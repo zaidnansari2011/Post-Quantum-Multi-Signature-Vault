@@ -1,0 +1,44 @@
+# --- Secrets & instance data (NEVER commit) ---
+.env
+instance/
+*.key
+*.pem
+*.db
+*.sqlite
+*.sqlite3
+
+# Encrypted vault blobs / uploaded ciphertext
+uploads/
+storage/
+
+# Local native PQC backend artefacts (if building liboqs from source)
+liboqs/
+*.dll
+*.so
+*.dylib
+
+# --- Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Tooling caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
