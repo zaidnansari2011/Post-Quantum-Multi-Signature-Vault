@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — Status{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0">Crypto-Agile Layer — Status</h1>
+  <span class="badge text-bg-success">backend: {{ backend }}</span>
+</div>
+
+<p class="text-muted">
+  These algorithms are registered and resolvable at runtime by <code>alg_id</code>. Switching the
+  default affects only <em>new</em> keys; every stored artefact keeps its own <code>alg_id</code>.
+</p>
+
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between">
+    <strong>Signature providers (FIPS 204 / 205)</strong>
+    <span>default: <span class="badge text-bg-primary algo-chip">{{ default_sig }}</span></span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>alg_id</th><th>Standard</th><th>Cat.</th>
+        <th class="text-end">Public key</th><th class="text-end">Signature</th><th>Reference impl</th>
+      </tr></thead>
+      <tbody>
+      {% for m in signature_metas %}
+        <tr>
+          <td><span class="badge text-bg-light algo-chip border">{{ m.alg_id }}</span>
+              {% if m.alg_id == default_sig %}<span class="badge text-bg-primary">default</span>{% endif %}</td>
+          <td>{{ m.nist_standard }}</td>
+          <td>{{ m.security_category }}</td>
+          <td class="text-end mono">{{ m.sizes.public_key }} B</td>
+          <td class="text-end mono">{{ m.sizes.signature }} B</td>
+          <td class="mono text-muted">{{ m.pqclean_name }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between">
+    <strong>Key-encapsulation providers (FIPS 203)</strong>
+    <span>default: <span class="badge text-bg-primary algo-chip">{{ default_kem }}</span></span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr>
+        <th>alg_id</th><th>Standard</th><th>Cat.</th>
+        <th class="text-end">Public key</th><th class="text-end">Ciphertext</th><th>Reference impl</th>
+      </tr></thead>
+      <tbody>
+      {% for m in kem_metas %}
+        <tr>
+          <td><span class="badge text-bg-light algo-chip border">{{ m.alg_id }}</span></td>
+          <td>{{ m.nist_standard }}</td>
+          <td>{{ m.security_category }}</td>
+          <td class="text-end mono">{{ m.sizes.public_key }} B</td>
+          <td class="text-end mono">{{ m.sizes.ciphertext }} B</td>
+          <td class="mono text-muted">{{ m.pqclean_name }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
