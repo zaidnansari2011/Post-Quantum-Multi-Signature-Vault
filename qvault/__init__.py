@@ -39,6 +39,7 @@ def create_app(config_name: str | None = None) -> Flask:
         return db.session.get(User, int(user_id))
 
     # --- Blueprints -------------------------------------------------------
+    from .blueprints.admin import bp as admin_bp
     from .blueprints.auth import bp as auth_bp
     from .blueprints.core import bp as core_bp
     from .blueprints.ledger import bp as ledger_bp
@@ -48,6 +49,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(vaults_bp)
     app.register_blueprint(ledger_bp)
+    app.register_blueprint(admin_bp)
 
     # --- Database: create tables + seed config/genesis --------------------
     from .services.bootstrap_service import init_database

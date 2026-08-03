@@ -38,16 +38,35 @@
   </div>
 
   <div class="col-lg-5">
-    <div class="card h-100">
-      <div class="card-header"><strong>What's next</strong></div>
+    <div class="card mb-3">
+      <div class="card-header"><strong>Crypto-agility</strong></div>
       <div class="card-body">
-        <p class="text-muted small">
-          The authentication and key-at-rest foundation (Phase 2) is in place. Upcoming phases
-          add vaults, proposals with encrypted files, M-of-N multi-signature approval, the audit
-          ledger view, the crypto-agility toggle, and key rotation.
+        <p class="small mb-2">
+          System default for new keys:
+          <span class="badge text-bg-primary algo-chip">{{ active_alg }}</span>
         </p>
+        {% if key and key.alg_id != active_alg %}
+          <div class="alert alert-warning py-2 small">
+            Your signing identity uses <span class="algo-chip">{{ key.alg_id }}</span>, which differs
+            from the current default. Re-issue to adopt <span class="algo-chip">{{ active_alg }}</span>.
+          </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('auth.reissue_key') }}">
+          {{ reissue_form.hidden_tag() }}
+          <div class="mb-2">{{ reissue_form.password(class="form-control form-control-sm", placeholder="Confirm your password") }}</div>
+          {{ reissue_form.submit(class="btn btn-outline-primary btn-sm") }}
+        </form>
+        <p class="text-muted small mt-2 mb-0">
+          Re-issuing generates a new key under the current algorithm and <em>retires but retains</em>
+          your old key, so every signature it made still verifies.
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
         <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.list_vaults') }}">Go to your vaults</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/">Crypto-agile layer status</a>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('ledger.view') }}">Audit log</a>
       </div>
     </div>
   </div>

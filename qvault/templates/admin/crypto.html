@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — Crypto-agility{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0">Crypto-agility control</h1>
+  <span class="badge text-bg-light border">backend: {{ backend }}</span>
+</div>
+<p class="text-muted">
+  Switching the active signature algorithm changes only which algorithm <strong>new</strong> keys
+  are generated under. Every existing key, signature, and ledger anchor records its own
+  <code>alg_id</code> and is always verified by the matching provider — so a switch never
+  invalidates stored data. The check at the bottom proves it live.
+</p>
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header"><strong>Active algorithms</strong></div>
+      <div class="card-body">
+        <dl class="row mb-3 small">
+          <dt class="col-6">Signatures (new keys)</dt>
+          <dd class="col-6"><span class="badge text-bg-primary algo-chip">{{ cfg.active_signature_alg }}</span></dd>
+          <dt class="col-6">Key encapsulation</dt>
+          <dd class="col-6"><span class="badge text-bg-light border algo-chip">{{ cfg.active_kem_alg }}</span></dd>
+        </dl>
+        <form method="post" action="{{ url_for('admin.switch_crypto') }}">
+          {{ form.hidden_tag() }}
+          <label class="form-label small mb-1">{{ form.algorithm.label.text }}</label>
+          {{ form.algorithm(class="form-select form-select-sm mb-2") }}
+          {{ form.submit(class="btn btn-primary btn-sm") }}
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><strong>Active signing keys by algorithm</strong></div>
+      <ul class="list-group list-group-flush">
+        {% for alg, n in keys_by_alg.items() %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span class="algo-chip">{{ alg }}</span><span class="badge text-bg-secondary">{{ n }}</span>
+        </li>
+        {% else %}
+        <li class="list-group-item text-muted small">No signing keys yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><strong>Registered signature algorithms</strong></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle small">
+          <thead><tr>
+            <th>alg_id</th><th>Standard</th><th>Cat.</th><th>Public key</th><th>Signature</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for m in sig_metas %}
+            <tr class="{% if m.alg_id == cfg.active_signature_alg %}table-primary{% endif %}">
+              <td><span class="algo-chip">{{ m.alg_id }}</span><div class="text-muted">{{ m.human_name }}</div></td>
+              <td>{{ m.nist_standard }}</td>
+              <td class="mono">{{ m.security_category }}</td>
+              <td class="mono">{{ m.sizes.public_key }} B</td>
+              <td class="mono">{{ m.sizes.signature }} B</td>
+              <td>{% if m.alg_id == cfg.active_signature_alg %}<span class="badge text-bg-primary">active</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><strong>Integrity across a mixed algorithm set</strong></div>
+      <div class="card-body">
+        {% if verify.total == 0 %}
+        <p class="text-muted small mb-0">No signatures or anchors to verify yet.</p>
+        {% elif verify.all_pass %}
+        <div class="alert alert-success mb-2 py-2">
+          ✓ All {{ verify.total }} existing artefacts verify under their own pinned algorithms.
+        </div>
+        {% else %}
+        <div class="alert alert-danger mb-2 py-2">
+          ✗ {{ verify.total - verify.ok }} of {{ verify.total }} artefacts failed verification.
+        </div>
+        {% endif %}
+        {% if verify.by_alg %}
+        <ul class="list-inline small mb-0">
+          {% for alg, c in verify.by_alg.items() %}
+          <li class="list-inline-item me-3">
+            <span class="algo-chip">{{ alg }}</span>
+            <span class="{% if c.ok == c.total %}text-success{% else %}text-danger{% endif %}">{{ c.ok }}/{{ c.total }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
