@@ -1,10 +1,9 @@
 """Idempotent startup seeding.
 
-Before the first request the database must contain: the single ``algorithm_config`` row and
-the genesis ledger entry. Without these, the first register/append would fail. Safe to run on
-every startup — it only creates what is missing.
-
-(The SYSTEM ledger-anchor key is seeded in Phase 5, when the head anchor is introduced.)
+Before the first request the database must contain: the single ``algorithm_config`` row, the
+genesis ledger entry, the SYSTEM ledger-anchor key, and an anchor over the head. Without these,
+the first register/append (or ledger verification) would fail. Safe to run on every startup — it
+only creates what is missing.
 """
 
 from __future__ import annotations
@@ -31,7 +30,12 @@ def seed() -> None:
         db.session.flush()
 
     ledger_service.ensure_genesis(commit=False)
+    ledger_service.ensure_system_key()  # SYSTEM ledger-anchor signing key
     db.session.commit()
+
+    # Anchor the head so the ledger is SYSTEM-signed from the very first entry onward.
+    if ledger_service.latest_anchor() is None:
+        ledger_service.anchor_head()
 
 
 def init_database(app: Flask) -> None:

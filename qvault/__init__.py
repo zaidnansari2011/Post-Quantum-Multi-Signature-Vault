@@ -41,20 +41,37 @@ def create_app(config_name: str | None = None) -> Flask:
     # --- Blueprints -------------------------------------------------------
     from .blueprints.auth import bp as auth_bp
     from .blueprints.core import bp as core_bp
+    from .blueprints.ledger import bp as ledger_bp
     from .blueprints.vaults import bp as vaults_bp
 
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(vaults_bp)
+    app.register_blueprint(ledger_bp)
 
     # --- Database: create tables + seed config/genesis --------------------
     from .services.bootstrap_service import init_database
 
     init_database(app)
 
+    # --- SYSTEM head anchor: re-sign the ledger head once per request that appended entries.
+    # Doing it here (rather than inside append()) keeps a single anchor per logical operation and
+    # never re-signs a same-seq hash change (a rewrite), so tampering stays detectable.
+    @app.after_request
+    def _anchor_ledger_head(response):
+        from flask import request
+
+        if request.endpoint == "static":
+            return response
+        from .services import ledger_service
+
+        try:
+            ledger_service.maybe_anchor()
+        except Exception:  # noqa: BLE001 - anchoring must never break the response
+            db.session.rollback()
+        return response
+
     # --- Later phases wire in here ----------------------------------------
-    # P3+: vault/proposal/ledger/keys/admin/benchmark blueprints
-    # P5:  SYSTEM ledger-anchor key + head signing
-    # P7:  scheduler.init_app(app) with rotation + expiry jobs
+    # P6:  crypto-agility switch UI  ·  P7: scheduler (rotation + expiry jobs)
 
     return app
