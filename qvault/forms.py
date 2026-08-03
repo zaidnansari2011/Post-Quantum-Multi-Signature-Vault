@@ -103,3 +103,9 @@ class ReissueKeyForm(FlaskForm):
 
     password = PasswordField("Confirm your password", validators=[DataRequired()])
     submit = SubmitField("Re-issue signing key")
+
+
+class RunMaintenanceForm(FlaskForm):
+    """Admin control to run the rotation + expiry jobs immediately (they also run on a schedule)."""
+
+    submit = SubmitField("Run rotation + expiry now")

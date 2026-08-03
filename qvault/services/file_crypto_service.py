@@ -77,6 +77,7 @@ def encrypt_and_store(vault, filename: str, plaintext: bytes, *, storage_key: st
         "size_bytes": len(plaintext),
         "aes_nonce": aes_nonce,
         "kem_alg_id": vault.kem_alg_id,
+        "kem_key_id": vault.kem_key_id,  # pin the encapsulating key so rotation keeps files usable
         "kem_ciphertext": kem_ct,
         "wrapped_dek": wrapped_dek,
         "dek_wrap_nonce": dek_wrap_nonce,
@@ -88,7 +89,11 @@ def decrypt(vault, file) -> bytes:
     registry = current_app.extensions["crypto"]
     sym = registry.symmetric("AES-256-GCM")
 
-    vault_key = db.session.get(Key, vault.kem_key_id)
+    # Use the key that actually encapsulated this file (retire-but-retain across rotation): a
+    # rotated vault key is kept, so files uploaded before the rotation still decrypt.
+    vault_key = db.session.get(Key, file.kem_key_id)
+    if vault_key is None:
+        raise FileDecryptError("integrity check failed: encapsulating key not found")
     kem = registry.kem(file.kem_alg_id)
 
     # Reject a malformed KEM ciphertext up front (length-altering tamper) so it fails as an

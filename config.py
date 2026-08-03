@@ -40,9 +40,12 @@ class BaseConfig:
     # Server master key — wraps vault-KEM and SYSTEM keys (§4.3). Base64/hex string.
     SERVER_MASTER_KEY = os.environ.get("SERVER_MASTER_KEY")
 
-    # Scheduler cron expressions
+    # Scheduler (APScheduler) — automated key rotation + proposal-expiry sweep (Phase 7)
+    SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "true").lower() == "true"
     KEY_ROTATION_CRON = os.environ.get("KEY_ROTATION_CRON", "0 3 * * *")
     PROPOSAL_EXPIRY_CRON = os.environ.get("PROPOSAL_EXPIRY_CRON", "*/15 * * * *")
+    # A key becomes due for rotation this many days after it is created.
+    KEY_MAX_AGE_DAYS = int(os.environ.get("KEY_MAX_AGE_DAYS", "90"))
 
     # The deliberate tamper demonstration is dev/demo only and OFF by default.
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "false").lower() == "true"
@@ -66,6 +69,7 @@ class TestConfig(BaseConfig):
     SERVER_MASTER_KEY = "0" * 64
     ENABLE_TAMPER_DEMO = True
     WTF_CSRF_ENABLED = False
+    SCHEDULER_ENABLED = False  # tests drive the rotation/expiry jobs directly, no background thread
 
 
 class ProdConfig(BaseConfig):

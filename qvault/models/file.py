@@ -33,8 +33,10 @@ class VaultFile(db.Model):
 
     aes_nonce = db.Column(db.LargeBinary(12), nullable=False)
 
-    # ML-KEM key-wrap of the DEK.
+    # ML-KEM key-wrap of the DEK. ``kem_key_id`` pins WHICH vault KEM key encapsulated this DEK,
+    # so a rotated (retired-but-retained) key can still decrypt files uploaded before the rotation.
     kem_alg_id = db.Column(db.String(64), nullable=False)
+    kem_key_id = db.Column(db.Integer, db.ForeignKey("keys.id"), nullable=False)
     kem_ciphertext = db.Column(db.LargeBinary, nullable=False)
     wrapped_dek = db.Column(db.LargeBinary, nullable=False)
     dek_wrap_nonce = db.Column(db.LargeBinary(12), nullable=False)

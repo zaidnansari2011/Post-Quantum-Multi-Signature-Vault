@@ -25,6 +25,7 @@
           <a class="btn btn-sm btn-outline-light" href="{{ url_for('ledger.view') }}">Audit log</a>
           {% if current_user.role == 'admin' %}
           <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin.crypto') }}">Crypto</a>
+          <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin.rotation') }}">Rotation</a>
           {% endif %}
           <span class="navbar-text text-white-50 small">{{ current_user.email }}</span>
           <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">

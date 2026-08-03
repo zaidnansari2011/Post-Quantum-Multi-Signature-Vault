@@ -45,7 +45,11 @@
           System default for new keys:
           <span class="badge text-bg-primary algo-chip">{{ active_alg }}</span>
         </p>
-        {% if key and key.alg_id != active_alg %}
+        {% if key_due %}
+          <div class="alert alert-danger py-2 small">
+            Your signing key is <strong>due for rotation</strong>. Re-issue it now to stay current.
+          </div>
+        {% elif key and key.alg_id != active_alg %}
           <div class="alert alert-warning py-2 small">
             Your signing identity uses <span class="algo-chip">{{ key.alg_id }}</span>, which differs
             from the current default. Re-issue to adopt <span class="algo-chip">{{ active_alg }}</span>.

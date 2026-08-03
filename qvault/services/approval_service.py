@@ -94,15 +94,16 @@ def verify_signature(sig: Signature, proposal) -> bool:
     return provider.verify(sig.public_key, message, sig.signature)
 
 
-def refresh_expiry(proposal, *, commit: bool = True) -> bool:
-    """Lazily expire an OPEN proposal whose deadline has passed. Returns True if it transitioned.
+def refresh_expiry(proposal, *, now: datetime | None = None, commit: bool = True) -> bool:
+    """Expire an OPEN proposal whose deadline has passed. Returns True if it transitioned.
 
-    Phase 7 replaces this read-time check with a scheduled sweep; the transition and its ledger
-    event are identical either way.
+    ``now`` is injectable so the Phase-7 scheduled sweep (and tests) can use a single consistent
+    clock; the read-time callers pass nothing and use wall-clock.
     """
+    now = now or datetime.now(UTC)
     if proposal.status != "open" or proposal.expires_at is None:
         return False
-    if datetime.now(UTC) <= proposal.expires_at:
+    if now <= proposal.expires_at:
         return False
 
     proposal.status = "expired"

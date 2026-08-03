@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — Key rotation{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0">Key rotation &amp; maintenance</h1>
+  <form method="post" action="{{ url_for('admin.run_maintenance') }}">
+    {{ form.hidden_tag() }}
+    {{ form.submit(class="btn btn-primary btn-sm") }}
+  </form>
+</div>
+<p class="text-muted">
+  Rotation is <strong>retire-but-retain</strong>: a rotated key is retired but kept so everything it
+  signed or encrypted still verifies / decrypts. Server-custodied keys (the SYSTEM anchor key and
+  vault KEM keys) rotate automatically on a schedule; password-protected user signing keys cannot be
+  rotated unattended, so they are only flagged here and the user re-keys from their dashboard.
+</p>
+
+{% if user_keys_due %}
+<div class="alert alert-warning py-2">
+  {{ user_keys_due|length }} user signing key(s) are due for rotation and need interactive re-keying
+  by their owners.
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header"><strong>Keys</strong></div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle small">
+      <thead><tr>
+        <th>#</th><th>Scope</th><th>Role</th><th>Algorithm</th><th>Status</th>
+        <th>Rotate after</th><th>Fingerprint</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr class="{% if r.due %}table-warning{% elif r.key.status == 'retired' %}text-muted{% endif %}">
+          <td class="mono">{{ r.key.id }}</td>
+          <td><span class="badge text-bg-light border text-uppercase">{{ r.scope }}</span></td>
+          <td class="mono">{{ r.key.role }}</td>
+          <td><span class="algo-chip">{{ r.key.alg_id }}</span></td>
+          <td>
+            {% if r.key.status == 'active' %}<span class="badge text-bg-success">active</span>
+            {% else %}<span class="badge text-bg-secondary">retired</span>{% endif %}
+            {% if r.due %}<span class="badge text-bg-warning">due</span>{% endif %}
+            {% if r.key.can_verify and r.key.status == 'retired' %}
+              <span class="badge text-bg-light border">still verifies</span>{% endif %}
+          </td>
+          <td class="mono">{{ r.key.rotate_after.strftime('%Y-%m-%d') if r.key.rotate_after else '—' }}</td>
+          <td class="mono">{{ r.key.public_fingerprint() }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

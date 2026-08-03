@@ -73,7 +73,9 @@ def create_app(config_name: str | None = None) -> Flask:
             db.session.rollback()
         return response
 
-    # --- Later phases wire in here ----------------------------------------
-    # P6:  crypto-agility switch UI  ·  P7: scheduler (rotation + expiry jobs)
+    # --- Scheduler: automated key rotation + proposal-expiry sweep --------
+    from .scheduler import init_scheduler
+
+    init_scheduler(app)
 
     return app
