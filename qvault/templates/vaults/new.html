@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — New vault{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <h1 class="h3 mb-3">Create a vault</h1>
+    <div class="card">
+      <div class="card-body">
+        <p class="text-muted small">
+          A dedicated <strong>ML-KEM</strong> keypair is generated for this vault to encrypt its
+          files. You are added as the owner (and an eligible signer). Set the approval threshold
+          <em>M</em>; the number of eligible signers <em>N</em> grows as you add members.
+        </p>
+        <form method="post" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="mb-3">
+            {{ form.name.label(class="form-label") }}
+            {{ form.name(class="form-control") }}
+            {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-3">
+            {{ form.description.label(class="form-label") }}
+            {{ form.description(class="form-control", rows="2") }}
+          </div>
+          <div class="mb-3 col-sm-6">
+            {{ form.threshold_m.label(class="form-label") }}
+            {{ form.threshold_m(class="form-control") }}
+            {% for e in form.threshold_m.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+          </div>
+          {{ form.submit(class="btn btn-primary") }}
+          <a class="btn btn-link" href="{{ url_for('vaults.list_vaults') }}">Cancel</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
