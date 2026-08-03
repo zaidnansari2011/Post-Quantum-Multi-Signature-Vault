@@ -1,6 +1,15 @@
-"""SQLAlchemy models (schema only) — populated in Phase 2 onward.
+"""SQLAlchemy models. Importing this package registers every model on the shared metadata
+so ``db.create_all()`` and Alembic can see them.
 
-Planned aggregates (see specification §5): user, vault, vault_member, vault_policy, key,
-proposal, file, signature, ledger_entry, ledger_anchor, algorithm_config, rotation_event.
-Models hold schema and relationships only — no business logic (that lives in services).
+Present (Phase 2): user, key, algorithm_config, ledger_entry. Added in later phases: vault,
+vault_member, vault_policy, proposal, file, signature, ledger_anchor, rotation_event.
 """
+
+from __future__ import annotations
+
+from .config_models import AlgorithmConfig
+from .key import Key
+from .ledger import LedgerEntry
+from .user import User
+
+__all__ = ["User", "Key", "AlgorithmConfig", "LedgerEntry"]

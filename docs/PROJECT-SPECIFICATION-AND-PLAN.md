@@ -508,13 +508,17 @@ Distinctness is enforced by a single mechanism — `signatures UNIQUE(proposal_i
             "seq":          e.seq,
             "timestamp":    e.timestamp,
             "actor":        e.actor,
+            "actor_id":     e.actor_id,       # authenticated routing metadata
             "event_type":   e.event_type,
+            "vault_id":     e.vault_id,
+            "ref_type":     e.ref_type,
+            "ref_id":       e.ref_id,
             "payload_hash": e.payload_hash,   # sha256(canonical(payload_json)); fixed-size
             "prev_hash":    e.prev_hash,
         }).encode("utf-8")
         return sha256(preimage)
 
-Every field is JSON-encoded (length-unambiguous), the genesis constant is fixed, `timestamp` is always in the preimage, and the payload enters via its hash — resolving all prior ledger inconsistencies.
+Every field is JSON-encoded (length-unambiguous), the genesis constant is fixed, `timestamp` is always in the preimage, and the payload enters via its hash. The preimage covers **every persisted, security-relevant column** — including the routing metadata `actor_id`, `vault_id`, `ref_type`, and `ref_id` — so none of them can be silently altered in the database without breaking the chain (a hardening applied after the Phase-2 security review).
 
 **Verification** recomputes each entry and checks `prev_hash == previous.entry_hash`, returning PASS or the first broken `seq`.
 

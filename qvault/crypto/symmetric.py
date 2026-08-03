@@ -35,8 +35,11 @@ class AESGCMProvider(SymmetricProvider):
     def encrypt(self, key: bytes, plaintext: bytes, aad: bytes = b"") -> tuple[bytes, bytes]:
         """Encrypt ``plaintext``; return ``(nonce, ciphertext_with_tag)``.
 
-        A fresh random nonce is generated per call. Because every artefact uses a fresh
-        key (per-file DEK / per-secret wrap key), the 96-bit random nonce is safe here.
+        A fresh random 96-bit nonce is generated per call. For the file path the key is also
+        fresh per artefact (a per-file DEK). For the private-key wrap path the key is the user's
+        Argon2id KEK, which is REUSED across that user's wraps — so nonce non-reuse there rests
+        on the random nonce alone, safe because the wraps per KEK stay far below the ~2^32
+        birthday bound.
         """
         nonce = os.urandom(NONCE_LENGTH)
         ciphertext = AESGCM(key).encrypt(nonce, plaintext, aad)
