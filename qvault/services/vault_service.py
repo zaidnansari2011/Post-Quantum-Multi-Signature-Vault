@@ -12,6 +12,7 @@ from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember, VaultPolicy
 from qvault.security import master_key
 from qvault.services import ledger_service
+from qvault.services.rotation_policy import rotation_deadline
 
 
 class PolicyError(ValueError):
@@ -52,6 +53,7 @@ def create_vault(
         can_sign=False,
         can_verify=False,
         version=1,
+        rotate_after=rotation_deadline(),
     )
     db.session.add(vault_key)
     db.session.flush()  # assign vault_key.id

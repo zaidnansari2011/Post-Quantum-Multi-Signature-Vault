@@ -73,10 +73,19 @@ def logout():
 @bp.get("/dashboard")
 @login_required
 def dashboard():
+    from datetime import UTC, datetime
+
     key = active_signing_key(current_user)
     active_alg = AlgorithmConfig.current().active_signature_alg
+    key_due = (
+        key is not None and key.rotate_after is not None and key.rotate_after < datetime.now(UTC)
+    )
     return render_template(
-        "dashboard.html", key=key, active_alg=active_alg, reissue_form=ReissueKeyForm()
+        "dashboard.html",
+        key=key,
+        active_alg=active_alg,
+        key_due=key_due,
+        reissue_form=ReissueKeyForm(),
     )
 
 

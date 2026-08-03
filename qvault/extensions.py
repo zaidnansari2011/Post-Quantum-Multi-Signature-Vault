@@ -23,9 +23,13 @@ login_manager.login_message_category = "warning"
 
 
 @event.listens_for(Engine, "connect")
-def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
-    """Enforce foreign keys on SQLite (off by default) so dev matches PostgreSQL."""
+def _configure_sqlite(dbapi_connection, connection_record):
+    """Tune SQLite: enforce foreign keys (match PostgreSQL) and reduce write-lock contention
+    between the background rotation/expiry thread and live requests (WAL + a busy timeout)."""
     if isinstance(dbapi_connection, sqlite3.Connection):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=30000")  # wait up to 30s instead of failing instantly
+        if dbapi_connection.in_transaction is False:
+            cursor.execute("PRAGMA journal_mode=WAL")  # concurrent readers alongside one writer
         cursor.close()

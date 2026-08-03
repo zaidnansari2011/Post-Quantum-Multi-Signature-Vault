@@ -6,13 +6,17 @@ stored artefact keeps its own ``alg_id`` and continues to verify, which this pag
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from flask import Blueprint, current_app, flash, redirect, render_template, url_for
 from flask_login import current_user
 
-from qvault.forms import SwitchAlgorithmForm
+from qvault.extensions import db
+from qvault.forms import RunMaintenanceForm, SwitchAlgorithmForm
 from qvault.models.config_models import AlgorithmConfig
+from qvault.models.key import Key
 from qvault.security.decorators import admin_required
-from qvault.services import config_service
+from qvault.services import config_service, rotation_service
 from qvault.services.config_service import ConfigError
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -64,3 +68,52 @@ def switch_crypto():
             "success",
         )
     return redirect(url_for("admin.crypto"))
+
+
+@bp.get("/rotation")
+@admin_required
+def rotation():
+    now = datetime.now(UTC)
+    keys = Key.query.order_by(Key.role, Key.created_at).all()
+    rows = [
+        {
+            "key": k,
+            "scope": ("system" if k.owner_id is None else "user") if k.role == "sig" else "vault",
+            "due": k.status == "active" and k.rotate_after is not None and k.rotate_after < now,
+        }
+        for k in keys
+    ]
+    return render_template(
+        "admin/rotation.html",
+        rows=rows,
+        user_keys_due=rotation_service.due_user_signing_keys(now),
+        form=RunMaintenanceForm(),
+    )
+
+
+@bp.post("/rotation/run")
+@admin_required
+def run_maintenance():
+    if not RunMaintenanceForm().validate_on_submit():
+        flash("Could not run maintenance.", "danger")
+        return redirect(url_for("admin.rotation"))
+    try:
+        summary = rotation_service.run_key_rotation(
+            actor=f"user:{current_user.id}", actor_id=current_user.id
+        )
+        expired = rotation_service.expire_stale_proposals()
+    except Exception:  # noqa: BLE001 - e.g. a ledger-seq race with the scheduled job
+        db.session.rollback()
+        flash(
+            "Maintenance is already running (scheduled job) — please try again shortly.", "warning"
+        )
+        return redirect(url_for("admin.rotation"))
+    flash(
+        "Maintenance complete — "
+        f"system key rotated: {summary['system_rotated']}, "
+        f"vault keys rotated: {len(summary['vaults_rotated'])}, "
+        f"user keys due (need interactive re-key): {len(summary['user_keys_due'])}, "
+        f"proposals expired: {expired}.",
+        "success",
+    )
+    return redirect(url_for("admin.rotation"))

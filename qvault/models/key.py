@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from qvault.extensions import db
+from qvault.models._types import AwareDateTime
 
 
 def _utcnow() -> datetime:
@@ -43,10 +44,12 @@ class Key(db.Model):
     can_sign = db.Column(db.Boolean, nullable=False, default=True)
     can_verify = db.Column(db.Boolean, nullable=False, default=True)
     version = db.Column(db.Integer, nullable=False, default=1)
-    rotate_after = db.Column(db.DateTime(timezone=True), nullable=True)
+    # AwareDateTime: SQLite drops tzinfo, so these must round-trip tz-aware to be comparable
+    # against an aware "now" in rotation checks (mirrors the Proposal timestamp handling).
+    rotate_after = db.Column(AwareDateTime, nullable=True)
 
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
-    retired_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    retired_at = db.Column(AwareDateTime, nullable=True)
 
     owner = db.relationship("User", back_populates="keys")
 

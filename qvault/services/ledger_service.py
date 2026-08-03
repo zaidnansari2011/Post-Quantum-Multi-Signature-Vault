@@ -21,6 +21,7 @@ from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.models.ledger import LedgerEntry
 from qvault.security import master_key
+from qvault.services.rotation_policy import rotation_deadline
 
 ENTRY_DS = b"QVAULT-LEDGER-v1|"
 GENESIS_PREV_HEX = sha256_hex(b"QVAULT-LEDGER-GENESIS-v1")
@@ -234,6 +235,7 @@ def ensure_system_key() -> Key:
         can_sign=True,
         can_verify=True,
         version=1,
+        rotate_after=rotation_deadline(),
     )
     db.session.add(key)
     db.session.flush()

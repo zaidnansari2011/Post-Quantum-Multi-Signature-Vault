@@ -23,6 +23,7 @@ from qvault.models.key import Key
 from qvault.models.user import User
 from qvault.security.passwords import verify_password
 from qvault.services import ledger_service
+from qvault.services.rotation_policy import rotation_deadline
 
 # Additional authenticated data binding the wrap to its purpose (not secret, but tamper-bound).
 _WRAP_AAD = b"qvault:sk-wrap:v1"
@@ -71,6 +72,7 @@ def generate_signing_key(
         can_sign=True,
         can_verify=True,
         version=1,
+        rotate_after=rotation_deadline(),
     )
     db.session.add(key)
     if commit:
