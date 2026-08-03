@@ -15,6 +15,8 @@ from __future__ import annotations
 import os
 
 from argon2.low_level import Type, hash_secret_raw
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 # OWASP-aligned Argon2id parameters (see NFR-2 in the specification).
 DEFAULT_PARAMS: dict[str, int] = {
@@ -48,3 +50,12 @@ def derive_kek(password: str, salt: bytes, *, length: int = KEK_LENGTH, **params
         hash_len=length,
         type=Type.ID,
     )
+
+
+def hkdf_sha256(key_material: bytes, *, info: bytes, length: int = 32) -> bytes:
+    """Derive a key from uniformly-random ``key_material`` (e.g. an ML-KEM shared secret).
+
+    No salt is used: the KEM shared secret is already uniform, so HKDF-Expand with a
+    domain-separating ``info`` label is sufficient (documented design choice, §4.9).
+    """
+    return HKDF(algorithm=hashes.SHA256(), length=length, salt=None, info=info).derive(key_material)

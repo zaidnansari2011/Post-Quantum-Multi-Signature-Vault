@@ -29,6 +29,9 @@ class BaseConfig:
     # Dev/demo convenience: create tables + seed on startup (production would use migrations).
     AUTO_CREATE_DB = True
 
+    # Maximum upload size — files are encrypted at rest; larger uploads are rejected (413).
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MiB
+
     # Crypto-agility defaults (only affect NEW keys; existing artefacts keep their own alg_id)
     CRYPTO_BACKEND = os.environ.get("CRYPTO_BACKEND", "quantcrypt")
     DEFAULT_SIG_ALGORITHM = os.environ.get("DEFAULT_SIG_ALGORITHM", "ML-DSA-65")

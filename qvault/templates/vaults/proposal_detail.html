@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — {{ proposal.title }}{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb"><ol class="breadcrumb small">
+  <li class="breadcrumb-item"><a href="{{ url_for('vaults.list_vaults') }}">Vaults</a></li>
+  <li class="breadcrumb-item"><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></li>
+  <li class="breadcrumb-item active">Proposal</li>
+</ol></nav>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0">{{ proposal.title }}</h1>
+  <span class="badge text-bg-secondary text-uppercase fs-6">{{ proposal.status }}</span>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header"><strong>Action</strong></div>
+      <div class="card-body">
+        <p style="white-space: pre-wrap">{{ proposal.action_text }}</p>
+        <dl class="row small text-muted mb-0">
+          <dt class="col-sm-4">Threshold</dt><dd class="col-sm-8 mono">{{ proposal.required_m }} of {{ proposal.required_n }}</dd>
+          <dt class="col-sm-4">Proposal id</dt><dd class="col-sm-8 mono">{{ proposal.proposal_uuid }}</dd>
+          <dt class="col-sm-4">Payload hash</dt><dd class="col-sm-8 mono">{{ proposal.payload_hash[:32] }}…</dd>
+          {% if proposal.expires_at %}<dt class="col-sm-4">Deadline</dt><dd class="col-sm-8">{{ proposal.expires_at }}</dd>{% endif %}
+        </dl>
+      </div>
+    </div>
+
+    {% if proposal.file %}
+    <div class="card">
+      <div class="card-header"><strong>Attached file</strong></div>
+      <div class="card-body d-flex justify-content-between align-items-center">
+        <div>
+          <div class="mono">{{ proposal.file.filename }}</div>
+          <div class="small text-muted">
+            {{ proposal.file.size_bytes }} bytes · AES-256-GCM, key wrapped by
+            <span class="algo-chip">{{ proposal.file.kem_alg_id }}</span>
+          </div>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('vaults.download_file', vid=vault.id, pid=proposal.proposal_uuid) }}">Download &amp; decrypt</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header"><strong>Signatures</strong></div>
+      <div class="card-body">
+        <p class="text-muted small mb-0">
+          Multi-signature collection and the M-of-N approval state machine arrive in
+          <strong>Phase 4</strong>. This proposal has snapshotted its canonical signing payload
+          (hash above) and its authorized-signer set, ready to be signed.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

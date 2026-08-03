@@ -41,9 +41,11 @@ def create_app(config_name: str | None = None) -> Flask:
     # --- Blueprints -------------------------------------------------------
     from .blueprints.auth import bp as auth_bp
     from .blueprints.core import bp as core_bp
+    from .blueprints.vaults import bp as vaults_bp
 
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(vaults_bp)
 
     # --- Database: create tables + seed config/genesis --------------------
     from .services.bootstrap_service import init_database

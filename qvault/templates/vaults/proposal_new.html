@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — New proposal{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{{ url_for('vaults.list_vaults') }}">Vaults</a></li>
+      <li class="breadcrumb-item"><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></li>
+      <li class="breadcrumb-item active">New proposal</li>
+    </ol></nav>
+    <h1 class="h3 mb-3">New proposal in {{ vault.name }}</h1>
+    <div class="card"><div class="card-body">
+      <p class="text-muted small">
+        Requires <strong>{{ vault.policy.threshold_m }}</strong> of the vault's eligible signers.
+        Any attached file is encrypted at rest with AES-256-GCM, its key wrapped by
+        <span class="algo-chip">{{ vault.kem_alg_id }}</span>.
+      </p>
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+          {{ form.title.label(class="form-label") }}
+          {{ form.title(class="form-control") }}
+          {% for e in form.title.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="mb-3">
+          {{ form.action_text.label(class="form-label") }}
+          {{ form.action_text(class="form-control", rows="3") }}
+          {% for e in form.action_text.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="row">
+          <div class="mb-3 col-sm-6">
+            {{ form.deadline.label(class="form-label") }}
+            {{ form.deadline(class="form-control") }}
+          </div>
+          <div class="mb-3 col-sm-6">
+            {{ form.file.label(class="form-label") }}
+            {{ form.file(class="form-control") }}
+          </div>
+        </div>
+        {{ form.submit(class="btn btn-primary") }}
+        <a class="btn btn-link" href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">Cancel</a>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}
