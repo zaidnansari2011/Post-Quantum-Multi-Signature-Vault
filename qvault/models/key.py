@@ -21,13 +21,18 @@ class Key(db.Model):
     __tablename__ = "keys"
 
     id = db.Column(db.Integer, primary_key=True)
-    owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    # Nullable: the SYSTEM ledger-anchor signing key (Phase 5) has no human owner.
+    owner_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
 
     role = db.Column(db.String(8), nullable=False)  # 'sig' | 'kem'
     alg_id = db.Column(db.String(64), nullable=False)
     backend = db.Column(db.String(32), nullable=False)
 
     public_key = db.Column(db.LargeBinary, nullable=False)
+    # Master-key MAC over the public key, binding it to the out-of-band trust root. Set only for
+    # the SYSTEM ledger-anchor key, so anchor verification can reject a DB-injected substitute key
+    # (a DB-write adversary cannot forge this MAC without the server master key).
+    public_key_mac = db.Column(db.LargeBinary, nullable=True)
     secret_key_wrapped = db.Column(db.LargeBinary, nullable=True)  # AES-256-GCM ciphertext+tag
     secret_key_nonce = db.Column(db.LargeBinary(12), nullable=True)
     wrap_domain = db.Column(

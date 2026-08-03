@@ -2,12 +2,13 @@
 so ``db.create_all()`` and Alembic can see them.
 
 Present: user, key, algorithm_config, ledger_entry (Phase 2); vault, vault_member, vault_policy,
-proposal, file (Phase 3); signature (Phase 4). Added in later phases: ledger_anchor,
+proposal, file (Phase 3); signature (Phase 4); ledger_anchor (Phase 5). Added in later phases:
 rotation_event.
 """
 
 from __future__ import annotations
 
+from .anchor import LedgerAnchor
 from .config_models import AlgorithmConfig
 from .file import VaultFile
 from .key import Key
@@ -22,6 +23,7 @@ __all__ = [
     "Key",
     "AlgorithmConfig",
     "LedgerEntry",
+    "LedgerAnchor",
     "Vault",
     "VaultMember",
     "VaultPolicy",

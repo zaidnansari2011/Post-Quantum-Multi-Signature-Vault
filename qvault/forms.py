@@ -74,3 +74,17 @@ class VoteForm(FlaskForm):
     reason = StringField("Reason (optional)", validators=[Optional(), Length(max=255)])
     approve = SubmitField("Approve & sign")
     reject = SubmitField("Reject")
+
+
+class LedgerTamperForm(FlaskForm):
+    """Dev-only tamper demonstration controls (gated by ENABLE_TAMPER_DEMO at the route)."""
+
+    target_seq = IntegerField(
+        "Entry # to tamper", validators=[DataRequired(), NumberRange(min=1)], default=1
+    )
+    edit = SubmitField("Tamper: edit payload")
+    rewrite = SubmitField("Tamper: full rewrite")
+
+
+class LedgerRestoreForm(FlaskForm):
+    restore = SubmitField("Restore ledger")

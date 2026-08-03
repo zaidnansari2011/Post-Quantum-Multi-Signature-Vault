@@ -12,10 +12,12 @@ This env-var master key is an explicit HSM/KMS *surrogate* — a documented non-
 from __future__ import annotations
 
 import hashlib
+import hmac
 
 from flask import current_app
 
 _MASTER_AAD = b"qvault:master-wrap:v1"
+_MAC_DS = b"qvault:system-pubkey-mac:v1"
 
 
 def _parse_hex_key(raw: str) -> bytes | None:
@@ -54,3 +56,16 @@ def wrap_secret(plaintext: bytes) -> tuple[bytes, bytes]:
 def unwrap_secret(nonce: bytes, ciphertext: bytes) -> bytes:
     """Decrypt master-key-wrapped material; raises on a wrong key / tampering."""
     return _symmetric().decrypt(get_master_key(), nonce, ciphertext, _MASTER_AAD)
+
+
+def mac(data: bytes) -> bytes:
+    """HMAC-SHA256 over ``data`` keyed by the master key — authenticates non-secret material
+    (e.g. the SYSTEM public key) against the out-of-band trust root."""
+    return hmac.new(get_master_key(), _MAC_DS + data, hashlib.sha256).digest()
+
+
+def verify_mac(data: bytes, tag: bytes | None) -> bool:
+    """Constant-time check that ``tag`` is a valid master-key MAC over ``data``."""
+    if not tag:
+        return False
+    return hmac.compare_digest(mac(data), tag)
