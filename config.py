@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 from dotenv import load_dotenv
+from sqlalchemy.pool import StaticPool
 
 load_dotenv()
 
@@ -21,8 +22,12 @@ class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY")
 
     # Database — SQLite for the demo, written to stay PostgreSQL-compatible.
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///instance/qvault.db")
+    # A bare relative SQLite name is stored in Flask's instance/ folder (auto-created).
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///qvault.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Dev/demo convenience: create tables + seed on startup (production would use migrations).
+    AUTO_CREATE_DB = True
 
     # Crypto-agility defaults (only affect NEW keys; existing artefacts keep their own alg_id)
     CRYPTO_BACKEND = os.environ.get("CRYPTO_BACKEND", "quantcrypt")
@@ -50,6 +55,11 @@ class TestConfig(BaseConfig):
     TESTING = True
     SECRET_KEY = "test-secret-key"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    # Keep the single in-memory DB alive across connections within a test run.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "connect_args": {"check_same_thread": False},
+        "poolclass": StaticPool,
+    }
     SERVER_MASTER_KEY = "0" * 64
     ENABLE_TAMPER_DEMO = True
     WTF_CSRF_ENABLED = False

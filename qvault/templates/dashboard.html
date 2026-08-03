@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault — Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h3 mb-0">Welcome, {{ current_user.display_name }}</h1>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card h-100">
+      <div class="card-header"><strong>Your post-quantum signing identity</strong></div>
+      <div class="card-body">
+        {% if key %}
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Algorithm</dt>
+            <dd class="col-sm-8"><span class="badge text-bg-primary algo-chip">{{ key.alg_id }}</span>
+                <span class="text-muted small">({{ key.backend }})</span></dd>
+            <dt class="col-sm-4">Status</dt>
+            <dd class="col-sm-8"><span class="badge text-bg-success text-uppercase">{{ key.status }}</span></dd>
+            <dt class="col-sm-4">Public-key fingerprint</dt>
+            <dd class="col-sm-8 mono">{{ key.public_fingerprint() }}</dd>
+            <dt class="col-sm-4">Public key size</dt>
+            <dd class="col-sm-8 mono">{{ key.public_key|length }} bytes</dd>
+            <dt class="col-sm-4">Private key</dt>
+            <dd class="col-sm-8">
+              <span class="badge text-bg-secondary">encrypted at rest</span>
+              <div class="text-muted small mt-1">
+                {{ key.secret_key_wrapped|length }} bytes of AES-256-GCM ciphertext ·
+                wrapped under an Argon2id key derived from your password
+              </div>
+            </dd>
+          </dl>
+        {% else %}
+          <p class="text-muted mb-0">No signing key found for your account.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header"><strong>What's next</strong></div>
+      <div class="card-body">
+        <p class="text-muted small">
+          The authentication and key-at-rest foundation (Phase 2) is in place. Upcoming phases
+          add vaults, proposals with encrypted files, M-of-N multi-signature approval, the audit
+          ledger view, the crypto-agility toggle, and key rotation.
+        </p>
+        <a class="btn btn-outline-secondary btn-sm" href="/">View crypto-agile layer status</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -20,3 +20,19 @@ from qvault.crypto import build_registry  # noqa: E402
 def registry():
     """A fully populated CryptoRegistry using the default backend."""
     return build_registry()
+
+
+@pytest.fixture()
+def app():
+    """A fresh app on an isolated in-memory testing DB, with an active app context."""
+    from qvault import create_app
+
+    application = create_app("testing")
+    with application.app_context():
+        yield application
+
+
+@pytest.fixture()
+def client(app):
+    """A test client for the app fixture."""
+    return app.test_client()
