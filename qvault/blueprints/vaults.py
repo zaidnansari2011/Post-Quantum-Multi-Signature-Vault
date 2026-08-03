@@ -8,12 +8,20 @@ from flask import Blueprint, Response, abort, flash, redirect, render_template, 
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from qvault.forms import AddMemberForm, ProposalForm, VaultForm
+from qvault.extensions import db
+from qvault.forms import AddMemberForm, ProposalForm, VaultForm, VoteForm
 from qvault.models.proposal import Proposal
 from qvault.models.vault import VaultMember
 from qvault.security.decorators import get_membership_or_403
-from qvault.services import file_crypto_service, proposal_service, vault_service
+from qvault.services import (
+    approval_service,
+    file_crypto_service,
+    proposal_service,
+    vault_service,
+)
+from qvault.services.approval_service import ApprovalError
 from qvault.services.file_crypto_service import FileDecryptError
+from qvault.services.key_service import KeyUnlockError
 from qvault.services.proposal_service import ProposalError
 from qvault.services.vault_service import MembershipError, PolicyError
 
@@ -117,7 +125,65 @@ def new_proposal(vid: int):
 def proposal_detail(vid: int, pid: str):
     vault = get_membership_or_403(vid)
     proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
-    return render_template("vaults/proposal_detail.html", vault=vault, proposal=proposal)
+
+    # Lazily flip to EXPIRED on view if its deadline has passed (Phase 7 makes this scheduled).
+    # Kept non-fatal: a page view must never 500 because a read-time expiry write raced/failed.
+    try:
+        approval_service.refresh_expiry(proposal)
+    except Exception:  # noqa: BLE001 - best-effort; fall back to the last committed state
+        db.session.rollback()
+
+    approvals, rejections = approval_service.tally(proposal)
+    votes = [
+        {"sig": s, "verified": approval_service.verify_signature(s, proposal)}
+        for s in proposal.signatures
+    ]
+    my_vote = approval_service.vote_of(proposal, current_user.id)
+    is_signer = current_user.id in {m.user_id for m in vault.signer_members()}
+    can_vote = proposal.status == "open" and is_signer and my_vote is None
+
+    return render_template(
+        "vaults/proposal_detail.html",
+        vault=vault,
+        proposal=proposal,
+        votes=votes,
+        approvals=approvals,
+        rejections=rejections,
+        my_vote=my_vote,
+        is_signer=is_signer,
+        can_vote=can_vote,
+        vote_form=VoteForm(),
+    )
+
+
+@bp.post("/<int:vid>/proposals/<pid>/vote")
+@login_required
+def vote(vid: int, pid: str):
+    get_membership_or_403(vid)  # authorises the caller; the proposal carries its own vault_id
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    form = VoteForm()
+    if not form.validate_on_submit():
+        flash("Please enter your password to sign.", "danger")
+        return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+
+    # Require exactly one explicit decision: never default an ambiguous submit to "approve".
+    approve, reject = bool(form.approve.data), bool(form.reject.data)
+    if approve == reject:
+        flash("Please choose either Approve or Reject.", "danger")
+        return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+    decision = "approve" if approve else "reject"
+    try:
+        approval_service.cast_vote(
+            proposal, current_user, form.password.data, decision, reason=form.reason.data
+        )
+    except KeyUnlockError:
+        flash("Incorrect password — your signing key could not be unlocked.", "danger")
+    except ApprovalError as exc:
+        flash(str(exc), "danger")
+    else:
+        verb = "Approval" if decision == "approve" else "Rejection"
+        flash(f"{verb} signed and recorded. Proposal is now {proposal.status}.", "success")
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
 
 @bp.get("/<int:vid>/proposals/<pid>/file")

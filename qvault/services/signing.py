@@ -14,6 +14,7 @@ import json
 from qvault.crypto import canonical_json
 
 DS_PROPOSAL = b"QVAULT-SIG-v1:PROPOSAL"
+DS_VOTE = b"QVAULT-SIG-v1:VOTE"
 
 
 def proposal_signing_bytes(
@@ -41,6 +42,28 @@ def proposal_signing_bytes(
         }
     )
     return DS_PROPOSAL + b"|" + body
+
+
+def vote_signing_bytes(*, proposal_payload_hash: str, decision: str, signer_id: int) -> bytes:
+    """Return the exact bytes a signer signs when casting a vote.
+
+    A vote is not merely a signature over the proposal action — it also commits to the *decision*
+    and the *voter*. Binding all three under a distinct ``DS_VOTE`` domain tag means an approval
+    signature can never be replayed as a rejection (or attributed to a different signer), and it
+    cannot be confused with the ``DS_PROPOSAL`` bytes. ``proposal_payload_hash`` is the proposal's
+    canonical ``payload_hash``, which already binds the vault, action, file, policy, signer set,
+    nonce, and timestamp — so the whole proposal is transitively covered.
+    """
+    if decision not in ("approve", "reject"):
+        raise ValueError(f"invalid decision: {decision!r}")
+    body = canonical_json(
+        {
+            "proposal_payload_hash": proposal_payload_hash,
+            "decision": decision,
+            "signer_id": signer_id,
+        }
+    )
+    return DS_VOTE + b"|" + body
 
 
 def signing_bytes_for(proposal) -> bytes:
