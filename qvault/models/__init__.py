@@ -2,7 +2,8 @@
 so ``db.create_all()`` and Alembic can see them.
 
 Present: user, key, algorithm_config, ledger_entry (Phase 2); vault, vault_member, vault_policy,
-proposal, file (Phase 3). Added in later phases: signature, ledger_anchor, rotation_event.
+proposal, file (Phase 3); signature (Phase 4). Added in later phases: ledger_anchor,
+rotation_event.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
 from .proposal import Proposal
+from .signature import Signature
 from .user import User
 from .vault import Vault, VaultMember, VaultPolicy
 
@@ -25,4 +27,5 @@ __all__ = [
     "VaultPolicy",
     "Proposal",
     "VaultFile",
+    "Signature",
 ]

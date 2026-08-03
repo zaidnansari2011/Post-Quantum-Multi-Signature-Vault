@@ -53,6 +53,12 @@ class Proposal(db.Model):
     file = db.relationship(
         "VaultFile", back_populates="proposal", uselist=False, cascade="all, delete-orphan"
     )
+    signatures = db.relationship(
+        "Signature",
+        back_populates="proposal",
+        cascade="all, delete-orphan",
+        order_by="Signature.created_at",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<Proposal {self.proposal_uuid} {self.status}>"

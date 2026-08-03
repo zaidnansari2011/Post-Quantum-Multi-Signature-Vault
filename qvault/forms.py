@@ -62,3 +62,15 @@ class ProposalForm(FlaskForm):
     )
     file = FileField("Attach a file (optional)")
     submit = SubmitField("Create proposal")
+
+
+class VoteForm(FlaskForm):
+    """Cast a signed approve/reject vote. The password unlocks the signer's PQC private key so
+    the vote can be signed; it is used transiently and never stored."""
+
+    password = PasswordField(
+        "Your password (to unlock your signing key)", validators=[DataRequired()]
+    )
+    reason = StringField("Reason (optional)", validators=[Optional(), Length(max=255)])
+    approve = SubmitField("Approve & sign")
+    reject = SubmitField("Reject")
