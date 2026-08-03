@@ -1,12 +1,28 @@
-"""Authorization helpers for vault-scoped routes."""
+"""Authorization helpers for vault-scoped and admin-only routes."""
 
 from __future__ import annotations
 
+from functools import wraps
+
 from flask import abort
-from flask_login import current_user
+from flask_login import current_user, login_required
 
 from qvault.extensions import db
 from qvault.models.vault import Vault
+
+
+def admin_required(view):
+    """Restrict a view to administrators. Anonymous users are sent to login (via
+    ``login_required``); authenticated non-admins get 403."""
+
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if current_user.role != "admin":
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 def get_membership_or_403(vault_id: int, *, roles: tuple[str, ...] | None = None) -> Vault:

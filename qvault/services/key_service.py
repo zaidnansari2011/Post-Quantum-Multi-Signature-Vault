@@ -12,6 +12,8 @@ The server never stores a plaintext private key or the KEK.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from flask import current_app
 
 from qvault.crypto.kdf import derive_kek
@@ -19,6 +21,8 @@ from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.models.user import User
+from qvault.security.passwords import verify_password
+from qvault.services import ledger_service
 
 # Additional authenticated data binding the wrap to its purpose (not secret, but tamper-bound).
 _WRAP_AAD = b"qvault:sk-wrap:v1"
@@ -104,6 +108,50 @@ def active_signing_key(user: User) -> Key | None:
     """Return the user's currently active signing key, if any."""
     return (
         Key.query.filter_by(owner_id=user.id, role="sig", status="active")
-        .order_by(Key.created_at.desc())
+        .order_by(Key.created_at.desc(), Key.id.desc())  # id breaks same-timestamp ties
         .first()
     )
+
+
+def reissue_signing_key(
+    user: User, password: str, *, alg_id: str | None = None, commit: bool = True
+) -> Key:
+    """Re-issue the user's signing key under the current active algorithm (or ``alg_id``).
+
+    Crypto-agility in action: the new key adopts the currently-selected algorithm, while the
+    previous key is **retired but retained** (``status='retired'``, ``can_sign=False``,
+    ``can_verify=True``) so every signature it ever produced still verifies. ``password`` is
+    verified first — it is needed to wrap the new private key at rest, and a wrong password would
+    otherwise silently create an unusable key.
+
+    Phase 7 automates this on a schedule and adds a rotation policy; here it is user-initiated.
+    """
+    if not verify_password(user.password_hash, password):
+        raise KeyUnlockError("incorrect password: cannot re-issue the signing key")
+
+    old = active_signing_key(user)
+    new = generate_signing_key(user, password, alg_id=alg_id, commit=False)
+    db.session.flush()  # assign new.id before it is referenced in the ledger payload below
+
+    if old is not None and old.id != new.id:
+        old.status = "retired"
+        old.can_sign = False
+        old.retired_at = datetime.now(UTC)  # can_verify stays True: retire-but-retain
+
+    ledger_service.append(
+        "key_reissued",
+        {
+            "user_id": user.id,
+            "old_key_id": old.id if old is not None else None,
+            "new_key_id": new.id,
+            "alg_id": new.alg_id,
+        },
+        actor=f"user:{user.id}",
+        actor_id=user.id,
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
+    if commit:
+        db.session.commit()
+    return new

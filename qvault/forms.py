@@ -88,3 +88,18 @@ class LedgerTamperForm(FlaskForm):
 
 class LedgerRestoreForm(FlaskForm):
     restore = SubmitField("Restore ledger")
+
+
+class SwitchAlgorithmForm(FlaskForm):
+    """Admin control to switch the active signature algorithm for NEW keys. ``choices`` are set
+    from the registry in the route, so only registered algorithms can be selected."""
+
+    algorithm = SelectField("Active signature algorithm", validators=[DataRequired()])
+    submit = SubmitField("Switch algorithm")
+
+
+class ReissueKeyForm(FlaskForm):
+    """Re-issue the current user's signing key under the active algorithm (retire-but-retain)."""
+
+    password = PasswordField("Confirm your password", validators=[DataRequired()])
+    submit = SubmitField("Re-issue signing key")

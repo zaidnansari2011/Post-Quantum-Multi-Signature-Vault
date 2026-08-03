@@ -7,10 +7,11 @@ from urllib.parse import urlparse
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
-from qvault.forms import LoginForm, RegisterForm
-from qvault.services import auth_service
+from qvault.forms import LoginForm, RegisterForm, ReissueKeyForm
+from qvault.models.config_models import AlgorithmConfig
+from qvault.services import auth_service, key_service
 from qvault.services.auth_service import EmailTakenError
-from qvault.services.key_service import active_signing_key
+from qvault.services.key_service import KeyUnlockError, active_signing_key
 
 bp = Blueprint("auth", __name__)
 
@@ -73,4 +74,27 @@ def logout():
 @login_required
 def dashboard():
     key = active_signing_key(current_user)
-    return render_template("dashboard.html", key=key)
+    active_alg = AlgorithmConfig.current().active_signature_alg
+    return render_template(
+        "dashboard.html", key=key, active_alg=active_alg, reissue_form=ReissueKeyForm()
+    )
+
+
+@bp.post("/keys/reissue")
+@login_required
+def reissue_key():
+    form = ReissueKeyForm()
+    if not form.validate_on_submit():
+        flash("Enter your password to re-issue your signing key.", "danger")
+        return redirect(url_for("auth.dashboard"))
+    try:
+        key = key_service.reissue_signing_key(current_user, form.password.data)
+    except KeyUnlockError:
+        flash("Incorrect password — your signing key was not re-issued.", "danger")
+    else:
+        flash(
+            f"Signing key re-issued under {key.alg_id}. Your previous key is retired but still "
+            "verifies every signature it made.",
+            "success",
+        )
+    return redirect(url_for("auth.dashboard"))

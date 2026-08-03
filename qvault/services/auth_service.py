@@ -35,13 +35,19 @@ def register_user(email: str, display_name: str, password: str) -> User:
     if User.query.filter_by(email=email).first() is not None:
         raise EmailTakenError(email)
 
+    # First registrant bootstraps the admin (who can operate the crypto-agility switch); there is
+    # no other way to obtain the role, so an empty system is not left without an administrator.
+    # (Single-process demo: this check-then-set is unguarded; a concurrent first-registration race
+    # is out of scope. A hardened deploy would provision the admin out-of-band.)
+    role = "admin" if User.query.count() == 0 else "user"
+
     user = User(
         email=email,
         display_name=display_name.strip(),
         password_hash=hash_password(password),
         kek_salt=new_salt(),
         kdf_params=json.dumps(DEFAULT_PARAMS),
-        role="user",
+        role=role,
     )
     db.session.add(user)
     db.session.flush()  # assign user.id
