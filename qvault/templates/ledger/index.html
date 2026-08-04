@@ -1,128 +1,209 @@
 {% extends "base.html" %}
 {% block title %}Q-Vault — Audit ledger{% endblock %}
-{% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h3 mb-0">Audit ledger</h1>
-  <span class="badge text-bg-light border">{{ entries|length }} entries · head #{{ report.head_seq }}</span>
-</div>
-<p class="text-muted">
-  An append-only, SHA-256 hash-chained log. Each entry commits to the previous entry's hash, and
-  the head is signed by the SYSTEM post-quantum key — so a single edit breaks the chain, and even a
-  fully-consistent rewrite is caught because the signed head no longer matches.
-</p>
 
-{# --- Verification banner ------------------------------------------------------------------ #}
+{% block content %}
+{% set head_signed = report.anchor_present and report.anchor_ok and report.anchor_covers_head %}
+<div class="mb-3">
+  <div class="eyebrow mb-1">Immutable audit trail</div>
+  <h1 class="h2 mb-2">Ledger</h1>
+  <p class="text-muted mb-0" style="max-width: 62ch;">
+    An append-only log where every entry commits to the SHA-256 hash of the one before it, and the
+    <strong>head is signed by the SYSTEM post-quantum key</strong>. Editing history breaks the chain;
+    rewriting it consistently moves the head, which the signature no longer covers — and that
+    signature cannot be forged.
+  </p>
+</div>
+
+{# --- Verification hero --------------------------------------------------------------------- #}
 {% if report.ok %}
-<div class="alert alert-success">
-  <strong>✓ Ledger verified.</strong> The hash-chain recomputes cleanly and the SYSTEM anchor
-  (entry #{{ report.anchor_seq }}) signs the current head.
+<div class="verify-hero ok mb-3">
+  <div class="verify-hero__icon">✓</div>
+  <div>
+    <div class="verify-hero__title">Ledger verified</div>
+    <div class="verify-hero__sub">
+      Recomputed {{ (report.head_seq + 1) if report.head_seq is not none else 0 }} entries — every
+      stored hash matches its contents, and the SYSTEM anchor over entry
+      <span class="text-mono">#{{ report.anchor_seq }}</span> verifies against the current head.
+    </div>
+  </div>
+  <div class="ms-auto text-end d-none d-md-block">
+    <span class="seal">🔏 chain + signature intact</span>
+  </div>
 </div>
 {% else %}
-<div class="alert alert-danger">
-  <strong>✗ Tamper detected.</strong>
-  <ul class="mb-0 mt-1">
-    {% if not report.chain_ok %}
-      <li>Hash-chain is broken at entry <strong>#{{ report.chain_break_seq }}</strong> — a stored
-        hash no longer matches its contents.</li>
-    {% endif %}
-    {% if not report.anchor_present %}
-      <li>No SYSTEM anchor is present.</li>
-    {% elif not report.anchor_ok %}
-      <li>The SYSTEM anchor signature does not verify.</li>
-    {% elif not report.anchor_covers_head %}
-      <li>The chain was <strong>rewritten</strong>: the SYSTEM anchor (entry #{{ report.anchor_seq }})
-        is validly signed but no longer matches the current head — and a new anchor cannot be forged
-        without the SYSTEM key.</li>
-    {% endif %}
-  </ul>
+<div class="verify-hero bad mb-3">
+  <div class="verify-hero__icon">✗</div>
+  <div>
+    <div class="verify-hero__title">Tamper detected</div>
+    <div class="verify-hero__sub">
+      <ul class="mb-0 mt-1 ps-3">
+        {% if not report.chain_ok %}
+          <li>Hash-chain broken at entry <strong class="text-mono">#{{ report.chain_break_seq }}</strong>
+            — its stored hash no longer matches its contents, so every later link is unprovable.</li>
+        {% endif %}
+        {% if not report.anchor_present %}
+          <li>No SYSTEM anchor is present — the head is unsigned.</li>
+        {% elif not report.anchor_ok %}
+          <li>The SYSTEM anchor signature does not verify.</li>
+        {% elif not report.anchor_covers_head %}
+          <li>The chain was <strong>rewritten</strong>: the anchor over entry
+            <span class="text-mono">#{{ report.anchor_seq }}</span> is validly signed but no longer
+            matches the live head. Recomputing the hashes was not enough — a new anchor needs the
+            SYSTEM private key.</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
 </div>
 {% endif %}
 
+<div class="stat-row mb-3">
+  <div class="stat">
+    <div class="stat__num">{{ (report.head_seq + 1) if report.head_seq is not none else 0 }}</div>
+    <div class="stat__label">Entries in chain</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num">{{ entries|length }}</div>
+    <div class="stat__label">Visible to you</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num" style="font-size:1.05rem;">SHA-256</div>
+    <div class="stat__label">Chain hash</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num" style="font-size:1.05rem;">{{ anchor.alg_id if anchor else '—' }}</div>
+    <div class="stat__label">Head signature</div>
+  </div>
+</div>
+
 <div class="row g-3">
+  {# --- The chain ---------------------------------------------------------------------------- #}
   <div class="col-lg-8">
-    <div class="card">
-      <div class="card-header"><strong>Entries</strong></div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle small">
-          <thead><tr>
-            <th>#</th><th>Event</th><th>Actor</th><th>Vault</th>
-            <th>Payload hash</th><th>Entry hash</th>
-          </tr></thead>
-          <tbody>
-          {% for e in entries %}
-            <tr class="{% if report.chain_break_seq is not none and e.seq >= report.chain_break_seq %}table-danger{% endif %}">
-              <td class="mono">{{ e.seq }}</td>
-              <td>{{ e.event_type }}</td>
-              <td class="mono">{{ e.actor }}</td>
-              <td class="mono">{{ e.vault_id if e.vault_id is not none else "—" }}</td>
-              <td class="mono" title="{{ e.payload_hash }}">{{ e.payload_hash[:12] }}…</td>
-              <td class="mono" title="{{ e.entry_hash }}">{{ e.entry_hash[:12] }}…</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
+    <div class="panel">
+      <div class="panel__head">
+        <div>
+          <div class="eyebrow">Hash chain</div>
+          <div class="text-muted small">newest first · each block commits to the one below it</div>
+        </div>
+        <span class="chip chip--muted">{{ entries|length }} shown</span>
+      </div>
+
+      {% if report.head_seq is not none %}
+      <div class="chain-head {{ '' if head_signed else 'bad' }}">
+        <span class="led {{ 'ok' if head_signed else 'bad' }}"></span>
+        <span class="chain-head__label">HEAD #{{ report.head_seq }}</span>
+        {% if anchor %}
+          <span class="seal {{ '' if head_signed else 'bad' }}">
+            🔏 SYSTEM anchor · {{ anchor.alg_id }}
+          </span>
+          <span class="text-muted small">signs (seq, head_hash)</span>
+        {% else %}
+          <span class="seal bad">unsigned head</span>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <div class="chain">
+        {% for e in entries|reverse %}
+          {% set newer = loop.previtem.seq if not loop.first else report.head_seq %}
+          {% if newer is not none and newer - e.seq > 1 %}
+            <div class="chain-gap">
+              ⋯ {{ newer - e.seq - 1 }} entr{{ 'y' if newer - e.seq - 1 == 1 else 'ies' }}
+              hidden from your view (other vaults) — still hashed into the chain and verified above.
+            </div>
+          {% endif %}
+          {% set broken = report.chain_break_seq is not none and e.seq == report.chain_break_seq %}
+          {% set tainted = report.chain_break_seq is not none and e.seq > report.chain_break_seq %}
+          <div class="chain-item {{ 'broken' if broken else '' }}{{ ' tainted' if tainted else '' }}{{ ' genesis' if e.seq == 0 else '' }}">
+            <div class="block">
+              <div class="block__top">
+                <span class="block__seq">#{{ e.seq }}</span>
+                <span class="block__event">{{ e.event_type }}</span>
+                {% if e.seq == 0 %}<span class="chip chip--muted">genesis</span>{% endif %}
+                {% if e.vault_id is not none %}<span class="chip">vault {{ e.vault_id }}</span>{% endif %}
+                {% if broken %}<span class="seal bad">hash mismatch</span>{% endif %}
+                <span class="block__actor">{{ e.actor }}</span>
+              </div>
+              <div class="block__hashes">
+                <span class="lbl">payload</span>
+                <code class="hashpill" data-copy="{{ e.payload_hash }}"
+                      title="SHA-256 of the canonical event payload">{{ e.payload_hash[:10] }}…</code>
+                <span class="lbl">prev ↓</span>
+                <code class="hashpill" data-copy="{{ e.prev_hash }}"
+                      title="entry_hash of the previous entry">{{ e.prev_hash[:10] }}…</code>
+                <span class="lbl">hash</span>
+                <code class="hashpill" data-copy="{{ e.entry_hash }}"
+                      title="SHA-256 over (seq, timestamp, event, actor, payload_hash, prev_hash)">{{ e.entry_hash[:10] }}…</code>
+                <span class="ms-auto text-muted">{{ e.timestamp[:19].replace('T', ' ') }}Z</span>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">No entries visible to you yet.</p>
+        {% endfor %}
       </div>
     </div>
   </div>
 
+  {# --- Anchor + demo ------------------------------------------------------------------------ #}
   <div class="col-lg-4">
-    <div class="card mb-3">
-      <div class="card-header"><strong>SYSTEM head anchor</strong></div>
-      <div class="card-body small">
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">SYSTEM head anchor</div>
         {% if anchor %}
-        <dl class="row mb-0">
-          <dt class="col-5">Covers head</dt><dd class="col-7 mono">#{{ anchor.seq }}</dd>
-          <dt class="col-5">Head hash</dt><dd class="col-7 mono" title="{{ anchor.head_hash }}">{{ anchor.head_hash[:16] }}…</dd>
-          <dt class="col-5">Algorithm</dt><dd class="col-7"><span class="algo-chip">{{ anchor.alg_id }}</span></dd>
-          <dt class="col-5">Signature</dt><dd class="col-7 mono">{{ anchor.fingerprint() }}…</dd>
-          <dt class="col-5">Status</dt>
-          <dd class="col-7">
-            {% if report.anchor_ok and report.anchor_covers_head %}
-              <span class="text-success">✓ verified</span>
-            {% elif report.anchor_ok %}
-              <span class="text-danger">✗ head mismatch</span>
-            {% else %}
-              <span class="text-danger">✗ invalid</span>
-            {% endif %}
-          </dd>
-        </dl>
-        {% else %}
-        <p class="text-muted mb-0">No anchor yet.</p>
+          <span class="seal {{ '' if head_signed else 'bad' }}">
+            {{ '✓ verified' if head_signed else ('✗ head mismatch' if report.anchor_ok else '✗ invalid') }}
+          </span>
         {% endif %}
       </div>
+      {% if anchor %}
+      <dl class="kv mb-2">
+        <dt>Covers head</dt><dd class="text-mono">#{{ anchor.seq }}</dd>
+        <dt>Head hash</dt>
+        <dd><code class="hashpill" data-copy="{{ anchor.head_hash }}">{{ anchor.head_hash[:14] }}…</code></dd>
+        <dt>Algorithm</dt><dd><span class="algo-chip">{{ anchor.alg_id }}</span></dd>
+        <dt>Backend</dt><dd><span class="chip chip--muted">{{ anchor.backend }}</span></dd>
+        <dt>Signature</dt>
+        <dd><code class="hashpill" data-copy="{{ anchor.fingerprint() }}">{{ anchor.fingerprint() }}</code></dd>
+      </dl>
+      <p class="text-muted small mb-0">
+        The signing key is owner-less, wrapped under the server master key, and its public key is
+        MAC-bound to that master key — so a database-write adversary cannot swap in a key of their own.
+      </p>
+      {% else %}
+      <p class="text-muted small mb-0">No anchor yet.</p>
+      {% endif %}
     </div>
 
     {% if demo_enabled %}
-    <div class="card border-warning">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Tamper demonstration</strong>
-        <span class="badge text-bg-warning">dev only</span>
+    <div class="panel" style="border-color: var(--warn-line);">
+      <div class="panel__head">
+        <div class="eyebrow">Tamper demonstration</div>
+        <span class="chip" style="background:var(--warn-050);color:var(--warn);border-color:var(--warn-line);">dev only</span>
       </div>
-      <div class="card-body small">
-        <p class="text-muted">
-          Two attacks, two defences:
-          <em>edit</em> changes a payload and leaves the hashes stale — the chain breaks.
-          <em>full rewrite</em> recomputes every hash forward so the chain stays consistent, but the
-          head moves and the SYSTEM signature can no longer cover it.
-        </p>
-        <form method="post" action="{{ url_for('ledger.demo_tamper') }}">
-          {{ tamper_form.hidden_tag() }}
-          <div class="input-group input-group-sm mb-2">
-            <span class="input-group-text">Entry #</span>
-            {{ tamper_form.target_seq(class="form-control", type="number", min="1") }}
-          </div>
-          <div class="d-grid gap-2">
-            {{ tamper_form.edit(class="btn btn-outline-danger btn-sm") }}
-            {{ tamper_form.rewrite(class="btn btn-outline-danger btn-sm") }}
-          </div>
-        </form>
-        {% if tampered %}
-        <form method="post" action="{{ url_for('ledger.demo_restore') }}" class="mt-2 d-grid">
-          {{ restore_form.hidden_tag() }}
-          {{ restore_form.restore(class="btn btn-success btn-sm") }}
-        </form>
-        {% endif %}
-      </div>
+      <p class="text-muted small">
+        Two attacks, two defences. <strong>Edit</strong> changes a payload and leaves the hashes
+        stale — the chain breaks at that block. <strong>Full rewrite</strong> recomputes every hash
+        forward so the chain stays self-consistent, but the head moves and the SYSTEM signature can
+        no longer cover it.
+      </p>
+      <form method="post" action="{{ url_for('ledger.demo_tamper') }}">
+        {{ tamper_form.hidden_tag() }}
+        <div class="input-group input-group-sm mb-2">
+          <span class="input-group-text">Entry #</span>
+          {{ tamper_form.target_seq(class="form-control", type="number", min="1") }}
+        </div>
+        <div class="d-grid gap-2">
+          {{ tamper_form.edit(class="btn btn-outline-danger btn-sm") }}
+          {{ tamper_form.rewrite(class="btn btn-outline-danger btn-sm") }}
+        </div>
+      </form>
+      {% if tampered %}
+      <form method="post" action="{{ url_for('ledger.demo_restore') }}" class="mt-2 d-grid">
+        {{ restore_form.hidden_tag() }}
+        {{ restore_form.restore(class="btn btn-success btn-sm") }}
+      </form>
+      {% endif %}
     </div>
     {% endif %}
   </div>
