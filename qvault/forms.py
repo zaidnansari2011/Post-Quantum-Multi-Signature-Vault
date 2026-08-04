@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField
 from wtforms import (
+    BooleanField,
     DateTimeLocalField,
     IntegerField,
     PasswordField,
@@ -106,9 +107,16 @@ class ProposalRestoreForm(FlaskForm):
 
 class SwitchAlgorithmForm(FlaskForm):
     """Admin control to switch the active signature algorithm for NEW keys. ``choices`` are set
-    from the registry in the route, so only registered algorithms can be selected."""
+    from the registry in the route, so only registered algorithms can be selected.
+
+    A switch that *lowers* the NIST security category additionally requires ticking
+    ``confirm_downgrade`` and typing a reason. The service refuses it otherwise, so these fields
+    are a prompt for deliberation rather than the security control itself.
+    """
 
     algorithm = SelectField("Active signature algorithm", validators=[DataRequired()])
+    confirm_downgrade = BooleanField("I intend to lower the security category")
+    downgrade_reason = StringField("Reason", validators=[Optional(), Length(max=255)])
     submit = SubmitField("Switch algorithm")
 
 

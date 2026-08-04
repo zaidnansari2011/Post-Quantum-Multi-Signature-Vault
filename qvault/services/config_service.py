@@ -27,10 +27,39 @@ class ConfigError(ValueError):
     """Raised for an invalid configuration change (e.g. an unregistered algorithm)."""
 
 
-def set_active_signature_algorithm(alg_id: str, *, actor_id: int, commit: bool = True):
+class DowngradeRefused(ConfigError):
+    """Raised when a switch would lower the security category without explicit authorisation."""
+
+
+def security_category(alg_id: str) -> int:
+    """The NIST security category of a registered signature algorithm."""
+    return current_app.extensions["crypto"].signature(alg_id).meta.security_category
+
+
+def set_active_signature_algorithm(
+    alg_id: str,
+    *,
+    actor_id: int,
+    allow_downgrade: bool = False,
+    reason: str | None = None,
+    commit: bool = True,
+):
     """Switch the active signature algorithm used for NEW keys. Idempotent for a no-op change.
 
-    Records an ``algorithm_switched`` event in the audit ledger. Does not touch any existing key.
+    **Agility is not neutral about direction.** The lesson of a decade of TLS downgrade attacks is
+    that a mechanism able to negotiate *to* a weaker option is a mechanism an attacker will use to
+    do exactly that. This system's switch is admin-only, but "admin-only" is not an argument — a
+    compromised or careless administrator moving the default from category 5 to category 3 would,
+    before this check existed, produce a ledger event indistinguishable from an upgrade.
+
+    So a decrease in NIST security category is **refused** unless the caller explicitly passes
+    ``allow_downgrade=True`` with a non-empty ``reason``, and it is recorded as a distinct
+    ``algorithm_downgraded`` event carrying both categories and the stated reason. An auditor
+    reading the ledger can then find every weakening decision by event type alone, rather than by
+    knowing which algorithm ids happen to be stronger.
+
+    Note the scope: this governs *new* keys. Artefacts already signed under a stronger algorithm
+    keep their own ``alg_id`` and are unaffected — a downgrade cannot retroactively weaken history.
     """
     registry = current_app.extensions["crypto"]
     if not registry.has_signature(alg_id):
@@ -41,13 +70,31 @@ def set_active_signature_algorithm(alg_id: str, *, actor_id: int, commit: bool =
     if alg_id == previous:
         return cfg  # no-op: nothing to record
 
+    from_cat = security_category(previous)
+    to_cat = security_category(alg_id)
+    is_downgrade = to_cat < from_cat
+
+    if is_downgrade:
+        if not allow_downgrade:
+            raise DowngradeRefused(
+                f"Switching from {previous} (category {from_cat}) to {alg_id} "
+                f"(category {to_cat}) lowers the security category. Confirm the downgrade "
+                "explicitly and state a reason if this is intended."
+            )
+        if not (reason or "").strip():
+            raise DowngradeRefused("A downgrade must be accompanied by a stated reason.")
+
     cfg.active_signature_alg = alg_id
     cfg.updated_by = actor_id
     cfg.updated_at = datetime.now(UTC)
 
+    payload = {"kind": "signature", "from": previous, "to": alg_id}
+    if is_downgrade:
+        payload |= {"from_category": from_cat, "to_category": to_cat, "reason": reason.strip()}
+
     ledger_service.append(
-        "algorithm_switched",
-        {"kind": "signature", "from": previous, "to": alg_id},
+        "algorithm_downgraded" if is_downgrade else "algorithm_switched",
+        payload,
         actor=f"user:{actor_id}",
         actor_id=actor_id,
         ref_type="config",
