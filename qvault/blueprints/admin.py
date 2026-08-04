@@ -25,7 +25,7 @@ from qvault.models.key import Key
 from qvault.security.decorators import admin_required
 from qvault.security.demo_gate import demo_enabled
 from qvault.services import benchmark_service, config_service, rotation_service
-from qvault.services.config_service import ConfigError
+from qvault.services.config_service import ConfigError, DowngradeRefused
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -66,7 +66,16 @@ def switch_crypto():
         flash("Please choose a registered algorithm.", "danger")
         return redirect(url_for("admin.crypto"))
     try:
-        config_service.set_active_signature_algorithm(form.algorithm.data, actor_id=current_user.id)
+        config_service.set_active_signature_algorithm(
+            form.algorithm.data,
+            actor_id=current_user.id,
+            allow_downgrade=bool(form.confirm_downgrade.data),
+            reason=form.downgrade_reason.data,
+        )
+    except DowngradeRefused as exc:
+        # Distinct from a generic error: the admin must be told this was refused *because it
+        # weakens the system*, not merely that something went wrong.
+        flash(str(exc), "warning")
     except ConfigError as exc:
         flash(str(exc), "danger")
     else:

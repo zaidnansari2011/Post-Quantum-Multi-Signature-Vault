@@ -50,6 +50,7 @@ measurable:
 | **Two-tier key custody** | User signing keys are wrapped under an Argon2id password-KEK; server-custodied keys under a master key. The scheduler can only rotate what it can unwrap. |
 | **Retire-but-retain rotation** | A rotated key is never deleted: `can_sign=False`, `can_verify=True`, so everything it produced still verifies and decrypts. |
 | **Runtime algorithm switch** | Changes the algorithm for *new* keys only; a live re-verification of every stored artefact proves nothing broke. |
+| **Downgrade resistance** | Moving to a *lower* NIST security category is refused unless explicitly confirmed with a reason, and logged as a distinct event ([ADR-0012](docs/adr/0012-downgrade-resistance.md)). |
 | **Verify after sign** | No signature is ever emitted without being verified first ([ADR-0010](docs/adr/0010-verify-after-sign.md)). |
 
 ## Measured performance
@@ -148,7 +149,8 @@ the runtime algorithm switch would no longer be safe.
   [0008 benchmark methodology](docs/adr/0008-benchmark-methodology.md) ·
   [0009 proposal binding](docs/adr/0009-proposal-binding-verification.md) ·
   [0010 verify after sign](docs/adr/0010-verify-after-sign.md) ·
-  [0011 demonstrability](docs/adr/0011-demonstrability.md)
+  [0011 demonstrability](docs/adr/0011-demonstrability.md) ·
+  [0012 downgrade resistance](docs/adr/0012-downgrade-resistance.md)
 
 ## Known limitations
 

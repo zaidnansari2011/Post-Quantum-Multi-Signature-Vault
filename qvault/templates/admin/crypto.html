@@ -66,15 +66,39 @@
         <dt>Signatures (new keys)</dt><dd><span class="algo-chip">{{ cfg.active_signature_alg }}</span></dd>
         <dt>Key encapsulation</dt><dd><span class="chip chip--muted">{{ cfg.active_kem_alg }}</span></dd>
       </dl>
+      {% set current_cat = (sig_metas | selectattr('alg_id', 'equalto', cfg.active_signature_alg)
+                            | map(attribute='security_category') | first) %}
       <form method="post" action="{{ url_for('admin.switch_crypto') }}">
         {{ form.hidden_tag() }}
         <label class="form-label small mb-1 fw-semibold">{{ form.algorithm.label.text }}</label>
         {{ form.algorithm(class="form-select form-select-sm mb-2") }}
+
+        {# Agility must not be direction-neutral: moving to a weaker category is a decision, not
+           a preference, so it costs an explicit tick and a written reason. See ADR-0012. #}
+        <div class="mb-2 p-2" style="border:1px solid var(--danger-line); border-radius:var(--radius-sm); background:var(--danger-050);">
+          <div class="form-check">
+            {{ form.confirm_downgrade(class="form-check-input") }}
+            <label class="form-check-label small fw-semibold" for="{{ form.confirm_downgrade.id }}"
+                   style="color:var(--danger);">
+              {{ form.confirm_downgrade.label.text }}
+            </label>
+          </div>
+          <div class="text-muted mt-1" style="font-size:.75rem;">
+            Currently category <strong>{{ current_cat }}</strong>. Selecting a lower category is
+            refused unless you tick this and give a reason, and it is recorded in the ledger as
+            <code>algorithm_downgraded</code> rather than as an ordinary switch.
+          </div>
+          {{ form.downgrade_reason(class="form-control form-control-sm mt-2",
+                                   placeholder="Reason for lowering the category") }}
+        </div>
+
         {{ form.submit(class="btn btn-primary btn-sm") }}
       </form>
       <p class="text-muted small mt-2 mb-0">
         Existing users keep signing with their current key until they re-issue it, and the SYSTEM
         anchor key keeps its own algorithm — so the system runs a genuinely mixed set, on purpose.
+        A downgrade governs new keys only; artefacts already signed under a stronger algorithm keep
+        their own <code>alg_id</code> and cannot be weakened retroactively.
       </p>
     </div>
 
