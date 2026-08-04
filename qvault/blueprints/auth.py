@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from qvault.forms import LoginForm, RegisterForm, ReissueKeyForm
@@ -80,11 +80,19 @@ def dashboard():
     key_due = (
         key is not None and key.rotate_after is not None and key.rotate_after < datetime.now(UTC)
     )
+    # Parameter sizes for the key's *pinned* algorithm, so the dashboard can show what this
+    # identity actually costs on the wire. A retired/unknown alg simply renders without them.
+    registry = current_app.extensions["crypto"]
+    key_meta = (
+        registry.signature(key.alg_id).meta if key and registry.has_signature(key.alg_id) else None
+    )
     return render_template(
         "dashboard.html",
         key=key,
+        key_meta=key_meta,
         active_alg=active_alg,
         key_due=key_due,
+        retired_keys=key_service.retired_signing_keys(current_user) if key else [],
         reissue_form=ReissueKeyForm(),
     )
 

@@ -207,6 +207,61 @@ a:hover { text-decoration: underline; }
 
 @keyframes pulseBad { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.35);} 50% { box-shadow: 0 0 0 5px rgba(220,38,38,0);} }
 
+/* -- Landing hero ------------------------------------------------------------------------- */
+.hero { padding: 2.5rem 0 1.75rem; }
+.hero__title {
+  font-size: clamp(2rem, 4.4vw, 3.1rem); font-weight: 800;
+  letter-spacing: -0.04em; line-height: 1.06; margin-bottom: .8rem;
+}
+.hero__title em { font-style: normal; color: var(--accent); }
+.hero__lead { font-size: 1.05rem; color: var(--ink-2); max-width: 60ch; }
+
+/* One card per FIPS standard: the sizes are the story. */
+.std {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.1rem 1.2rem; box-shadow: var(--shadow); height: 100%;
+}
+.std__std { font-family: var(--mono); font-size: .72rem; font-weight: 700; color: var(--accent); }
+.std__name { font-weight: 800; font-size: 1.05rem; letter-spacing: -0.02em; margin: .15rem 0 .35rem; }
+.std__role { color: var(--muted); font-size: .85rem; min-height: 2.6em; }
+
+/* The pipeline strip — what actually happens when a decision is made. */
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem; }
+.flow-step {
+  position: relative; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: .85rem 1rem;
+}
+.flow-step__n {
+  font-family: var(--mono); font-size: .7rem; font-weight: 800; color: var(--accent);
+  background: var(--accent-050); border-radius: 999px; padding: .05rem .45rem;
+}
+.flow-step__title { font-weight: 700; margin: .4rem 0 .2rem; letter-spacing: -0.01em; }
+.flow-step__body { font-size: .82rem; color: var(--muted); }
+
+/* -- Quorum meter (M-of-N) ---------------------------------------------------------------- */
+.quorum { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.quorum__slot {
+  flex: 1 1 0; min-width: 22px; height: 10px; border-radius: 999px;
+  background: #e9edf5; border: 1px solid var(--line);
+}
+.quorum__slot.approve { background: var(--ok); border-color: var(--ok); }
+.quorum__slot.reject { background: var(--danger); border-color: var(--danger); }
+.quorum__slot.needed { background: repeating-linear-gradient(135deg, #dfe5f0 0 4px, #eef1f6 4px 8px); }
+
+/* One signature = one provenance record. */
+.vote { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .65rem .8rem; margin-bottom: .55rem; }
+.vote.approve { border-left: 3px solid var(--ok); }
+.vote.reject { border-left: 3px solid var(--danger); }
+.vote.unverified { background: var(--danger-050); border-color: var(--danger-line); }
+.vote__head { display: flex; align-items: center; gap: .5rem; }
+.vote__who { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vote__meta { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .4rem; font-size: .72rem; color: var(--muted); }
+
+/* -- Size bars (algorithm comparison) ----------------------------------------------------- */
+.bar { background: var(--line-2); border-radius: 999px; height: 7px; overflow: hidden; min-width: 60px; }
+.bar__fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.bar__fill.alt { background: #a5b4fc; }
+
 /* -- Flash / footer ----------------------------------------------------------------------- */
 .alert { border-radius: var(--radius-sm); border: 1px solid var(--line); }
 footer { color: var(--muted); }
