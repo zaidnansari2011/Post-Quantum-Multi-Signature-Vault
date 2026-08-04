@@ -10,14 +10,20 @@ import json
 import pathlib
 from datetime import UTC, datetime
 
-from flask import Blueprint, current_app, flash, redirect, render_template, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, url_for
 from flask_login import current_user
 
 from qvault.extensions import db
-from qvault.forms import RunBenchmarkForm, RunMaintenanceForm, SwitchAlgorithmForm
+from qvault.forms import (
+    ExpireKeysForm,
+    RunBenchmarkForm,
+    RunMaintenanceForm,
+    SwitchAlgorithmForm,
+)
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.security.decorators import admin_required
+from qvault.security.demo_gate import demo_enabled
 from qvault.services import benchmark_service, config_service, rotation_service
 from qvault.services.config_service import ConfigError
 
@@ -195,7 +201,40 @@ def rotation():
         rows=rows,
         user_keys_due=rotation_service.due_user_signing_keys(now),
         form=RunMaintenanceForm(),
+        demo_enabled=demo_enabled(),
+        expire_form=ExpireKeysForm(),
     )
+
+
+@bp.post("/rotation/demo/expire")
+@admin_required
+def demo_expire_keys():
+    """Dev-only: age every key past its rotation deadline so a rotation run has work to do.
+
+    Without this, a freshly-seeded database correctly reports "nothing to rotate" — deadlines are
+    90 days out — and the rotation feature demonstrates as a no-op.
+    """
+    if not demo_enabled():
+        abort(404)
+    if not ExpireKeysForm().validate_on_submit():
+        flash("Could not age the keys.", "danger")
+        return redirect(url_for("admin.rotation"))
+
+    try:
+        affected = rotation_service.demo_expire_keys(
+            actor=f"user:{current_user.id}", actor_id=current_user.id
+        )
+    except Exception:  # noqa: BLE001 - same ledger-seq race the "run now" button handles
+        db.session.rollback()
+        flash("Could not age the keys just now — please try again shortly.", "warning")
+        return redirect(url_for("admin.rotation"))
+
+    flash(
+        f"{affected} key(s) aged past their rotation deadline, and the ledger records that the "
+        "clock was moved. Run maintenance now to watch the server-custodied keys rotate.",
+        "warning",
+    )
+    return redirect(url_for("admin.rotation"))
 
 
 @bp.post("/rotation/run")

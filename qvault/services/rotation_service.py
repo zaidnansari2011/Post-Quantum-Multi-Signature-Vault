@@ -16,7 +16,7 @@ be driven directly by a test or an admin "run now" button, independent of the sc
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from flask import current_app
 
@@ -50,6 +50,37 @@ def due_user_signing_keys(now: datetime | None = None) -> list[Key]:
         for k in Key.query.filter_by(role="sig", status="active").all()
         if k.owner_id is not None and k.rotate_after is not None and k.rotate_after < now
     ]
+
+
+def demo_expire_keys(*, actor: str = "SYSTEM", actor_id: int | None = None) -> int:
+    """Dev-only: bring every active key's rotation deadline forward so it is due right now.
+
+    Rotation is genuinely time-driven — ``KEY_MAX_AGE_DAYS`` defaults to 90 — so on a database
+    created minutes ago there is correctly nothing to rotate, and "Run rotation now" reports doing
+    nothing. That is right, and it is also unwatchable: automated key rotation is a third of this
+    project's title and demonstrating it should not require waiting a quarter of a year.
+
+    This moves the *deadlines*, never the keys, and appends a ``demo_keys_expired`` ledger event
+    so the audit trail records that the clock was moved rather than quietly appearing to age. The
+    rotation that follows is the real code path, unmodified.
+
+    Callers MUST gate on ``qvault.security.demo_gate.demo_enabled`` — as with the ledger and
+    proposal demonstrations, the gate lives at the route so there is exactly one of it.
+    """
+    yesterday = datetime.now(UTC) - timedelta(days=1)
+    keys = Key.query.filter_by(status="active").all()
+    for key in keys:
+        key.rotate_after = yesterday
+
+    ledger_service.append(
+        "demo_keys_expired",
+        {"keys_affected": len(keys), "rotate_after": yesterday.isoformat()},
+        actor=actor,
+        actor_id=actor_id,
+        commit=False,
+    )
+    db.session.commit()
+    return len(keys)
 
 
 def _is_due(key: Key | None, now: datetime) -> bool:

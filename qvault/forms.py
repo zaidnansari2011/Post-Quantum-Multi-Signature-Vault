@@ -125,6 +125,16 @@ class RunMaintenanceForm(FlaskForm):
     submit = SubmitField("Run rotation + expiry now")
 
 
+class ExpireKeysForm(FlaskForm):
+    """Dev-only: bring every key's rotation deadline forward so rotation has work to do.
+
+    Gated at the route by ``qvault.security.demo_gate.demo_enabled``, like the ledger and proposal
+    demonstrations.
+    """
+
+    submit = SubmitField("Age all keys past their deadline")
+
+
 class RunBenchmarkForm(FlaskForm):
     """Admin control for a small, indicative in-request benchmark.
 
