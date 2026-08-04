@@ -10,11 +10,32 @@
     <div class="eyebrow mb-1">Key lifecycle</div>
     <h1 class="h2 mb-0">Rotation &amp; maintenance</h1>
   </div>
-  <form method="post" action="{{ url_for('admin.run_maintenance') }}">
-    {{ form.hidden_tag() }}
-    {{ form.submit(class="btn btn-primary btn-sm") }}
-  </form>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    {% if demo_enabled %}
+    <form method="post" action="{{ url_for('admin.demo_expire_keys') }}">
+      {{ expire_form.hidden_tag() }}
+      {{ expire_form.submit(class="btn btn-outline-danger btn-sm") }}
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('admin.run_maintenance') }}">
+      {{ form.hidden_tag() }}
+      {{ form.submit(class="btn btn-primary btn-sm") }}
+    </form>
+  </div>
 </div>
+
+{% if demo_enabled and not due %}
+<div class="panel mb-3" style="border-color: var(--warn-line); background: var(--warn-050);">
+  <div class="small">
+    <strong>Nothing is due yet — and that is correct.</strong>
+    Keys become due {{ config.KEY_MAX_AGE_DAYS }} days after they are created, so on a fresh
+    database a rotation run has nothing to do. Use <em>Age all keys past their deadline</em> to
+    move the deadlines forward (never the keys), then run maintenance to watch the real rotation
+    code path execute. The clock change is itself recorded in the ledger as
+    <code>demo_keys_expired</code>, so the audit trail never pretends the keys aged naturally.
+  </div>
+</div>
+{% endif %}
 
 <p class="text-muted mb-3" style="max-width:68ch;">
   Rotation is <strong>retire-but-retain</strong>: a rotated key is never deleted, so everything it
