@@ -1,29 +1,94 @@
 {% extends "base.html" %}
 {% block title %}Q-Vault — Key rotation{% endblock %}
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h3 mb-0">Key rotation &amp; maintenance</h1>
+{% set active = rows | selectattr('key.status', 'equalto', 'active') | list %}
+{% set retired = rows | rejectattr('key.status', 'equalto', 'active') | list %}
+{% set due = rows | selectattr('due') | list %}
+
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+  <div>
+    <div class="eyebrow mb-1">Key lifecycle</div>
+    <h1 class="h2 mb-0">Rotation &amp; maintenance</h1>
+  </div>
   <form method="post" action="{{ url_for('admin.run_maintenance') }}">
     {{ form.hidden_tag() }}
     {{ form.submit(class="btn btn-primary btn-sm") }}
   </form>
 </div>
-<p class="text-muted">
-  Rotation is <strong>retire-but-retain</strong>: a rotated key is retired but kept so everything it
-  signed or encrypted still verifies / decrypts. Server-custodied keys (the SYSTEM anchor key and
-  vault KEM keys) rotate automatically on a schedule; password-protected user signing keys cannot be
-  rotated unattended, so they are only flagged here and the user re-keys from their dashboard.
+
+<p class="text-muted mb-3" style="max-width:68ch;">
+  Rotation is <strong>retire-but-retain</strong>: a rotated key is never deleted, so everything it
+  signed still verifies and everything it wrapped still decrypts. The custody boundary decides what
+  can rotate unattended — the scheduler holds the server's keys, but not yours.
 </p>
 
+<div class="stat-row mb-3">
+  <div class="stat">
+    <div class="stat__num" style="color:var(--ok);">{{ active | length }}</div>
+    <div class="stat__label">Active keys</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num text-muted">{{ retired | length }}</div>
+    <div class="stat__label">Retired · still verify</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num" style="color: {{ 'var(--warn)' if due else 'var(--ink)' }};">{{ due | length }}</div>
+    <div class="stat__label">Due for rotation</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num" style="color: {{ 'var(--warn)' if user_keys_due else 'var(--ink)' }};">{{ user_keys_due | length }}</div>
+    <div class="stat__label">Awaiting user re-key</div>
+  </div>
+</div>
+
+{# --- The custody boundary, stated plainly ------------------------------------------------- #}
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="panel h-100">
+      <div class="panel__head">
+        <div class="eyebrow">Server-custodied · rotates automatically</div>
+        <span class="led ok"></span>
+      </div>
+      <p class="text-muted small mb-0">
+        The SYSTEM anchor key and each vault's ML-KEM key are wrapped under the server master key,
+        so the scheduler can replace them without a human present. Old anchors keep verifying under
+        the retained key, and every stored file pins the key that encapsulated it — so rotation can
+        never strand a file.
+      </p>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="panel h-100">
+      <div class="panel__head">
+        <div class="eyebrow">User-custodied · flagged only</div>
+        <span class="led {{ 'warn' if user_keys_due else '' }}"></span>
+      </div>
+      <p class="text-muted small mb-0">
+        A user's signing key is wrapped under a key derived from their password, which the server
+        never holds. It therefore <em>cannot</em> be rotated unattended — the job flags it, and the
+        owner re-issues it from their dashboard. That limitation is the security property working.
+      </p>
+    </div>
+  </div>
+</div>
+
 {% if user_keys_due %}
-<div class="alert alert-warning py-2">
-  {{ user_keys_due|length }} user signing key(s) are due for rotation and need interactive re-keying
-  by their owners.
+<div class="verify-hero mb-3" style="padding:.9rem 1.15rem;border-color:var(--warn-line);background:linear-gradient(180deg,var(--warn-050),#fff);">
+  <div class="verify-hero__icon" style="width:2.4rem;height:2.4rem;font-size:1.2rem;background:var(--warn);">!</div>
+  <div>
+    <div class="verify-hero__title" style="font-size:1rem;color:var(--warn);">
+      {{ user_keys_due|length }} user signing key{{ '' if user_keys_due|length == 1 else 's' }} due
+    </div>
+    <div class="verify-hero__sub small">Their owners must re-key interactively from their dashboard.</div>
+  </div>
 </div>
 {% endif %}
 
-<div class="card">
-  <div class="card-header"><strong>Keys</strong></div>
+<div class="panel">
+  <div class="panel__head">
+    <div class="eyebrow">All keys</div>
+    <span class="chip chip--muted">{{ rows | length }} total</span>
+  </div>
   <div class="table-responsive">
     <table class="table table-sm mb-0 align-middle small">
       <thead><tr>
@@ -32,20 +97,21 @@
       </tr></thead>
       <tbody>
       {% for r in rows %}
-        <tr class="{% if r.due %}table-warning{% elif r.key.status == 'retired' %}text-muted{% endif %}">
-          <td class="mono">{{ r.key.id }}</td>
-          <td><span class="badge text-bg-light border text-uppercase">{{ r.scope }}</span></td>
-          <td class="mono">{{ r.key.role }}</td>
+        <tr {% if r.key.status != 'active' %}class="text-muted"{% endif %}>
+          <td class="text-mono">{{ r.key.id }}</td>
+          <td><span class="chip chip--muted">{{ r.scope }}</span></td>
+          <td class="text-mono">{{ r.key.role }}</td>
           <td><span class="algo-chip">{{ r.key.alg_id }}</span></td>
           <td>
-            {% if r.key.status == 'active' %}<span class="badge text-bg-success">active</span>
-            {% else %}<span class="badge text-bg-secondary">retired</span>{% endif %}
-            {% if r.due %}<span class="badge text-bg-warning">due</span>{% endif %}
+            <span class="led {{ 'warn' if r.due else ('ok' if r.key.status == 'active' else '') }} me-1"></span>
+            {{ r.key.status }}
+            {% if r.due %}<span class="chip" style="background:var(--warn-050);color:var(--warn);border-color:var(--warn-line);">due</span>{% endif %}
             {% if r.key.can_verify and r.key.status == 'retired' %}
-              <span class="badge text-bg-light border">still verifies</span>{% endif %}
+              <span class="chip chip--muted">still verifies</span>
+            {% endif %}
           </td>
-          <td class="mono">{{ r.key.rotate_after.strftime('%Y-%m-%d') if r.key.rotate_after else '—' }}</td>
-          <td class="mono">{{ r.key.public_fingerprint() }}</td>
+          <td class="text-mono">{{ r.key.rotate_after.strftime('%Y-%m-%d') if r.key.rotate_after else '—' }}</td>
+          <td><code class="hashpill" data-copy="{{ r.key.public_fingerprint() }}">{{ r.key.public_fingerprint() }}</code></td>
         </tr>
       {% endfor %}
       </tbody>

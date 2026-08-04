@@ -115,6 +115,19 @@ def active_signing_key(user: User) -> Key | None:
     )
 
 
+def retired_signing_keys(user: User) -> list[Key]:
+    """The user's retired-but-retained signing keys, newest first.
+
+    Rotation never deletes a key: signatures it made must keep verifying, so a retired key stays
+    on record with ``can_verify=True`` and ``can_sign=False``.
+    """
+    return (
+        Key.query.filter_by(owner_id=user.id, role="sig", status="retired")
+        .order_by(Key.retired_at.desc(), Key.id.desc())
+        .all()
+    )
+
+
 def reissue_signing_key(
     user: User, password: str, *, alg_id: str | None = None, commit: bool = True
 ) -> Key:

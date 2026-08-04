@@ -1,133 +1,198 @@
 {% extends "base.html" %}
 {% block title %}Q-Vault — {{ proposal.title }}{% endblock %}
 {% block content %}
+{% set verified_votes = votes | selectattr('verified') | list %}
+{% set pending = proposal.required_n - votes|length %}
+
 <nav aria-label="breadcrumb"><ol class="breadcrumb small">
   <li class="breadcrumb-item"><a href="{{ url_for('vaults.list_vaults') }}">Vaults</a></li>
   <li class="breadcrumb-item"><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></li>
   <li class="breadcrumb-item active">Proposal</li>
 </ol></nav>
 
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h3 mb-0">{{ proposal.title }}</h1>
-  <span class="badge text-bg-secondary text-uppercase fs-6">{{ proposal.status }}</span>
+<div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+  <div>
+    <div class="eyebrow mb-1">Proposal · {{ proposal.required_m }} of {{ proposal.required_n }} threshold</div>
+    <h1 class="h2 mb-0">{{ proposal.title }}</h1>
+  </div>
+  <span class="seal {{ 'bad' if proposal.status in ('rejected', 'expired') else '' }}"
+        style="font-size:.8rem;padding:.25rem .7rem;{% if proposal.status == 'open' %}color:var(--accent);background:var(--accent-050);border-color:var(--accent-100);{% endif %}">
+    {{ proposal.status }}
+  </span>
 </div>
 
 <div class="row g-3">
   <div class="col-lg-7">
-    <div class="card mb-3">
-      <div class="card-header"><strong>Action</strong></div>
-      <div class="card-body">
-        <p style="white-space: pre-wrap">{{ proposal.action_text }}</p>
-        <dl class="row small text-muted mb-0">
-          <dt class="col-sm-4">Threshold</dt><dd class="col-sm-8 mono">{{ proposal.required_m }} of {{ proposal.required_n }}</dd>
-          <dt class="col-sm-4">Proposal id</dt><dd class="col-sm-8 mono">{{ proposal.proposal_uuid }}</dd>
-          <dt class="col-sm-4">Payload hash</dt><dd class="col-sm-8 mono">{{ proposal.payload_hash[:32] }}…</dd>
-          {% if proposal.expires_at %}<dt class="col-sm-4">Deadline</dt><dd class="col-sm-8">{{ proposal.expires_at }}</dd>{% endif %}
-        </dl>
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">Action under approval</div>
       </div>
+      <p style="white-space: pre-wrap">{{ proposal.action_text }}</p>
+      <div class="divider"></div>
+      <dl class="kv small mb-2">
+        <dt>Threshold</dt><dd class="text-mono">{{ proposal.required_m }} of {{ proposal.required_n }}</dd>
+        <dt>Proposal id</dt>
+        <dd><code class="hashpill" data-copy="{{ proposal.proposal_uuid }}">{{ proposal.proposal_uuid }}</code></dd>
+        <dt>Payload hash</dt>
+        <dd><code class="hashpill" data-copy="{{ proposal.payload_hash }}">{{ proposal.payload_hash[:24] }}…</code></dd>
+        {% if proposal.expires_at %}
+        <dt>Deadline</dt><dd class="text-mono">{{ proposal.expires_at.strftime('%Y-%m-%d %H:%M') }}Z</dd>
+        {% endif %}
+      </dl>
+      <p class="text-muted small mb-0">
+        The action text, threshold and signer set were frozen into a canonical payload and hashed
+        when the proposal opened. Every signature below commits to <em>that</em> hash — so changing
+        the vault's membership or wording afterwards cannot retroactively change what was approved.
+      </p>
     </div>
 
     {% if proposal.file %}
-    <div class="card">
-      <div class="card-header"><strong>Attached file</strong></div>
-      <div class="card-body d-flex justify-content-between align-items-center">
-        <div>
-          <div class="mono">{{ proposal.file.filename }}</div>
-          <div class="small text-muted">
-            {{ proposal.file.size_bytes }} bytes · AES-256-GCM, key wrapped by
-            <span class="algo-chip">{{ proposal.file.kem_alg_id }}</span>
-          </div>
-        </div>
+    <div class="panel">
+      <div class="panel__head">
+        <div class="eyebrow">Attached file · encrypted at rest</div>
         <a class="btn btn-outline-primary btn-sm" href="{{ url_for('vaults.download_file', vid=vault.id, pid=proposal.proposal_uuid) }}">Download &amp; decrypt</a>
       </div>
+      <div class="text-mono mb-1">{{ proposal.file.filename }}</div>
+      <div class="d-flex flex-wrap gap-2 align-items-center small text-muted">
+        <span class="chip chip--muted">{{ proposal.file.size_bytes }} B</span>
+        <span class="chip chip--muted">AES-256-GCM</span>
+        <span>key wrapped by</span>
+        <span class="algo-chip">{{ proposal.file.kem_alg_id }}</span>
+      </div>
+      <p class="text-muted small mb-0 mt-2">
+        The file's symmetric key never exists unencrypted at rest: it is encapsulated to the vault's
+        ML-KEM public key, and the encapsulating key is pinned so rotation cannot strand the file.
+      </p>
     </div>
     {% endif %}
   </div>
 
   <div class="col-lg-5">
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Signatures</strong>
-        <span class="mono small">{{ approvals }} / {{ proposal.required_m }} approvals</span>
+    {# --- Quorum ---------------------------------------------------------------------------- #}
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">Quorum</div>
+        <span class="text-mono small">{{ approvals }} / {{ proposal.required_m }}</span>
       </div>
-      <div class="card-body">
-        {% set pct = (approvals / proposal.required_m * 100) if proposal.required_m else 0 %}
-        <div class="progress mb-2" role="progressbar" aria-valuenow="{{ approvals }}"
-             aria-valuemin="0" aria-valuemax="{{ proposal.required_m }}" style="height: 8px">
-          <div class="progress-bar
-            {%- if proposal.status == 'approved' %} bg-success
-            {%- elif proposal.status in ('rejected', 'expired') %} bg-secondary{% endif %}"
-            style="width: {{ [pct, 100]|min }}%"></div>
-        </div>
-        <p class="small text-muted mb-3">
-          Threshold <strong>{{ proposal.required_m }} of {{ proposal.required_n }}</strong>.
-          {{ approvals }} approval(s), {{ rejections }} rejection(s).
-          {% if proposal.status == 'approved' %}<span class="text-success fw-semibold">Approved.</span>
-          {% elif proposal.status == 'rejected' %}<span class="text-danger fw-semibold">Rejected — the threshold can no longer be met.</span>
-          {% elif proposal.status == 'expired' %}<span class="text-secondary fw-semibold">Expired — the deadline passed before approval.</span>{% endif %}
-        </p>
 
-        {% if votes %}
-        <ul class="list-group list-group-flush mb-0">
-          {% for v in votes %}
-          <li class="list-group-item px-0">
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="text-truncate">{{ v.sig.signer.email }}</span>
-              {% if v.sig.decision == 'approve' %}
-                <span class="badge text-bg-success">approved</span>
-              {% else %}
-                <span class="badge text-bg-danger">rejected</span>
-              {% endif %}
-            </div>
-            <div class="small text-muted d-flex flex-wrap gap-2 align-items-center mt-1">
-              <span class="algo-chip">{{ v.sig.alg_id }}</span>
-              <span class="mono">sig {{ v.sig.fingerprint() }}…</span>
-              {% if v.verified %}
-                <span class="text-success">✓ verified</span>
-              {% else %}
-                <span class="text-danger">✗ verification failed</span>
-              {% endif %}
-            </div>
-            {% if v.sig.reason %}<div class="small fst-italic mt-1">“{{ v.sig.reason }}”</div>{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="text-muted small mb-0">No votes yet.</p>
-        {% endif %}
+      <div class="quorum">
+        {% for i in range(proposal.required_n) %}
+          {% if i < approvals %}
+            <span class="quorum__slot approve" title="verified approval"></span>
+          {% elif i < approvals + rejections %}
+            <span class="quorum__slot reject" title="rejection"></span>
+          {% elif i < proposal.required_m %}
+            <span class="quorum__slot needed" title="still required"></span>
+          {% else %}
+            <span class="quorum__slot" title="beyond the threshold"></span>
+          {% endif %}
+        {% endfor %}
       </div>
+
+      <p class="small text-muted mb-0">
+        <strong>{{ approvals }}</strong> verified approval{{ '' if approvals == 1 else 's' }},
+        <strong>{{ rejections }}</strong> rejection{{ '' if rejections == 1 else 's' }}
+        of <strong>{{ proposal.required_n }}</strong> authorised signers.
+        {% if proposal.status == 'approved' %}
+          <span class="fw-semibold" style="color:var(--ok)">Threshold met — approved.</span>
+        {% elif proposal.status == 'rejected' %}
+          <span class="fw-semibold" style="color:var(--danger)">Rejected — the threshold can no longer be met.</span>
+        {% elif proposal.status == 'expired' %}
+          <span class="fw-semibold text-muted">Expired — the deadline passed before approval.</span>
+        {% else %}
+          Needs {{ [proposal.required_m - approvals, 0]|max }} more.
+        {% endif %}
+      </p>
+      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
+        The tally counts only signatures that verify <em>right now</em> — a tampered signature row
+        silently stops counting rather than manufacturing an approval.
+      </p>
     </div>
 
-    {% if can_vote %}
-    <div class="card">
-      <div class="card-header"><strong>Cast your vote</strong></div>
-      <div class="card-body">
-        <p class="small text-muted">
-          Signing produces a post-quantum signature over this proposal's canonical payload with
-          your private key. Your password unlocks that key for this one operation only.
-        </p>
-        <form method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
-          {{ vote_form.hidden_tag() }}
-          <div class="mb-2">{{ vote_form.password(class="form-control form-control-sm", placeholder="Your password") }}</div>
-          <div class="mb-2">{{ vote_form.reason(class="form-control form-control-sm", placeholder="Reason (optional)") }}</div>
-          <div class="d-flex gap-2">
-            {{ vote_form.approve(class="btn btn-success btn-sm flex-fill") }}
-            {{ vote_form.reject(class="btn btn-outline-danger btn-sm flex-fill") }}
-          </div>
-        </form>
+    {# --- Signature provenance --------------------------------------------------------------- #}
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">Signatures</div>
+        <span class="chip chip--muted">{{ votes|length }} cast · {{ verified_votes|length }} verify</span>
       </div>
+
+      {% for v in votes %}
+      <div class="vote {{ v.sig.decision }}{{ ' unverified' if not v.verified else '' }}">
+        <div class="vote__head">
+          <span class="led {{ 'ok' if v.verified else 'bad' }}"></span>
+          <span class="vote__who">{{ v.sig.signer.email }}</span>
+          <span class="seal {{ 'bad' if v.sig.decision == 'reject' else '' }} ms-auto">
+            {{ 'approved' if v.sig.decision == 'approve' else 'rejected' }}
+          </span>
+        </div>
+        <div class="vote__meta">
+          <span class="algo-chip">{{ v.sig.alg_id }}</span>
+          <span class="chip chip--muted">{{ v.sig.signature|length }} B</span>
+          <code class="hashpill" data-copy="{{ v.sig.fingerprint() }}"
+                title="SHA-256 fingerprint of the signature bytes">sig {{ v.sig.fingerprint() }}</code>
+          <span class="ms-auto" style="color: {{ 'var(--ok)' if v.verified else 'var(--danger)' }}; font-weight:700;">
+            {{ '✓ verified' if v.verified else '✗ verification failed' }}
+          </span>
+        </div>
+        {% if v.sig.reason %}<div class="small fst-italic mt-1 text-muted">“{{ v.sig.reason }}”</div>{% endif %}
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">No votes yet.</p>
+      {% endfor %}
+
+      {% if pending > 0 and proposal.status == 'open' %}
+      <div class="text-muted small mt-2">
+        {{ pending }} authorised signer{{ '' if pending == 1 else 's' }} yet to vote.
+      </div>
+      {% endif %}
+
+      {% if votes %}
+      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
+        Each signature is bound to the signer's registered key: the public key and algorithm are
+        pinned on the row, and verification re-checks that the key belongs to that signer. Rotating
+        a key never invalidates a vote it already cast.
+      </p>
+      {% endif %}
+    </div>
+
+    {# --- Voting ---------------------------------------------------------------------------- #}
+    {% if can_vote %}
+    <div class="panel">
+      <div class="panel__head">
+        <div class="eyebrow">Cast your vote</div>
+      </div>
+      <p class="small text-muted">
+        Signing produces a post-quantum signature over this proposal's canonical payload with your
+        private key. Your password unlocks that key for this one operation only — it is re-wrapped
+        immediately and never held in the session.
+      </p>
+      <form method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
+        {{ vote_form.hidden_tag() }}
+        <div class="mb-2">{{ vote_form.password(class="form-control form-control-sm", placeholder="Your password") }}</div>
+        <div class="mb-2">{{ vote_form.reason(class="form-control form-control-sm", placeholder="Reason (optional)") }}</div>
+        <div class="d-flex gap-2">
+          {{ vote_form.approve(class="btn btn-success btn-sm flex-fill") }}
+          {{ vote_form.reject(class="btn btn-outline-danger btn-sm flex-fill") }}
+        </div>
+      </form>
     </div>
     {% elif my_vote %}
-    <div class="alert alert-info small mb-0">
-      You have already <strong>{{ 'approved' if my_vote.decision == 'approve' else 'rejected' }}</strong>
-      this proposal. Each signer votes once.
+    <div class="panel">
+      <div class="d-flex align-items-center gap-2">
+        <span class="led {{ 'ok' if my_vote.decision == 'approve' else 'bad' }}"></span>
+        <div class="small">
+          You have already
+          <strong>{{ 'approved' if my_vote.decision == 'approve' else 'rejected' }}</strong>
+          this proposal. Each signer votes once — enforced by a uniqueness constraint, not just the UI.
+        </div>
+      </div>
     </div>
     {% elif not is_signer %}
-    <div class="alert alert-light border small mb-0">
+    <div class="panel small text-muted">
       You are a viewer on this vault, so you cannot sign proposals.
     </div>
     {% elif proposal.status != 'open' %}
-    <div class="alert alert-light border small mb-0">
+    <div class="panel small text-muted">
       This proposal is {{ proposal.status }} and no longer accepts votes.
     </div>
     {% endif %}

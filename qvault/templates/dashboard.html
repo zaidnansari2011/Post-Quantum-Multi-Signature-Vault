@@ -1,77 +1,166 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Dashboard{% endblock %}
+{% block title %}Q-Vault — Console{% endblock %}
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h3 mb-0">Welcome, {{ current_user.display_name }}</h1>
+
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+  <div>
+    <div class="eyebrow mb-1">Console</div>
+    <h1 class="h2 mb-0">{{ current_user.display_name }}</h1>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.list_vaults') }}">Your vaults</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('ledger.view') }}">Audit ledger</a>
+  </div>
 </div>
+
+{% if key %}
+{# --- The identity, in real numbers ------------------------------------------------------- #}
+<div class="stat-row mb-3">
+  <div class="stat">
+    <div class="stat__num" style="font-size:1.05rem;">{{ key.alg_id }}</div>
+    <div class="stat__label">Signature algorithm</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num">{{ key.public_key|length }}</div>
+    <div class="stat__label">Public key bytes</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num">{{ key.secret_key_wrapped|length }}</div>
+    <div class="stat__label">Wrapped private bytes</div>
+  </div>
+  <div class="stat">
+    <div class="stat__num">{{ key_meta.sizes.signature if key_meta else '—' }}</div>
+    <div class="stat__label">Bytes per signature</div>
+  </div>
+</div>
+{% endif %}
 
 <div class="row g-3">
   <div class="col-lg-7">
-    <div class="card h-100">
-      <div class="card-header"><strong>Your post-quantum signing identity</strong></div>
-      <div class="card-body">
+    <div class="panel h-100">
+      <div class="panel__head">
+        <div>
+          <div class="eyebrow">Your post-quantum signing identity</div>
+          <div class="text-muted small">used for every approval you cast</div>
+        </div>
         {% if key %}
-          <dl class="row mb-0">
-            <dt class="col-sm-4">Algorithm</dt>
-            <dd class="col-sm-8"><span class="badge text-bg-primary algo-chip">{{ key.alg_id }}</span>
-                <span class="text-muted small">({{ key.backend }})</span></dd>
-            <dt class="col-sm-4">Status</dt>
-            <dd class="col-sm-8"><span class="badge text-bg-success text-uppercase">{{ key.status }}</span></dd>
-            <dt class="col-sm-4">Public-key fingerprint</dt>
-            <dd class="col-sm-8 mono">{{ key.public_fingerprint() }}</dd>
-            <dt class="col-sm-4">Public key size</dt>
-            <dd class="col-sm-8 mono">{{ key.public_key|length }} bytes</dd>
-            <dt class="col-sm-4">Private key</dt>
-            <dd class="col-sm-8">
-              <span class="badge text-bg-secondary">encrypted at rest</span>
-              <div class="text-muted small mt-1">
-                {{ key.secret_key_wrapped|length }} bytes of AES-256-GCM ciphertext ·
-                wrapped under an Argon2id key derived from your password
-              </div>
-            </dd>
-          </dl>
-        {% else %}
-          <p class="text-muted mb-0">No signing key found for your account.</p>
+          <span class="seal"><span class="led ok"></span> {{ key.status }}</span>
         {% endif %}
       </div>
+
+      {% if key %}
+      <dl class="kv mb-3">
+        <dt>Algorithm</dt>
+        <dd>
+          <span class="algo-chip">{{ key.alg_id }}</span>
+          <span class="chip chip--muted ms-1">{{ key.backend }}</span>
+        </dd>
+        {% if key_meta %}
+        <dt>Standard</dt>
+        <dd class="text-mono">{{ key_meta.nist_standard }} · category {{ key_meta.security_category }}</dd>
+        {% endif %}
+        <dt>Public-key fingerprint</dt>
+        <dd><code class="hashpill" data-copy="{{ key.public_fingerprint() }}">{{ key.public_fingerprint() }}</code></dd>
+        <dt>Created</dt>
+        <dd class="text-mono">{{ key.created_at.strftime('%Y-%m-%d %H:%M') if key.created_at else '—' }}</dd>
+        <dt>Rotation due</dt>
+        <dd class="text-mono">
+          {% if key.rotate_after %}
+            <span class="led {{ 'bad' if key_due else 'ok' }} me-1"></span>{{ key.rotate_after.strftime('%Y-%m-%d') }}
+          {% else %}—{% endif %}
+        </dd>
+      </dl>
+
+      <div class="divider"></div>
+
+      <div class="d-flex align-items-start gap-2">
+        <span class="chip chip--muted">private key</span>
+        <div class="small text-muted">
+          Never stored in the clear. {{ key.secret_key_wrapped|length }} bytes of
+          <strong>AES-256-GCM</strong> ciphertext, wrapped under a key derived from your password
+          with <strong>Argon2id</strong> — the server cannot sign on your behalf, and a database
+          dump alone does not yield your signing power.
+        </div>
+      </div>
+
+      {% if retired_keys %}
+      <div class="divider"></div>
+      <div class="eyebrow mb-2">Retired but retained · {{ retired_keys|length }}</div>
+      <p class="text-muted small">
+        Rotation never deletes a key. Each of these can no longer sign, but still verifies every
+        signature it ever made — so history stays checkable.
+      </p>
+      {% for rk in retired_keys %}
+      <div class="d-flex align-items-center gap-2 small mb-1">
+        <span class="led"></span>
+        <span class="algo-chip">{{ rk.alg_id }}</span>
+        <code class="hashpill" data-copy="{{ rk.public_fingerprint() }}">{{ rk.public_fingerprint() }}</code>
+        <span class="text-muted ms-auto text-mono">
+          retired {{ rk.retired_at.strftime('%Y-%m-%d') if rk.retired_at else '—' }}
+        </span>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      {% else %}
+      <p class="text-muted mb-0">No signing key found for your account.</p>
+      {% endif %}
     </div>
   </div>
 
   <div class="col-lg-5">
-    <div class="card mb-3">
-      <div class="card-header"><strong>Crypto-agility</strong></div>
-      <div class="card-body">
-        <p class="small mb-2">
-          System default for new keys:
-          <span class="badge text-bg-primary algo-chip">{{ active_alg }}</span>
-        </p>
-        {% if key_due %}
-          <div class="alert alert-danger py-2 small">
-            Your signing key is <strong>due for rotation</strong>. Re-issue it now to stay current.
-          </div>
-        {% elif key and key.alg_id != active_alg %}
-          <div class="alert alert-warning py-2 small">
-            Your signing identity uses <span class="algo-chip">{{ key.alg_id }}</span>, which differs
-            from the current default. Re-issue to adopt <span class="algo-chip">{{ active_alg }}</span>.
-          </div>
-        {% endif %}
-        <form method="post" action="{{ url_for('auth.reissue_key') }}">
-          {{ reissue_form.hidden_tag() }}
-          <div class="mb-2">{{ reissue_form.password(class="form-control form-control-sm", placeholder="Confirm your password") }}</div>
-          {{ reissue_form.submit(class="btn btn-outline-primary btn-sm") }}
-        </form>
-        <p class="text-muted small mt-2 mb-0">
-          Re-issuing generates a new key under the current algorithm and <em>retires but retains</em>
-          your old key, so every signature it made still verifies.
-        </p>
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">Crypto-agility</div>
+        <span class="chip">system default: {{ active_alg }}</span>
       </div>
+
+      {% if key_due %}
+        <div class="verify-hero bad mb-3" style="padding:.8rem 1rem;">
+          <div class="verify-hero__icon" style="width:2.2rem;height:2.2rem;font-size:1.1rem;">!</div>
+          <div>
+            <div class="verify-hero__title" style="font-size:.95rem;">Key is due for rotation</div>
+            <div class="verify-hero__sub small">
+              Your private key is wrapped under your password, so the scheduler cannot rotate it
+              unattended. Re-issue it below.
+            </div>
+          </div>
+        </div>
+      {% elif key and key.alg_id != active_alg %}
+        <div class="verify-hero mb-3" style="padding:.8rem 1rem;border-color:var(--warn-line);background:linear-gradient(180deg,var(--warn-050),#fff);">
+          <div class="verify-hero__icon" style="width:2.2rem;height:2.2rem;font-size:1.1rem;background:var(--warn);">⇄</div>
+          <div>
+            <div class="verify-hero__title" style="font-size:.95rem;color:var(--warn);">Behind the current default</div>
+            <div class="verify-hero__sub small">
+              You sign with <span class="algo-chip">{{ key.alg_id }}</span>; new keys are issued
+              under <span class="algo-chip">{{ active_alg }}</span>. Your existing signatures stay
+              valid either way.
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('auth.reissue_key') }}">
+        {{ reissue_form.hidden_tag() }}
+        <div class="mb-2">{{ reissue_form.password(class="form-control form-control-sm", placeholder="Confirm your password") }}</div>
+        {{ reissue_form.submit(class="btn btn-outline-primary btn-sm") }}
+      </form>
+      <p class="text-muted small mt-2 mb-0">
+        Re-issuing generates a new key under the current algorithm and <em>retires but retains</em>
+        the old one, so every signature it made still verifies.
+      </p>
     </div>
 
-    <div class="card">
-      <div class="card-body">
-        <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.list_vaults') }}">Go to your vaults</a>
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('ledger.view') }}">Audit log</a>
-      </div>
+    <div class="panel">
+      <div class="eyebrow mb-2">What your signature commits to</div>
+      <p class="text-muted small mb-2">
+        A vote is not a database flag. It is a post-quantum signature over a domain-separated
+        payload binding the proposal hash, your decision, and your user id — so it cannot be
+        replayed onto another proposal, flipped from reject to approve, or attributed to anyone else.
+      </p>
+      <code class="hashpill d-inline-block" style="cursor:default;white-space:normal;">
+        QVAULT-SIG-v1:VOTE | {proposal_payload_hash, decision, signer_id}
+      </code>
     </div>
   </div>
 </div>

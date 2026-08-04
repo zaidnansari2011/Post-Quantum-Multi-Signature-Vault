@@ -1,99 +1,169 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Crypto-agility{% endblock %}
+{% block title %}Q-Vault — Crypto-agility lab{% endblock %}
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h1 class="h3 mb-0">Crypto-agility control</h1>
-  <span class="badge text-bg-light border">backend: {{ backend }}</span>
+{% set max_sig = sig_metas | map(attribute='sizes.signature') | max %}
+{% set max_pk = sig_metas | map(attribute='sizes.public_key') | max %}
+
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+  <div>
+    <div class="eyebrow mb-1">Crypto-agility lab</div>
+    <h1 class="h2 mb-0">Algorithms</h1>
+  </div>
+  <span class="chip chip--muted">backend: {{ backend }}</span>
 </div>
-<p class="text-muted">
+
+<p class="text-muted mb-3" style="max-width:66ch;">
   Switching the active signature algorithm changes only which algorithm <strong>new</strong> keys
-  are generated under. Every existing key, signature, and ledger anchor records its own
-  <code>alg_id</code> and is always verified by the matching provider — so a switch never
-  invalidates stored data. The check at the bottom proves it live.
+  are generated under. Every existing key, signature and ledger anchor carries its own
+  <code>alg_id</code> and is always verified by the matching provider — so a switch can never
+  invalidate stored data. The check at the bottom re-verifies every artefact live to prove it.
 </p>
+
+{# --- Live proof: everything still verifies, across a mixed algorithm set ------------------ #}
+{% if verify.total == 0 %}
+<div class="panel mb-3 text-muted small">No signatures or anchors to verify yet.</div>
+{% elif verify.all_pass %}
+<div class="verify-hero ok mb-3">
+  <div class="verify-hero__icon">✓</div>
+  <div>
+    <div class="verify-hero__title">{{ verify.total }} artefacts verify under their own algorithms</div>
+    <div class="verify-hero__sub">
+      Every stored signature and ledger anchor was just re-checked against the provider pinned on
+      it — not against the current default. That is what crypto-agility has to mean.
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="verify-hero bad mb-3">
+  <div class="verify-hero__icon">✗</div>
+  <div>
+    <div class="verify-hero__title">{{ verify.total - verify.ok }} of {{ verify.total }} artefacts failed verification</div>
+    <div class="verify-hero__sub">A stored artefact no longer verifies under its pinned algorithm.</div>
+  </div>
+</div>
+{% endif %}
+
+{% if verify.by_alg %}
+<div class="stat-row mb-3">
+  {% for alg, c in verify.by_alg.items() %}
+  <div class="stat">
+    <div class="stat__num" style="color: {{ 'var(--ok)' if c.ok == c.total else 'var(--danger)' }};">
+      {{ c.ok }}<span class="text-muted" style="font-size:1rem;">/{{ c.total }}</span>
+    </div>
+    <div class="stat__label">{{ alg }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div class="row g-3">
   <div class="col-lg-5">
-    <div class="card mb-3">
-      <div class="card-header"><strong>Active algorithms</strong></div>
-      <div class="card-body">
-        <dl class="row mb-3 small">
-          <dt class="col-6">Signatures (new keys)</dt>
-          <dd class="col-6"><span class="badge text-bg-primary algo-chip">{{ cfg.active_signature_alg }}</span></dd>
-          <dt class="col-6">Key encapsulation</dt>
-          <dd class="col-6"><span class="badge text-bg-light border algo-chip">{{ cfg.active_kem_alg }}</span></dd>
-        </dl>
-        <form method="post" action="{{ url_for('admin.switch_crypto') }}">
-          {{ form.hidden_tag() }}
-          <label class="form-label small mb-1">{{ form.algorithm.label.text }}</label>
-          {{ form.algorithm(class="form-select form-select-sm mb-2") }}
-          {{ form.submit(class="btn btn-primary btn-sm") }}
-        </form>
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">Active configuration</div>
       </div>
+      <dl class="kv mb-3">
+        <dt>Signatures (new keys)</dt><dd><span class="algo-chip">{{ cfg.active_signature_alg }}</span></dd>
+        <dt>Key encapsulation</dt><dd><span class="chip chip--muted">{{ cfg.active_kem_alg }}</span></dd>
+      </dl>
+      <form method="post" action="{{ url_for('admin.switch_crypto') }}">
+        {{ form.hidden_tag() }}
+        <label class="form-label small mb-1 fw-semibold">{{ form.algorithm.label.text }}</label>
+        {{ form.algorithm(class="form-select form-select-sm mb-2") }}
+        {{ form.submit(class="btn btn-primary btn-sm") }}
+      </form>
+      <p class="text-muted small mt-2 mb-0">
+        Existing users keep signing with their current key until they re-issue it, and the SYSTEM
+        anchor key keeps its own algorithm — so the system runs a genuinely mixed set, on purpose.
+      </p>
     </div>
 
-    <div class="card">
-      <div class="card-header"><strong>Active signing keys by algorithm</strong></div>
-      <ul class="list-group list-group-flush">
-        {% for alg, n in keys_by_alg.items() %}
-        <li class="list-group-item d-flex justify-content-between align-items-center">
-          <span class="algo-chip">{{ alg }}</span><span class="badge text-bg-secondary">{{ n }}</span>
-        </li>
-        {% else %}
-        <li class="list-group-item text-muted small">No signing keys yet.</li>
-        {% endfor %}
-      </ul>
+    <div class="panel">
+      <div class="panel__head">
+        <div class="eyebrow">Active signing keys by algorithm</div>
+      </div>
+      {% for alg, n in keys_by_alg.items() %}
+      <div class="d-flex justify-content-between align-items-center py-1">
+        <span class="algo-chip">{{ alg }}</span>
+        <span class="text-mono">{{ n }}</span>
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">No signing keys yet.</p>
+      {% endfor %}
     </div>
   </div>
 
   <div class="col-lg-7">
-    <div class="card mb-3">
-      <div class="card-header"><strong>Registered signature algorithms</strong></div>
+    <div class="panel">
+      <div class="panel__head">
+        <div>
+          <div class="eyebrow">Registered signature algorithms</div>
+          <div class="text-muted small">the size/assumption trade-off, to scale</div>
+        </div>
+      </div>
       <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle small">
           <thead><tr>
-            <th>alg_id</th><th>Standard</th><th>Cat.</th><th>Public key</th><th>Signature</th><th></th>
+            <th>alg_id</th><th>Standard</th><th>Cat.</th>
+            <th style="min-width:130px">Public key</th><th style="min-width:130px">Signature</th>
           </tr></thead>
           <tbody>
           {% for m in sig_metas %}
-            <tr class="{% if m.alg_id == cfg.active_signature_alg %}table-primary{% endif %}">
-              <td><span class="algo-chip">{{ m.alg_id }}</span><div class="text-muted">{{ m.human_name }}</div></td>
+            <tr>
+              <td>
+                <span class="algo-chip">{{ m.alg_id }}</span>
+                {% if m.alg_id == cfg.active_signature_alg %}
+                  <span class="chip ms-1">active</span>
+                {% endif %}
+                <div class="text-muted">{{ m.human_name }}</div>
+              </td>
               <td>{{ m.nist_standard }}</td>
-              <td class="mono">{{ m.security_category }}</td>
-              <td class="mono">{{ m.sizes.public_key }} B</td>
-              <td class="mono">{{ m.sizes.signature }} B</td>
-              <td>{% if m.alg_id == cfg.active_signature_alg %}<span class="badge text-bg-primary">active</span>{% endif %}</td>
+              <td class="text-mono">{{ m.security_category }}</td>
+              <td>
+                <div class="text-mono">{{ m.sizes.public_key }} B</div>
+                <div class="bar mt-1"><div class="bar__fill alt" style="width: {{ (m.sizes.public_key / max_pk * 100)|round(1) }}%"></div></div>
+              </td>
+              <td>
+                <div class="text-mono">{{ m.sizes.signature }} B</div>
+                <div class="bar mt-1"><div class="bar__fill" style="width: {{ (m.sizes.signature / max_sig * 100)|round(1) }}%"></div></div>
+              </td>
             </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
+      {% if sig_metas | length > 1 %}
+      <p class="text-muted small mt-3 mb-0">
+        The largest signature here is
+        {{ (max_sig / (sig_metas | map(attribute='sizes.signature') | min))|round|int }}× the
+        smallest: the hash-based option buys security resting on nothing but the hash function, and
+        pays for it in bytes. Being able to adopt it later — without re-signing history — is the
+        point of the agility layer.
+      </p>
+      {% endif %}
     </div>
 
-    <div class="card">
-      <div class="card-header"><strong>Integrity across a mixed algorithm set</strong></div>
-      <div class="card-body">
-        {% if verify.total == 0 %}
-        <p class="text-muted small mb-0">No signatures or anchors to verify yet.</p>
-        {% elif verify.all_pass %}
-        <div class="alert alert-success mb-2 py-2">
-          ✓ All {{ verify.total }} existing artefacts verify under their own pinned algorithms.
-        </div>
-        {% else %}
-        <div class="alert alert-danger mb-2 py-2">
-          ✗ {{ verify.total - verify.ok }} of {{ verify.total }} artefacts failed verification.
-        </div>
-        {% endif %}
-        {% if verify.by_alg %}
-        <ul class="list-inline small mb-0">
-          {% for alg, c in verify.by_alg.items() %}
-          <li class="list-inline-item me-3">
-            <span class="algo-chip">{{ alg }}</span>
-            <span class="{% if c.ok == c.total %}text-success{% else %}text-danger{% endif %}">{{ c.ok }}/{{ c.total }}</span>
-          </li>
+    <div class="panel mt-3">
+      <div class="panel__head">
+        <div class="eyebrow">Key-encapsulation providers</div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle small">
+          <thead><tr><th>alg_id</th><th>Standard</th><th>Cat.</th>
+            <th class="text-end">Public key</th><th class="text-end">Ciphertext</th></tr></thead>
+          <tbody>
+          {% for m in kem_metas %}
+            <tr>
+              <td><span class="algo-chip">{{ m.alg_id }}</span>
+                  <div class="text-muted">{{ m.human_name }}</div></td>
+              <td>{{ m.nist_standard }}</td>
+              <td class="text-mono">{{ m.security_category }}</td>
+              <td class="text-end text-mono">{{ m.sizes.public_key }} B</td>
+              <td class="text-end text-mono">{{ m.sizes.ciphertext }} B</td>
+            </tr>
           {% endfor %}
-        </ul>
-        {% endif %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

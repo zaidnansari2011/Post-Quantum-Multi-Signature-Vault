@@ -6,66 +6,78 @@
   <li class="breadcrumb-item active">{{ vault.name }}</li>
 </ol></nav>
 
-<div class="d-flex align-items-center justify-content-between mb-3">
+<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
   <div>
-    <h1 class="h3 mb-1">{{ vault.name }}</h1>
+    <div class="eyebrow mb-1">Vault</div>
+    <h1 class="h2 mb-1">{{ vault.name }}</h1>
     <div class="d-flex gap-2 flex-wrap">
-      <span class="badge text-bg-primary">policy: {{ vault.policy.threshold_m }} of {{ n_signers }}</span>
-      <span class="badge text-bg-light border algo-chip">{{ vault.kem_alg_id }}</span>
+      <span class="chip">{{ vault.policy.threshold_m }} of {{ n_signers }} to approve</span>
+      <span class="algo-chip">{{ vault.kem_alg_id }}</span>
     </div>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">+ New proposal</a>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">+ New proposal</a>
 </div>
-<p class="text-muted">{{ vault.description or "" }}</p>
+{% if vault.description %}<p class="text-muted">{{ vault.description }}</p>{% endif %}
 
 <div class="row g-3">
   <div class="col-lg-7">
-    <div class="card h-100">
-      <div class="card-header"><strong>Proposals</strong></div>
+    <div class="panel h-100">
+      <div class="panel__head">
+        <div class="eyebrow">Proposals</div>
+        <span class="chip chip--muted">{{ proposals|length }}</span>
+      </div>
       {% if proposals %}
-      <div class="table-responsive"><table class="table table-sm mb-0 align-middle">
-        <thead><tr><th>Title</th><th>Status</th><th>Progress</th><th>File</th></tr></thead>
+      <div class="table-responsive"><table class="table table-sm mb-0 align-middle small">
+        <thead><tr><th>Title</th><th>Status</th><th>Threshold</th><th>File</th></tr></thead>
         <tbody>
         {% for p in proposals %}
           <tr>
             <td><a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=p.proposal_uuid) }}">{{ p.title }}</a></td>
-            <td><span class="badge text-bg-secondary text-uppercase">{{ p.status }}</span></td>
-            <td class="mono">{{ p.required_m }} of {{ p.required_n }}</td>
-            <td>{% if p.file %}<span class="badge text-bg-light border">encrypted</span>{% else %}—{% endif %}</td>
+            <td>
+              <span class="led {{ 'ok' if p.status == 'approved' else ('bad' if p.status in ('rejected', 'expired') else '') }} me-1"></span>
+              {{ p.status }}
+            </td>
+            <td class="text-mono">{{ p.required_m }} of {{ p.required_n }}</td>
+            <td>{% if p.file %}<span class="chip chip--muted">encrypted</span>{% else %}—{% endif %}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table></div>
       {% else %}
-      <div class="card-body text-muted">No proposals yet.</div>
+      <p class="text-muted small mb-0">No proposals yet.</p>
       {% endif %}
     </div>
   </div>
 
   <div class="col-lg-5">
-    <div class="card mb-3">
-      <div class="card-header"><strong>Members ({{ vault.members|length }})</strong></div>
-      <ul class="list-group list-group-flush">
-        {% for m in vault.members %}
-        <li class="list-group-item d-flex justify-content-between align-items-center">
-          <span>{{ m.user.email }}</span>
-          <span class="badge text-bg-light border text-uppercase">{{ m.member_role }}</span>
-        </li>
-        {% endfor %}
-      </ul>
+    <div class="panel mb-3">
+      <div class="panel__head">
+        <div class="eyebrow">Members</div>
+        <span class="chip chip--muted">{{ vault.members|length }}</span>
+      </div>
+      {% for m in vault.members %}
+      <div class="d-flex justify-content-between align-items-center py-1 small">
+        <span class="text-truncate">{{ m.user.email }}</span>
+        <span class="chip chip--muted">{{ m.member_role }}</span>
+      </div>
+      {% endfor %}
+      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
+        Only signers count toward the threshold. The signer set is snapshotted into each proposal
+        when it opens, so changing membership cannot alter an approval already in progress.
+      </p>
     </div>
 
     {% if is_owner %}
-    <div class="card">
-      <div class="card-header"><strong>Add member</strong></div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('vaults.add_member', vid=vault.id) }}">
-          {{ member_form.hidden_tag() }}
-          <div class="mb-2">{{ member_form.email(class="form-control form-control-sm", placeholder="registered email") }}</div>
-          <div class="mb-2">{{ member_form.role(class="form-select form-select-sm") }}</div>
-          {{ member_form.submit(class="btn btn-sm btn-outline-primary") }}
-        </form>
+    <div class="panel">
+      <div class="panel__head">
+        <div class="eyebrow">Add member</div>
       </div>
+      <form method="post" action="{{ url_for('vaults.add_member', vid=vault.id) }}">
+        {{ member_form.hidden_tag() }}
+        <div class="mb-2">{{ member_form.email(class="form-control form-control-sm", placeholder="registered email") }}</div>
+        <div class="mb-2">{{ member_form.role(class="form-select form-select-sm") }}</div>
+        {{ member_form.submit(class="btn btn-sm btn-outline-primary") }}
+      </form>
     </div>
     {% endif %}
   </div>
