@@ -24,6 +24,7 @@
           {% if current_user.role == 'admin' %}
           <a class="qv-navlink is-admin" href="{{ url_for('admin.crypto') }}">Crypto</a>
           <a class="qv-navlink is-admin" href="{{ url_for('admin.rotation') }}">Rotation</a>
+          <a class="qv-navlink is-admin" href="{{ url_for('admin.benchmark') }}">Benchmark</a>
           {% endif %}
           <span class="text-muted small mx-1 d-none d-md-inline">{{ current_user.email }}</span>
           <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">

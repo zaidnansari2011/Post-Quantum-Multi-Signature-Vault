@@ -109,3 +109,16 @@ class RunMaintenanceForm(FlaskForm):
     """Admin control to run the rotation + expiry jobs immediately (they also run on a schedule)."""
 
     submit = SubmitField("Run rotation + expiry now")
+
+
+class RunBenchmarkForm(FlaskForm):
+    """Admin control for a small, indicative in-request benchmark.
+
+    The iteration count is clamped again in the route against ``BENCHMARK_LIVE_MAX_ITERATIONS``:
+    the field bound is a convenience, not the safety limit.
+    """
+
+    iterations = IntegerField(
+        "Iterations", validators=[Optional(), NumberRange(min=1, max=25)], default=3
+    )
+    submit = SubmitField("Run live")

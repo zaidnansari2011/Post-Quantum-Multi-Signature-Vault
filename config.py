@@ -8,6 +8,7 @@ fails loudly instead of running with insecure defaults.
 from __future__ import annotations
 
 import os
+import pathlib
 
 from dotenv import load_dotenv
 from sqlalchemy.pool import StaticPool
@@ -15,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 load_dotenv()
 
 _DEV_SECRET = "dev-insecure-secret-key-change-me"
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 class BaseConfig:
@@ -49,6 +51,17 @@ class BaseConfig:
 
     # The deliberate tamper demonstration is dev/demo only and OFF by default.
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "false").lower() == "true"
+
+    # Benchmark (Phase 8). The canonical report is produced offline by
+    # ``scripts/run_benchmark.py``; the admin page only renders whatever it finds here.
+    BENCHMARK_REPORT_PATH = os.environ.get(
+        "BENCHMARK_REPORT_PATH", str(_REPO_ROOT / "docs" / "benchmarks" / "latest.json")
+    )
+    # A live in-request run is a demo aid, not a measurement: it is capped hard so a page
+    # request can never hang the single-worker dev server. The budget is the TOTAL wall clock
+    # for the whole run, divided across the operations it measures.
+    BENCHMARK_LIVE_MAX_ITERATIONS = int(os.environ.get("BENCHMARK_LIVE_MAX_ITERATIONS", "5"))
+    BENCHMARK_LIVE_BUDGET_S = float(os.environ.get("BENCHMARK_LIVE_BUDGET_S", "10"))
 
 
 class DevConfig(BaseConfig):

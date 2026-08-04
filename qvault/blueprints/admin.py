@@ -6,17 +6,19 @@ stored artefact keeps its own ``alg_id`` and continues to verify, which this pag
 
 from __future__ import annotations
 
+import json
+import pathlib
 from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, flash, redirect, render_template, url_for
 from flask_login import current_user
 
 from qvault.extensions import db
-from qvault.forms import RunMaintenanceForm, SwitchAlgorithmForm
+from qvault.forms import RunBenchmarkForm, RunMaintenanceForm, SwitchAlgorithmForm
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.security.decorators import admin_required
-from qvault.services import config_service, rotation_service
+from qvault.services import benchmark_service, config_service, rotation_service
 from qvault.services.config_service import ConfigError
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -68,6 +70,111 @@ def switch_crypto():
             "success",
         )
     return redirect(url_for("admin.crypto"))
+
+
+# Exactly what the benchmark template dereferences, per section: (required ops, required sizes).
+_REPORT_SHAPE = {
+    "signatures": (("keygen", "sign", "verify"), ("public_key", "signature")),
+    "kems": (("keygen", "encapsulate", "decapsulate"), ("public_key", "ciphertext")),
+}
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _is_renderable_report(data: object) -> bool:
+    """Check a loaded report carries everything the template dereferences.
+
+    The template does arithmetic on these numbers (bar widths, ratios, ``format``), so a file that
+    merely *looks* like a report but carries a string where a float belongs, or omits a key,
+    would raise mid-render and 500 the page. Validating here keeps the failure mode "empty state",
+    which is what ADR-0008 claims.
+    """
+    if not isinstance(data, dict) or data.get("schema") != benchmark_service.SCHEMA:
+        return False
+    for section, (required_ops, required_sizes) in _REPORT_SHAPE.items():
+        rows = data.get(section)
+        if not isinstance(rows, list):
+            return False
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get("ops"), dict):
+                return False
+            sizes = row.get("measured_sizes")
+            if not isinstance(sizes, dict) or not all(
+                _is_number(sizes.get(k)) for k in required_sizes
+            ):
+                return False
+            for op in required_ops:
+                stats = row["ops"].get(op)
+                if not isinstance(stats, dict):
+                    return False
+                if not all(_is_number(stats.get(k)) for k in ("median_ms", "ops_per_sec")):
+                    return False
+    return isinstance(data.get("parameters"), dict) and isinstance(data.get("environment"), dict)
+
+
+def _stored_report() -> dict | None:
+    """Load the canonical benchmark report produced offline by ``scripts/run_benchmark.py``.
+
+    Returns None for a missing, unreadable, malformed, foreign-schema or structurally incomplete
+    file: a benchmark artefact is decoration, and must never be able to break the admin page.
+    """
+    path = pathlib.Path(current_app.config["BENCHMARK_REPORT_PATH"])
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if _is_renderable_report(data) else None
+
+
+@bp.get("/benchmark")
+@admin_required
+def benchmark():
+    return render_template(
+        "admin/benchmark.html",
+        report=_stored_report(),
+        live=None,
+        form=RunBenchmarkForm(),
+        max_iterations=current_app.config["BENCHMARK_LIVE_MAX_ITERATIONS"],
+    )
+
+
+@bp.post("/benchmark/run")
+@admin_required
+def run_benchmark():
+    """Run a small benchmark inside the request — a demo aid, not the reported measurement.
+
+    Hard-capped by ``BENCHMARK_LIVE_MAX_ITERATIONS`` and a total wall-clock budget so an admin
+    cannot (accidentally or otherwise) tie up the worker with a long run.
+    """
+    form = RunBenchmarkForm()
+    if not form.validate_on_submit():
+        flash("Enter an iteration count between 1 and 25.", "danger")
+        return redirect(url_for("admin.benchmark"))
+
+    cap = current_app.config["BENCHMARK_LIVE_MAX_ITERATIONS"]
+    iterations = min(form.iterations.data or 3, cap)
+    try:
+        live = benchmark_service.run_benchmark(
+            current_app.extensions["crypto"],
+            iterations=iterations,
+            warmup=1,
+            # A *total* budget, not per-operation: a per-op budget would multiply by the dozen
+            # operations in a full run and could hold the worker far longer than intended.
+            total_budget_s=current_app.config["BENCHMARK_LIVE_BUDGET_S"],
+        )
+    except benchmark_service.BenchmarkError as exc:
+        flash(f"Benchmark aborted — a correctness check failed: {exc}", "danger")
+        return redirect(url_for("admin.benchmark"))
+
+    return render_template(
+        "admin/benchmark.html",
+        report=_stored_report(),
+        live=live,
+        form=form,
+        max_iterations=cap,
+    )
 
 
 @bp.get("/rotation")
