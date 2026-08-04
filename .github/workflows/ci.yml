@@ -1,0 +1,80 @@
+name: CI
+
+# Lint, test and prove the crypto core actually runs — on Windows (the development machine) and
+# on Linux, because "it works on my laptop" is not a claim a security project should rest on.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The development and demonstration platform.
+          - os: windows-latest
+            python: "3.13"
+          # quantcrypt ships manylinux_2_39 wheels, which need glibc >= 2.39 — Ubuntu 24.04.
+          # Pinned rather than ubuntu-latest so a runner image bump cannot silently break it.
+          - os: ubuntu-24.04
+            python: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install pinned dependencies
+        # The lock file pins runtime *and* tooling, so CI runs the same versions as the author.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Format check (black)
+        run: black --check .
+
+      - name: Tests
+        # 92% at the time of writing; the floor is set below that so ordinary churn does not
+        # break the build, but a real regression in coverage does.
+        run: pytest --cov=qvault --cov-report=term-missing --cov-fail-under=88
+        env:
+          SECRET_KEY: ci-secret-not-used-outside-ci
+          SERVER_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+
+      - name: Crypto smoke — the PQC backend really works on this platform
+        # Cheap, and it fails loudly if a wheel is missing or a byte format has shifted, which a
+        # pure unit-test pass could in principle miss.
+        run: python scripts/run_benchmark.py --quick --out - --format markdown
+
+  types:
+    name: Type check (advisory)
+    runs-on: ubuntu-24.04
+    # mypy has never run clean against this codebase (disallow_untyped_defs is aspirational).
+    # Reported, never gating — a red X on a check nobody intends to fix teaches people to ignore
+    # red Xs. Remove continue-on-error when the annotations actually land.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock.txt mypy
+      - run: mypy qvault
