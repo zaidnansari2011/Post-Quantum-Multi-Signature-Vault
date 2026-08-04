@@ -313,7 +313,11 @@ def cast_vote(
     # May raise KeyUnlockError on a wrong password — surfaced to the caller unchanged.
     sig_bytes = key_service.sign_with_key(signer, key, password, message)
 
-    # Never persist a signature we cannot verify with the very provider that made it.
+    # Defence in depth. Since ADR-0010, ``sign_with_key`` verifies before it returns, so this is
+    # normally unreachable — it is retained because the cost is one verification on a path that
+    # already spends ~80 ms deriving an Argon2id key, and because a vote is the one signature a
+    # human is held to. Do not delete it on the grounds that it is redundant; that redundancy is
+    # the point.
     provider = current_app.extensions["crypto"].signature(key.alg_id)
     if not provider.verify(key.public_key, message, sig_bytes):
         raise ApprovalError("Freshly produced signature failed verification; vote not recorded.")

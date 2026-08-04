@@ -34,6 +34,15 @@ class KeyUnlockError(Exception):
     """Raised when a private key cannot be decrypted (typically a wrong password)."""
 
 
+class SignFaultError(Exception):
+    """Raised when a freshly-produced signature fails to verify under its own public key.
+
+    This should be impossible. Reaching it means a fault (induced or otherwise), a corrupted key,
+    or a provider inconsistency — never a user error — so it is deliberately NOT caught and shown
+    as a friendly message anywhere: the operation must fail. See ADR-0010.
+    """
+
+
 def _registry():
     return current_app.extensions["crypto"]
 
@@ -98,12 +107,36 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
 
 
 def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
-    """Unlock ``key`` with ``password`` and sign ``message`` with the matching provider."""
+    """Unlock ``key`` with ``password``, sign ``message``, and verify before returning.
+
+    **Invariant: never emit a signature we have not just verified.** See ADR-0010.
+
+    A faulted lattice signature is not merely useless — for ML-DSA it can leak information about
+    the secret key, which is the basis of published fault attacks on FIPS 204. Verifying our own
+    output before it leaves this function turns a whole attack class into a loud failure, and
+    also catches the mundane cases: a corrupted key blob, a provider/algorithm mismatch, or a
+    backend whose byte format silently changed under us.
+
+    The cost is one verification per signature, and it is asymmetric in a useful way — see the
+    committed benchmark: ~+37% for ML-DSA-65 (0.63 ms on 1.71 ms) but only ~+4.6% for
+    SLH-DSA-SHAKE-256f (1.77 ms on 38.66 ms). The scheme that is slowest to sign pays the least
+    proportionally to be safe.
+    """
+    provider = _registry().signature(key.alg_id)
     secret_key = unlock_secret_key(user, key, password)
     try:
-        return _registry().signature(key.alg_id).sign(secret_key, message)
+        signature = provider.sign(secret_key, message)
     finally:
         del secret_key
+
+    if not provider.verify(key.public_key, message, signature):
+        # Do not return it, do not persist it, do not log the bytes. The caller's transaction
+        # should abort; a signature that fails its own verification is evidence of a fault or a
+        # corrupted key, not something to retry silently.
+        raise SignFaultError(
+            f"signature produced under {key.alg_id} (key {key.id}) failed immediate verification"
+        )
+    return signature
 
 
 def active_signing_key(user: User) -> Key | None:

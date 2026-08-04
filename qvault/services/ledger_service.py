@@ -255,15 +255,21 @@ def anchor_head(*, commit: bool = True) -> LedgerAnchor:
     head = _last_entry() or ensure_genesis(commit=False)
     key = ensure_system_key()
 
+    provider = current_app.extensions["crypto"].signature(key.alg_id)
+    message = _anchor_message(head.seq, head.entry_hash)
     secret = master_key.unwrap_secret(key.secret_key_nonce, key.secret_key_wrapped)
     try:
-        signature = (
-            current_app.extensions["crypto"]
-            .signature(key.alg_id)
-            .sign(secret, _anchor_message(head.seq, head.entry_hash))
-        )
+        signature = provider.sign(secret, message)
     finally:
         del secret  # best-effort; drop the plaintext key reference promptly
+
+    # Verify before persisting (ADR-0010). The anchor is the ledger's trust root: an anchor that
+    # does not verify would make verify_ledger() report tampering forever after, turning a
+    # transient fault into a permanent, unexplained "tamper detected" on a healthy chain.
+    if not provider.verify(key.public_key, message, signature):
+        raise LedgerError(
+            f"SYSTEM anchor signature over seq {head.seq} failed immediate verification"
+        )
 
     anchor = LedgerAnchor(
         seq=head.seq,
