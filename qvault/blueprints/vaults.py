@@ -9,10 +9,18 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from qvault.extensions import db
-from qvault.forms import AddMemberForm, ProposalForm, VaultForm, VoteForm
+from qvault.forms import (
+    AddMemberForm,
+    ProposalForm,
+    ProposalRestoreForm,
+    ProposalTamperForm,
+    VaultForm,
+    VoteForm,
+)
 from qvault.models.proposal import Proposal
 from qvault.models.vault import VaultMember
 from qvault.security.decorators import get_membership_or_403
+from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
     file_crypto_service,
@@ -149,11 +157,58 @@ def proposal_detail(vid: int, pid: str):
         votes=votes,
         approvals=approvals,
         rejections=rejections,
+        binding=approval_service.verify_proposal_binding(proposal),
         my_vote=my_vote,
         is_signer=is_signer,
         can_vote=can_vote,
         vote_form=VoteForm(),
+        demo_enabled=demo_enabled(),
+        tampered=proposal_service.demo_proposal_is_tampered(proposal),
+        tamper_form=ProposalTamperForm(),
+        restore_form=ProposalRestoreForm(),
     )
+
+
+@bp.post("/<int:vid>/proposals/<pid>/demo/tamper")
+@login_required
+def demo_tamper_proposal(vid: int, pid: str):
+    """Dev-only: rewrite this proposal's text without touching a single signature byte.
+
+    Deliberately requires vault membership rather than admin: the point of the demonstration is
+    that even a legitimate insider — someone who is *supposed* to see this proposal — cannot
+    alter it undetectably.
+    """
+    if not demo_enabled():
+        abort(404)
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    if not ProposalTamperForm().validate_on_submit():
+        abort(400)
+
+    proposal_service.demo_tamper_proposal(proposal)
+    flash(
+        "Proposal text rewritten directly in the database. Every signature is byte-for-byte "
+        "intact and still verifies — but the binding check below now refuses to count them.",
+        "warning",
+    )
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+
+
+@bp.post("/<int:vid>/proposals/<pid>/demo/restore")
+@login_required
+def demo_restore_proposal(vid: int, pid: str):
+    if not demo_enabled():
+        abort(404)
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    if not ProposalRestoreForm().validate_on_submit():
+        abort(400)
+
+    if proposal_service.demo_restore_proposal(proposal):
+        flash("Original proposal text restored — the binding verifies again.", "success")
+    else:
+        flash("Nothing to restore for this proposal.", "info")
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
 
 @bp.post("/<int:vid>/proposals/<pid>/vote")

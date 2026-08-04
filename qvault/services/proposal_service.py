@@ -22,6 +22,48 @@ class ProposalError(ValueError):
     """Raised when a proposal cannot be created (e.g. policy not satisfiable)."""
 
 
+# --- Deliberate tamper demonstration (dev/demo only) -------------------------------------------
+# Mirrors ledger_service's demo: a process-global backup, never a database column, so a demo
+# artefact can never be mistaken for real state or survive a restart. Callers MUST gate on
+# qvault.security.demo_gate.demo_enabled() — these functions do not check it themselves, exactly
+# like ledger_service.demo_tamper, so the gate lives in one place (the route) rather than two.
+_PROPOSAL_DEMO_BACKUP: dict[str, str] = {}
+
+DEMO_TAMPERED_TEXT = "Wire 10,000,000 to account GB29-ATTACKER-0001."
+
+
+def demo_tamper_proposal(proposal, replacement: str | None = None) -> str:
+    """Rewrite an approved proposal's action text behind its signatures' backs.
+
+    This is the attack the binding check exists to catch, performed exactly as a database-level
+    adversary would: change what the proposal *says* while leaving every signature byte-for-byte
+    intact. The signatures still verify — they commit to the recorded hash, which is untouched —
+    so nothing about the cryptography is broken. What breaks is the correspondence between that
+    hash and the text, which is what ``approval_service.verify_proposal_binding`` recomputes.
+
+    Returns the original text, which is also stashed for :func:`demo_restore_proposal`.
+    """
+    original = proposal.action_text
+    _PROPOSAL_DEMO_BACKUP.setdefault(proposal.proposal_uuid, original)
+    proposal.action_text = replacement or DEMO_TAMPERED_TEXT
+    db.session.commit()
+    return original
+
+
+def demo_restore_proposal(proposal) -> bool:
+    """Put the original text back. Returns False if nothing was stashed for this proposal."""
+    original = _PROPOSAL_DEMO_BACKUP.pop(proposal.proposal_uuid, None)
+    if original is None:
+        return False
+    proposal.action_text = original
+    db.session.commit()
+    return True
+
+
+def demo_proposal_is_tampered(proposal) -> bool:
+    return proposal.proposal_uuid in _PROPOSAL_DEMO_BACKUP
+
+
 def create_proposal(
     vault: Vault,
     creator,

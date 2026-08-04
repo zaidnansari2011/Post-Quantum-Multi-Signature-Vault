@@ -4,7 +4,10 @@
 {% block content %}
 {% set head_signed = report.anchor_present and report.anchor_ok and report.anchor_covers_head %}
 <div class="mb-3">
-  <div class="eyebrow mb-1">Immutable audit trail</div>
+  {# ADR-0003 is explicit that "immutable" is the wrong word for what this is: an adversary with
+     raw database write access CAN rewrite the chain. What they cannot do is forge the SYSTEM
+     signature over a head an auditor already holds. Say the precise thing. #}
+  <div class="eyebrow mb-1">Tamper-evident audit trail</div>
   <h1 class="h2 mb-2">Ledger</h1>
   <p class="text-muted mb-0" style="max-width: 62ch;">
     An append-only log where every entry commits to the SHA-256 hash of the one before it, and the
