@@ -17,6 +17,7 @@ creation can neither add nor remove eligible voters for an in-flight proposal.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from flask import current_app
@@ -24,13 +25,36 @@ from sqlalchemy.exc import IntegrityError
 
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
+from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
 from qvault.services import key_service, ledger_service
-from qvault.services.signing import vote_signing_bytes
+from qvault.services.signing import signing_bytes_for, vote_signing_bytes
 
 
 class ApprovalError(ValueError):
     """Raised when a vote cannot be cast (closed proposal, not a signer, already voted, ...)."""
+
+
+@dataclass(frozen=True)
+class BindingReport:
+    """Whether a proposal's stored ``payload_hash`` still describes the proposal itself.
+
+    Votes sign ``payload_hash``, not the proposal row. That indirection is what lets a vote stay
+    small and stable — but it means "this signature is valid" and "this signature approves what
+    you are reading on screen" are two different claims. This report establishes the second.
+    """
+
+    ok: bool
+    detail: str
+    recomputed_hash: str  # hash of the proposal's CURRENT canonical bytes
+    recorded_hash: str  # the proposals.payload_hash column, which votes commit to
+    ledger_hash: str | None  # payload_hash recorded in the proposal_created ledger entry
+    content_matches: bool  # recomputed == recorded: the row was not edited under its own hash
+    ledger_matches: bool  # recorded == ledger: the hash itself was not swapped
+
+    @property
+    def tampered(self) -> bool:
+        return not self.ok
 
 
 def _authorized_ids(proposal) -> set[int]:
@@ -51,6 +75,75 @@ def vote_of(proposal, user_id: int) -> Signature | None:
     return next((s for s in proposal.signatures if s.signer_id == user_id), None)
 
 
+def _creation_ledger_hash(proposal) -> str | None:
+    """The ``payload_hash`` the ledger recorded when this proposal was created, if still present.
+
+    This is the load-bearing step. The ``proposals`` table is ordinary mutable state, but the
+    ledger entry is inside the SHA-256 hash chain whose head is signed by the SYSTEM key — so
+    comparing against it drags the proposal under the anchor's protection without duplicating any
+    data. An attacker who edits the proposal *and* its ``payload_hash`` column to match must now
+    also rewrite ledger history, which is exactly the attack the anchor already detects.
+    """
+    entry = (
+        LedgerEntry.query.filter_by(
+            event_type="proposal_created",
+            ref_type="proposal",
+            ref_id=proposal.proposal_uuid,
+        )
+        .order_by(LedgerEntry.seq.asc())
+        .first()
+    )
+    if entry is None:
+        return None
+    try:
+        return json.loads(entry.payload_json).get("payload_hash")
+    except (ValueError, AttributeError):
+        return None
+
+
+def verify_proposal_binding(proposal) -> BindingReport:
+    """Check that the proposal on screen is the proposal that was signed.
+
+    ``verify_signature`` proves a vote commits to ``proposal.payload_hash``. On its own that is
+    not enough: it compares one stored column against another, so an adversary with database
+    write access who edits ``action_text`` leaves every vote verifying against a hash that no
+    longer describes the text. This closes that gap with two independent checks:
+
+    1. **Content** — recompute the canonical signing bytes from the live proposal and confirm they
+       still hash to ``payload_hash``. Catches an edit to any signed field.
+    2. **Ledger** — confirm ``payload_hash`` equals the one recorded in the ``proposal_created``
+       ledger entry. Catches an adversary who edits the field *and* updates the column to match.
+
+    Together they mean altering an approved proposal undetectably requires forging the SYSTEM
+    anchor signature — the same bar the ledger already sets, rather than a plain UPDATE.
+    """
+    recorded = proposal.payload_hash
+    recomputed = sha256_hex(signing_bytes_for(proposal))
+    ledger_hash = _creation_ledger_hash(proposal)
+
+    content_matches = recomputed == recorded
+    ledger_matches = ledger_hash is not None and ledger_hash == recorded
+
+    if not content_matches:
+        detail = "The proposal's contents no longer hash to the value its signers signed."
+    elif ledger_hash is None:
+        detail = "No proposal_created record survives in the ledger for this proposal."
+    elif not ledger_matches:
+        detail = "The stored payload hash disagrees with the one recorded in the ledger."
+    else:
+        detail = "Signed contents match, and the hash agrees with the ledger record."
+
+    return BindingReport(
+        ok=content_matches and ledger_matches,
+        detail=detail,
+        recomputed_hash=recomputed,
+        recorded_hash=recorded,
+        ledger_hash=ledger_hash,
+        content_matches=content_matches,
+        ledger_matches=ledger_matches,
+    )
+
+
 def tally(proposal) -> tuple[int, int]:
     """Return ``(approvals, rejections)`` counting ONLY signatures that currently verify.
 
@@ -58,7 +151,14 @@ def tally(proposal) -> tuple[int, int]:
     decision, payload binding, or key material was altered after insertion stops counting (and
     renders as "verification failed"), so database tampering cannot silently manufacture an
     approval or a rejection.
+
+    A broken proposal binding collapses the tally to ``(0, 0)``. Counting votes for a proposal
+    whose text no longer matches what was signed would report consent that was never given — the
+    signatures are valid, but they are not consent to *this*. Refusing to count is the safe
+    direction: it can stall an approval, never fabricate one.
     """
+    if not verify_proposal_binding(proposal).ok:
+        return (0, 0)
     rows = Signature.query.filter_by(proposal_id=proposal.id).all()
     approvals = sum(1 for s in rows if s.decision == "approve" and verify_signature(s, proposal))
     rejections = sum(1 for s in rows if s.decision == "reject" and verify_signature(s, proposal))
@@ -74,9 +174,13 @@ def verify_signature(sig: Signature, proposal) -> bool:
       is that signer's registered key and its ``public_key``/``alg_id`` match the snapshot. Without
       this, a row carrying an attacker-chosen ``(public_key, alg_id, signer_id)`` would "verify"
       against itself; binding to the registered key is what makes the vote non-repudiable.
-    * **Integrity** — the signature commits to the proposal's current canonical payload, so nothing
-      was altered after signing.
+    * **Integrity** — the signature commits to the proposal's recorded ``payload_hash``.
     * **Validity** — the signature is cryptographically valid under its pinned provider.
+
+    Note the precise scope of the integrity check: it binds the vote to the *recorded hash*, not
+    to the proposal's current text. Proving the recorded hash still describes the proposal is
+    :func:`verify_proposal_binding`'s job, and :func:`tally` requires both. Keep them separate —
+    conflating them is exactly the mistake that let an edited ``action_text`` render as verified.
     """
     key = sig.key
     if key is None or key.owner_id != sig.signer_id:

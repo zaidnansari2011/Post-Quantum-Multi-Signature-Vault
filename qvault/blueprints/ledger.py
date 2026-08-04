@@ -6,7 +6,6 @@ from __future__ import annotations
 from flask import (
     Blueprint,
     abort,
-    current_app,
     flash,
     redirect,
     render_template,
@@ -17,16 +16,10 @@ from flask_login import current_user, login_required
 from qvault.forms import LedgerRestoreForm, LedgerTamperForm
 from qvault.models.ledger import LedgerEntry
 from qvault.models.vault import VaultMember
+from qvault.security.demo_gate import demo_enabled as _demo_enabled
 from qvault.services import ledger_service
 
 bp = Blueprint("ledger", __name__, url_prefix="/ledger")
-
-
-def _demo_enabled() -> bool:
-    """Dev-only: the mutating tamper endpoints require the flag AND a debug/testing context, so a
-    production-like config (DEBUG and TESTING both false) can never expose them."""
-    cfg = current_app.config
-    return bool(cfg.get("ENABLE_TAMPER_DEMO")) and bool(cfg.get("DEBUG") or cfg.get("TESTING"))
 
 
 def _visible_entries() -> list[LedgerEntry]:

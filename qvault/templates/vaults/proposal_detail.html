@@ -46,6 +46,72 @@
       </p>
     </div>
 
+    {# --- Binding: is the text on screen the text that was signed? ------------------------- #}
+    <div class="panel mb-3 {{ '' if binding.ok else 'border-danger' }}"
+         {% if not binding.ok %}style="border-color: var(--danger-line);"{% endif %}>
+      <div class="panel__head">
+        <div class="eyebrow">Signed-content binding</div>
+        <span class="seal {{ '' if binding.ok else 'bad' }}">
+          {{ '✓ matches what was signed' if binding.ok else '✗ does not match' }}
+        </span>
+      </div>
+
+      {% if binding.ok %}
+      <p class="text-muted small mb-2">
+        The proposal above was re-hashed just now and still produces the value its signers signed,
+        and that value agrees with the record written into the ledger when it was created.
+      </p>
+      {% else %}
+      <p class="small mb-2" style="color: var(--danger);">
+        <strong>{{ binding.detail }}</strong>
+        The signatures below may each still be cryptographically valid — but they are not consent
+        to what you are reading, so the tally refuses to count them.
+      </p>
+      {% endif %}
+
+      <dl class="kv small mb-0">
+        <dt>Recomputed now</dt>
+        <dd><code class="hashpill" data-copy="{{ binding.recomputed_hash }}">{{ binding.recomputed_hash[:14] }}…</code></dd>
+        <dt>Signed by voters</dt>
+        <dd><code class="hashpill" data-copy="{{ binding.recorded_hash }}">{{ binding.recorded_hash[:14] }}…</code></dd>
+        <dt>Recorded in ledger</dt>
+        <dd>
+          {% if binding.ledger_hash %}
+            <code class="hashpill" data-copy="{{ binding.ledger_hash }}">{{ binding.ledger_hash[:14] }}…</code>
+          {% else %}
+            <span class="seal bad">no creation record</span>
+          {% endif %}
+        </dd>
+      </dl>
+
+      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
+        Two independent checks. The first catches an edit to any signed field. The second catches
+        an attacker who also rewrites the stored hash to match — because the ledger's copy sits
+        inside the hash chain under the SYSTEM anchor, so faking it means forging that signature.
+      </p>
+
+      {% if demo_enabled %}
+      <div class="divider"></div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="chip" style="background:var(--warn-050);color:var(--warn);border-color:var(--warn-line);">dev only</span>
+        {% if tampered %}
+        <form method="post" action="{{ url_for('vaults.demo_restore_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+          {{ restore_form.hidden_tag() }}
+          {{ restore_form.restore(class="btn btn-success btn-sm") }}
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('vaults.demo_tamper_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+          {{ tamper_form.hidden_tag() }}
+          {{ tamper_form.tamper(class="btn btn-outline-danger btn-sm") }}
+        </form>
+        {% endif %}
+        <span class="text-muted small">
+          Rewrites the text in the database, leaving every signature untouched.
+        </span>
+      </div>
+      {% endif %}
+    </div>
+
     {% if proposal.file %}
     <div class="panel">
       <div class="panel__head">

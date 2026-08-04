@@ -90,6 +90,20 @@ class LedgerRestoreForm(FlaskForm):
     restore = SubmitField("Restore ledger")
 
 
+class ProposalTamperForm(FlaskForm):
+    """Dev-only: rewrite an approved proposal's text behind its signatures' backs.
+
+    Gated at the route by ``qvault.security.demo_gate.demo_enabled`` — the same predicate as the
+    ledger tamper demo, so both destructive demonstrations share one switch.
+    """
+
+    tamper = SubmitField("Rewrite this proposal")
+
+
+class ProposalRestoreForm(FlaskForm):
+    restore = SubmitField("Restore original text")
+
+
 class SwitchAlgorithmForm(FlaskForm):
     """Admin control to switch the active signature algorithm for NEW keys. ``choices`` are set
     from the registry in the route, so only registered algorithms can be selected."""
