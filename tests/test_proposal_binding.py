@@ -207,12 +207,18 @@ def _register(client, email, name="U"):
 
 
 def _vault_and_proposal_via_http(client):
-    client.post("/vaults/new", data={"name": "Ops", "threshold_m": 1, "description": ""},
-                follow_redirects=True)
+    client.post(
+        "/vaults/new",
+        data={"name": "Ops", "threshold_m": 1, "description": ""},
+        follow_redirects=True,
+    )
     resp = client.post(
         "/vaults/1/proposals/new",
-        data={"title": "Wire funds", "action_text": "Wire 10,000 to escrow.",
-              "submit": "Create proposal"},
+        data={
+            "title": "Wire funds",
+            "action_text": "Wire 10,000 to escrow.",
+            "submit": "Create proposal",
+        },
         follow_redirects=True,
     )
     import re
@@ -223,8 +229,11 @@ def _vault_and_proposal_via_http(client):
 def test_tamper_demo_shows_the_break_then_restores(app, client):
     _register(client, "demo@e.com")
     pid = _vault_and_proposal_via_http(client)
-    client.post(f"/vaults/1/proposals/{pid}/vote",
-                data={"password": PASSWORD, "approve": "Approve & sign"}, follow_redirects=True)
+    client.post(
+        f"/vaults/1/proposals/{pid}/vote",
+        data={"password": PASSWORD, "approve": "Approve & sign"},
+        follow_redirects=True,
+    )
 
     before = client.get(f"/vaults/1/proposals/{pid}").get_data(as_text=True)
     assert "matches what was signed" in before
