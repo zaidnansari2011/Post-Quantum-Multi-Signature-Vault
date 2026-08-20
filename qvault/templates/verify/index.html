@@ -94,7 +94,11 @@
     <div class="panel__body">
       <form method="post" enctype="multipart/form-data" action="{{ url_for('verify.index') }}">
         <div class="field">
-          <input class="input" type="file" name="bundle" accept=".json,application/json">
+          {# .zip first: the export hands people a package, and a picker that hides it makes the
+             one file the product produces the one file this page appears to refuse. The route
+             unwraps it (see verify.py::_read_submission); the bare .json still works too. #}
+          <input class="input" type="file" name="bundle"
+                 accept=".zip,.json,application/zip,application/json">
         </div>
         <details class="verify__more">
           <summary>Pin the keys you expect</summary>
@@ -116,7 +120,8 @@
 
   <p class="verify__foot tiny muted">
     This page runs the check on our server, so it is a convenience rather than evidence.
-    To check without trusting us: <code class="mono">python -m qvault.verify decision.qvault.json</code>
+    To check without trusting us: <code class="mono">python -m qvault.verify decision-xxxxxxxx.qvault.zip</code>
+    &mdash; or open <code class="mono">verifier.html</code> from inside that package, which needs no Python.
   </p>
 </div>
 {% endmacro %}
