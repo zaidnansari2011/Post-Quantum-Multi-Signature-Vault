@@ -635,6 +635,9 @@ def test_the_default_export_is_a_self_verifying_document(app, client):
 
     assert resp.status_code == 200
     assert resp.mimetype == "text/html"
+    # Exactly one charset. Setting it in the mimetype as well as letting Flask add it produced
+    # "text/html; charset=utf-8; charset=utf-8", which some clients will not parse.
+    assert resp.headers["Content-Type"].count("charset") == 1
     assert ".qvault.html" in resp.headers["Content-Disposition"]
 
     html = resp.get_data(as_text=True)

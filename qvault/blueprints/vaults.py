@@ -305,7 +305,9 @@ def export_proposal(vid: int, pid: str):
     if fmt != "zip":
         return Response(
             export_service.build_decision_document(bundle),
-            mimetype="text/html; charset=utf-8",
+            # Bare "text/html": Flask appends the charset itself, and spelling it out here yields
+            # a doubled "charset=utf-8; charset=utf-8".
+            mimetype="text/html",
             headers={
                 "Content-Disposition": (
                     f'attachment; filename="{export_service.document_filename(proposal)}"'
