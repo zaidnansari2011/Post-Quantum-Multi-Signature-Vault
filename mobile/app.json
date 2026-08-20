@@ -2,14 +2,22 @@
   "expo": {
     "name": "Q-Vault",
     "slug": "qvault",
+    "owner": "zaid7864",
     "scheme": "qvault",
     "version": "1.0.0",
     "runtimeVersion": "1",
+    "updates": {
+      "url": "https://u.expo.dev/abfa50c5-38c5-4fd7-a01d-7c0d0dd9c028",
+      "fallbackToCacheTimeout": 0
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "extra": {
-      "apiBaseUrl": "https://project4.zaidansari.tech"
+      "apiBaseUrl": "https://project4.zaidansari.tech",
+      "eas": {
+        "projectId": "abfa50c5-38c5-4fd7-a01d-7c0d0dd9c028"
+      }
     },
     "ios": {
       "supportsTablet": true,
@@ -32,7 +40,11 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
