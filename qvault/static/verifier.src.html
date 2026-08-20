@@ -765,6 +765,24 @@
     if (bundle) {
       globalThis.qvaultEmbedded = bundle;
 
+      // The pins are promoted, not buried. Entering a fingerprint you obtained from somewhere
+      // other than this file is the strongest check available here — it is what separates "signed
+      // by a log" from "signed by the log you meant" — so it belongs on the page, not folded
+      // inside a disclosure about loading some other file.
+      const pins = document.querySelector('#loader .pins');
+      const result = document.getElementById('result');
+      if (pins && result && result.parentNode) {
+        const panel = document.createElement('div');
+        panel.className = 'panel no-print';
+        panel.innerHTML = '<div class="panel__head"><span class="label">'
+          + 'Pin the keys you were told to expect</span></div>';
+        const body = document.createElement('div');
+        body.className = 'panel__body';
+        body.appendChild(pins);
+        panel.appendChild(body);
+        result.parentNode.insertBefore(panel, result.nextSibling);
+      }
+
       // The loader stays reachable — this file is still a working verifier — but stops being the
       // first thing you see, and never prints.
       const loader = document.getElementById('loader');
