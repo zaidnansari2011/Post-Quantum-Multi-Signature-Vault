@@ -218,22 +218,44 @@ a little per day until reverted:
 
 *Your effort:* one command if you keep the witness, four if you do not.
 
-### 2.5 Publish the witness fingerprint — `TODO` (added 2026-08-20)
+### 2.5 Publish the key fingerprints — `PARTLY DONE` (2026-08-21)
 
-*Why it's yours:* a fingerprint is only worth anything if it comes from you,
-through a channel that is not the log itself. Me writing it into the repo the
-log ships from is exactly the circularity it exists to break.
+*Why it's yours:* a fingerprint is only worth anything if it reaches the reader through a channel
+the log does not control. Me writing it into the repo the log ships from is exactly the circularity
+it exists to break — so the last step has to be you, in public, in advance.
 
-The deployed witness is **`witness-1`, ML-DSA-87, fingerprint
-`c79ad5683b2e9109`**. Put it in the dissertation, on the title slide, or on any
-page that is not served by Q-Vault. Anyone checking an export then pins it:
+Both values, recomputed from the keys the running services served on 2026-08-21:
+
+| | | |
+| --- | --- | --- |
+| **The log** | `951dbf99653347de` | ML-DSA-65, signs every checkpoint |
+| **The witness** | `c79ad5683b2e9109` | ML-DSA-87, `witness-1`, separate process and key |
+
+Each is `SHA-256(public key)` truncated to 16 hex characters — the same rule as
+`Key.public_fingerprint()`, so a value shown on a phone, on the website and in an export can be
+compared by eye.
+
+*What I've done:* published both on the **Q-Vault Crypto Inventory** page, which is hosted on
+claude.ai rather than served by Q-Vault, so it is already a channel independent of the thing it
+vouches for.
+
+*What's still yours, and it is the part that carries the argument:* **put the witness fingerprint
+on a slide, or write it on the board, before the demo starts.** Then when the verifier reports *the
+witness key is the one you expected*, you can point at a value that was visible before the file was
+opened. A fingerprint produced after the fact proves nothing; one committed to in advance is
+evidence. Thirty seconds of work, and it is the difference between demonstrating the mechanism and
+demonstrating the property.
+
+To use either:
 
 ```
-python -m qvault.verify decision.json --expect-witness c79ad5683b2e9109
+python -m qvault.verify decision-xxxxxxxx.qvault.html --expect-witness c79ad5683b2e9109
 ```
 
-Without that published value, "signed by a witness" only ever means "signed by
-*some* witness".
+or paste it into the offline record's **Pin the keys you were told to expect** field. A correct
+value adds a passing check; a wrong one turns the verdict red.
+
+*Your effort:* one line on a slide.
 
 ---
 
@@ -389,3 +411,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-08-06 | Added §4.2 — title-page details for the drafted synopsis. |
 | 2026-08-06 | §4.2 closed (details supplied and built in); split the title wording out as §4.3. |
 | 2026-08-20 | Pre-demo verification. Added §2.4 (demo-day Azure spend to revert) and §2.5 (publish the witness fingerprint). |
+| 2026-08-21 | §2.5 partly closed: both fingerprints published off-platform; the slide is still yours. |
