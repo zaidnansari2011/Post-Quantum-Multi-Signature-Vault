@@ -88,8 +88,8 @@ synchronisation while adding a babel, metro and CSS-interop layer to debug.
 ## Running it
 
 ```bash
-pnpm install --node-linker=hoisted   # hoisted: Metro and pnpm symlinks do not get along
-pnpm start                           # then scan the QR code with Expo Go
+pnpm install    # layout comes from pnpm-workspace.yaml; no flags needed
+pnpm start      # then scan the QR code with Expo Go
 ```
 
 It points at the deployed instance by default. Override without touching source via
