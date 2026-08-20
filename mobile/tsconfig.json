@@ -1,0 +1,15 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    // Imports carry explicit .ts extensions so the same modules run unmodified under Node's type
+    // stripping (tools/e2e_client.ts, tools/canonical_probe.ts) as well as through Metro. That is
+    // what lets the signing flows be tested against a real server instead of only on a handset.
+    "allowImportingTsExtensions": true,
+    "noUncheckedIndexedAccess": false,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}

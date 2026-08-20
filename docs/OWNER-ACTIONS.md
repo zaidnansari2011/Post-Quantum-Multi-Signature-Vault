@@ -184,6 +184,39 @@ up automatically. Commit the result.
 
 ---
 
+### 3.3 Run the mobile app on a real handset — `TODO`
+
+The Expo client in `mobile/` is written, typechecks, bundles, and its signing flows pass an
+end-to-end test against a real HTTP server. Three things remain that **only a phone can settle**:
+
+1. that the `crypto.getRandomValues` polyfill installs before `@noble/post-quantum` loads under
+   Hermes — it works in Node because Node has a `crypto` global and Hermes does not;
+2. how long ML-DSA key derivation and signing actually take on ARM under Hermes (6-27 ms on
+   desktop V8; the biometric prompt should absorb whatever multiple Hermes adds);
+3. that `expo-secure-store` and `expo-local-authentication` behave on your specific device.
+
+*Why it's yours:* it needs your hardware, your fingerprint, and your eyes on the result.
+
+*What I've prepared:* everything else. To run it:
+
+```bash
+cd mobile
+pnpm install --node-linker=hoisted
+pnpm start
+```
+
+Then scan the QR code with **Expo Go**. It points at the deployed Azure instance already, so the
+phone does not need to be on this machine's network. Sign in with your Q-Vault email and password
+once, at enrolment; after that the app never asks for it again.
+
+Expo Go supports both `expo-secure-store` and `expo-local-authentication`, so **Atharva's iPhone
+works without an Apple Developer account**. For an installable Android APK later:
+`eas build -p android`.
+
+Worth doing on the demo itself: have one person approve in the app and another approve in the web
+UI on the same decision. The decision screen shows a `device key` / `server key` chip per vote, so
+both custody models appear side by side on one record.
+
 ## 4. Submission and delivery
 
 ### 4.1 The dissertation — `TODO`

@@ -61,7 +61,7 @@ def main() -> int:
     with app.app_context():
         print("\n  REGISTERING TEAM")
         members = []
-        for name, email, is_admin in TEAM:
+        for name, email, _is_admin in TEAM:
             existing = User.query.filter_by(email=email.lower()).first()
             if existing is not None:
                 print(f"    {name:<18} already registered (id {existing.id}) — skipped")
@@ -108,7 +108,10 @@ def main() -> int:
                 "Decisions requiring the project team's joint approval.",
                 args.threshold,
             )
-            print(f"    created '{vault.name}' (id {vault.id}) at {args.threshold}-of-{len(members)}")
+            print(
+                f"    created '{vault.name}' (id {vault.id})"
+                f" at {args.threshold}-of-{len(members)}"
+            )
             for member in members[1:]:
                 vault_service.add_member(vault, member.email, "signer", actor_id=owner.id)
                 print(f"      + {member.display_name} (signer)")
