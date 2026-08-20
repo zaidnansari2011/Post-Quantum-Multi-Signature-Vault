@@ -16,10 +16,12 @@ calling the function.
 
 from __future__ import annotations
 
+import io
 import json
 import pathlib
 import subprocess
 import sys
+import zipfile
 
 import pytest
 
@@ -61,9 +63,7 @@ def decision(app, witnessed):
 
 
 def login(client, email="ada@e.com"):
-    return client.post(
-        "/login", data={"email": email, "password": PASSWORD}, follow_redirects=True
-    )
+    return client.post("/login", data={"email": email, "password": PASSWORD}, follow_redirects=True)
 
 
 # --------------------------------------------------------------------------------------------
@@ -72,18 +72,40 @@ def login(client, email="ada@e.com"):
 
 
 def test_a_member_can_download_the_bundle(app, client, decision):
+    """The export is a package now, but its contents are the same evidence as before.
+
+    The default download changed from a bare .json to a .zip carrying the bundle plus a readable
+    certificate and the offline verifier. What the bundle itself must contain did not change, so
+    those assertions are kept and simply read from inside the archive.
+    """
     login(client)
     resp = client.get(f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}/export")
 
     assert resp.status_code == 200
-    assert resp.mimetype == "application/json"
+    assert resp.mimetype == "application/zip"
     assert "attachment" in resp.headers["Content-Disposition"]
-    assert ".qvault.json" in resp.headers["Content-Disposition"]
+    assert ".qvault.zip" in resp.headers["Content-Disposition"]
 
-    bundle = json.loads(resp.get_data(as_text=True))
+    with zipfile.ZipFile(io.BytesIO(resp.data)) as archive:
+        bundle = json.loads(archive.read("decision.json"))
     assert bundle["decision"]["proposal_uuid"] == decision.proposal_uuid
     assert len(bundle["signatures"]) == 2
     assert bundle["log"]["witnesses"], "the export should carry a witness co-signature"
+
+
+def test_the_bare_bundle_is_still_downloadable_for_tooling(app, client, decision):
+    """?format=json keeps the pre-package contract for anything scripted against this route."""
+    login(client)
+    resp = client.get(
+        f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}/export?format=json"
+    )
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/json"
+    assert ".qvault.json" in resp.headers["Content-Disposition"]
+    assert json.loads(resp.get_data(as_text=True))["decision"]["proposal_uuid"] == (
+        decision.proposal_uuid
+    )
 
 
 def test_a_non_member_gets_404_rather_than_403(app, client, decision):
@@ -104,9 +126,9 @@ def test_exporting_requires_a_session(app, client, decision):
 
 def test_the_decision_page_shows_its_transparency_state(app, client, decision):
     login(client)
-    page = client.get(
-        f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}"
-    ).get_data(as_text=True)
+    page = client.get(f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}").get_data(
+        as_text=True
+    )
 
     assert "Witnessed" in page
     assert "Export for verification" in page
@@ -327,13 +349,19 @@ def test_the_cli_can_pin_the_witness_key(app, decision, tmp_path, witnessed):
 
     ok = subprocess.run(
         [sys.executable, "-m", "qvault.verify", str(path), "--expect-witness", fingerprint],
-        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=180,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
     )
     assert ok.returncode == 0, ok.stdout
 
     wrong = subprocess.run(
         [sys.executable, "-m", "qvault.verify", str(path), "--expect-witness", "deadbeefdeadbeef"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=180,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
     )
     assert wrong.returncode == 1
 
@@ -344,7 +372,10 @@ def test_the_cli_json_output_is_machine_readable(app, decision, tmp_path):
 
     result = subprocess.run(
         [sys.executable, "-m", "qvault.verify", str(path), "--json"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=180,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
     )
     report = json.loads(result.stdout)
     assert report["ok"] is True
@@ -360,7 +391,10 @@ def test_the_cli_warns_when_there_is_no_witness(app, decision, tmp_path):
 
     result = subprocess.run(
         [sys.executable, "-m", "qvault.verify", str(path), "--no-colour"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=180,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
     )
 
     assert result.returncode == 0

@@ -11,6 +11,7 @@ check it targets has actually been lost rather than that the fixture drifted.
 from __future__ import annotations
 
 import copy
+import io
 import json
 from base64 import b64decode, b64encode
 
@@ -518,3 +519,93 @@ def test_a_future_major_format_is_refused_rather_than_guessed(app, bundle):
     report = check(app, forged)
     assert not report.ok
     assert "understands" in report.summary
+
+
+# -- the downloadable package ----------------------------------------------------------------------
+
+
+def _approved(client, prefix="pkg"):
+    """A vault with one approval, logged in as the owner. Returns (vid, pid)."""
+    owner = auth_service.register_user(f"{prefix}-a@e.com", "Ada", "password-123")
+    vault = vault_service.create_vault(owner, "Finance approvals", "", 1)
+    proposal = proposal_service.create_proposal(
+        vault, owner, "Release funds", "Release 10,00,000 to Jio against invoice 4471."
+    )
+    approval_service.cast_vote(proposal, owner, "password-123", "approve")
+    db.session.commit()
+    client.post("/login", data={"email": f"{prefix}-a@e.com", "password": "password-123"})
+    return vault.id, proposal.proposal_uuid
+
+
+def test_export_delivers_a_readable_package_not_a_bare_json(app, client):
+    """A .json handed to a person reads as a debugging dump; the proof it carries is invisible.
+
+    The package keeps the bundle as the artefact that actually carries the evidence, and puts a
+    certificate and the offline verifier beside it so the recipient can read the decision and check
+    it without an account, an internet connection, or this server.
+    """
+    import io
+    import zipfile
+
+    vid, pid = _approved(client, "pkg1")
+    resp = client.get(f"/vaults/{vid}/proposals/{pid}/export")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/zip"
+    assert ".qvault.zip" in resp.headers["Content-Disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(resp.data)) as archive:
+        names = set(archive.namelist())
+        assert {"certificate.html", "decision.json", "verifier.html", "README.txt"} <= names
+
+        # The evidence must survive the repackaging unaltered.
+        bundle = json.loads(archive.read("decision.json"))
+        assert check(app, bundle).ok
+
+        # The certificate must state the decision, not merely reference it.
+        certificate = archive.read("certificate.html").decode("utf-8")
+        assert "Release 10,00,000 to Jio against invoice 4471." in certificate
+        assert bundle["decision"]["payload_hash"] in certificate
+
+        # The verifier has to be the real self-contained one, or the package promises what it
+        # cannot deliver: a check that needs no network.
+        assert len(archive.read("verifier.html")) > 50_000
+
+
+def test_the_package_can_be_fed_straight_back_to_the_verify_page(client):
+    """Whatever the product hands you must be what the verify page accepts.
+
+    Exporting a .zip while /verify/ took only .json would make the one file a user actually has
+    the one file the page refuses.
+    """
+    vid, pid = _approved(client, "pkg2")
+    package = client.get(f"/vaults/{vid}/proposals/{pid}/export").data
+
+    resp = client.post(
+        "/verify/",
+        data={"bundle": (io.BytesIO(package), "decision.qvault.zip")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Release 10,00,000 to Jio" in body or "verified" in body.lower()
+
+
+def test_the_raw_bundle_is_still_reachable_for_tooling(app, client):
+    """?format=json keeps the bare artefact available to anything scripted against it."""
+    vid, pid = _approved(client, "pkg3")
+    resp = client.get(f"/vaults/{vid}/proposals/{pid}/export?format=json")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/json"
+    assert check(app, json.loads(resp.data)).ok
+
+
+def test_the_bundle_records_which_signatures_were_device_held(app, client):
+    """Custody has to travel with the export or the recipient cannot tell the two models apart."""
+    vid, pid = _approved(client, "pkg4")
+    bundle = json.loads(client.get(f"/vaults/{vid}/proposals/{pid}/export?format=json").data)
+
+    assert [s["custody"] for s in bundle["signatures"]] == ["server"]
+    # Unknown-to-older-verifiers fields must not break verification.
+    assert check(app, bundle).ok
