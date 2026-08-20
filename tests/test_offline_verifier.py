@@ -492,3 +492,37 @@ def test_the_generic_verifier_is_unchanged_by_all_this(page):
     assert page.locator("#pagetitle").is_visible()
     assert page.locator(".banner").count() == 0
     assert page.evaluate("typeof window.qvaultEmbedded") == "undefined"
+
+
+def test_pinning_a_fingerprint_is_reachable_without_hunting_for_it(app, browser, document, bundle):
+    """The pins were once folded inside a "check a different file" disclosure, where nobody would
+    find them. Entering a fingerprint obtained from somewhere other than this file is the strongest
+    check the page offers -- it is what separates "signed by a log" from "signed by THE log" -- so
+    it has to be visible without opening anything."""
+    p, context, _ = _open(browser, document)
+    try:
+        assert p.locator("#pinlog").is_visible()
+        assert p.locator("#pinwit").is_visible()
+
+        witness = bundle["log"]["witnesses"][0]
+        expected = in_python(app, bundle).fingerprints["witnesses"][0]["fingerprint"]
+
+        p.fill("#pinwit", expected)
+        p.dispatch_event("#pinwit", "change")
+        p.wait_for_function(
+            "document.querySelectorAll('.checks li').length > 11", timeout=30_000
+        )
+        titles = p.locator(".checks li .ctitle").all_inner_texts()
+        assert "The witness key is the one you expected" in titles
+        assert p.locator(".banner__title").first.inner_text().startswith("Verified")
+        assert witness["witness"]  # the co-signature really is in the bundle under test
+
+        # ...and a wrong fingerprint must flip it, or the field is theatre.
+        p.fill("#pinwit", "0000000000000000")
+        p.dispatch_event("#pinwit", "change")
+        p.wait_for_function(
+            "document.querySelector('.banner').classList.contains('bad')", timeout=30_000
+        )
+        assert p.locator(".banner__title").first.inner_text().startswith("NOT verified")
+    finally:
+        context.close()
