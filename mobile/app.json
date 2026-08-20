@@ -8,7 +8,10 @@
     "runtimeVersion": "1",
     "updates": {
       "url": "https://u.expo.dev/abfa50c5-38c5-4fd7-a01d-7c0d0dd9c028",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "preview"
+      }
     },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -56,7 +59,9 @@
           "faceIDPermission": "Q-Vault uses Face ID to authorise a signature with the key held on this device."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withReleaseSigning",
+      "./plugins/withAndroidBuildTuning"
     ]
   }
 }

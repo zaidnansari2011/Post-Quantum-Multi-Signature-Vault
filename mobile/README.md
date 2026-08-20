@@ -100,6 +100,51 @@ Apple Developer account can run this as-is -- with one exception: **Face ID does
 Go**, because the usage description belongs to the Expo Go binary rather than to this app. Touch ID
 and Android fingerprint are fine. A device or release build is needed to exercise Face ID.
 
+## Building a release APK locally
+
+Gradle on this machine, rather than the EAS queue:
+
+```powershell
+npx expo prebuild --platform android --clean
+cd android
+.\gradlew.bat assembleRelease
+# -> android/app/build/outputs/apk/release/app-release.apk
+```
+
+Two things make the local build equivalent to a cloud one rather than a toy:
+
+**It is signed with a real key.** Expo's template signs the *release* build type with
+`signingConfigs.debug`, whose keystore ships inside the template and is therefore identical in every
+Expo project. [`plugins/withReleaseSigning.js`](plugins/withReleaseSigning.js) replaces that with a
+4096-bit RSA key from `credentials/` (gitignored). It is a config plugin rather than a hand edit
+because `prebuild --clean` wipes `android/`. It **no-ops when `credentials/` is absent**, so EAS
+Build still works with its own managed credentials.
+
+**It knows its update channel.** EAS Build injects the channel from `eas.json`; a plain Gradle build
+does not, so the APK would ask the update server for no channel and receive nothing. `app.json` sets
+it explicitly:
+
+```json
+"updates": { "requestHeaders": { "expo-channel-name": "preview" } }
+```
+
+which `@expo/config-plugins` stringifies into the manifest as
+`expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY`, where `UpdatesConfiguration.kt`
+reads it. Baked at build time — changing channel needs a new APK.
+
+**The keystore is the app's identity for its lifetime.** Back up `credentials/` somewhere outside
+this repo. A different key means Android refuses to install over an existing copy, and the ML-DSA
+seed in that install's keychain becomes unreachable — every enrolled device has to enrol again.
+A locally-signed APK and an EAS-signed one are two separate lineages: pick one and stay on it.
+
+Verify a build without a phone — substitute your installed build-tools version:
+
+```powershell
+$bt = "$env:LOCALAPPDATA/Android/Sdk/build-tools/36.0.0"
+& "$bt/apksigner.bat" verify --print-certs app-release.apk   # which certificate signed it
+& "$bt/aapt2.exe" dump badging app-release.apk               # package, version, ABI, permissions
+```
+
 Note the deployed server runs with `min-replicas 0`, so the first request after an idle period pays
 a cold start of roughly forty seconds. The client's timeout is set to 75s for that reason.
 
