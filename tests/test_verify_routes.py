@@ -413,13 +413,33 @@ def test_the_cli_warns_when_there_is_no_witness(app, decision, tmp_path):
 # --------------------------------------------------------------------------------------------
 
 
-def test_the_file_picker_offers_zip_as_well_as_json(app, client):
-    """The `accept` attribute is part of the contract, not decoration."""
+def test_the_file_picker_offers_every_format_the_export_produces(app, client, decision):
+    """The `accept` attribute is part of the contract, and it has now been wrong twice.
+
+    First it listed only .json while the download was a .zip; then only .zip/.json while the
+    download had become .html. Both times the route accepted the file perfectly well and the OS
+    file dialog greyed it out, so the page appeared to refuse the user's own evidence -- and both
+    times every route-level test passed, because posting to the route bypasses the picker.
+
+    So this asks the export what it actually produces rather than hardcoding a list. A fourth
+    format cannot be added without this failing.
+    """
+    login(client)
+    produced = set()
+    for query in ("", "?format=zip", "?format=json"):
+        resp = client.get(
+            f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}/export{query}"
+        )
+        name = resp.headers["Content-Disposition"].split("filename=")[-1].strip('"')
+        produced.add("." + name.rsplit(".", 1)[-1])
+    assert produced == {".html", ".zip", ".json"}, produced
+
     body = client.get("/verify/").get_data(as_text=True)
     accept = re.search(r'name="bundle"[^>]*accept="([^"]+)"', body, re.S)
     assert accept, "the bundle input must declare what it accepts"
-    assert ".zip" in accept.group(1)
-    assert ".json" in accept.group(1)
+    listed = {part.strip() for part in accept.group(1).split(",")}
+    missing = produced - listed
+    assert not missing, f"the file picker hides {sorted(missing)}, which the export produces"
 
 
 def test_the_whole_decision_package_verifies_through_the_web_form(app, client, decision):

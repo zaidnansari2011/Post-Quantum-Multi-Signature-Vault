@@ -157,7 +157,7 @@
         <strong>Drop a .qvault.json file here</strong>
         or click to choose one
       </div>
-      <input type="file" id="file" accept=".json,application/json" hidden>
+      <input type="file" id="file" accept=".html,.json,text/html,application/json" hidden>
       <div class="pins" style="margin-top:.8rem">
         <div>
           <label for="pinlog">Expected log key fingerprint</label>
@@ -6327,12 +6327,32 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
   const drop = document.getElementById('drop');
   const file = document.getElementById('file');
 
+  // A dropped file may be a self-verifying decision record rather than a bare bundle -- that is
+  // what the export hands people by default, so refusing it here would make this page reject the
+  // product's own artefact. Mirrors qvault/verify/reader.py, and like it, detects by content
+  // rather than by filename.
+  const SLOT = /<script[^>]*id=["']qvault-decision["'][^>]*>([\s\S]*?)<\/script\s*>/i;
+
+  function unwrap(text) {
+    const match = SLOT.exec(text);
+    if (!match) return text;
+    const payload = match[1].trim();
+    if (!payload) {
+      throw new Error('that file is a blank Q-Vault verifier — it carries no decision of its own');
+    }
+    return payload;
+  }
+
   function handle(text) {
     let bundle;
     try {
-      bundle = JSON.parse(text);
+      bundle = JSON.parse(unwrap(text));
     } catch (err) {
-      render({ ok: false, summary: 'That is not valid JSON: ' + err.message,
+      // unwrap() raises its own already-explained error; only a parse failure needs the prefix.
+      const why = err instanceof SyntaxError
+        ? 'That is not valid JSON: ' + err.message
+        : err.message;
+      render({ ok: false, summary: why,
                checks: [], facts: {}, fingerprints: { log: null, witnesses: [] } });
       return;
     }

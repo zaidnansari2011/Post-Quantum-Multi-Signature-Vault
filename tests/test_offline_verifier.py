@@ -415,14 +415,15 @@ def document(app, bundle, tmp_path):
     return path
 
 
-def _open(browser, path):
+def _open(browser, path, *, expect_banner=True):
     context = browser.new_context()
     p = context.new_page()
     errors: list[str] = []
     p.on("pageerror", lambda e: errors.append(str(e)))
     p.goto(path.as_uri())
     p.wait_for_function("typeof window.qvaultVerify === 'function'", timeout=30_000)
-    p.wait_for_function("document.querySelector('.banner') !== null", timeout=30_000)
+    if expect_banner:
+        p.wait_for_function("document.querySelector('.banner') !== null", timeout=30_000)
     return p, context, errors
 
 
@@ -524,5 +525,38 @@ def test_pinning_a_fingerprint_is_reachable_without_hunting_for_it(app, browser,
             "document.querySelector('.banner').classList.contains('bad')", timeout=30_000
         )
         assert p.locator(".banner__title").first.inner_text().startswith("NOT verified")
+    finally:
+        context.close()
+
+
+def test_the_generic_verifier_accepts_a_decision_record_too(app, browser, document, bundle):
+    """Dropping the product's own default artefact on its own verifier must work.
+
+    The .html record IS what the export hands people, so a verifier that took only bare .json
+    would be refusing the one file its user is most likely to have -- the same defect that hit
+    /verify's file picker twice.
+    """
+    p, context, _ = _open(browser, VERIFIER, expect_banner=False)
+    try:
+        # The real control, not a hook: Playwright can set files on a hidden input, so this is
+        # the same code path a person clicking the drop zone takes.
+        p.set_input_files("#file", str(document))
+        p.wait_for_function("document.querySelector('.banner') !== null", timeout=30_000)
+        assert p.locator(".banner__title").first.inner_text().startswith("Verified")
+        assert p.locator(".checks li.is-bad").count() == 0
+    finally:
+        context.close()
+
+
+def test_dropping_the_blank_verifier_on_itself_explains_rather_than_confuses(app, browser):
+    """An easy mistake to make, and "not valid JSON" would be a baffling thing to read
+    about an HTML file that is plainly not JSON and was never meant to be."""
+    p, context, _ = _open(browser, VERIFIER, expect_banner=False)
+    try:
+        p.set_input_files("#file", str(VERIFIER))
+        p.wait_for_function("document.querySelector('.banner') !== null", timeout=30_000)
+        summary = p.locator(".banner__title").first.inner_text()
+        assert "carries no decision" in summary
+        assert "not valid JSON" not in summary
     finally:
         context.close()
