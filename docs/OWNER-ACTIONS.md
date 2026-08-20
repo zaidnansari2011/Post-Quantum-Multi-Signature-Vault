@@ -183,6 +183,60 @@ including it now buys nothing and puts `POST_NOTIFICATIONS` on a signing app's m
 feature that does not exist. If you want "a decision is waiting", `refetchInterval` on the inbox
 query does it with zero native surface and ships over the air.
 
+### 2.4 Post-demo: turn the demo-day Azure spend back down — `TODO` (added 2026-08-20)
+
+*Why it's yours:* it costs money, and only you can decide when the demo is over.
+
+Two changes were made on 2026-08-20 to de-risk the 2026-08-21 demo, and both cost
+a little per day until reverted:
+
+1. **`qvault` min-replicas 0 -> 1.** Removes the ~40 s cold start on the first
+   click. Revert with:
+
+   ```
+   az containerapp update -n qvault -g qvault-rg --min-replicas 0
+   ```
+
+2. **A witness is now deployed** as a second Container App, `qvault-witness`,
+   running the *same image* with a command override (`python -m witness`). Its
+   state and keypair live on an Azure Files share so its identity survives a
+   restart -- `qvaultwitness260820` / share `witness-data`, mounted with
+   `nobrl` because SQLite cannot take byte-range locks over SMB.
+
+   `WITNESS_URL`, `WITNESS_TIMEOUT_S=15` and `WITNESS_SYNC_SECONDS=60` are set
+   on `qvault`. Keep this if you want exports to carry a co-signature; it is
+   what turns the last verifier check from NOT-APPLICABLE into PASS.
+
+   To tear it down entirely:
+
+   ```
+   az containerapp delete -n qvault-witness -g qvault-rg --yes
+   az containerapp env storage remove -n qvault-env -g qvault-rg --storage-name witnessfiles --yes
+   az storage account delete -n qvaultwitness260820 -g qvault-rg --yes
+   az containerapp update -n qvault -g qvault-rg --remove-env-vars WITNESS_URL WITNESS_TIMEOUT_S WITNESS_SYNC_SECONDS
+   ```
+
+*Your effort:* one command if you keep the witness, four if you do not.
+
+### 2.5 Publish the witness fingerprint — `TODO` (added 2026-08-20)
+
+*Why it's yours:* a fingerprint is only worth anything if it comes from you,
+through a channel that is not the log itself. Me writing it into the repo the
+log ships from is exactly the circularity it exists to break.
+
+The deployed witness is **`witness-1`, ML-DSA-87, fingerprint
+`c79ad5683b2e9109`**. Put it in the dissertation, on the title slide, or on any
+page that is not served by Q-Vault. Anyone checking an export then pins it:
+
+```
+python -m qvault.verify decision.json --expect-witness c79ad5683b2e9109
+```
+
+Without that published value, "signed by a witness" only ever means "signed by
+*some* witness".
+
+---
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
@@ -334,3 +388,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-08-04 | Created. Seeded from the state after Phase 8. |
 | 2026-08-06 | Added §4.2 — title-page details for the drafted synopsis. |
 | 2026-08-06 | §4.2 closed (details supplied and built in); split the title wording out as §4.3. |
+| 2026-08-20 | Pre-demo verification. Added §2.4 (demo-day Azure spend to revert) and §2.5 (publish the witness fingerprint). |

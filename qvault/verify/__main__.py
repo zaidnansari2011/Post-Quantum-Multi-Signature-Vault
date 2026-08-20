@@ -12,8 +12,10 @@ log you meant".
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
+import zipfile
 from pathlib import Path
 
 from qvault.crypto import build_registry
@@ -73,7 +75,9 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m qvault.verify",
         description="Verify a Q-Vault decision bundle offline. Contacts nothing.",
     )
-    parser.add_argument("bundle", type=Path, help="the exported .qvault.json file")
+    parser.add_argument(
+        "bundle", type=Path, help="the exported .qvault.zip package, or a bare decision.json"
+    )
     parser.add_argument(
         "--expect-log",
         metavar="FINGERPRINT",
@@ -90,11 +94,30 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+        raw = args.bundle.read_bytes()
     except OSError as exc:
         print(f"cannot read {args.bundle}: {exc}", file=sys.stderr)
         return 2
-    except json.JSONDecodeError as exc:
+
+    # Accept the decision package as well as the bare bundle. The export produces a .zip and the
+    # web page's own footer tells people to run this command against what they downloaded, so a
+    # CLI that took only the loose .json would be advertising a path that does not work.
+    # Detected by magic bytes rather than by suffix: a renamed file is still a package.
+    if raw[:4] == b"PK\x03\x04":
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                names = [n for n in archive.namelist() if n.endswith("decision.json")]
+                if not names:
+                    print(f"{args.bundle} contains no decision.json", file=sys.stderr)
+                    return 2
+                raw = archive.read(names[0])
+        except (zipfile.BadZipFile, KeyError) as exc:
+            print(f"{args.bundle} could not be opened: {exc}", file=sys.stderr)
+            return 2
+
+    try:
+        bundle = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         print(f"{args.bundle} is not valid JSON: {exc}", file=sys.stderr)
         return 2
 

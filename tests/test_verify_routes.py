@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import zipfile
@@ -399,3 +400,101 @@ def test_the_cli_warns_when_there_is_no_witness(app, decision, tmp_path):
 
     assert result.returncode == 0
     assert "no witness co-signature" in result.stdout
+
+
+# --------------------------------------------------------------------------------------------
+# The package, not just the bundle.
+#
+# The export hands people a .zip. Every route that says "give us your exported decision" must
+# therefore take one, and the file picker must SHOW one -- an `accept` filter that lists only
+# .json makes the single file the product produces invisible in the chooser, which reads to a
+# user as "this page refuses my file". That was a real defect: the route already unwrapped the
+# package while the input hid it.
+# --------------------------------------------------------------------------------------------
+
+
+def test_the_file_picker_offers_zip_as_well_as_json(app, client):
+    """The `accept` attribute is part of the contract, not decoration."""
+    body = client.get("/verify/").get_data(as_text=True)
+    accept = re.search(r'name="bundle"[^>]*accept="([^"]+)"', body, re.S)
+    assert accept, "the bundle input must declare what it accepts"
+    assert ".zip" in accept.group(1)
+    assert ".json" in accept.group(1)
+
+
+def test_the_whole_decision_package_verifies_through_the_web_form(app, client, decision):
+    """Upload the .zip exactly as downloaded -- no extraction step."""
+    bundle = export_service.build_decision_bundle(decision)
+    package = export_service.build_decision_package(bundle, certificate_html="<html></html>")
+
+    resp = client.post(
+        "/verify/",
+        data={"bundle": (io.BytesIO(package), "decision-abcd1234.qvault.zip")},
+        content_type="multipart/form-data",
+    )
+    body = resp.get_data(as_text=True)
+
+    assert resp.status_code == 200
+    assert "Verified" in body
+    assert "NOT verified" not in body
+    assert "Wire to escrow" in body
+
+
+def test_the_cli_accepts_the_package_as_well_as_the_bundle(app, decision, tmp_path):
+    """The verify page's own footer tells people to run this against what they downloaded."""
+    bundle = export_service.build_decision_bundle(decision)
+    package = export_service.build_decision_package(bundle, certificate_html="<html></html>")
+    path = tmp_path / "decision-abcd1234.qvault.zip"
+    path.write_bytes(package)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "qvault.verify", str(path), "--json"],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["ok"] is True
+    assert report["facts"]["title"] == "Wire to escrow"
+
+
+def test_the_cli_detects_a_package_by_its_bytes_not_its_name(app, decision, tmp_path):
+    """A renamed package is still a package; suffix-sniffing would reject it."""
+    bundle = export_service.build_decision_bundle(decision)
+    package = export_service.build_decision_package(bundle, certificate_html="<html></html>")
+    path = tmp_path / "downloaded-without-an-extension"
+    path.write_bytes(package)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "qvault.verify", str(path), "--json"],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["ok"] is True
+
+
+def test_a_zip_without_a_decision_gets_an_explanation_not_a_traceback(tmp_path):
+    path = tmp_path / "holiday-photos.zip"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("notes.txt", "nothing here")
+    path.write_bytes(buf.getvalue())
+
+    result = subprocess.run(
+        [sys.executable, "-m", "qvault.verify", str(path)],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        timeout=180,
+    )
+
+    assert result.returncode == 2
+    assert "no decision.json" in result.stderr
+    assert "Traceback" not in result.stderr
