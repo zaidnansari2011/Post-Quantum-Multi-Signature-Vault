@@ -1,3 +1,13 @@
+# pnpm 10+ reads settings from HERE, not from .npmrc. `node-linker=hoisted` in .npmrc is silently
+# ignored by pnpm 11 (`pnpm config get node-linker` -> undefined), which meant the layout every test
+# ran against -- flat, because the flag was passed by hand -- was NOT the layout a clean clone or an
+# EAS build would produce. Declaring it here makes `pnpm install` reproduce it with no flag.
+#
+# Hoisted rather than the default isolated store: Metro resolves pnpm's symlinked layout
+# inconsistently, and a bundler that cannot find a module fails at build time with a path, not a
+# cause.
+nodeLinker: hoisted
+
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.17'
   - '@expo/fingerprint@0.20.9'

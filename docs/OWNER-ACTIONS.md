@@ -252,7 +252,7 @@ end-to-end test against a real HTTP server. Three things remain that **only a ph
 
 ```bash
 cd mobile
-pnpm install --node-linker=hoisted
+pnpm install
 pnpm start
 ```
 

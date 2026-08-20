@@ -95,9 +95,9 @@ jobs:
 
       - name: Install mobile dependencies
         working-directory: mobile
-        # Hoisted: Metro and pnpm's symlinked layout do not get along, and the same layout is what
-        # the pytest harnesses resolve @noble/post-quantum through.
-        run: pnpm install --node-linker=hoisted --frozen-lockfile
+        # No linker flag: pnpm-workspace.yaml declares nodeLinker: hoisted, so a clean clone, this
+        # job, and an EAS build all produce the same flat layout the tests were written against.
+        run: pnpm install --frozen-lockfile
 
       - name: Type check
         working-directory: mobile
