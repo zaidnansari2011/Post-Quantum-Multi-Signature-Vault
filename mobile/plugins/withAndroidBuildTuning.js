@@ -22,7 +22,9 @@ const SETTINGS = {
   reactNativeArchitectures: ARCHITECTURES,
   // Explicit rather than inherited: the default grows until the OS refuses, which is exactly the
   // failure seen. Metaspace is separate from the heap and the Kotlin compiler is hungry for it.
-  'org.gradle.jvmargs': '-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8',
+  // Modest on purpose. The crash was a NATIVE allocation failure (clang/ninja), not a Java heap
+  // exhaustion -- so a smaller JVM reservation leaves MORE room for the C++ compile, not less.
+  'org.gradle.jvmargs': '-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8',
   // Parallelism multiplies peak memory by the worker count, which is the thing under pressure.
   'org.gradle.workers.max': '2',
 };

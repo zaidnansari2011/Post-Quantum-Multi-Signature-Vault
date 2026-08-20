@@ -24,7 +24,7 @@
     {# Rule 3: the one figure on this screen. A decision is a count of people who agreed. #}
     <div class="head__figure {% if approvals >= proposal.required_m %}head__figure--sealed{% endif %}">
       <b>{{ approvals }}/{{ proposal.required_m }}</b>
-      <span>Approvals</span>
+      <span>Approvals{% if device_signed %} &middot; {{ device_signed }} device-held{% endif %}</span>
     </div>
     {{ tally(approvals, proposal.required_m, proposal.required_n) }}
     {# The hand-off to the offline verifier is the closing move of the whole demonstration. It
@@ -52,7 +52,7 @@
 </div>
 {% endif %}
 
-{# `split` not `split--wide`: the signatures table carries seven columns of cryptographic metadata
+{# `split` not `split--wide`: the signatures table carries eight columns of cryptographic metadata
    and a 25rem sidebar clipped the last one off the screen. #}
 <div class="split">
   <div class="stack">
@@ -98,7 +98,7 @@
       <div class="scroll-x">
         <table class="dt">
           <thead>
-            <tr><th style="width:24%">Signer</th><th>Decision</th><th>Algorithm</th>
+            <tr><th style="width:22%">Signer</th><th>Decision</th><th>Custody</th><th>Algorithm</th>
                 <th class="num">Bytes</th><th>Fingerprint</th><th>Verified</th>
                 <th class="num" style="width:5.5rem">Signed</th></tr>
           </thead>
@@ -112,6 +112,14 @@
               <td>
                 {% if v.sig.decision == 'approve' %}<span class="chip chip--sealed">Approve</span>
                 {% else %}<span class="chip chip--broken">Reject</span>{% endif %}
+              </td>
+              {# Sealed for device, neutral for server. Not decoration: ADR-0016 records that a
+                 server-held key gives attributable audit but NOT third-party non-repudiation,
+                 because this process can unwrap it. Server custody is ordinary, not a failure,
+                 so it gets no status colour either way. #}
+              <td>
+                {% if v.sig.custody == 'device' %}<span class="chip chip--sealed">Device</span>
+                {% else %}<span class="tag">Server</span>{% endif %}
               </td>
               <td><span class="tag">{{ v.sig.alg_id }}</span></td>
               <td class="num">{{ v.sig.signature|length }}</td>
