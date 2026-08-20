@@ -19,6 +19,7 @@ import pytest
 
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
+from qvault.models.proposal import Proposal
 from qvault.services import (
     approval_service,
     auth_service,
@@ -27,7 +28,7 @@ from qvault.services import (
     proposal_service,
     vault_service,
 )
-from qvault.verify import verify_bundle
+from qvault.verify import load_bundle, verify_bundle
 
 PASSWORD = "password-123"
 
@@ -524,13 +525,11 @@ def test_a_future_major_format_is_refused_rather_than_guessed(app, bundle):
 # -- the downloadable package ----------------------------------------------------------------------
 
 
-def _approved(client, prefix="pkg"):
+def _approved(client, prefix="pkg", action="Release 10,00,000 to Jio against invoice 4471."):
     """A vault with one approval, logged in as the owner. Returns (vid, pid)."""
     owner = auth_service.register_user(f"{prefix}-a@e.com", "Ada", "password-123")
     vault = vault_service.create_vault(owner, "Finance approvals", "", 1)
-    proposal = proposal_service.create_proposal(
-        vault, owner, "Release funds", "Release 10,00,000 to Jio against invoice 4471."
-    )
+    proposal = proposal_service.create_proposal(vault, owner, "Release funds", action)
     approval_service.cast_vote(proposal, owner, "password-123", "approve")
     db.session.commit()
     client.post("/login", data={"email": f"{prefix}-a@e.com", "password": "password-123"})
@@ -548,7 +547,7 @@ def test_export_delivers_a_readable_package_not_a_bare_json(app, client):
     import zipfile
 
     vid, pid = _approved(client, "pkg1")
-    resp = client.get(f"/vaults/{vid}/proposals/{pid}/export")
+    resp = client.get(f"/vaults/{vid}/proposals/{pid}/export?format=zip")
 
     assert resp.status_code == 200
     assert resp.mimetype == "application/zip"
@@ -572,18 +571,28 @@ def test_export_delivers_a_readable_package_not_a_bare_json(app, client):
         assert len(archive.read("verifier.html")) > 50_000
 
 
-def test_the_package_can_be_fed_straight_back_to_the_verify_page(client):
+@pytest.mark.parametrize(
+    ("query", "filename"),
+    [
+        ("", "decision.qvault.html"),
+        ("?format=zip", "decision.qvault.zip"),
+        ("?format=json", "decision.qvault.json"),
+    ],
+)
+def test_every_artefact_the_export_produces_is_accepted_by_the_verify_page(client, query, filename):
     """Whatever the product hands you must be what the verify page accepts.
 
-    Exporting a .zip while /verify/ took only .json would make the one file a user actually has
-    the one file the page refuses.
+    Parametrised over all three formats on purpose. This has broken twice, both times because the
+    export changed shape and one reader was left behind -- and both times the symptom was that the
+    single file a user actually possessed was the single file the page would not take. Adding a
+    format without adding it here should fail.
     """
-    vid, pid = _approved(client, "pkg2")
-    package = client.get(f"/vaults/{vid}/proposals/{pid}/export").data
+    vid, pid = _approved(client, "pkg2" + query)
+    artefact = client.get(f"/vaults/{vid}/proposals/{pid}/export{query}").data
 
     resp = client.post(
         "/verify/",
-        data={"bundle": (io.BytesIO(package), "decision.qvault.zip")},
+        data={"bundle": (io.BytesIO(artefact), filename)},
         content_type="multipart/form-data",
     )
     assert resp.status_code == 200
@@ -609,3 +618,88 @@ def test_the_bundle_records_which_signatures_were_device_held(app, client):
     assert [s["custody"] for s in bundle["signatures"]] == ["server"]
     # Unknown-to-older-verifiers fields must not break verification.
     assert check(app, bundle).ok
+
+
+# --------------------------------------------------------------------------------------------
+# The self-verifying decision record.
+#
+# The default export is one HTML file that is simultaneously the readable record, the evidence,
+# and the verifier. It is not a second implementation: it is verifier.html with the bundle
+# substituted into its one empty slot, so there stays exactly one set of checks to keep honest.
+# --------------------------------------------------------------------------------------------
+
+
+def test_the_default_export_is_a_self_verifying_document(app, client):
+    vid, pid = _approved(client, "doc1")
+    resp = client.get(f"/vaults/{vid}/proposals/{pid}/export")
+
+    assert resp.status_code == 200
+    assert resp.mimetype == "text/html"
+    assert ".qvault.html" in resp.headers["Content-Disposition"]
+
+    html = resp.get_data(as_text=True)
+    # It must carry the verifier, not merely link to one -- otherwise checking it needs us.
+    assert len(html) > 50_000
+    assert "globalThis.PQC" in html or "PQC" in html
+
+    # And the evidence must survive the embedding unaltered.
+    bundle = load_bundle(resp.data)
+    assert check(app, bundle).ok
+    assert bundle["decision"]["proposal_uuid"] == pid
+
+
+def test_the_document_states_the_decision_it_carries(app, client):
+    """A record that only a machine can read is not a record. The action text must be in there."""
+    vid, pid = _approved(client, "doc2")
+    html = client.get(f"/vaults/{vid}/proposals/{pid}/export").get_data(as_text=True)
+    bundle = load_bundle(html.encode("utf-8"))
+
+    assert bundle["decision"]["action_text"] == "Release 10,00,000 to Jio against invoice 4471."
+    assert bundle["decision"]["payload_hash"] in html.replace("\u003c", "<")
+
+
+def test_a_decision_cannot_inject_script_into_its_own_record(app, client):
+    """``action_text`` is attacker-controlled and lands inside a <script> tag.
+
+    A proposal whose text contained a literal ``</script>`` would close the element early, turn the
+    rest of the bundle into markup, and give anybody who can raise a proposal script execution in
+    every reader's browser -- in a file whose entire purpose is being opened by strangers.
+    """
+    hostile = "</script><script>window.PWNED=1</script><img src=x onerror=alert(1)>"
+    vid, pid = _approved(client, "doc3", action=hostile)
+    html = client.get(f"/vaults/{vid}/proposals/{pid}/export").get_data(as_text=True)
+
+    # The invariant that actually matters: the embedded payload contains NO raw angle brackets at
+    # all, so nothing inside it can ever be parsed as markup no matter what a proposal says. (The
+    # bare text "onerror=alert(1)" surviving is harmless -- an attribute cannot fire without a tag,
+    # and there is no tag.)
+    after_slot = html.split('<script id="qvault-decision" type="application/json">', 1)[1]
+    payload = after_slot.split("</script>", 1)[0]
+    assert "<" not in payload and ">" not in payload
+
+    # The slot is therefore still a single element carrying the whole bundle.
+    assert json.loads(payload)["format"] == "qvault.decision/1"
+    assert "<script>window.PWNED" not in html
+
+    # ...and it decodes back to exactly the original text, so the payload hash still checks out.
+    bundle = load_bundle(html.encode("utf-8"))
+    assert bundle["decision"]["action_text"] == hostile
+    assert check(app, bundle).ok
+
+
+def test_building_a_document_fails_loudly_if_the_slot_is_gone(app, client, monkeypatch, tmp_path):
+    """A verifier.html rebuilt without the slot would otherwise ship a record carrying no record.
+
+    Silently returning the blank verifier is the dangerous outcome: it looks like a working file
+    and proves nothing, so the failure has to be at build time and loud.
+    """
+    vid, pid = _approved(client, "doc4")
+    proposal = Proposal.query.filter_by(proposal_uuid=pid).first()
+    bundle = export_service.build_decision_bundle(proposal, sync_witness=False)
+
+    stub = tmp_path / "verifier.html"
+    stub.write_text("<html>rebuilt without the slot</html>", encoding="utf-8")
+    monkeypatch.setattr(export_service, "_VERIFIER_PATH", stub)
+
+    with pytest.raises(RuntimeError, match="no decision slot"):
+        export_service.build_decision_document(bundle)

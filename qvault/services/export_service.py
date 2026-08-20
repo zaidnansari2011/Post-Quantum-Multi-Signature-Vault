@@ -217,6 +217,62 @@ def bundle_filename(proposal: Proposal) -> str:
     return f"decision-{stem}.qvault.json"
 
 
+# -- the self-verifying decision record -----------------------------------------------------------
+
+#: The empty slot in ``verifier.html`` that a bundle is substituted into. Matching on the exact tag
+#: rather than a comment marker means the generic verifier and the document are provably the same
+#: file with one difference, and a build that dropped the slot fails loudly here.
+_DECISION_SLOT = '<script id="qvault-decision" type="application/json"></script>'
+
+#: Module level so a test can point it at a stub. The guard in ``build_decision_document`` is the
+#: only thing standing between a mis-generated verifier and a "decision record" carrying no
+#: decision, so it needs to be exercised rather than assumed.
+_VERIFIER_PATH = pathlib.Path(__file__).resolve().parent.parent / "static" / "verifier.html"
+
+
+def _embeddable_json(bundle: dict) -> str:
+    """JSON safe to place inside a ``<script>`` element.
+
+    ``action_text`` and ``title`` are user-supplied and end up inside an HTML document, so a
+    decision whose text contained ``</script>`` would close the tag early — turning the rest of
+    the bundle into markup, and handing anyone who can raise a proposal script execution in every
+    reader's browser. Escaping ``<``, ``>`` and ``&`` as ``\\uXXXX`` makes that impossible while
+    parsing back to exactly the same string, so the verifier still recomputes the same hash.
+    """
+    text = json.dumps(bundle, indent=2, sort_keys=True, ensure_ascii=False)
+    return text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+def build_decision_document(bundle: dict) -> bytes:
+    """One HTML file that is the readable record, the evidence, and the verifier at once.
+
+    A zip made a person extract three files before they could do anything; a bare .json assumed
+    they already had a verifier, which is precisely the assumption an outsider does not get to
+    make. This is the same ``verifier.html`` shipped everywhere else with the bundle substituted
+    into its empty slot: open it and it renders the decision and re-checks every signature against
+    it, offline, with no extraction step and nothing to install.
+
+    Deliberately NOT a second implementation. The document and the generic verifier are the same
+    bytes apart from the slot, so there is one set of checks to keep honest rather than two.
+    """
+    html = _VERIFIER_PATH.read_text(encoding="utf-8")
+    if _DECISION_SLOT not in html:
+        raise RuntimeError(
+            "verifier.html has no decision slot — run scripts/build_verifier.py, and check that "
+            "verifier.src.html still contains the empty qvault-decision script tag."
+        )
+    filled = (
+        f'<script id="qvault-decision" type="application/json">\n'
+        f"{_embeddable_json(bundle)}\n</script>"
+    )
+    return html.replace(_DECISION_SLOT, filled, 1).encode("utf-8")
+
+
+def document_filename(proposal: Proposal) -> str:
+    stem = proposal.proposal_uuid.split("-")[0]
+    return f"decision-{stem}.qvault.html"
+
+
 # -- the downloadable package ---------------------------------------------------------------------
 
 _README = """Q-Vault decision package

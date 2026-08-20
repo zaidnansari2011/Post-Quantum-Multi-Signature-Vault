@@ -283,15 +283,32 @@ def export_proposal(vid: int, pid: str):
 
     bundle = export_service.build_decision_bundle(proposal)
 
-    # ?format=json still yields the bare bundle. The package is the better thing to hand a person,
-    # but the raw artefact is what the verifier consumes and what tooling should be able to fetch.
-    if request.args.get("format") == "json":
+    # Three formats, one per audience, and the default is the one a person receives:
+    #
+    #   (default)  .html  a self-verifying decision record — readable, printable, and it re-checks
+    #                     its own signatures on open with no extraction step and nothing installed
+    #   ?format=json      the bare bundle: what the verifier consumes and what tooling should fetch
+    #   ?format=zip       the same three files loose, for anyone who wants them separately
+    fmt = request.args.get("format")
+
+    if fmt == "json":
         return Response(
             export_service.bundle_bytes(bundle),
             mimetype="application/json",
             headers={
                 "Content-Disposition": (
                     f'attachment; filename="{export_service.bundle_filename(proposal)}"'
+                )
+            },
+        )
+
+    if fmt != "zip":
+        return Response(
+            export_service.build_decision_document(bundle),
+            mimetype="text/html; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{export_service.document_filename(proposal)}"'
                 )
             },
         )

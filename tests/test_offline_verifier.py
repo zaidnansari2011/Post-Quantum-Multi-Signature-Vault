@@ -396,3 +396,99 @@ def test_the_page_renders_a_verdict_a_human_can_read(app, page, bundle, tmp_path
     assert "NOT verified" not in body
     assert "Wire to escrow" in body
     assert "An independent witness countersigned it" in body
+
+
+# --------------------------------------------------------------------------------------------
+# The self-verifying decision record.
+#
+# The same file, with a bundle substituted into its one empty slot, opened from file:// the way a
+# recipient opens it. These assertions are about the DOCUMENT -- that it renders the decision and
+# re-checks it on open, unprompted -- rather than about the checks themselves, which every test
+# above already pins by comparing the browser against Python.
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def document(app, bundle, tmp_path):
+    path = tmp_path / "decision.qvault.html"
+    path.write_bytes(export_service.build_decision_document(bundle))
+    return path
+
+
+def _open(browser, path):
+    context = browser.new_context()
+    p = context.new_page()
+    errors: list[str] = []
+    p.on("pageerror", lambda e: errors.append(str(e)))
+    p.goto(path.as_uri())
+    p.wait_for_function("typeof window.qvaultVerify === 'function'", timeout=30_000)
+    p.wait_for_function("document.querySelector('.banner') !== null", timeout=30_000)
+    return p, context, errors
+
+
+def test_the_document_verifies_itself_on_open(app, browser, document):
+    """No drop, no click, no network: opening the file is the whole interaction."""
+    p, context, errors = _open(browser, document)
+    try:
+        assert not errors, f"the document raised on load: {errors}"
+        assert p.locator(".banner__title").first.inner_text().startswith("Verified")
+        assert p.locator(".checks li.is-bad").count() == 0
+        assert p.locator(".checks li.is-ok").count() >= 9
+    finally:
+        context.close()
+
+
+def test_the_document_is_readable_as_well_as_checkable(app, browser, document, bundle):
+    """It replaces a certificate, so it has to state the decision, not just its verdict."""
+    p, context, errors = _open(browser, document)
+    try:
+        assert p.locator(".doc-title").inner_text() == bundle["decision"]["title"]
+        assert bundle["decision"]["action_text"] in p.locator(".action").first.inner_text()
+        # One row per signature, with custody shown -- the distinction the record exists to carry.
+        assert p.locator("table.sigs tbody tr").count() == len(bundle["signatures"])
+        assert p.locator("table.sigs").inner_text().lower().count("server") >= 1
+    finally:
+        context.close()
+
+
+def test_editing_the_embedded_evidence_is_caught_by_the_document_itself(app, browser, document):
+    """The demonstration the whole system exists for, performed by the file on its own."""
+    raw = document.read_text(encoding="utf-8")
+    tampered = raw.replace("250,000 EUR", "950,000 EUR", 1)
+    assert tampered != raw, "tamper target not present in the rendered document"
+    path = document.with_name("tampered.qvault.html")
+    path.write_text(tampered, encoding="utf-8")
+
+    p, context, errors = _open(browser, path)
+    try:
+        assert not errors, f"the document raised on load: {errors}"
+        assert p.locator(".banner__title").first.inner_text().startswith("NOT verified")
+        assert p.locator(".checks li.is-bad").count() >= 1
+        # It shows the reader the altered wording rather than the original, so the contradiction
+        # between what the page says and what the signatures cover is visible rather than hidden.
+        assert "950,000 EUR" in p.locator(".action").first.inner_text()
+    finally:
+        context.close()
+
+
+def test_a_document_whose_evidence_is_unparseable_says_so(app, browser, document):
+    """Truncated download, mangled copy-paste: still a finding, never a blank page."""
+    raw = document.read_text(encoding="utf-8")
+    broken = raw.replace('"format"', '"format" :: ', 1)
+    path = document.with_name("broken.qvault.html")
+    path.write_text(broken, encoding="utf-8")
+
+    p, context, _ = _open(browser, path)
+    try:
+        assert p.locator(".banner__title").first.inner_text().startswith("NOT verified")
+        assert "not valid JSON" in p.locator(".banner__body").first.inner_text()
+    finally:
+        context.close()
+
+
+def test_the_generic_verifier_is_unchanged_by_all_this(page):
+    """The same file with an empty slot must still be the tool it always was."""
+    assert page.locator("#drop").is_visible()
+    assert page.locator("#pagetitle").is_visible()
+    assert page.locator(".banner").count() == 0
+    assert page.evaluate("typeof window.qvaultEmbedded") == "undefined"
