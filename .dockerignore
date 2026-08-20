@@ -1,0 +1,38 @@
+# Keep secrets, local state and build noise out of the image.
+#
+# instance/ is the important one: it holds the live SQLite database, the witness key and the
+# encrypted file blobs. Baking those into an image that gets pushed to a registry would publish
+# real key material and every stored decision.
+
+.env
+.env.*
+!.env.example
+
+instance/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.git/
+.github/
+node_modules/
+tests/interop/node_modules/
+
+documents/
+*.docx
+*.pptx
+*.pdf
+
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
