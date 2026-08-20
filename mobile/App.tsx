@@ -1,9 +1,7 @@
-// MUST be first. Hermes ships no `crypto` global, and @noble/post-quantum reaches for
-// crypto.getRandomValues during key generation. Importing this after anything that pulls in noble
-// would leave the polyfill installed too late, and keygen would throw on a real device while
-// working perfectly in Node.
-import 'react-native-get-random-values';
-
+// No crypto polyfill here on purpose. Hermes ships no `crypto` global, but rather than depend on
+// a third-party native module -- which Expo Go does not bundle, so it would fail on exactly the
+// devices this is meant to run on -- the randomness ML-DSA signing needs is supplied explicitly
+// from expo-crypto. See setRandomSource in src/crypto/algorithms.ts.
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';

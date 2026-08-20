@@ -4,9 +4,14 @@
 /**
  * The deployed instance. The phones that matter here are not on the development machine's
  * network, so a localhost default would be wrong for everyone except the developer.
+ *
+ * A custom domain rather than the Azure-assigned hostname, and not only for looks: this string is
+ * compiled into the APK, so whatever it says at build time is where every installed copy points.
+ * The Container App keeps answering on its *.azurecontainerapps.io name too, but that name is tied
+ * to the specific environment -- rebuilding the infrastructure would change it and strand every
+ * phone. A domain we control can be repointed without touching the app.
  */
-export const DEFAULT_API_BASE_URL =
-  'https://qvault.livelyisland-19e02d3e.centralindia.azurecontainerapps.io';
+export const DEFAULT_API_BASE_URL = 'https://project4.zaidansari.tech';
 
 let apiBaseUrl = DEFAULT_API_BASE_URL;
 

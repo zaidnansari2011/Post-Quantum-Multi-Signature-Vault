@@ -13,7 +13,7 @@ import { randomBytes } from 'node:crypto';
 
 import { setApiBaseUrl } from '../src/config.ts';
 import * as api from '../src/api/endpoints.ts';
-import { getAlgorithm } from '../src/crypto/algorithms.ts';
+import { getAlgorithm, setRandomSource } from '../src/crypto/algorithms.ts';
 import { toBase64, toHex } from '../src/crypto/bytes.ts';
 import { publicKeyFingerprint } from '../src/crypto/fingerprint.ts';
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -39,6 +39,10 @@ interface Input {
 
 const input: Input = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 setApiBaseUrl(input.base_url);
+
+// Stand in for expo-crypto, so the tests exercise the SAME code path a handset takes --
+// hedged signing with caller-supplied entropy -- rather than noble's Node-only fallback.
+setRandomSource((byteLength) => new Uint8Array(randomBytes(byteLength)));
 
 /** The same contract expo-secure-store satisfies on a handset, backed by a variable here. */
 function memoryCustody(): Custody {

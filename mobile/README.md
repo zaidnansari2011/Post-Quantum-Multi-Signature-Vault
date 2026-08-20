@@ -95,8 +95,10 @@ pnpm start                           # then scan the QR code with Expo Go
 It points at the deployed instance by default. Override without touching source via
 `expo.extra.apiBaseUrl` in `app.json`.
 
-`expo-secure-store` and `expo-local-authentication` both work under Expo Go, so an iPhone with no
-Apple Developer account can run this as-is. For an installable APK, `eas build -p android`.
+`expo-secure-store` and `expo-local-authentication` both load under Expo Go, so an iPhone with no
+Apple Developer account can run this as-is -- with one exception: **Face ID does not work in Expo
+Go**, because the usage description belongs to the Expo Go binary rather than to this app. Touch ID
+and Android fingerprint are fine. A device or release build is needed to exercise Face ID.
 
 Note the deployed server runs with `min-replicas 0`, so the first request after an idle period pays
 a cold start of roughly forty seconds. The client's timeout is set to 75s for that reason.

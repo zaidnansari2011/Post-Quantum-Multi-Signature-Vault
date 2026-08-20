@@ -253,6 +253,19 @@ function describe(err: unknown): { title: string; detail?: string } {
   if (err instanceof Error && err.name === 'AuthenticationCancelled') {
     return { title: 'Nothing was signed.' };
   }
+  // Deliberately NOT folded into the line above: a device that cannot ask is a different problem
+  // from a person who declined, and telling someone "nothing was signed" when their sensor is
+  // locked out sends them round the same loop forever.
+  if (err instanceof Error && err.name === 'AuthenticationUnavailable') {
+    const reason = (err as { reason?: string }).reason;
+    return {
+      title: 'This device could not verify you.',
+      detail:
+        reason === 'lockout' || reason === 'not_enrolled'
+          ? 'Unlock your phone with your PIN, then try again.'
+          : 'Check that a screen lock or biometric is set up on this phone.',
+    };
+  }
   if (err instanceof ApiError) {
     switch (err.code) {
       case 'already_voted':

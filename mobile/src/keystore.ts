@@ -16,10 +16,15 @@
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as Crypto from 'expo-crypto';
-import { getAlgorithm } from './crypto/algorithms.ts';
+import { getAlgorithm, setRandomSource } from './crypto/algorithms.ts';
 import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import { fromBase64, toBase64 } from './crypto/bytes.ts';
 import type { NewKeyPair, ProtectionLevel, StoredIdentity } from './custody.ts';
+
+// Installed on import, before anything can sign. This module is the only Custody implementation
+// the app has, so no signing path can reach noble without passing through here first -- which is
+// what makes this the right place for it rather than the entry point, where it could be reordered.
+setRandomSource((byteLength) => Crypto.getRandomBytes(byteLength));
 
 const SEED_KEY = 'qvault.device.seed.v1';
 const TOKEN_KEY = 'qvault.device.token.v1';
@@ -55,13 +60,46 @@ export class AuthenticationCancelled extends Error {
 }
 
 /**
+ * The handset could not run the check at all -- no sensor, nothing enrolled, locked out, or the
+ * biometric permissions missing from the build.
+ *
+ * Distinct from `AuthenticationCancelled` on purpose. `authenticateAsync` RESOLVES with
+ * `{ success: false, error: 'not_available' }` for a hardware or manifest fault rather than
+ * rejecting, so collapsing every falsy `success` into "cancelled" would make a broken build
+ * indistinguishable from a signer changing their mind -- the app would look like it was working
+ * and quietly never sign anything.
+ */
+export class AuthenticationUnavailable extends Error {
+  readonly reason: string;
+  constructor(reason: string, detail?: string) {
+    super(detail ?? `This device could not verify you (${reason}).`);
+    this.name = 'AuthenticationUnavailable';
+    this.reason = reason;
+  }
+}
+
+/** Outcomes that mean a human declined, as opposed to a device that could not ask. */
+const DECLINED: ReadonlySet<string> = new Set([
+  'user_cancel',
+  'app_cancel',
+  'system_cancel',
+  'user_fallback',
+]);
+
+/**
  * Ask the OS to confirm the human is present, immediately before a signature.
  *
  * `disableDeviceFallback: false` lets the PIN or pattern stand in for a fingerprint. That is a
  * deliberate choice rather than laziness: a strict biometric-only gate locks out a signer whose
  * sensor fails, and the recovery path for that is worse than the marginal strength gained.
  *
- * Returns the level actually satisfied, so the caller can tell the user what protected the key.
+ * Returns the STRONGEST FACTOR THIS HANDSET OFFERS -- not the factor actually used. The OS does
+ * not tell us which one was: a successful `authenticateAsync` resolves to bare `{ success: true }`,
+ * and `warning` exists only on the failure branch. So on an iOS device with Face ID unavailable
+ * this still reports 'biometric' even though the passcode satisfied the prompt. Claiming otherwise
+ * would be inventing precision the platform does not give us; the label is recorded locally for
+ * display only and is never sent to the server.
+ *
  * When the handset has no lock at all this returns 'none' rather than throwing -- the caller then
  * falls back to the account password, which is the only factor left.
  */
@@ -75,7 +113,10 @@ export async function confirmPresence(promptMessage: string): Promise<Protection
     disableDeviceFallback: false,
     requireConfirmation: false,
   });
-  if (!result.success) throw new AuthenticationCancelled();
+  if (!result.success) {
+    if (DECLINED.has(result.error)) throw new AuthenticationCancelled();
+    throw new AuthenticationUnavailable(result.error, result.warning);
+  }
   return protection;
 }
 

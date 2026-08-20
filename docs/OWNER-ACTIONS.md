@@ -132,6 +132,59 @@ it, never after.
 
 ---
 
+### 2.3 Build the mobile APK and switch on OTA updates — `TODO`
+
+The app is configured and frozen-ready; what remains needs an **Expo account**, which is yours.
+Do these **in order** — step 3 must happen before step 5, or the APK ships with updates disabled.
+
+1. **Create or confirm an account** at expo.dev. The free plan includes EAS Update. If it is an
+   organisation rather than a personal account, tell me — `app.json` then also needs
+   `"owner": "<org-slug>"`.
+
+2. `cd q-vault/mobile && npx eas login`
+
+3. `npx eas init` — mints the project and writes `extra.eas.projectId` into `app.json`.
+   **Then set `updates.url` to `https://u.expo.dev/<that-same-uuid>`**, which `eas init` does not
+   do for you. I left both out deliberately: a placeholder URL produces a build that looks
+   update-capable and silently is not. Ping me and I will fill them in, or run
+   `npx eas update:configure` — but if it replaces `runtimeVersion` with a policy object, put the
+   static `"1"` back (see [ADR-0018](adr/0018-static-runtime-version.md)).
+
+   *Verify before building:* a correct config makes `expo.modules.updates.ENABLED` read `true` in
+   the generated manifest. It currently reads `false`, which is how I know the URL is still missing.
+
+4. **Android keystore.** The first build offers to generate one — accept, then back it up with
+   `npx eas credentials`. **This keystore is the app's identity for its lifetime.** A different one
+   means a different signature, Android refuses to upgrade over the installed APK, and the enrolled
+   signing seed inside becomes unreachable.
+
+5. **Cut the build:** `npx eas build -p android --profile preview` → an installable `.apk`.
+
+6. **Test on a real handset** (biometrics cannot be validated on an emulator): enrol → fingerprint
+   prompt appears → approve a decision → decline the prompt and confirm nothing is signed → confirm
+   the PIN fallback works.
+
+7. **Prove OTA works before relying on it.** Change one visible string in `src/`, then
+   `npx eas update --branch preview --message "smoke test"`. Force-close and reopen the app twice —
+   the first launch downloads, the second runs it.
+
+*Why it's yours:* an account, a signing credential, and a physical device.
+
+*What I've prepared:* everything else — `eas.json` with a `preview` profile that emits an APK,
+`app.json` with a static `runtimeVersion`, `expo-updates` installed and wired, and the permission
+set trimmed to `INTERNET`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, `VIBRATE`.
+
+**The rule that keeps OTA working:** bump `runtimeVersion` in `app.json` whenever a native module
+or any `plugins`/`android`/`ios`/`icon`/`scheme` value changes — and only then. JavaScript, assets
+and `extra` never need it. ADR-0018 explains why this is a hand-maintained string rather than the
+fingerprint policy.
+
+**Decided against:** `expo-notifications`. Android push needs `google-services.json` compiled into
+the binary, so adding push later forces a new APK *even if* the module is already bundled —
+including it now buys nothing and puts `POST_NOTIFICATIONS` on a signing app's manifest for a
+feature that does not exist. If you want "a decision is waiting", `refetchInterval` on the inbox
+query does it with zero native surface and ships over the air.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`

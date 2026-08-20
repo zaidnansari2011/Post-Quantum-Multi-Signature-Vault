@@ -15,6 +15,28 @@
 
 import { ml_dsa65, ml_dsa87 } from '@noble/post-quantum/ml-dsa.js';
 
+/** Returns `byteLength` cryptographically secure bytes. */
+export type RandomSource = (byteLength: number) => Uint8Array;
+
+let randomSource: RandomSource | null = null;
+
+/**
+ * Install the platform's randomness source for signing.
+ *
+ * ML-DSA signing is hedged by default (FIPS 204): noble draws 32 bytes of `extraEntropy` on every
+ * `sign()` and, left to itself, draws them from `crypto.getRandomValues`. Hermes has no `crypto`
+ * global, so on a handset that call throws -- and it throws inside signing, which is the one place
+ * a failure is most expensive and least reproducible on a laptop.
+ *
+ * Rather than polyfill the global, the platform supplies the bytes explicitly. `keystore.ts` wires
+ * this to expo-crypto, which is part of the Expo runtime and therefore present in Expo Go; a
+ * third-party native module would not be. When nothing is installed -- Node, where a `crypto`
+ * global does exist -- noble's own source is used.
+ */
+export function setRandomSource(source: RandomSource): void {
+  randomSource = source;
+}
+
 export interface AlgorithmSpec {
   readonly id: string;
   readonly publicKeyBytes: number;
@@ -44,7 +66,13 @@ function spec(
     keygen: (seed) => impl.keygen(seed),
     // Argument order is (message, key) in @noble/post-quantum >= 0.5 -- the reverse of earlier
     // releases. tests/interop/device_client.mjs pins the same order against the live server.
-    sign: (message, secretKey) => impl.sign(message, secretKey),
+    // Hedged signing, with entropy from the platform when one has been installed.
+    sign: (message, secretKey) =>
+      impl.sign(
+        message,
+        secretKey,
+        randomSource ? { extraEntropy: randomSource(32) } : undefined,
+      ),
     verify: (signature, message, publicKey) => impl.verify(signature, message, publicKey),
   };
 }
