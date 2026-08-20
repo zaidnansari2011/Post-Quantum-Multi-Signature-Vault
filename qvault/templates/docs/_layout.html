@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — Documentation — Q-Vault{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('docs.index') }}">Docs</a>
+    </nav>
+    <div class="head__title">{{ title }}</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="split">
+  <div class="doc">{% block doc %}{% endblock %}</div>
+  <nav class="panel" aria-label="Documentation">
+    <div class="panel__head"><span class="label">Contents</span></div>
+    <div class="panel__body doc__nav">
+      {% for s, t, _ in pages %}
+        <a href="{{ url_for('docs.page', slug=s) }}" {% if s == slug %}aria-current="page"{% endif %}>{{ t }}</a>
+      {% endfor %}
+    </div>
+  </nav>
+</div>
+{% endblock %}

@@ -6,68 +6,163 @@
   <title>{% block title %}Q-Vault{% endblock %}</title>
   {# Every asset is served locally. A demonstration must not depend on the venue's network, and
      a CDN failure would strip the entire interface mid-presentation. See docs/adr/0011. #}
-  <link href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='vendor/fonts.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='qvault.css') }}" rel="stylesheet">
 </head>
 <body>
-  <nav class="qv-topbar">
-    <div class="container d-flex align-items-center justify-content-between py-2">
-      <a class="qv-brand d-flex align-items-center gap-2" href="/">
-        🔐 Q-Vault <small class="d-none d-sm-inline">· post-quantum vault</small>
+
+{% macro icon(name) -%}
+<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
+     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if name == 'home' %}<path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+  {%- elif name == 'inbox' %}<path d="M2 9h3l1 2h4l1-2h3M2 9l1.6-5.5A1 1 0 0 1 4.6 3h6.8a1 1 0 0 1 1 .5L14 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
+  {%- elif name == 'vault' %}<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><circle cx="8" cy="8" r="2.5"/><path d="M8 3.5v1M8 11.5v1"/>
+  {%- elif name == 'audit' %}<path d="M4 2h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>
+  {%- elif name == 'security' %}<path d="M8 1.8 13 4v4c0 3-2.1 5.3-5 6.2C5.1 13.3 3 11 3 8V4z"/><path d="M6 8l1.5 1.5L10.5 6.5"/>
+  {%- elif name == 'account' %}<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
+  {%- elif name == 'docs' %}<path d="M4 2h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v3h3"/>
+  {%- elif name == 'verify' %}<path d="M8 1.8 13 4v4c0 3-2.1 5.3-5 6.2C5.1 13.3 3 11 3 8V4z"/><path d="M5.8 8.2 7.3 9.7l3-3.4"/>
+  {%- elif name == 'search' %}<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/>
+  {%- endif %}
+</svg>
+{%- endmacro %}
+
+{% if current_user.is_authenticated %}
+<div class="app">
+  <nav class="side" aria-label="Main">
+    <a class="side__brand" href="{{ url_for('core.index') }}">
+      {# Two overlapping squares: two parties whose agreement has to overlap before anything
+         happens. The product in one mark. #}
+      <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true">
+        <rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <rect x="6" y="6" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <rect x="6" y="6" width="6" height="6" fill="currentColor" opacity=".18"/>
+      </svg>
+      Q-Vault
+    </a>
+
+    <div class="side__nav">
+      <a class="side__link" href="{{ url_for('core.index') }}"
+         {% if request.endpoint == 'core.index' %}aria-current="page"{% endif %}>
+        {{ icon('home') }} Home
       </a>
-      <div class="d-flex align-items-center gap-1">
-        {% if current_user.is_authenticated %}
-          <a class="qv-navlink" href="{{ url_for('auth.dashboard') }}">Dashboard</a>
-          <a class="qv-navlink" href="{{ url_for('vaults.list_vaults') }}">Vaults</a>
-          <a class="qv-navlink" href="{{ url_for('ledger.view') }}">Audit log</a>
-          {% if current_user.role == 'admin' %}
-          <a class="qv-navlink is-admin" href="{{ url_for('admin.crypto') }}">Crypto</a>
-          <a class="qv-navlink is-admin" href="{{ url_for('admin.rotation') }}">Rotation</a>
-          <a class="qv-navlink is-admin" href="{{ url_for('admin.benchmark') }}">Benchmark</a>
-          {% endif %}
-          <span class="text-muted small mx-1 d-none d-md-inline">{{ current_user.email }}</span>
-          <form method="post" action="{{ url_for('auth.logout') }}" class="d-inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="btn btn-sm btn-outline-secondary" type="submit">Log out</button>
-          </form>
-        {% else %}
-          <a class="qv-navlink" href="{{ url_for('auth.login') }}">Log in</a>
-          <a class="btn btn-sm btn-primary" href="{{ url_for('auth.register') }}">Register</a>
-        {% endif %}
+      <a class="side__link" href="{{ url_for('approvals.index') }}"
+         {% if request.blueprint == 'approvals' %}aria-current="page"{% endif %}>
+        {{ icon('inbox') }} Approvals
+        {% if pending_count %}<span class="side__badge">{{ pending_count }}</span>{% endif %}
+      </a>
+      <a class="side__link" href="{{ url_for('vaults.list_vaults') }}"
+         {% if request.blueprint == 'vaults' %}aria-current="page"{% endif %}>
+        {{ icon('vault') }} Vaults
+      </a>
+      <a class="side__link" href="{{ url_for('ledger.view') }}"
+         {% if request.blueprint == 'ledger' %}aria-current="page"{% endif %}>
+        {{ icon('audit') }} Audit
+      </a>
+      {# The verifier is the capability nothing else in this product category has. It was
+         reachable only from one muted sentence on the signed-out landing page. #}
+      <a class="side__link" href="{{ url_for('verify.index') }}"
+         {% if request.blueprint == 'verify' %}aria-current="page"{% endif %}>
+        {{ icon('verify') }} Verify
+      </a>
+
+      <div class="side__sep" role="presentation"></div>
+
+      {% if current_user.role == 'admin' %}
+      <a class="side__link" href="{{ url_for('admin.crypto') }}"
+         {% if request.blueprint == 'admin' %}aria-current="page"{% endif %}>
+        {{ icon('security') }} Security
+      </a>
+      {% endif %}
+      <a class="side__link" href="{{ url_for('account.index') }}"
+         {% if request.blueprint == 'account' %}aria-current="page"{% endif %}>
+        {{ icon('account') }} Account
+      </a>
+      <a class="side__link" href="{{ url_for('docs.index') }}"
+         {% if request.blueprint == 'docs' %}aria-current="page"{% endif %}>
+        {{ icon('docs') }} Docs
+      </a>
+    </div>
+
+    <div class="side__foot">
+      <div class="side__user">
+        <span class="side__avatar" aria-hidden="true">
+          {{ (current_user.display_name or current_user.email)[:1] | upper }}
+        </span>
+        <span class="truncate" style="min-width:0">
+          <span class="small truncate" style="display:block">{{ current_user.display_name or current_user.email }}</span>
+          <span class="tiny muted truncate" style="display:block">{{ current_user.email }}</span>
+        </span>
       </div>
+      <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:.5rem">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--ghost btn--sm btn--block" type="submit">Sign out</button>
+      </form>
     </div>
   </nav>
 
-  <main class="container py-4">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-          {{ message }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-      {% endfor %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </main>
+  <div class="main">
+    {% block chrome %}{% endblock %}
+    <div class="{% block bodyclass %}body{% endblock %}">
+      {% include "_flash.html" %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
 
-  <footer class="container py-4 border-top mt-4">
-    Reference / educational system — not production-audited. &middot; Q-Vault v{{ version|default('0.1.0') }}
-    &middot; ML-DSA · SLH-DSA · ML-KEM
-  </footer>
+{% else %}
+{# Signed out: no rail to navigate, so the page stands alone — but it still gets a way back to
+   the two things a stranger can legitimately do here, or /login is a dead end that advertises a
+   verifier it offers no route to. #}
+<div class="main">
+  <div class="body body--anon">
+    <div style="width:100%">
+      {% include "_flash.html" %}
+      {% block anon_content %}{% endblock %}
+    </div>
+  </div>
+  <div class="anonbar">
+    <a href="{{ url_for('core.index') }}">Q-Vault</a>
+    <span class="push"></span>
+    <a href="{{ url_for('verify.index') }}">Verify a decision</a>
+    <a href="{{ url_for('docs.index') }}">Documentation</a>
+  </div>
+</div>
+{% endif %}
 
-  <script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
-  <script>
-    // Click any .hashpill[data-copy] to copy its full value — makes real hashes/bytes tangible.
-    document.addEventListener('click', function (e) {
-      var el = e.target.closest('.hashpill[data-copy]');
-      if (!el) return;
-      var full = el.getAttribute('data-copy');
-      navigator.clipboard && navigator.clipboard.writeText(full);
-      var prev = el.textContent;
-      el.classList.add('copied'); el.textContent = 'copied ✓';
-      setTimeout(function () { el.classList.remove('copied'); el.textContent = prev; }, 1000);
-    });
-  </script>
+<script>
+  document.addEventListener('click', function (e) {
+    var close = e.target.closest('[data-dismiss]');
+    if (close) { close.closest('.alert').remove(); return; }
+
+    // Demonstration convenience: fill the sign-in form rather than making someone read two
+    // strings off one page and type them into another.
+    var fill = e.target.closest('[data-fill-email]');
+    if (fill) {
+      var form = document.querySelector('form');
+      form.querySelector('[name=email]').value = fill.getAttribute('data-fill-email');
+      form.querySelector('[name=password]').value = fill.getAttribute('data-fill-password');
+      form.querySelector('[name=email]').focus();
+      return;
+    }
+
+    // Click any .hash[data-copy] to copy its full value — a truncated hash you cannot retrieve
+    // in full is not evidence of anything.
+    var el = e.target.closest('.hash[data-copy]');
+    if (!el) return;
+    navigator.clipboard && navigator.clipboard.writeText(el.getAttribute('data-copy'));
+    var prev = el.textContent;
+    el.classList.add('copied');
+    el.textContent = 'copied';
+    setTimeout(function () { el.classList.remove('copied'); el.textContent = prev; }, 1000);
+  });
+
+  // Submitting a filter form on change is what makes a toolbar feel like a tool rather than a
+  // form: no Apply button to hunt for. Text inputs are excluded — they submit on Enter.
+  document.addEventListener('change', function (e) {
+    var el = e.target.closest('[data-autosubmit] select, [data-autosubmit] input[type=date]');
+    if (el) el.form.requestSubmit();
+  });
+</script>
 </body>
 </html>

@@ -38,7 +38,11 @@ Anchor the ledger head with a post-quantum signature by a **SYSTEM key**.
   external reference" to "detectable as long as the server master key is uncompromised." An attacker
   who also holds the master key can forge anchors — the same trust boundary as the rest of the
   system, stated in the threat model.
-- **Known limitation — truncation/rollback.** Because anchors live in the same store they protect,
+- **Known limitation — truncation/rollback. RETIRED by [ADR-0015](0015-transparency-log-and-witness.md)**,
+  which adds exactly the external monotonic witness described below. The paragraph is left intact
+  rather than rewritten, because the reasoning in it is still correct — it is the *scope* that
+  changed, and the attack it describes is now the one `tests/test_witness_integration.py` performs
+  in full. Because anchors live in the same store they protect,
   an adversary who deletes tail entries **and** their anchors leaves a shorter, internally
   consistent prefix that still verifies. This is inherent to any self-contained anchor with no
   external monotonic witness; detecting it would require exporting the latest `(seq, head_hash,

@@ -1,0 +1,51 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  Registering creates a post-quantum signing key that is yours alone. Approving something means
+  signing it with that key, which is what makes an approval provably yours and stops it being
+  undone by editing a database.
+</p>
+
+<h3>Where your private key lives</h3>
+<p>
+  Not on this server in any readable form. Your password is stretched with <strong>Argon2id</strong>
+  into a key-encryption key, which wraps your private key under <strong>AES-256-GCM</strong>. The
+  server stores the ciphertext and never the password, so stealing the entire database still does
+  not get anyone your signature.
+</p>
+<p>
+  The consequence is that nobody can recover your key for you. There is no reset.
+</p>
+
+<h3>Changing your password</h3>
+<p>
+  Because your password protects your key rather than merely admitting you, changing it
+  re-encrypts your key material. Every key you hold — active and retired — is unwrapped under the
+  old password and re-wrapped under the new one, in a single transaction, and the salt is rotated.
+  If anything fails, nothing changes.
+</p>
+
+<h3>Two kinds of custody</h3>
+<p>
+  <strong>Server-held keys</strong> — the key that seals the audit record, and each vault's
+  file-encryption key — are wrapped under the server's master key. The scheduler can replace them
+  with nobody present.
+</p>
+<p>
+  <strong>Your signing key</strong> is locked with your password, which the server never holds. It
+  therefore <em>cannot</em> be replaced unattended: the system flags it as due and you replace it
+  yourself. That limitation is the security property working, not a gap.
+</p>
+
+<h3>Retire but retain</h3>
+<p>
+  Replacing a key never deletes it. The old key stops signing and keeps verifying, so every
+  signature it ever made still checks out. Old files stay readable too: each stored file records
+  exactly which key encrypted it, so rotating a vault key cannot strand anything.
+</p>
+<p>
+  This is why replacing a key is safe, and why a signature from years ago still verifies against a
+  key that has long since been retired.
+</p>
+{% endblock %}

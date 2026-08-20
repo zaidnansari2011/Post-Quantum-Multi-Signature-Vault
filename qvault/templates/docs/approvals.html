@@ -1,0 +1,54 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  A <strong>decision</strong> is something you want done that nobody should be able to do alone:
+  releasing a payment, approving a contract, granting emergency access. You write it down, and a
+  set number of people have to sign it before it counts.
+</p>
+
+<h3>Proposing</h3>
+<p>
+  Anyone in a vault can propose a decision. You give it a title and the exact wording of the action
+  being authorised. At that moment four things are frozen together and hashed: the wording, the
+  approval threshold, the list of people eligible to approve, and a random value that makes the
+  decision unique.
+</p>
+<p>
+  Because those are frozen, changing the wording afterwards — or adding and removing members —
+  cannot retroactively change what anyone agreed to. If the stored text is edited directly in the
+  database, the decision page says so and stops counting the signatures on it.
+</p>
+
+<h3>Signing</h3>
+<p>
+  Approvers type their password, which unlocks their private signing key for that one operation.
+  The signature commits to three things at once: <em>which</em> decision, <em>what</em> was decided,
+  and <em>who</em> decided it. Because all three are signed together, a signature cannot be moved
+  onto a different decision, flipped from reject to approve, or attributed to somebody else.
+</p>
+<p>
+  Each approver signs once. That is enforced by a uniqueness constraint in the database, not just
+  by the interface.
+</p>
+
+<h3>The threshold</h3>
+<p>
+  A vault set to &ldquo;2 of 3&rdquo; needs two of its three approvers. The tally counts only
+  signatures that verify <em>at the moment you look</em> — every signature is re-checked on every
+  page load. A tampered signature row silently stops counting rather than manufacturing an
+  approval.
+</p>
+<p>
+  A decision becomes <strong>approved</strong> when it reaches its threshold, and
+  <strong>rejected</strong> once enough people have refused that the threshold can no longer be
+  reached. If it has a deadline and that passes first, it <strong>expires</strong> without effect.
+</p>
+
+<h3>Attachments</h3>
+<p>
+  A decision can carry a file. It is encrypted with AES-256-GCM before it is stored, and the key
+  for it is wrapped for the vault using ML-KEM. The file never reaches disk in the clear, and the
+  server checks it has not been modified before handing it back.
+</p>
+{% endblock %}

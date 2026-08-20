@@ -46,6 +46,24 @@ class Signature(db.Model):
     signer = db.relationship("User")
     key = db.relationship("Key")
 
+    @property
+    def custody(self) -> str:
+        """Who held the private half when this vote was signed: ``'device'`` or ``'server'``.
+
+        ``'device'`` means the private key never left the signer's own hardware, so not even a
+        compromised server could have produced this signature. ``'server'`` means it was unwrapped
+        from an Argon2id password-KEK in this server's memory at sign time — the custody model
+        ADR-0004 documents, and the limitation ADR-0016 exists to close.
+
+        Derived rather than stored. ``Key.wrap_domain`` is write-once (set at construction, never
+        mutated) and ``verify_signature`` already treats the Key row as load-bearing — it refuses
+        any signature whose ``public_key``/``alg_id`` disagree with it — so reading one more
+        write-once column from that same row adds no new trust and keeps one source of truth. It
+        also needs no schema change, which matters: this project creates tables with
+        ``db.create_all()``, which never ALTERs an existing one.
+        """
+        return "device" if self.key is not None and self.key.wrap_domain == "device" else "server"
+
     def fingerprint(self) -> str:
         """A short SHA-256 fingerprint of the raw signature bytes, for display."""
         from qvault.crypto import sha256_hex

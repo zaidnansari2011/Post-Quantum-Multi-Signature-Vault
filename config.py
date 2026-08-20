@@ -48,9 +48,25 @@ class BaseConfig:
     PROPOSAL_EXPIRY_CRON = os.environ.get("PROPOSAL_EXPIRY_CRON", "*/15 * * * *")
     # A key becomes due for rotation this many days after it is created.
     KEY_MAX_AGE_DAYS = int(os.environ.get("KEY_MAX_AGE_DAYS", "90"))
+    # A device's bearer token stops being accepted this many days after enrolment. The server
+    # cannot rotate a key whose private half it has never held, so custody is time-bounded on the
+    # token instead of the key: re-enrol to continue. See ADR-0016.
+    DEVICE_TOKEN_MAX_AGE_DAYS = int(os.environ.get("DEVICE_TOKEN_MAX_AGE_DAYS", "90"))
 
     # The deliberate tamper demonstration is dev/demo only and OFF by default.
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "false").lower() == "true"
+
+    # Transparency log (ADR-0015). LOG_ORIGIN names this log inside every signed checkpoint, so
+    # a checkpoint from one deployment can never be replayed as another's; change it per instance.
+    LOG_ORIGIN = os.environ.get("LOG_ORIGIN", "qvault.local/ledger")
+    # The witness is a SEPARATE process holding its own key — see witness/README.md. Unset means
+    # "no witness", which is reported honestly rather than hidden: checkpoints are then signed
+    # only by the log itself and cannot survive an operator who controls this database.
+    WITNESS_URL = os.environ.get("WITNESS_URL")
+    WITNESS_TIMEOUT_S = float(os.environ.get("WITNESS_TIMEOUT_S", "3.0"))
+    # Offered on a timer, never in the request path: an unreachable witness must cost a growing
+    # lag on the transparency page, not latency on every write.
+    WITNESS_SYNC_SECONDS = int(os.environ.get("WITNESS_SYNC_SECONDS", "60"))
 
     # Benchmark (Phase 8). The canonical report is produced offline by
     # ``scripts/run_benchmark.py``; the admin page only renders whatever it finds here.
@@ -83,6 +99,8 @@ class TestConfig(BaseConfig):
     ENABLE_TAMPER_DEMO = True
     WTF_CSRF_ENABLED = False
     SCHEDULER_ENABLED = False  # tests drive the rotation/expiry jobs directly, no background thread
+    LOG_ORIGIN = "qvault.test/ledger"
+    WITNESS_URL = None  # tests drive the witness in-process; no sockets in the suite
 
 
 class ProdConfig(BaseConfig):

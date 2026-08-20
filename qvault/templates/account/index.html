@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% from "_macros.html" import key_state, hash %}
+{% block title %}Account — Q-Vault{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Account</div>
+    <div class="head__sub">{{ current_user.email }}</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="split">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head"><span class="label">Signing key</span>
+        {% if key %}<span class="push">{{ key_state(key) }}</span>{% endif %}
+      </div>
+      <div class="panel__body">
+        {% if key %}
+        <dl class="meta">
+          <dt>Type</dt>
+          <dd>Post-quantum signature <span class="tag">{{ key.alg_id }}</span></dd>
+          <dt>Provider</dt><dd><span class="tag">{{ key.backend }}</span></dd>
+          <dt>Fingerprint</dt><dd><code class="hash" data-copy="{{ key.public_fingerprint() }}">{{ key.public_fingerprint() }}</code></dd>
+          <dt>Public key</dt><dd class="mono">{{ key.public_key|length }} bytes</dd>
+          {% if key.secret_key_wrapped %}<dt>Private key</dt><dd class="mono">{{ key.secret_key_wrapped|length }} bytes, AES-256-GCM under your password</dd>{% endif %}
+          <dt>Created</dt><dd class="mono">{{ key.created_at.strftime('%d %b %Y') if key.created_at else '—' }}</dd>
+          <dt>Replace by</dt>
+          <dd class="mono">
+            {{ key.rotate_after.strftime('%d %b %Y') if key.rotate_after else '—' }}
+            {% if key.alg_id != active_alg %}
+              <span class="chip chip--waiting">New keys use {{ active_alg }}</span>
+            {% endif %}
+          </dd>
+        </dl>
+        <div class="divider"></div>
+        <form method="post" action="{{ url_for('auth.reissue_key') }}" class="hstack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input class="input input--auto" type="password" name="password" placeholder="Current password"
+                 autocomplete="current-password" required>
+          <button class="btn btn--ghost btn--sm" type="submit">Replace key</button>
+          <span class="tiny muted">Issues a new key; the old one is retained for verification.</span>
+        </form>
+        {% else %}
+        <p class="small muted" style="margin:0">No signing key on this account.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if retired_keys %}
+    <div class="panel">
+      <div class="panel__head"><span class="label">Retired keys</span>
+        <span class="push tiny muted">{{ retired_keys|length }}</span>
+      </div>
+      <table class="dt">
+        <thead><tr><th>Algorithm</th><th>Fingerprint</th><th>Retired</th><th>Verifies</th></tr></thead>
+        <tbody>
+          {% for k in retired_keys %}
+          <tr>
+            <td><span class="tag">{{ k.alg_id }}</span></td>
+            <td><code class="hash" data-copy="{{ k.public_fingerprint() }}">{{ k.public_fingerprint() }}</code></td>
+            <td class="tiny muted nowrap">{{ k.retired_at.strftime('%d %b %Y') if k.retired_at else '—' }}</td>
+            <td>{% if k.can_verify %}<span class="chip chip--sealed">Yes</span>{% else %}<span class="chip">No</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head"><span class="label">Profile</span></div>
+      <div class="panel__body">
+        <form method="post" action="{{ url_for('account.update_profile') }}">
+          {{ profile_form.hidden_tag() }}
+          <div class="field">
+            {{ profile_form.display_name.label(class="field__label") }}
+            {{ profile_form.display_name(class="input") }}
+            {% for e in profile_form.display_name.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+          </div>
+          <div class="field">
+            <span class="field__label">Email</span>
+            <input class="input" value="{{ current_user.email }}" disabled>
+            <p class="field__help">Your email identifies this account and cannot be changed.</p>
+          </div>
+          {{ profile_form.submit(class="btn btn--ghost btn--sm") }}
+        </form>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head"><span class="label">Password</span></div>
+      <div class="panel__body">
+        <form method="post" action="{{ url_for('account.change_password') }}">
+          {{ password_form.hidden_tag() }}
+          <div class="field">
+            {{ password_form.current_password.label(class="field__label") }}
+            {{ password_form.current_password(class="input", autocomplete="current-password") }}
+            {% for e in password_form.current_password.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+          </div>
+          <div class="field">
+            {{ password_form.new_password.label(class="field__label") }}
+            {{ password_form.new_password(class="input", autocomplete="new-password") }}
+            {% for e in password_form.new_password.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+          </div>
+          <div class="field">
+            {{ password_form.confirm.label(class="field__label") }}
+            {{ password_form.confirm(class="input", autocomplete="new-password") }}
+            {% for e in password_form.confirm.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+          </div>
+          <p class="field__help" style="margin-bottom:.6rem">
+            Re-encrypts your signing keys. You will be signed out.
+          </p>
+          {{ password_form.submit(class="btn btn--ghost btn--sm") }}
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from datetime import UTC
 
-from flask import Blueprint, Response, abort, flash, redirect, render_template, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
 from qvault.extensions import db
 from qvault.forms import (
     AddMemberForm,
+    MemberRoleForm,
     ProposalForm,
     ProposalRestoreForm,
     ProposalTamperForm,
+    RemoveMemberForm,
+    ThresholdForm,
     VaultForm,
     VoteForm,
 )
@@ -23,7 +27,9 @@ from qvault.security.decorators import get_membership_or_403
 from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
+    export_service,
     file_crypto_service,
+    inbox_service,
     proposal_service,
     vault_service,
 )
@@ -41,7 +47,26 @@ bp = Blueprint("vaults", __name__, url_prefix="/vaults")
 def list_vaults():
     memberships = VaultMember.query.filter_by(user_id=current_user.id).all()
     vaults = sorted((m.vault for m in memberships), key=lambda v: v.created_at, reverse=True)
-    return render_template("vaults/list.html", vaults=vaults)
+
+    # Each row answers "is anything here waiting for me?". Both counts come from inbox_service so
+    # they agree exactly with the Approvals inbox and, more importantly, with what cast_vote will
+    # accept — an earlier version of this counted current vault membership, which promised votes
+    # the server then refused for anyone added after a proposal opened.
+    signer_vaults = inbox_service.signer_vault_ids(current_user)
+    rows = []
+    for vault in vaults:
+        decorated = inbox_service.decorate(vault.proposals, current_user, signer_vaults)
+        rows.append(
+            {
+                "vault": vault,
+                "open": sum(1 for r in decorated if r["status"] == "open"),
+                "needs_me": sum(1 for r in decorated if r["needs_me"]),
+                "signers": len(vault.signer_ids()),
+            }
+        )
+    return render_template(
+        "vaults/list.html", rows=rows, awaiting_me=sum(r["needs_me"] for r in rows)
+    )
 
 
 @bp.route("/new", methods=["GET", "POST"])
@@ -61,18 +86,36 @@ def new_vault():
     return render_template("vaults/new.html", form=form)
 
 
+VAULT_TABS = ("decisions", "members", "files", "settings")
+
+
 @bp.get("/<int:vid>")
 @login_required
 def vault_detail(vid: int):
     vault = get_membership_or_403(vid)
-    proposals = Proposal.query.filter_by(vault_id=vid).order_by(Proposal.created_at.desc()).all()
+    tab = request.args.get("tab", "decisions")
+    if tab not in VAULT_TABS:
+        tab = "decisions"
+
+    proposals = (
+        Proposal.query.filter_by(vault_id=vid)
+        .options(selectinload(Proposal.signatures), selectinload(Proposal.file))
+        .order_by(Proposal.created_at.desc())
+        .all()
+    )
     is_owner = vault.member_for(current_user.id).member_role == "owner"
+    signer_vaults = inbox_service.signer_vault_ids(current_user)
     return render_template(
         "vaults/detail.html",
         vault=vault,
-        proposals=proposals,
+        tab=tab,
+        rows=inbox_service.decorate(proposals, current_user, signer_vaults),
+        files=[p for p in proposals if p.file is not None],
         is_owner=is_owner,
         member_form=AddMemberForm(),
+        role_form=MemberRoleForm(),
+        remove_form=RemoveMemberForm(),
+        threshold_form=ThresholdForm(threshold_m=vault.policy.threshold_m),
         n_signers=len(vault.signer_ids()),
     )
 
@@ -93,6 +136,55 @@ def add_member(vid: int):
     else:
         flash("Please provide a valid email.", "danger")
     return redirect(url_for("vaults.vault_detail", vid=vid))
+
+
+@bp.post("/<int:vid>/members/role")
+@login_required
+def change_member_role(vid: int):
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = MemberRoleForm()
+    if not form.validate_on_submit():
+        flash("Choose a valid role.", "danger")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="members"))
+    try:
+        vault_service.change_member_role(
+            vault, form.user_id.data, form.role.data, actor_id=current_user.id
+        )
+        flash("Role updated.", "success")
+    except MembershipError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="members"))
+
+
+@bp.post("/<int:vid>/members/remove")
+@login_required
+def remove_member(vid: int):
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = RemoveMemberForm()
+    if not form.validate_on_submit():
+        abort(400)
+    try:
+        vault_service.remove_member(vault, form.user_id.data, actor_id=current_user.id)
+        flash("Member removed.", "success")
+    except MembershipError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="members"))
+
+
+@bp.post("/<int:vid>/settings/threshold")
+@login_required
+def set_threshold(vid: int):
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = ThresholdForm()
+    if not form.validate_on_submit():
+        flash("Enter a valid number of approvals.", "danger")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+    try:
+        vault_service.set_threshold(vault, form.threshold_m.data, actor_id=current_user.id)
+        flash("Approval threshold updated.", "success")
+    except PolicyError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
 
 
 @bp.route("/<int:vid>/proposals/new", methods=["GET", "POST"])
@@ -158,6 +250,7 @@ def proposal_detail(vid: int, pid: str):
         approvals=approvals,
         rejections=rejections,
         binding=approval_service.verify_proposal_binding(proposal),
+        transparency=export_service.transparency_status(proposal),
         my_vote=my_vote,
         is_signer=is_signer,
         can_vote=can_vote,
@@ -166,6 +259,30 @@ def proposal_detail(vid: int, pid: str):
         tampered=proposal_service.demo_proposal_is_tampered(proposal),
         tamper_form=ProposalTamperForm(),
         restore_form=ProposalRestoreForm(),
+    )
+
+
+@bp.get("/<int:vid>/proposals/<pid>/export")
+@login_required
+def export_proposal(vid: int, pid: str):
+    """Download this decision as a bundle anyone can verify without an account.
+
+    Membership is required to *download* — the decision's contents are confidential until someone
+    chooses to share them. Nothing about the bundle requires membership to *check*, which is the
+    whole point: the person you send it to needs no relationship with this system at all.
+    """
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+
+    bundle = export_service.build_decision_bundle(proposal)
+    return Response(
+        export_service.bundle_bytes(bundle),
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{export_service.bundle_filename(proposal)}"'
+            )
+        },
     )
 
 

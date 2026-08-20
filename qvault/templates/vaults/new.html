@@ -1,36 +1,43 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — New vault{% endblock %}
+{% block title %}New vault — Q-Vault{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('vaults.list_vaults') }}">Vaults</a><span>/</span>
+    </nav>
+    <div class="head__title">New vault</div>
+  </div>
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-7">
-    <h1 class="h3 mb-3">Create a vault</h1>
-    <div class="card">
-      <div class="card-body">
-        <p class="text-muted small">
-          A dedicated <strong>ML-KEM</strong> keypair is generated for this vault to encrypt its
-          files. You are added as the owner (and an eligible signer). Set the approval threshold
-          <em>M</em>; the number of eligible signers <em>N</em> grows as you add members.
-        </p>
-        <form method="post" novalidate>
-          {{ form.hidden_tag() }}
-          <div class="mb-3">
-            {{ form.name.label(class="form-label") }}
-            {{ form.name(class="form-control") }}
-            {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.description.label(class="form-label") }}
-            {{ form.description(class="form-control", rows="2") }}
-          </div>
-          <div class="mb-3 col-sm-6">
-            {{ form.threshold_m.label(class="form-label") }}
-            {{ form.threshold_m(class="form-control") }}
-            {% for e in form.threshold_m.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          {{ form.submit(class="btn btn-primary") }}
-          <a class="btn btn-link" href="{{ url_for('vaults.list_vaults') }}">Cancel</a>
-        </form>
-      </div>
+<div style="max-width:34rem">
+  <div class="panel">
+    <div class="panel__body">
+      <form method="post" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="field">
+          {{ form.name.label(class="field__label") }}
+          {{ form.name(class="input") }}
+          {% for e in form.name.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="field">
+          {{ form.description.label(class="field__label") }}
+          {{ form.description(class="input", rows="2") }}
+        </div>
+        <div class="field">
+          {{ form.threshold_m.label(class="field__label") }}
+          {{ form.threshold_m(class="input", type="number", min="1", style="max-width:6rem") }}
+          <p class="field__help">You are the first approver. Add more members afterwards.</p>
+          {% for e in form.threshold_m.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="hstack">
+          {{ form.submit(class="btn btn--primary btn--sm") }}
+          <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.list_vaults') }}">Cancel</a>
+        </div>
+      </form>
     </div>
   </div>
 </div>

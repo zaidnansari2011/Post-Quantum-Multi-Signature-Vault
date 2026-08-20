@@ -1,0 +1,70 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  The encryption protecting most systems today relies on problems that are slow for an ordinary
+  computer and fast for a large enough quantum one. That is not only a future concern: an attacker
+  can copy encrypted data now and decrypt it years later. Anything that must stay private or
+  provable for a decade is already exposed.
+</p>
+<p>
+  In August 2024 NIST published the first replacement standards. Q-Vault uses all three.
+</p>
+
+<h3>What is used where</h3>
+<ul>
+  <li><strong>ML-DSA</strong> (FIPS 204) — signatures. Every approval, and the seal over the audit
+    record.</li>
+  <li><strong>ML-KEM</strong> (FIPS 203) — key encapsulation. Wraps the AES key of every file
+    stored in a vault.</li>
+  <li><strong>SLH-DSA</strong> (FIPS 205) — a hash-based signature alternative, available as a
+    switchable option.</li>
+</ul>
+
+<h3>What it costs</h3>
+<p>
+  Post-quantum cryptography is affordable in time and expensive in space. Measured on the
+  development machine, against classical schemes measured the same way:
+</p>
+<table class="dt" style="margin-bottom:1rem">
+  <thead>
+    <tr><th>Scheme</th><th class="num">Sign</th><th class="num">Verify</th>
+        <th class="num">Public key</th><th class="num">Signature</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>RSA-2048 <span class="tiny muted">classical</span></td>
+        <td class="num">0.53 ms</td><td class="num">0.03 ms</td><td class="num">294 B</td><td class="num">256 B</td></tr>
+    <tr><td>ECDSA P-256 <span class="tiny muted">classical</span></td>
+        <td class="num">0.04 ms</td><td class="num">0.08 ms</td><td class="num">91 B</td><td class="num">71 B</td></tr>
+    <tr><td><span class="tag">ML-DSA-65</span></td>
+        <td class="num">1.71 ms</td><td class="num">0.63 ms</td><td class="num">1,952 B</td><td class="num">3,309 B</td></tr>
+    <tr><td><span class="tag">SLH-DSA-SHAKE-256f</span></td>
+        <td class="num">38.66 ms</td><td class="num">1.77 ms</td><td class="num">64 B</td><td class="num">49,856 B</td></tr>
+  </tbody>
+</table>
+<p>
+  ML-DSA's signature is about 13&times; RSA's. SLH-DSA's is roughly 195&times; — but its public key
+  is 64 bytes, less than a quarter of RSA's, and its security rests on nothing but a hash function
+  rather than on any structured mathematical assumption. That trade is why both are standardised,
+  and why being able to move between them matters.
+</p>
+
+<h3>Changing algorithm</h3>
+<p>
+  Every key, signature and seal records the algorithm that produced it, and is always verified by
+  that same algorithm. Switching the system default therefore changes only which algorithm
+  <em>new</em> keys use. Everything already signed keeps its own and stays valid — nothing is
+  re-signed, and the stored signature bytes do not change.
+</p>
+<p>
+  The practical consequence is that the system deliberately runs a mixed set: existing keys on one
+  algorithm, new keys on another, all verifying. When an algorithm is eventually weakened,
+  replacing it is a configuration change rather than a rebuild, and no history is lost.
+</p>
+<p>
+  Moving to a <em>weaker</em> algorithm is treated differently from moving to a stronger one. A
+  decrease in NIST security category is refused unless it is explicitly confirmed with a stated
+  reason, and it is recorded as a distinct downgrade event so an auditor can find every weakening
+  decision by event type alone.
+</p>
+{% endblock %}

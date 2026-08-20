@@ -1,9 +1,15 @@
 """APScheduler integration (Phase 7).
 
-Registers two cron jobs — automated key rotation and the proposal-expiry sweep — each running
-inside an application context. The job bodies live in ``rotation_service`` as plain functions, so
-they are equally callable from a test or an admin "run now" button; the scheduler only decides
-*when* they run.
+Registers three background jobs — automated key rotation, the proposal-expiry sweep, and the
+witness sync — each running inside an application context. The job bodies live in services as
+plain functions, so they are equally callable from a test or an admin "run now" button; the
+scheduler only decides *when* they run.
+
+The witness sync belongs here rather than in the request path. Offering a checkpoint means an
+HTTP round trip to another process, and putting that in ``after_request`` would make every write
+wait on a machine that might be down — turning a witness outage into a Q-Vault outage, which is
+precisely backwards. On a timer, an unreachable witness costs nothing but a growing lag, which is
+what the transparency page reports.
 """
 
 from __future__ import annotations
@@ -12,6 +18,7 @@ import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from .extensions import db
 
@@ -28,7 +35,7 @@ def init_scheduler(app):
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return None
 
-    from qvault.services import rotation_service
+    from qvault.services import checkpoint_service, rotation_service
 
     def _in_context(job):
         def _run():
@@ -54,6 +61,13 @@ def init_scheduler(app):
         id="proposal_expiry",
         replace_existing=True,
     )
+    if app.config.get("WITNESS_URL"):
+        scheduler.add_job(
+            _in_context(checkpoint_service.sync_witness),
+            IntervalTrigger(seconds=int(app.config.get("WITNESS_SYNC_SECONDS", 60))),
+            id="witness_sync",
+            replace_existing=True,
+        )
     scheduler.start()
     app.extensions["scheduler"] = scheduler
     return scheduler

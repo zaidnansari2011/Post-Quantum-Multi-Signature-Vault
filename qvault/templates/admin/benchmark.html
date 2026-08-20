@@ -1,186 +1,126 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Benchmark{% endblock %}
+{% block title %}Performance — Q-Vault{% endblock %}
 
-{# One rendering used for both the stored report and a live run, so they are directly comparable. #}
 {% macro sig_table(rows) %}
-  {% if not rows %}
-  <p class="text-muted small mb-0">No signature algorithms measured.</p>
-  {% else %}
-  {# `or 1` guards the bar-width division: a report with all-zero timings must not 500 the page. #}
+  {% if rows %}
+  {# `or 1` guards the bar-width division: an all-zero report must not 500 the page. #}
   {% set max_sign = (rows | map(attribute='ops.sign.median_ms') | max) or 1 %}
   {% set max_size = (rows | map(attribute='measured_sizes.signature') | max) or 1 %}
-  <div class="table-responsive">
-    <table class="table table-sm mb-0 align-middle small">
-      <thead><tr>
-        <th>Algorithm</th><th>Cat.</th>
-        <th class="text-end">Keygen</th><th style="min-width:150px">Sign</th>
-        <th class="text-end">Verify</th><th class="text-end">Verify/s</th>
-        <th class="text-end">Public key</th><th style="min-width:150px">Signature</th>
-      </tr></thead>
+  <div class="scroll-x">
+    <table class="dt">
+      <thead>
+        <tr><th style="width:20%">Algorithm</th><th class="num">Cat.</th><th class="num">Keygen</th>
+            <th style="width:16%">Sign</th><th class="num">Verify</th><th class="num">Verify/s</th>
+            <th class="num">Public key</th><th style="width:16%">Signature</th></tr>
+      </thead>
       <tbody>
       {% for r in rows %}
-        {% set ops = r.ops %}
         <tr>
+          <td><span class="tag">{{ r.alg_id }}</span><span class="dt__sub">{{ r.nist_standard }}</span></td>
+          <td class="num">{{ r.security_category }}</td>
+          <td class="num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
           <td>
-            <span class="algo-chip">{{ r.alg_id }}</span>
-            <div class="text-muted">{{ r.nist_standard }}</div>
+            <span class="mono">{{ '%.3f'|format(r.ops.sign.median_ms) }} ms</span>
+            <div class="bar" style="margin-top:3px"><div class="bar__fill" style="width: {{ (r.ops.sign.median_ms / max_sign * 100)|round(1) }}%"></div></div>
           </td>
-          <td class="text-mono">{{ r.security_category }}</td>
-          <td class="text-end text-mono">{{ '%.3f'|format(ops.keygen.median_ms) }} ms</td>
+          <td class="num">{{ '%.3f'|format(r.ops.verify.median_ms) }}</td>
+          <td class="num">{{ '%.0f'|format(r.ops.verify.ops_per_sec) }}</td>
+          <td class="num">{{ r.measured_sizes.public_key }} B</td>
           <td>
-            <div class="text-mono">{{ '%.3f'|format(ops.sign.median_ms) }} ms</div>
-            <div class="bar mt-1"><div class="bar__fill" style="width: {{ (ops.sign.median_ms / max_sign * 100)|round(1) }}%"></div></div>
-          </td>
-          <td class="text-end text-mono">{{ '%.3f'|format(ops.verify.median_ms) }} ms</td>
-          <td class="text-end text-mono">{{ '%.0f'|format(ops.verify.ops_per_sec) }}</td>
-          <td class="text-end text-mono">{{ r.measured_sizes.public_key }} B</td>
-          <td>
-            <div class="text-mono">{{ r.measured_sizes.signature }} B</div>
-            <div class="bar mt-1"><div class="bar__fill alt" style="width: {{ (r.measured_sizes.signature / max_size * 100)|round(1) }}%"></div></div>
+            <span class="mono">{{ r.measured_sizes.signature }} B</span>
+            <div class="bar" style="margin-top:3px"><div class="bar__fill bar__fill--alt" style="width: {{ (r.measured_sizes.signature / max_size * 100)|round(1) }}%"></div></div>
           </td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  {% else %}
+  <div class="panel__body"><p class="small muted" style="margin:0">No signature algorithms measured.</p></div>
   {% endif %}
 {% endmacro %}
 
 {% macro kem_table(rows) %}
-  <div class="table-responsive">
-    <table class="table table-sm mb-0 align-middle small">
-      <thead><tr>
-        <th>Algorithm</th><th>Cat.</th><th class="text-end">Keygen</th>
-        <th class="text-end">Encapsulate</th><th class="text-end">Decapsulate</th>
-        <th class="text-end">Public key</th><th class="text-end">Ciphertext</th>
-      </tr></thead>
-      <tbody>
-      {% for r in rows %}
-        <tr>
-          <td><span class="algo-chip">{{ r.alg_id }}</span>
-              <div class="text-muted">{{ r.nist_standard }}</div></td>
-          <td class="text-mono">{{ r.security_category }}</td>
-          <td class="text-end text-mono">{{ '%.3f'|format(r.ops.keygen.median_ms) }} ms</td>
-          <td class="text-end text-mono">{{ '%.3f'|format(r.ops.encapsulate.median_ms) }} ms</td>
-          <td class="text-end text-mono">{{ '%.3f'|format(r.ops.decapsulate.median_ms) }} ms</td>
-          <td class="text-end text-mono">{{ r.measured_sizes.public_key }} B</td>
-          <td class="text-end text-mono">{{ r.measured_sizes.ciphertext }} B</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+<div class="scroll-x">
+  <table class="dt">
+    <thead>
+      <tr><th style="width:24%">Algorithm</th><th class="num">Cat.</th><th class="num">Keygen</th>
+          <th class="num">Encapsulate</th><th class="num">Decapsulate</th>
+          <th class="num">Public key</th><th class="num">Ciphertext</th></tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><span class="tag">{{ r.alg_id }}</span><span class="dt__sub">{{ r.nist_standard }}</span></td>
+        <td class="num">{{ r.security_category }}</td>
+        <td class="num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
+        <td class="num">{{ '%.3f'|format(r.ops.encapsulate.median_ms) }}</td>
+        <td class="num">{{ '%.3f'|format(r.ops.decapsulate.median_ms) }}</td>
+        <td class="num">{{ r.measured_sizes.public_key }} B</td>
+        <td class="num">{{ r.measured_sizes.ciphertext }} B</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endmacro %}
 
 {% macro run_meta(rep) %}
-  <div class="d-flex flex-wrap gap-2 align-items-center small text-muted">
-    <span class="chip chip--muted">{{ rep.parameters.iterations }} iterations</span>
-    <span class="chip chip--muted">{{ rep.parameters.warmup }} warm-up</span>
-    <span class="chip chip--muted">{{ rep.parameters.message_size_bytes }} B messages</span>
-    <span class="chip chip--muted">{{ rep.backend }}</span>
-    <span>{{ rep.environment.implementation }} {{ rep.environment.python }} ·
-      {{ rep.environment.system }} {{ rep.environment.release }} ·
-      {{ rep.environment.machine }} · {{ rep.environment.cpu_count }} logical CPUs</span>
-  </div>
+<div class="panel__body" style="padding-top:.5rem;padding-bottom:.5rem">
+  <span class="tiny muted">
+    {{ rep.parameters.iterations }} iterations · {{ rep.parameters.warmup }} warm-up ·
+    {{ rep.parameters.message_size_bytes }} B messages · {{ rep.backend }} ·
+    {{ rep.environment.implementation }} {{ rep.environment.python }} ·
+    {{ rep.environment.system }} · {{ rep.environment.cpu_count }} CPUs
+  </span>
+</div>
 {% endmacro %}
 
-{% block content %}
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+{% block chrome %}
+<div class="head">
   <div>
-    <div class="eyebrow mb-1">Measurement</div>
-    <h1 class="h2 mb-0">Benchmark</h1>
-  </div>
-  <form method="post" action="{{ url_for('admin.run_benchmark') }}" class="d-flex gap-2 align-items-end">
-    {{ form.hidden_tag() }}
-    <div>
-      <label class="form-label small mb-1 fw-semibold">{{ form.iterations.label.text }}</label>
-      {{ form.iterations(class="form-control form-control-sm", style="width:6rem", type="number", min="1", max=max_iterations) }}
+    <div class="head__title">Security</div>
+    <div class="head__sub">
+      {% if report and report.signatures %}Reference run {{ report.generated_at[:10] }}
+      {% else %}No reference run recorded{% endif %}
     </div>
-    {{ form.submit(class="btn btn-outline-primary btn-sm") }}
-  </form>
+  </div>
+  <div class="head__actions">
+    <form method="post" action="{{ url_for('admin.run_benchmark') }}" class="hstack hstack--tight">
+      {{ form.hidden_tag() }}
+      {{ form.iterations(class="input input--auto", type="number", min="1", max=max_iterations, style="width:4.5rem") }}
+      {{ form.submit(class="btn btn--ghost btn--sm") }}
+    </form>
+  </div>
 </div>
+{% include "admin/_nav.html" %}
+{% endblock %}
 
-<p class="text-muted mb-3" style="max-width:68ch;">
-  Every figure is measured through the same <code>CryptoRegistry</code> the application signs and
-  verifies through, so it describes what Q-Vault actually costs. Timings use a monotonic
-  high-resolution clock after a warm-up phase, with the cyclic garbage collector disabled inside
-  the measured loop, and <strong>every sample is checked for correctness</strong> — a signature
-  that did not verify, or a shared secret that did not agree, aborts the run rather than being
-  reported as a fast result. Medians are shown; the mean is skewed by scheduler noise.
-</p>
+{% block content %}
 
 {% if live %}
-<div class="panel mb-3" style="border-color: var(--accent-100);">
+<div class="panel" style="margin-bottom:1rem">
   <div class="panel__head">
-    <div>
-      <div class="eyebrow">Live run · just now</div>
-      <div class="text-muted small">
-        indicative only — capped at {{ max_iterations }} iterations so a page request cannot hang
-      </div>
-    </div>
-    <span class="chip">{{ live.elapsed_s }} s</span>
+    <span class="label">Live run</span>
+    <span class="push tiny muted">{{ live.elapsed_s }} s · capped at {{ max_iterations }} iterations</span>
   </div>
   {{ run_meta(live) }}
-  <div class="divider"></div>
   {{ sig_table(live.signatures) }}
-  {% if live.kems %}<div class="divider"></div>{{ kem_table(live.kems) }}{% endif %}
+  {% if live.kems %}{{ kem_table(live.kems) }}{% endif %}
 </div>
 {% endif %}
 
 {% if report and report.signatures %}
-{% set fastest = report.signatures | sort(attribute='ops.sign.median_ms') | first %}
-{% set smallest = report.signatures | sort(attribute='measured_sizes.signature') | first %}
-{% set largest = report.signatures | sort(attribute='measured_sizes.signature') | last %}
-{% set size_ratio = (largest.measured_sizes.signature / (smallest.measured_sizes.signature or 1))|round|int %}
-<div class="stat-row mb-3">
-  <div class="stat">
-    <div class="stat__num" style="font-size:1.05rem;">{{ fastest.alg_id }}</div>
-    <div class="stat__label">Fastest to sign</div>
-  </div>
-  <div class="stat">
-    <div class="stat__num">{{ '%.2f'|format(fastest.ops.sign.median_ms) }}<span class="text-muted" style="font-size:.9rem;"> ms</span></div>
-    <div class="stat__label">Median sign time</div>
-  </div>
-  <div class="stat">
-    <div class="stat__num">{{ size_ratio }}×</div>
-    <div class="stat__label">Largest ÷ smallest signature</div>
-  </div>
-  <div class="stat">
-    <div class="stat__num">{{ report.signatures|length + report.kems|length }}</div>
-    <div class="stat__label">Algorithms measured</div>
-  </div>
-</div>
-
-<div class="panel mb-3">
-  <div class="panel__head">
-    <div>
-      <div class="eyebrow">Signature algorithms</div>
-      <div class="text-muted small">recorded {{ report.generated_at }}</div>
-    </div>
-    <span class="chip chip--muted">reference run</span>
-  </div>
+<div class="panel">
+  <div class="panel__head"><span class="label">Signatures</span></div>
   {{ run_meta(report) }}
-  <div class="divider"></div>
   {{ sig_table(report.signatures) }}
-  <p class="text-muted small mt-3 mb-0">
-    The trade-off the agility layer exists to let you make: the lattice schemes sign in about a
-    millisecond with kilobyte signatures, while the hash-based scheme has a
-    <strong>{{ report.signatures | map(attribute='measured_sizes.public_key') | min }}-byte public
-    key</strong> and rests on no structured hardness assumption — at roughly {{ size_ratio }}× the
-    signature size.
-  </p>
 </div>
 
 {% if report.kems %}
-<div class="panel mb-3">
-  <div class="panel__head">
-    <div class="eyebrow">Key-encapsulation mechanisms</div>
-  </div>
+<div class="panel">
+  <div class="panel__head"><span class="label">Key encapsulation</span></div>
   {{ kem_table(report.kems) }}
-  <p class="text-muted small mt-3 mb-0">
-    This cost is paid once per encrypted file: the KEM wraps the AES-256-GCM key, and the bulk of
-    the file is encrypted symmetrically.
-  </p>
 </div>
 {% endif %}
 
@@ -191,26 +131,18 @@
   {% endfor %}
 {% endfor %}
 {% if truncated %}
-<div class="panel mb-3" style="border-color: var(--warn-line); background: var(--warn-050);">
-  <div class="small">
-    The time budget was reached before all iterations completed for
-    <strong>{{ truncated | join(', ') }}</strong>. Those figures summarise fewer samples.
-  </div>
+<div class="alert alert-warning" style="margin-top:1rem">
+  <span>Time budget reached for {{ truncated | join(', ') }} — those figures summarise fewer samples.</span>
 </div>
 {% endif %}
 
 {% else %}
-<div class="panel mb-3">
-  <div class="eyebrow mb-2">No reference run recorded</div>
-  <p class="text-muted small mb-2">
-    The canonical figures are produced offline, away from a web request, so they are not competing
-    with the server for CPU. Generate them with:
+<div class="empty">
+  <div class="empty__title">No reference run recorded</div>
+  <p class="empty__sub">
+    Canonical figures are produced offline so they do not compete with the server for CPU.
   </p>
-  <code class="hashpill d-inline-block" style="cursor:default;">py -3.13 scripts/run_benchmark.py</code>
-  <p class="text-muted small mt-2 mb-0">
-    It writes <code>docs/benchmarks/latest.json</code> (read by this page) and
-    <code>latest.md</code> (ready to paste into the report).
-  </p>
+  <p><code class="hash" style="cursor:default">py -3.13 scripts/run_benchmark.py</code></p>
 </div>
 {% endif %}
 {% endblock %}

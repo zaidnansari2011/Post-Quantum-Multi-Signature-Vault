@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_chip, tally, pager, sort_link %}
+{% block title %}Approvals — Q-Vault{% endblock %}
+{% block bodyclass %}body body--flush{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Approvals</div>
+    <div class="head__sub">Every decision across your vaults</div>
+  </div>
+  <div class="head__actions">
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.list_vaults') }}">Vaults</a>
+  </div>
+</div>
+
+<div class="tabs">
+  {% for key, label in [('needs_you','Needs you'), ('open','Open'), ('settled','Settled'), ('all','All')] %}
+    <a class="tab" href="{{ url_for('approvals.index', **filters.to_query(tab=key, page=1)) }}"
+       {% if filters.tab == key %}aria-current="page"{% endif %}>
+      {{ label }}<span class="tab__n">{{ counts[key] }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<form class="toolbar" method="get" action="{{ url_for('approvals.index') }}" data-autosubmit>
+  <input type="hidden" name="tab" value="{{ filters.tab }}">
+  <label class="toolbar__search">
+    <span class="visually-hidden" hidden>Search</span>
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/>
+    </svg>
+    <input class="input" type="search" name="q" value="{{ filters.query }}" placeholder="Search decisions">
+  </label>
+
+  <select class="input input--auto" name="vault" aria-label="Vault">
+    <option value="">All vaults</option>
+    {% for v in vaults %}
+      <option value="{{ v.id }}" {% if filters.vault_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+    {% endfor %}
+  </select>
+
+  <select class="input input--auto" name="sort" aria-label="Sort">
+    {% for key, label in [('recent','Newest first'), ('oldest','Oldest first'), ('deadline','By deadline'), ('title','By title')] %}
+      <option value="{{ key }}" {% if filters.sort == key %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  {% if filters.is_filtered %}
+    <a class="btn btn--quiet btn--sm" href="{{ url_for('approvals.index', tab=filters.tab) }}">Clear</a>
+  {% endif %}
+  <span class="toolbar__count">{{ page.total }} decision{{ '' if page.total == 1 else 's' }}</span>
+</form>
+{% endblock %}
+
+{% block content %}
+{% if rows %}
+<div class="scroll-x scroll-x--tall">
+  <table class="dt">
+    <thead>
+      <tr>
+        <th style="width:40%">{{ sort_link('approvals.index', filters, 'title', 'Decision') }}</th>
+        <th>Vault</th>
+        <th>Status</th>
+        <th style="width:130px">Progress</th>
+        <th>{{ sort_link('approvals.index', filters, 'deadline', 'Deadline') }}</th>
+        <th class="num">{{ sort_link('approvals.index', filters, 'recent', 'Opened') }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set p = r.proposal %}
+      <tr {% if r.needs_me %}class="is-unread"{% endif %}>
+        <td>
+          <a class="dt__link truncate" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
+          <span class="dt__sub truncate">
+            {{ p.creator.display_name or p.creator.email }}
+            {%- if p.file %} · attachment{% endif %}
+          </span>
+        </td>
+        <td class="truncate">
+          <a href="{{ url_for('vaults.vault_detail', vid=p.vault_id) }}">{{ p.vault.name }}</a>
+        </td>
+        <td>
+          {{ status_chip(r.status) }}
+          {% if r.needs_me %}<span class="chip chip--waiting">Needs you</span>{% endif %}
+        </td>
+        <td>
+          {{ tally(r.signed, p.required_m, p.required_n) }}
+        </td>
+        <td class="tiny muted nowrap">
+          {{ p.expires_at.strftime('%d %b %H:%M') if p.expires_at else '—' }}
+        </td>
+        <td class="num tiny muted nowrap">{{ p.created_at.strftime('%d %b') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{{ pager('approvals.index', page, filters) }}
+
+{% else %}
+<div class="empty">
+  {% if filters.is_filtered %}
+    <div class="empty__title">No matches</div>
+    <p class="empty__sub">Nothing in this view matches those filters.</p>
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('approvals.index', tab=filters.tab) }}">Clear filters</a>
+  {% elif filters.tab == 'needs_you' %}
+    <div class="empty__title">Nothing needs your signature</div>
+    <p class="empty__sub">Everything you can approve has been signed.</p>
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('approvals.index', tab='open') }}">See what's open</a>
+  {% else %}
+    <div class="empty__title">No decisions yet</div>
+    <p class="empty__sub">Decisions live in vaults. Open one to propose the first.</p>
+    <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.list_vaults') }}">Go to vaults</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

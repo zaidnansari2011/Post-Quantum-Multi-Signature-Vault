@@ -276,19 +276,15 @@ def _finalize_if_decided(proposal, *, actor_id: int) -> None:
         )
 
 
-def cast_vote(
-    proposal,
-    signer,
-    password: str,
-    decision: str,
-    *,
-    reason: str | None = None,
-    commit: bool = True,
-) -> Signature:
-    """Record ``signer``'s signed ``decision`` ('approve'|'reject') on ``proposal``.
+def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
+    """The governance gate every vote passes, whoever held the key.
 
-    Raises :class:`ApprovalError` for a governance failure (closed proposal, non-signer, double
-    vote, no key) and :class:`~qvault.services.key_service.KeyUnlockError` for a wrong password.
+    The order is observable and must not change: the decision whitelist first (so an invalid
+    decision can never reach the signed bytes), then the durable expiry refresh (so a
+    stale-but-open proposal cannot be voted on), then the status gate, then authorisation against
+    the **frozen** signer snapshot rather than current vault membership, and finally the advisory
+    duplicate check — advisory because ``uq_signature_signer`` is the authority and a concurrent
+    vote may not be visible here yet.
     """
     if decision not in ("approve", "reject"):
         raise ApprovalError("Decision must be 'approve' or 'reject'.")
@@ -303,24 +299,80 @@ def cast_vote(
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
 
-    key = key_service.active_signing_key(signer)
-    if key is None:
-        raise ApprovalError("You have no active signing key to vote with.")
 
+def _require_device_signing_key(signer, key) -> None:
+    """Reject anything but an active, device-custodied signing key belonging to ``signer``.
+
+    The web path gets all of these implicitly, because ``active_signing_key`` can only return a
+    key that already satisfies them. The device path has no such guarantee: the key is resolved
+    from a bearer token, so each property has to be asserted explicitly.
+
+    ``status`` and ``can_sign`` are checked separately even though retire-but-retain always sets
+    them together — nothing else in the codebase gates on key status at vote time, so without the
+    ``status`` check revoking a stolen phone would be cosmetic.
+    """
+    if key is None:
+        raise ApprovalError("You have no enrolled device key to vote with.")
+    if key.owner_id != signer.id:
+        raise ApprovalError("That signing key does not belong to you.")
+    if key.role != "sig":
+        raise ApprovalError("That key is not a signing key.")
+    if key.wrap_domain != "device":
+        # A device endpoint accepting a password-wrapped key would mean its private half had left
+        # this server. That is a compromise report, not a vote.
+        raise ApprovalError("That key is not device-custodied.")
+    if key.status != "active" or not key.can_sign:
+        raise ApprovalError("That device has been revoked and can no longer sign.")
+    if not current_app.extensions["crypto"].has_signature(key.alg_id):
+        raise ApprovalError(f"No provider is registered for {key.alg_id}.")
+
+
+def _record_vote(
+    proposal, signer, key, decision: str, sig_bytes: bytes, *, reason: str | None, commit: bool
+) -> Signature:
+    """Verify ``sig_bytes`` against ``key`` and persist the vote, the ledger entry and any outcome.
+
+    **The message is re-derived here, never accepted as a parameter.** ``vote_signing_bytes``
+    enforces three bindings at once — the proposal (via ``payload_hash``, which transitively covers
+    the vault, action text, file hash, M/N, signer set, nonce and timestamp), the decision, and the
+    signer — under a domain tag that can never be confused with proposal bytes. Threading a
+    caller-supplied ``message`` through would hand all three away on precisely the path where the
+    caller is a remote client. The cost is one ``canonical_json`` over ~150 bytes.
+    """
+    from_device = key.wrap_domain == "device"
     message = vote_signing_bytes(
         proposal_payload_hash=proposal.payload_hash, decision=decision, signer_id=signer.id
     )
-    # May raise KeyUnlockError on a wrong password — surfaced to the caller unchanged.
-    sig_bytes = key_service.sign_with_key(signer, key, password, message)
-
-    # Defence in depth. Since ADR-0010, ``sign_with_key`` verifies before it returns, so this is
-    # normally unreachable — it is retained because the cost is one verification on a path that
-    # already spends ~80 ms deriving an Argon2id key, and because a vote is the one signature a
-    # human is held to. Do not delete it on the grounds that it is redundant; that redundancy is
-    # the point.
     provider = current_app.extensions["crypto"].signature(key.alg_id)
+
+    # Reject on length before handing untrusted bytes to the verifier.
+    expected = provider.meta.sizes["signature"]
+    if len(sig_bytes) != expected:
+        raise ApprovalError(
+            f"A {key.alg_id} signature must be {expected} bytes, got {len(sig_bytes)}."
+        )
+
+    # This verification plays two different roles depending on who produced the signature.
+    #
+    # On the web path it is defence in depth: ``sign_with_key`` already verified these exact bytes
+    # microseconds earlier (ADR-0010), so it is normally unreachable. It is retained anyway — the
+    # cost is one verification on a request that already spent ~80 ms on Argon2id, and a vote is
+    # the one signature a human is held to. Do not delete it on the grounds that it is redundant;
+    # that redundancy is the point.
+    #
+    # On the device path every premise of that argument is gone. Nothing upstream verified
+    # anything, and this line is the FIRST and ONLY cryptographic opinion on an attacker-supplied
+    # byte string. It must also stay *before* the flush below, because failing afterwards would be
+    # unrepairable: it would burn the signer's one ``uq_signature_signer`` slot so the legitimate
+    # signer could never vote, write an immutable ledger entry asserting a signing event that
+    # never happened, and permanently desynchronise the offline verifier's signature/ledger
+    # cross-check — an honest Q-Vault reporting itself as tampered with, forever.
     if not provider.verify(key.public_key, message, sig_bytes):
-        raise ApprovalError("Freshly produced signature failed verification; vote not recorded.")
+        raise ApprovalError(
+            "The signature did not verify under your registered device key; vote not recorded."
+            if from_device
+            else "Freshly produced signature failed verification; vote not recorded."
+        )
 
     sig = Signature(
         signer_id=signer.id,
@@ -348,7 +400,18 @@ def cast_vote(
                 "decision": decision,
                 "alg_id": key.alg_id,
                 "signature_sha256": sha256_hex(sig_bytes),
+                # Added in Phase 1 (ADR-0016). Purely additive: ledger_service.append hashes the
+                # canonical payload at append time and verify_chain recomputes from the stored
+                # text, so existing entries keep verifying, and both offline verifiers read this
+                # payload by named key, so extra fields are ignored and old bundles still verify.
+                "custody": "device" if from_device else "server",
+                "key_id": key.id,
+                # Joins this vote to its device_enrolled entry, so an auditor working from the
+                # ledger alone can confirm the key was recorded as device-held.
+                "public_key_sha256": sha256_hex(key.public_key),
             },
+            # The human is the actor even when a device held the key; audit_service filters and
+            # renders on these two fields.
             actor=f"user:{signer.id}",
             actor_id=signer.id,
             vault_id=proposal.vault_id,
@@ -365,3 +428,60 @@ def cast_vote(
             raise ApprovalError("You have already voted on this proposal.") from exc
         raise  # a different constraint (e.g. a ledger-seq race) must not look like a re-vote
     return sig
+
+
+def cast_vote(
+    proposal,
+    signer,
+    password: str,
+    decision: str,
+    *,
+    reason: str | None = None,
+    commit: bool = True,
+) -> Signature:
+    """Record ``signer``'s signed ``decision`` ('approve'|'reject') on ``proposal``.
+
+    The password-custodied path: this server unwraps the signer's private key and produces the
+    signature itself. See ``record_device_vote`` for the device-custodied path.
+
+    Raises :class:`ApprovalError` for a governance failure (closed proposal, non-signer, double
+    vote, no key) and :class:`~qvault.services.key_service.KeyUnlockError` for a wrong password.
+    """
+    _authorize_vote(proposal, signer, decision, commit=commit)
+
+    key = key_service.active_signing_key(signer)
+    if key is None:
+        raise ApprovalError("You have no active signing key to vote with.")
+
+    message = vote_signing_bytes(
+        proposal_payload_hash=proposal.payload_hash, decision=decision, signer_id=signer.id
+    )
+    # May raise KeyUnlockError on a wrong password — surfaced to the caller unchanged.
+    sig_bytes = key_service.sign_with_key(signer, key, password, message)
+
+    return _record_vote(proposal, signer, key, decision, sig_bytes, reason=reason, commit=commit)
+
+
+def record_device_vote(
+    proposal,
+    signer,
+    key,
+    decision: str,
+    sig_bytes: bytes,
+    *,
+    reason: str | None = None,
+    commit: bool = True,
+) -> Signature:
+    """Record a vote whose signature was produced on the signer's own device (ADR-0016).
+
+    The private half of ``key`` has never been held by this server, so there is nothing here to
+    unlock and no password to take: this function *admits* a signature rather than producing one.
+    That is the whole point — a compromised server cannot forge this vote.
+
+    ``key`` must be resolved from the caller's authenticated device, never from a client-supplied
+    identifier. Passing an attacker-chosen key here would let a valid token vote under someone
+    else's identity; ``_require_device_signing_key`` is the last line of defence, not the first.
+    """
+    _authorize_vote(proposal, signer, decision, commit=commit)
+    _require_device_signing_key(signer, key)
+    return _record_vote(proposal, signer, key, decision, sig_bytes, reason=reason, commit=commit)

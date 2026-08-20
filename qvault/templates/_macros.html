@@ -1,0 +1,57 @@
+{# Shared components. Anything used on more than one screen lives here, so a status chip means
+   the same thing everywhere and cannot drift screen by screen. #}
+
+{% macro status_chip(status) -%}
+  {%- if status == 'approved' %}<span class="chip chip--sealed">Approved</span>
+  {%- elif status == 'rejected' %}<span class="chip chip--broken">Rejected</span>
+  {%- elif status == 'expired' %}<span class="chip">Expired</span>
+  {%- else %}<span class="chip chip--waiting">Open</span>
+  {%- endif %}
+{%- endmacro %}
+
+{# One slot per authorised signer: approvals filled, the gap to the threshold hatched, seats
+   beyond the threshold empty. A quorum is a count of people, not a percentage. #}
+{% macro tally(signed, required_m, required_n) -%}
+<span class="tally" role="img" aria-label="{{ signed }} of {{ required_m }} required, {{ required_n }} approvers">
+  {%- for i in range(required_n) -%}
+    {%- if i < signed %}<span class="tally__slot tally__slot--approve"></span>
+    {%- elif i < required_m %}<span class="tally__slot tally__slot--needed"></span>
+    {%- else %}<span class="tally__slot"></span>
+    {%- endif -%}
+  {%- endfor -%}
+</span>
+{%- endmacro %}
+
+{% macro sort_link(endpoint, filters, key, label) -%}
+  <a href="{{ url_for(endpoint, **filters.to_query(sort=key, page=1)) }}">
+    {{ label }}{% if filters.sort == key %} ↓{% endif %}
+  </a>
+{%- endmacro %}
+
+{% macro pager(endpoint, page, filters) -%}
+{% if page.pages and page.pages > 1 %}
+<div class="pager">
+  <span>Page {{ page.page }} of {{ page.pages }}</span>
+  {% if page.has_prev %}
+    <a class="btn btn--ghost btn--sm" href="{{ url_for(endpoint, **filters.to_query(page=page.prev_num)) }}">Previous</a>
+  {% else %}
+    <span class="btn btn--ghost btn--sm" aria-disabled="true" style="opacity:.4">Previous</span>
+  {% endif %}
+  {% if page.has_next %}
+    <a class="btn btn--ghost btn--sm" href="{{ url_for(endpoint, **filters.to_query(page=page.next_num)) }}">Next</a>
+  {% else %}
+    <span class="btn btn--ghost btn--sm" aria-disabled="true" style="opacity:.4">Next</span>
+  {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro hash(value, chars=12) -%}
+<code class="hash" data-copy="{{ value }}" title="Click to copy">{{ value[:chars] }}…</code>
+{%- endmacro %}
+
+{% macro key_state(key) -%}
+  {%- if key.status == 'active' %}<span class="chip chip--sealed">Active</span>
+  {%- else %}<span class="chip">Retired</span>
+  {%- endif %}
+{%- endmacro %}

@@ -236,17 +236,22 @@ def test_tamper_demo_shows_the_break_then_restores(app, client):
     )
 
     before = client.get(f"/vaults/1/proposals/{pid}").get_data(as_text=True)
-    assert "matches what was signed" in before
+    assert "Content verified" in before
+    assert "Content altered" not in before
 
     client.post(f"/vaults/1/proposals/{pid}/demo/tamper", follow_redirects=True)
     after = client.get(f"/vaults/1/proposals/{pid}").get_data(as_text=True)
-    assert "does not match" in after
+    # Stated on the page itself, not only in a panel a reader might never open: someone who
+    # glances at this screen must be told it is showing them text nobody signed.
+    assert "Content altered" in after
+    assert "Content verified" not in after
     assert "GB29-ATTACKER-0001" in after, "the rewritten text should be visible on the page"
     assert "no longer hash" in after
 
     client.post(f"/vaults/1/proposals/{pid}/demo/restore", follow_redirects=True)
     restored = client.get(f"/vaults/1/proposals/{pid}").get_data(as_text=True)
-    assert "matches what was signed" in restored
+    assert "Content verified" in restored
+    assert "Content altered" not in restored
 
 
 def test_tamper_demo_is_absent_in_a_production_like_config(app, client):

@@ -1,45 +1,43 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Register{% endblock %}
-{% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-6 col-lg-5">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h1 class="h4 mb-1">Create your account</h1>
-        <p class="text-muted small mb-4">
-          A post-quantum <strong>ML-DSA</strong> signing keypair is generated for you on
-          registration. Your private key is encrypted at rest under a key derived from your
-          password (Argon2id → AES-256-GCM) — the server never stores it in the clear.
-        </p>
-        <form method="post" novalidate>
-          {{ form.hidden_tag() }}
-          <div class="mb-3">
-            {{ form.display_name.label(class="form-label") }}
-            {{ form.display_name(class="form-control") }}
-            {% for e in form.display_name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.email.label(class="form-label") }}
-            {{ form.email(class="form-control") }}
-            {% for e in form.email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.password.label(class="form-label") }}
-            {{ form.password(class="form-control") }}
-            {% for e in form.password.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.confirm.label(class="form-label") }}
-            {{ form.confirm(class="form-control") }}
-            {% for e in form.confirm.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          {{ form.submit(class="btn btn-primary w-100") }}
-        </form>
-      </div>
-    </div>
-    <p class="text-center text-muted small mt-3">
-      Already registered? <a href="{{ url_for('auth.login') }}">Log in</a>.
-    </p>
+{% block title %}Create account — Q-Vault{% endblock %}
+{% block anon_content %}
+<div class="auth">
+  <div class="auth__mark">
+    <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true">
+      <rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="6" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="6" width="6" height="6" fill="currentColor" opacity=".18"/>
+    </svg>
+    <span>Q-Vault</span>
   </div>
+  <h1 class="auth__title">Create account</h1>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="field">
+      {{ form.display_name.label(class="field__label") }}
+      {{ form.display_name(class="input", autocomplete="name") }}
+      {% for e in form.display_name.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+    </div>
+    <div class="field">
+      {{ form.email.label(class="field__label") }}
+      {{ form.email(class="input", autocomplete="username") }}
+      {% for e in form.email.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+    </div>
+    <div class="field">
+      {{ form.password.label(class="field__label") }}
+      {{ form.password(class="input", autocomplete="new-password") }}
+      <p class="field__help">Unlocks your signing key. It cannot be reset for you.</p>
+      {% for e in form.password.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+    </div>
+    <div class="field">
+      {{ form.confirm.label(class="field__label") }}
+      {{ form.confirm(class="input", autocomplete="new-password") }}
+      {% for e in form.confirm.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+    </div>
+    {{ form.submit(class="btn btn--primary btn--block") }}
+  </form>
+  <p class="small muted auth__foot">
+    Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a>
+  </p>
 </div>
 {% endblock %}

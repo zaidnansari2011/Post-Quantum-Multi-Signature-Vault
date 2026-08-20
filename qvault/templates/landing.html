@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Q-Vault{% endblock %}
+{% block anon_content %}
+<div class="landing">
+  <div class="landing__mark">
+    <svg width="26" height="26" viewBox="0 0 18 18" aria-hidden="true">
+      <rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="6" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="6" width="6" height="6" fill="currentColor" opacity=".18"/>
+    </svg>
+    <span>Q-Vault</span>
+  </div>
+
+  <h1 class="landing__title">Approvals that need more than one person.</h1>
+  <p class="landing__lead">
+    Shared control over high-value actions, with a signed record of who authorised what.
+    Post-quantum signatures throughout.
+  </p>
+
+  <div class="hstack" style="justify-content:center;margin-bottom:2.5rem">
+    <a class="btn btn--primary" href="{{ url_for('auth.register') }}">Create account</a>
+    <a class="btn btn--ghost" href="{{ url_for('auth.login') }}">Sign in</a>
+  </div>
+
+  {# Live, checkable values — not the names of four algorithms. Every one of these can be
+     confirmed by a stranger against an exported decision, which is the point of the product and
+     was previously stated nowhere on its front door. #}
+  <div class="figures landing__figures">
+    <div class="figure">
+      <div class="figure__num">{{ log.entries if log.entries is not none else '—' }}</div>
+      <div class="figure__label">Audit entries</div>
+    </div>
+    <div class="figure">
+      <div class="figure__num">{{ log.root[:8] if log.root else '—' }}</div>
+      <div class="figure__label">Merkle root</div>
+    </div>
+    <div class="figure">
+      <div class="figure__num">{{ log.witnessed if log.witnessed else '—' }}</div>
+      <div class="figure__label">Witnessed to</div>
+    </div>
+    <div class="figure">
+      <div class="figure__num">{{ algorithms }}</div>
+      <div class="figure__label">PQC algorithms</div>
+    </div>
+  </div>
+
+  {# The verifier is the one thing here that is useful to someone with no account, so it is the
+     one thing offered to them — as an action, not as a footnote. #}
+  <div class="hstack" style="justify-content:center;margin-top:1.5rem">
+    <a class="btn btn--ghost" href="{{ url_for('verify.index') }}">Verify a decision</a>
+    <span class="tiny muted">no account needed</span>
+  </div>
+
+  <p class="tiny muted" style="margin-top:1.5rem">
+    <a href="{{ url_for('docs.index') }}">Documentation</a> · Reference system, not production-audited
+  </p>
+</div>
+{% endblock %}

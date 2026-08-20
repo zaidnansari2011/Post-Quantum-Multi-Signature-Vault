@@ -1,0 +1,10 @@
+{# Security is one section with several screens, so it carries its own tab strip rather than
+   appearing as three unrelated items in the main navigation. #}
+<div class="tabs">
+  <a class="tab" href="{{ url_for('admin.crypto') }}"
+     {% if request.endpoint == 'admin.crypto' %}aria-current="page"{% endif %}>Algorithms</a>
+  <a class="tab" href="{{ url_for('admin.rotation') }}"
+     {% if request.endpoint == 'admin.rotation' %}aria-current="page"{% endif %}>Keys</a>
+  <a class="tab" href="{{ url_for('admin.benchmark') }}"
+     {% if request.endpoint == 'admin.benchmark' %}aria-current="page"{% endif %}>Performance</a>
+</div>

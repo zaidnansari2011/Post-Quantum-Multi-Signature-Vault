@@ -53,7 +53,10 @@ def crypto():
         kem_metas=registry.kem_metas(),
         backend=registry.backend,
         keys_by_alg=config_service.signing_keys_by_algorithm(),
-        verify=config_service.verify_all_artefacts(),
+        # detail=True so the page can list the actual artefact inventory. After a switch the
+        # algorithm column visibly changes partway down it, which is the whole claim made
+        # concrete: a mixed set that still verifies, each item under its own algorithm.
+        verify=config_service.verify_all_artefacts(detail=True),
     )
 
 

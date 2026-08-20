@@ -10,10 +10,12 @@ algorithms.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 
 from flask import current_app
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from qvault.extensions import db
 from qvault.models.anchor import LedgerAnchor
@@ -110,27 +112,48 @@ def signing_keys_by_algorithm() -> dict[str, int]:
     """Count active USER signing keys grouped by algorithm — shows the live algorithm mix.
 
     The owner-less SYSTEM anchor key is excluded (it is not a user identity and is unaffected by a
-    signature switch).
+    signature switch). Device-custodied keys are excluded too: this figure answers "what will the
+    switch affect?", and a device key is enrolled at a fixed algorithm the server cannot re-issue,
+    so counting a user's phone alongside their password key would double-count one identity.
     """
     rows = (
         db.session.query(Key.alg_id, func.count(Key.id))
-        .filter(Key.role == "sig", Key.status == "active", Key.owner_id.isnot(None))
+        .filter(
+            Key.role == "sig",
+            Key.status == "active",
+            Key.owner_id.isnot(None),
+            Key.wrap_domain == "password",
+        )
         .group_by(Key.alg_id)
         .all()
     )
     return {alg_id: count for alg_id, count in rows}
 
 
-def verify_all_artefacts() -> dict:
+def verify_all_artefacts(*, detail: bool = False) -> dict:
     """Verify every stored signature (votes) and ledger anchor under its OWN pinned algorithm.
 
     This is the crypto-agility proof: the returned counts are all-pass even across a mixed set of
     algorithms and after the active algorithm has been switched. ``by_alg`` breaks the totals down
     per algorithm for display.
+
+    ``elapsed_ms`` is the wall-clock time spent inside the verification calls themselves — the
+    database round-trips that fetch the rows are deliberately excluded, so the interface can state
+    "N verifications in X ms" without that being a half-truth about where the time went.
+
+    ``detail=True`` additionally returns ``artefacts``: one record per artefact, oldest first, each
+    naming what it is in ordinary words, which algorithm it is pinned to, and whether the key that
+    verifies it is still active or has been retired. Two things need that list. An inventory view
+    cannot show heterogeneity without per-artefact algorithms; and ``key_status`` is the only place
+    retire-but-retain becomes visible — a signature verifying against a *retired* key is the proof
+    that replacing a key does not invalidate what it already signed. It is off by default because
+    it costs an extra eager-load that the plain counters do not need.
     """
     by_alg: dict[str, dict[str, int]] = {}
+    artefacts: list[dict] = []
     ok = 0
     total = 0
+    elapsed_ns = 0
 
     def _tally(alg_id: str, passed: bool) -> None:
         nonlocal ok, total
@@ -140,9 +163,69 @@ def verify_all_artefacts() -> dict:
         bucket["total"] += 1
         bucket["ok"] += 1 if passed else 0
 
-    for sig in Signature.query.all():
-        _tally(sig.alg_id, approval_service.verify_signature(sig, sig.proposal))
-    for anchor in LedgerAnchor.query.all():
-        _tally(anchor.alg_id, ledger_service.verify_anchor(anchor))
+    sig_q = Signature.query
+    anchor_q = LedgerAnchor.query
+    if detail:
+        sig_q = sig_q.options(
+            joinedload(Signature.signer), joinedload(Signature.proposal), joinedload(Signature.key)
+        )
+        anchor_q = anchor_q.options(joinedload(LedgerAnchor.key))
 
-    return {"ok": ok, "total": total, "all_pass": ok == total, "by_alg": by_alg}
+    for sig in sig_q.all():
+        t0 = time.perf_counter_ns()
+        passed = approval_service.verify_signature(sig, sig.proposal)
+        elapsed_ns += time.perf_counter_ns() - t0
+        _tally(sig.alg_id, passed)
+        if detail:
+            artefacts.append(
+                {
+                    "kind": "signature",
+                    "alg_id": sig.alg_id,
+                    "backend": sig.backend,
+                    "verified": passed,
+                    "size_bytes": len(sig.signature),
+                    "created_at": sig.created_at,
+                    "who": (sig.signer.display_name or sig.signer.email) if sig.signer else "someone",
+                    "what": sig.proposal.title if sig.proposal else "a decision",
+                    "action": "approved" if sig.decision == "approve" else "rejected",
+                    "key_status": sig.key.status if sig.key else "unknown",
+                    "fingerprint": sig.fingerprint(),
+                }
+            )
+
+    for anchor in anchor_q.all():
+        t0 = time.perf_counter_ns()
+        passed = ledger_service.verify_anchor(anchor)
+        elapsed_ns += time.perf_counter_ns() - t0
+        _tally(anchor.alg_id, passed)
+        if detail:
+            artefacts.append(
+                {
+                    "kind": "seal",
+                    "alg_id": anchor.alg_id,
+                    "backend": anchor.backend,
+                    "verified": passed,
+                    "size_bytes": len(anchor.signature),
+                    "created_at": anchor.created_at,
+                    "who": "The system",
+                    "what": f"the record up to entry #{anchor.seq}",
+                    "action": "sealed",
+                    "key_status": anchor.key.status if anchor.key else "unknown",
+                    "fingerprint": anchor.fingerprint(),
+                }
+            )
+
+    report = {
+        "ok": ok,
+        "total": total,
+        "all_pass": ok == total,
+        "by_alg": by_alg,
+        "elapsed_ms": round(elapsed_ns / 1e6, 2),
+    }
+    if detail:
+        # Oldest first: in a system that has switched algorithms, chronological order is what
+        # makes the change legible — the pinned algorithm visibly changes partway down the list.
+        report["artefacts"] = sorted(
+            artefacts, key=lambda a: (a["created_at"] is None, a["created_at"])
+        )
+    return report

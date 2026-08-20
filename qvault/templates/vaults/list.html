@@ -1,39 +1,61 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Vaults{% endblock %}
-{% block content %}
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
-  <div>
-    <div class="eyebrow mb-1">Vaults</div>
-    <h1 class="h2 mb-0">Your vaults</h1>
-  </div>
-  <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.new_vault') }}">+ New vault</a>
-</div>
+{% block title %}Vaults — Q-Vault{% endblock %}
+{% block bodyclass %}body body--flush{% endblock %}
 
-{% if vaults %}
-<div class="row g-3">
-  {% for v in vaults %}
-  <div class="col-md-6 col-lg-4">
-    <div class="panel h-100 d-flex flex-column">
-      <h2 class="h5 mb-1">
-        <a href="{{ url_for('vaults.vault_detail', vid=v.id) }}">{{ v.name }}</a>
-      </h2>
-      <p class="text-muted small mb-2">{{ v.description or "No description" }}</p>
-      <div class="d-flex gap-2 flex-wrap mb-2">
-        <span class="chip">{{ v.policy.threshold_m }} of {{ v.signer_ids()|length }} to approve</span>
-        <span class="algo-chip">{{ v.kem_alg_id }}</span>
-      </div>
-      <div class="mt-auto pt-2 small text-muted" style="border-top:1px solid var(--line-2);">
-        {{ v.members|length }} member{{ '' if v.members|length == 1 else 's' }} ·
-        {{ v.proposals|length }} proposal{{ '' if v.proposals|length == 1 else 's' }}
-      </div>
-    </div>
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Vaults</div>
+    <div class="head__sub">{{ rows|length }} vault{{ '' if rows|length == 1 else 's' }}</div>
   </div>
-  {% endfor %}
+  <div class="head__actions">
+    <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">New vault</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if rows %}
+<div class="scroll-x">
+  <table class="dt">
+    <thead>
+      <tr>
+        <th style="width:34%">Vault</th>
+        <th>Policy</th>
+        <th class="num">Members</th>
+        <th class="num">Open</th>
+        <th>Waiting on you</th>
+        <th>File encryption</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr {% if r.needs_me %}class="is-unread"{% endif %}>
+        <td>
+          <a class="dt__link truncate" href="{{ url_for('vaults.vault_detail', vid=r.vault.id) }}">{{ r.vault.name }}</a>
+          {% if r.vault.description %}<span class="dt__sub truncate">{{ r.vault.description }}</span>{% endif %}
+        </td>
+        <td class="mono nowrap">{{ r.vault.policy.threshold_m }} of {{ r.signers }}</td>
+        <td class="num">{{ r.vault.members|length }}</td>
+        <td class="num">{{ r.open }}</td>
+        <td>
+          {% if r.needs_me %}
+            <span class="chip chip--waiting">{{ r.needs_me }}</span>
+          {% else %}
+            <span class="tiny muted">—</span>
+          {% endif %}
+        </td>
+        <td><span class="tag">{{ r.vault.kem_alg_id }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% else %}
-<div class="panel text-center text-muted py-5">
-  You are not a member of any vault yet.
-  <a href="{{ url_for('vaults.new_vault') }}">Create one</a> to get started.
+<div class="empty">
+  <div class="empty__title">No vaults</div>
+  <p class="empty__sub">A vault holds a group of people and the number of them who must agree.</p>
+  <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">Create a vault</a>
 </div>
 {% endif %}
 {% endblock %}

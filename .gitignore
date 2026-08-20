@@ -1,5 +1,7 @@
 # --- Secrets & instance data (NEVER commit) ---
 .env
+.env.*
+!.env.example
 instance/
 *.key
 *.pem
@@ -42,3 +44,6 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Node toolchain for the JS interop test (tests/interop) and, later, the mobile client.
+node_modules/

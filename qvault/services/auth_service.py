@@ -76,6 +76,26 @@ def register_user(email: str, display_name: str, password: str) -> User:
     return user
 
 
+def update_display_name(user: User, display_name: str, *, commit: bool = True) -> User:
+    """Change the name shown beside this user's actions.
+
+    Deliberately does not touch the email. The email is this account's identifier — it is what a
+    vault owner types to add someone, and it is embedded in the ``user_registered`` ledger payload
+    that is already hashed into the chain. Changing it would leave the audit record naming an
+    address that no longer resolves to anyone, so the product does not offer it.
+
+    The display name has no such problem: the record stores actor *ids*, and names are resolved for
+    display at read time, so a rename shows up consistently across the whole history.
+    """
+    name = (display_name or "").strip()
+    if not name:
+        raise ValueError("A display name cannot be empty.")
+    user.display_name = name[:255]
+    if commit:
+        db.session.commit()
+    return user
+
+
 def authenticate(email: str, password: str) -> User | None:
     """Return the user if the credentials are valid, else None.
 

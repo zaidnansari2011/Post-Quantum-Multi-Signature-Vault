@@ -88,12 +88,29 @@ class SLHDSAShake256fProvider(_QuantcryptSignatureProvider):
     (quantcrypt exposes only the 256f/256s SPHINCS+ parameter sets, both category 5.)
     """
 
+    # INTEROPERABILITY NOTE — measured, not assumed.
+    #
+    # quantcrypt's FAST_SPHINCS wraps PQClean's ``sphincs-shake-256f-simple``, which is the
+    # **SPHINCS+ round-3 submission**. FIPS 205 (SLH-DSA) is derived from that submission but is
+    # **not byte-compatible with it**: signatures produced here are rejected by a conforming
+    # FIPS 205 implementation, and vice versa. This was established by checking real signatures
+    # from this provider against @noble/post-quantum's FIPS 205 code, at identical key (64 B) and
+    # signature (49,856 B) sizes — it fails even through noble's ``internal.verify``, which skips
+    # the FIPS 205 message prefix, so the difference is in the construction rather than in message
+    # preprocessing.
+    #
+    # The ``alg_id`` is left unchanged because every stored artefact pins it and renaming would
+    # invalidate existing signatures' provider lookup. What must not happen is the system claiming
+    # something untrue (ADR-0011), so ``nist_standard`` states what this actually is. Consequence:
+    # the offline browser verifier cannot check these signatures and says so, rather than
+    # reporting valid ones as forged. ML-DSA-65 and ML-DSA-87 are byte-compatible with FIPS 204
+    # and verify in the browser exactly as they do here.
     _CLS = FAST_SPHINCS
     meta = AlgMeta(
         alg_id="SLH-DSA-SHAKE-256f",
         family="SLH-DSA",
         human_name="SPHINCS+ SHAKE-256f (category 5)",
-        nist_standard="FIPS 205",
+        nist_standard="SPHINCS+ round 3 (basis of FIPS 205; not interoperable with it)",
         security_category=5,
         backend="quantcrypt",
         pqclean_name="sphincs-shake-256f-simple",

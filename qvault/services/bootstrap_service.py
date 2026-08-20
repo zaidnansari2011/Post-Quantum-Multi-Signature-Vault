@@ -12,7 +12,7 @@ from flask import Flask, current_app
 
 from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
-from qvault.services import ledger_service
+from qvault.services import checkpoint_service, ledger_service
 
 
 def seed() -> None:
@@ -36,6 +36,13 @@ def seed() -> None:
     # Anchor the head so the ledger is SYSTEM-signed from the very first entry onward.
     if ledger_service.latest_anchor() is None:
         ledger_service.anchor_head()
+
+    # And checkpoint it, so the log has a signed Merkle root from entry zero. Seeding this at
+    # startup rather than on first export matters: the checkpoint sequence is only evidence of
+    # append-only growth if it starts at the beginning. A log whose first checkpoint appears at
+    # size 400 has said nothing about entries 0-399.
+    if checkpoint_service.latest_checkpoint() is None:
+        checkpoint_service.create_checkpoint()
 
 
 def init_database(app: Flask) -> None:

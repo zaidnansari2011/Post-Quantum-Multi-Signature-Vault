@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Documentation — Q-Vault{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Documentation</div>
+    <div class="head__sub">How the product works and what protects it</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:44rem">
+  <table class="dt">
+    <tbody>
+      {% for slug, title, summary in pages %}
+      <tr>
+        <td>
+          <a class="dt__link" href="{{ url_for('docs.page', slug=slug) }}">{{ title }}</a>
+          <span class="dt__sub">{{ summary }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

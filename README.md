@@ -12,7 +12,8 @@ and keys **rotate on a schedule without invalidating a single historical signatu
 Built on the three NIST post-quantum standards finalised in August 2024:
 **ML-KEM (FIPS 203)**, **ML-DSA (FIPS 204)**, **SLH-DSA (FIPS 205)**.
 
-> **Status:** feature-complete (P0–P8). 198 tests, ~92% coverage, CI green on Windows and Linux.
+> **Status:** feature-complete (P0–P8, plus device-held signing keys). 668 tests, CI green on
+> Windows and Linux.
 > Remaining work is the written report and demonstration (P9).
 >
 > This is an educational reference system, **not production-audited**. Its limitations are
@@ -80,7 +81,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 copy .env.example .env      # then set SECRET_KEY and SERVER_MASTER_KEY
 
-pytest                                   # 198 tests
+pytest                                   # 668 tests
 python scripts/seed_demo.py --reset      # a demonstration database
 flask --app wsgi run --debug             # http://127.0.0.1:5000/
 ```
@@ -125,7 +126,7 @@ q-vault/
 │  ├─ scheduler.py          # APScheduler: rotation + proposal expiry
 │  └─ templates/ static/
 ├─ scripts/                 # run_benchmark.py, seed_demo.py
-├─ tests/                   # 198 tests
+├─ tests/                   # 668 tests
 └─ docs/                    # specification, ADRs, benchmark results
 ```
 
@@ -150,7 +151,11 @@ the runtime algorithm switch would no longer be safe.
   [0009 proposal binding](docs/adr/0009-proposal-binding-verification.md) ·
   [0010 verify after sign](docs/adr/0010-verify-after-sign.md) ·
   [0011 demonstrability](docs/adr/0011-demonstrability.md) ·
-  [0012 downgrade resistance](docs/adr/0012-downgrade-resistance.md)
+  [0012 downgrade resistance](docs/adr/0012-downgrade-resistance.md) ·
+  [0013 interface states its conclusion](docs/adr/0013-interface-states-its-conclusion.md) ·
+  [0014 product not demonstration](docs/adr/0014-product-not-demonstration.md) ·
+  [0015 transparency log and witness](docs/adr/0015-transparency-log-and-witness.md) ·
+  [0016 device-held signing keys](docs/adr/0016-device-held-signing-keys.md)
 
 ## Known limitations
 

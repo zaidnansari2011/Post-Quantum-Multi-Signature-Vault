@@ -1,85 +1,201 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — {{ vault.name }}{% endblock %}
-{% block content %}
-<nav aria-label="breadcrumb"><ol class="breadcrumb small">
-  <li class="breadcrumb-item"><a href="{{ url_for('vaults.list_vaults') }}">Vaults</a></li>
-  <li class="breadcrumb-item active">{{ vault.name }}</li>
-</ol></nav>
+{% from "_macros.html" import status_chip, tally %}
+{% block title %}{{ vault.name }} — Q-Vault{% endblock %}
+{# Edge-to-edge only for the tabs that ARE a table. Members and Settings are panel layouts, and
+   flush strips their gutters so they butt against the rail and clip at the window edge. #}
+{% block bodyclass %}body{% if tab in ('decisions', 'files') %} body--flush{% endif %}{% endblock %}
 
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+{% block chrome %}
+<div class="head">
   <div>
-    <div class="eyebrow mb-1">Vault</div>
-    <h1 class="h2 mb-1">{{ vault.name }}</h1>
-    <div class="d-flex gap-2 flex-wrap">
-      <span class="chip">{{ vault.policy.threshold_m }} of {{ n_signers }} to approve</span>
-      <span class="algo-chip">{{ vault.kem_alg_id }}</span>
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('vaults.list_vaults') }}">Vaults</a>
+    </nav>
+    <div class="head__title">{{ vault.name }}</div>
+    <div class="head__sub">
+      {{ vault.policy.threshold_m }} of {{ n_signers }} to approve · {{ vault.members|length }} members
     </div>
   </div>
-  <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">+ New proposal</a>
+  <div class="head__actions">
+    <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">New decision</a>
+  </div>
 </div>
-{% if vault.description %}<p class="text-muted">{{ vault.description }}</p>{% endif %}
 
-<div class="row g-3">
-  <div class="col-lg-7">
-    <div class="panel h-100">
-      <div class="panel__head">
-        <div class="eyebrow">Proposals</div>
-        <span class="chip chip--muted">{{ proposals|length }}</span>
-      </div>
-      {% if proposals %}
-      <div class="table-responsive"><table class="table table-sm mb-0 align-middle small">
-        <thead><tr><th>Title</th><th>Status</th><th>Threshold</th><th>File</th></tr></thead>
-        <tbody>
-        {% for p in proposals %}
-          <tr>
-            <td><a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=p.proposal_uuid) }}">{{ p.title }}</a></td>
-            <td>
-              <span class="led {{ 'ok' if p.status == 'approved' else ('bad' if p.status in ('rejected', 'expired') else '') }} me-1"></span>
-              {{ p.status }}
-            </td>
-            <td class="text-mono">{{ p.required_m }} of {{ p.required_n }}</td>
-            <td>{% if p.file %}<span class="chip chip--muted">encrypted</span>{% else %}—{% endif %}</td>
-          </tr>
+<div class="tabs">
+  {% for key, label, n in [
+      ('decisions','Decisions', rows|length),
+      ('members','Members', vault.members|length),
+      ('files','Files', files|length),
+      ('settings','Settings', None)] %}
+    {% if key != 'settings' or is_owner %}
+    <a class="tab" href="{{ url_for('vaults.vault_detail', vid=vault.id, tab=key) }}"
+       {% if tab == key %}aria-current="page"{% endif %}>
+      {{ label }}{% if n is not none %}<span class="tab__n">{{ n }}</span>{% endif %}
+    </a>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if tab == 'decisions' %}
+  {% if rows %}
+  <div class="scroll-x">
+    <table class="dt">
+      <thead>
+        <tr><th style="width:42%">Decision</th><th>Status</th><th style="width:130px">Progress</th>
+            <th>Proposed by</th><th class="num">Opened</th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% set p = r.proposal %}
+        <tr {% if r.needs_me %}class="is-unread"{% endif %}>
+          <td>
+            <a class="dt__link truncate" href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
+            {% if p.file %}<span class="dt__sub">attachment</span>{% endif %}
+          </td>
+          <td>
+            {{ status_chip(r.status) }}
+            {% if r.needs_me %}<span class="chip chip--waiting">Needs you</span>{% endif %}
+          </td>
+          <td>
+            {{ tally(r.signed, p.required_m, p.required_n) }}
+          </td>
+          <td class="truncate small">{{ p.creator.display_name or p.creator.email }}</td>
+          <td class="num tiny muted nowrap">{{ p.created_at.strftime('%d %b') }}</td>
+        </tr>
         {% endfor %}
-        </tbody>
-      </table></div>
-      {% else %}
-      <p class="text-muted small mb-0">No proposals yet.</p>
-      {% endif %}
-    </div>
+      </tbody>
+    </table>
   </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty__title">No decisions</div>
+    <p class="empty__sub">Nothing has been proposed in this vault.</p>
+    <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">Propose one</a>
+  </div>
+  {% endif %}
 
-  <div class="col-lg-5">
-    <div class="panel mb-3">
-      <div class="panel__head">
-        <div class="eyebrow">Members</div>
-        <span class="chip chip--muted">{{ vault.members|length }}</span>
-      </div>
-      {% for m in vault.members %}
-      <div class="d-flex justify-content-between align-items-center py-1 small">
-        <span class="text-truncate">{{ m.user.email }}</span>
-        <span class="chip chip--muted">{{ m.member_role }}</span>
-      </div>
-      {% endfor %}
-      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
-        Only signers count toward the threshold. The signer set is snapshotted into each proposal
-        when it opens, so changing membership cannot alter an approval already in progress.
-      </p>
+{% elif tab == 'members' %}
+  <div class="split">
+    <div class="scroll-x">
+      <table class="dt">
+        <thead><tr><th style="width:45%">Member</th><th>Access</th><th>Added</th>
+          {% if is_owner %}<th class="num">Actions</th>{% endif %}</tr></thead>
+        <tbody>
+          {% for m in vault.members %}
+          <tr>
+            <td>
+              <span class="dt__link truncate">{{ m.user.display_name or m.user.email }}</span>
+              <span class="dt__sub truncate">{{ m.user.email }}</span>
+            </td>
+            <td>
+              {% if m.member_role == 'owner' %}<span class="chip">Owner</span>
+              {% elif m.member_role == 'signer' %}<span class="chip chip--sealed">Can approve</span>
+              {% else %}<span class="chip">View only</span>{% endif %}
+            </td>
+            <td class="tiny muted nowrap">{{ m.created_at.strftime('%d %b %Y') }}</td>
+            {% if is_owner %}
+            <td class="num">
+              {% if m.member_role != 'owner' %}
+              <div class="hstack hstack--tight" style="justify-content:flex-end">
+                <form method="post" action="{{ url_for('vaults.change_member_role', vid=vault.id) }}" class="hstack hstack--tight">
+                  {{ role_form.hidden_tag() }}
+                  <input type="hidden" name="user_id" value="{{ m.user_id }}">
+                  <select class="input input--auto" name="role" style="height:26px;font-size:.74rem">
+                    <option value="signer" {% if m.member_role == 'signer' %}selected{% endif %}>Can approve</option>
+                    <option value="viewer" {% if m.member_role == 'viewer' %}selected{% endif %}>View only</option>
+                  </select>
+                  <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+                </form>
+                <form method="post" action="{{ url_for('vaults.remove_member', vid=vault.id) }}">
+                  {{ remove_form.hidden_tag() }}
+                  <input type="hidden" name="user_id" value="{{ m.user_id }}">
+                  <button class="btn btn--quiet btn--sm" type="submit">Remove</button>
+                </form>
+              </div>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
 
     {% if is_owner %}
     <div class="panel">
-      <div class="panel__head">
-        <div class="eyebrow">Add member</div>
+      <div class="panel__head"><span class="label">Add member</span></div>
+      <div class="panel__body">
+        <form method="post" action="{{ url_for('vaults.add_member', vid=vault.id) }}">
+          {{ member_form.hidden_tag() }}
+          <div class="field">{{ member_form.email(class="input", placeholder="Registered email") }}</div>
+          <div class="field">{{ member_form.role(class="input") }}</div>
+          {{ member_form.submit(class="btn btn--ghost btn--sm btn--block") }}
+        </form>
       </div>
-      <form method="post" action="{{ url_for('vaults.add_member', vid=vault.id) }}">
-        {{ member_form.hidden_tag() }}
-        <div class="mb-2">{{ member_form.email(class="form-control form-control-sm", placeholder="registered email") }}</div>
-        <div class="mb-2">{{ member_form.role(class="form-select form-select-sm") }}</div>
-        {{ member_form.submit(class="btn btn-sm btn-outline-primary") }}
-      </form>
     </div>
     {% endif %}
   </div>
-</div>
+
+{% elif tab == 'files' %}
+  {% if files %}
+  <div class="scroll-x">
+    <table class="dt">
+      <thead><tr><th style="width:40%">File</th><th>Decision</th><th class="num">Size</th>
+        <th>Encryption</th><th class="num"></th></tr></thead>
+      <tbody>
+        {% for p in files %}
+        <tr>
+          <td class="mono truncate">{{ p.file.filename }}</td>
+          <td class="truncate">
+            <a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
+          </td>
+          <td class="num">{{ p.file.size_bytes }} B</td>
+          <td><span class="tag">AES-256-GCM</span> <span class="tag">{{ p.file.kem_alg_id }}</span></td>
+          <td class="num">
+            <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.download_file', vid=vault.id, pid=p.proposal_uuid) }}">Download</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty__title">No files</div>
+    <p class="empty__sub">Files attached to a decision appear here, encrypted at rest.</p>
+  </div>
+  {% endif %}
+
+{% elif tab == 'settings' %}
+  <div class="split">
+    <div class="stack">
+      <div class="panel">
+        <div class="panel__head"><span class="label">Approval threshold</span></div>
+        <div class="panel__body">
+          <form method="post" action="{{ url_for('vaults.set_threshold', vid=vault.id) }}" class="hstack">
+            {{ threshold_form.hidden_tag() }}
+            {{ threshold_form.threshold_m(class="input input--auto", type="number", min="1", max=n_signers, style="width:5rem") }}
+            <span class="small muted">of {{ n_signers }} approvers</span>
+            <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+          </form>
+          <p class="field__help">Applies to new decisions. Open decisions keep the threshold they were created with.</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel__head"><span class="label">Vault</span></div>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>Owner</dt><dd class="truncate">{{ vault.owner.display_name or vault.owner.email }}</dd>
+          <dt>Created</dt><dd class="mono">{{ vault.created_at.strftime('%d %b %Y') }}</dd>
+          <dt>File encryption</dt><dd><span class="tag">{{ vault.kem_alg_id }}</span></dd>
+          <dt>Key custody</dt><dd class="small">Server, under the master key</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

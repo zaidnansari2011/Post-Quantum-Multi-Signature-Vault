@@ -1,265 +1,248 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — {{ proposal.title }}{% endblock %}
-{% block content %}
+{% from "_macros.html" import status_chip, tally %}
+{% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
+
 {% set verified_votes = votes | selectattr('verified') | list %}
-{% set pending = proposal.required_n - votes|length %}
+{% set unsigned = proposal.required_n - votes|length %}
+{% set still_needed = [proposal.required_m - approvals, 0] | max %}
 
-<nav aria-label="breadcrumb"><ol class="breadcrumb small">
-  <li class="breadcrumb-item"><a href="{{ url_for('vaults.list_vaults') }}">Vaults</a></li>
-  <li class="breadcrumb-item"><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></li>
-  <li class="breadcrumb-item active">Proposal</li>
-</ol></nav>
-
-<div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
-  <div>
-    <div class="eyebrow mb-1">Proposal · {{ proposal.required_m }} of {{ proposal.required_n }} threshold</div>
-    <h1 class="h2 mb-0">{{ proposal.title }}</h1>
+{% block chrome %}
+<div class="head">
+  <div style="min-width:0">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('vaults.list_vaults') }}">Vaults</a><span>/</span>
+      <a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a>
+    </nav>
+    <div class="head__title truncate">{{ proposal.title }}</div>
+    <div class="head__sub">
+      {{ proposal.creator.display_name or proposal.creator.email }} ·
+      {{ proposal.created_at.strftime('%d %b %Y, %H:%M') }}
+    </div>
   </div>
-  <span class="seal {{ 'bad' if proposal.status in ('rejected', 'expired') else '' }}"
-        style="font-size:.8rem;padding:.25rem .7rem;{% if proposal.status == 'open' %}color:var(--accent);background:var(--accent-050);border-color:var(--accent-100);{% endif %}">
-    {{ proposal.status }}
-  </span>
+  <div class="head__actions">
+    {{ status_chip(proposal.status) }}
+    {# Rule 3: the one figure on this screen. A decision is a count of people who agreed. #}
+    <div class="head__figure {% if approvals >= proposal.required_m %}head__figure--sealed{% endif %}">
+      <b>{{ approvals }}/{{ proposal.required_m }}</b>
+      <span>Approvals</span>
+    </div>
+    {{ tally(approvals, proposal.required_m, proposal.required_n) }}
+    {# The hand-off to the offline verifier is the closing move of the whole demonstration. It
+       was the quietest control on the page while this slot held nothing but a chip. #}
+    <a class="btn btn--ghost btn--sm"
+       href="{{ url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+      Export for verification
+    </a>
+  </div>
 </div>
+{% endblock %}
 
-<div class="row g-3">
-  <div class="col-lg-7">
-    <div class="panel mb-3">
+{% block content %}
+
+{# The one banner that survives in this product: the record it exists to protect is lying. #}
+{% if not binding.ok %}
+<div class="banner banner--broken">
+  <div>
+    <div class="banner__title">Content altered since signing</div>
+    <div class="banner__body">
+      {{ binding.detail }} The signatures below remain individually valid but do not authorise this
+      text, so they are not counted.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# `split` not `split--wide`: the signatures table carries seven columns of cryptographic metadata
+   and a 25rem sidebar clipped the last one off the screen. #}
+<div class="split">
+  <div class="stack">
+    <div class="panel">
       <div class="panel__head">
-        <div class="eyebrow">Action under approval</div>
-      </div>
-      <p style="white-space: pre-wrap">{{ proposal.action_text }}</p>
-      <div class="divider"></div>
-      <dl class="kv small mb-2">
-        <dt>Threshold</dt><dd class="text-mono">{{ proposal.required_m }} of {{ proposal.required_n }}</dd>
-        <dt>Proposal id</dt>
-        <dd><code class="hashpill" data-copy="{{ proposal.proposal_uuid }}">{{ proposal.proposal_uuid }}</code></dd>
-        <dt>Payload hash</dt>
-        <dd><code class="hashpill" data-copy="{{ proposal.payload_hash }}">{{ proposal.payload_hash[:24] }}…</code></dd>
+        <span class="label">Action</span>
         {% if proposal.expires_at %}
-        <dt>Deadline</dt><dd class="text-mono">{{ proposal.expires_at.strftime('%Y-%m-%d %H:%M') }}Z</dd>
+          <span class="push tiny muted">Expires {{ proposal.expires_at.strftime('%d %b %Y, %H:%M') }} UTC</span>
         {% endif %}
-      </dl>
-      <p class="text-muted small mb-0">
-        The action text, threshold and signer set were frozen into a canonical payload and hashed
-        when the proposal opened. Every signature below commits to <em>that</em> hash — so changing
-        the vault's membership or wording afterwards cannot retroactively change what was approved.
-      </p>
+      </div>
+      <div class="panel__body">
+        <p style="white-space:pre-wrap;margin:0">{{ proposal.action_text }}</p>
+      </div>
     </div>
 
-    {# --- Binding: is the text on screen the text that was signed? ------------------------- #}
-    <div class="panel mb-3 {{ '' if binding.ok else 'border-danger' }}"
-         {% if not binding.ok %}style="border-color: var(--danger-line);"{% endif %}>
+    {% if can_vote %}
+    <div class="panel">
+      <div class="panel__head"><span class="label">Sign</span></div>
+      <div class="panel__body">
+        <form method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
+          {{ vote_form.hidden_tag() }}
+          <div class="field">
+            {{ vote_form.password(class="input", placeholder="Your password", autocomplete="current-password") }}
+          </div>
+          <div class="field">
+            {{ vote_form.reason(class="input", placeholder="Note (optional)") }}
+          </div>
+          <div class="hstack">
+            {{ vote_form.approve(class="btn btn--primary") }}
+            {{ vote_form.reject(class="btn btn--ghost") }}
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="panel">
       <div class="panel__head">
-        <div class="eyebrow">Signed-content binding</div>
-        <span class="seal {{ '' if binding.ok else 'bad' }}">
-          {{ '✓ matches what was signed' if binding.ok else '✗ does not match' }}
-        </span>
+        <span class="label">Signatures</span>
+        <span class="push tiny muted">{{ verified_votes|length }} of {{ votes|length }} verify</span>
       </div>
-
-      {% if binding.ok %}
-      <p class="text-muted small mb-2">
-        The proposal above was re-hashed just now and still produces the value its signers signed,
-        and that value agrees with the record written into the ledger when it was created.
-      </p>
+      {% if votes %}
+      <div class="scroll-x">
+        <table class="dt">
+          <thead>
+            <tr><th style="width:24%">Signer</th><th>Decision</th><th>Algorithm</th>
+                <th class="num">Bytes</th><th>Fingerprint</th><th>Verified</th>
+                <th class="num" style="width:5.5rem">Signed</th></tr>
+          </thead>
+          <tbody>
+            {% for v in votes %}
+            <tr>
+              <td>
+                <span class="dt__link truncate">{{ v.sig.signer.display_name or v.sig.signer.email }}</span>
+                {% if v.sig.reason %}<span class="dt__sub truncate">{{ v.sig.reason }}</span>{% endif %}
+              </td>
+              <td>
+                {% if v.sig.decision == 'approve' %}<span class="chip chip--sealed">Approve</span>
+                {% else %}<span class="chip chip--broken">Reject</span>{% endif %}
+              </td>
+              <td><span class="tag">{{ v.sig.alg_id }}</span></td>
+              <td class="num">{{ v.sig.signature|length }}</td>
+              <td><code class="hash" data-copy="{{ v.sig.fingerprint() }}">{{ v.sig.fingerprint() }}</code></td>
+              <td>
+                {% if v.verified %}<span class="chip chip--sealed">Yes</span>
+                {% else %}<span class="chip chip--broken">No</span>{% endif %}
+              </td>
+              <td class="num tiny muted nowrap">{{ v.sig.created_at.strftime('%d %b') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-      <p class="small mb-2" style="color: var(--danger);">
-        <strong>{{ binding.detail }}</strong>
-        The signatures below may each still be cryptographically valid — but they are not consent
-        to what you are reading, so the tally refuses to count them.
-      </p>
-      {% endif %}
-
-      <dl class="kv small mb-0">
-        <dt>Recomputed now</dt>
-        <dd><code class="hashpill" data-copy="{{ binding.recomputed_hash }}">{{ binding.recomputed_hash[:14] }}…</code></dd>
-        <dt>Signed by voters</dt>
-        <dd><code class="hashpill" data-copy="{{ binding.recorded_hash }}">{{ binding.recorded_hash[:14] }}…</code></dd>
-        <dt>Recorded in ledger</dt>
-        <dd>
-          {% if binding.ledger_hash %}
-            <code class="hashpill" data-copy="{{ binding.ledger_hash }}">{{ binding.ledger_hash[:14] }}…</code>
-          {% else %}
-            <span class="seal bad">no creation record</span>
-          {% endif %}
-        </dd>
-      </dl>
-
-      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
-        Two independent checks. The first catches an edit to any signed field. The second catches
-        an attacker who also rewrites the stored hash to match — because the ledger's copy sits
-        inside the hash chain under the SYSTEM anchor, so faking it means forging that signature.
-      </p>
-
-      {% if demo_enabled %}
-      <div class="divider"></div>
-      <div class="d-flex align-items-center gap-2 flex-wrap">
-        <span class="chip" style="background:var(--warn-050);color:var(--warn);border-color:var(--warn-line);">dev only</span>
-        {% if tampered %}
-        <form method="post" action="{{ url_for('vaults.demo_restore_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-          {{ restore_form.hidden_tag() }}
-          {{ restore_form.restore(class="btn btn-success btn-sm") }}
-        </form>
-        {% else %}
-        <form method="post" action="{{ url_for('vaults.demo_tamper_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-          {{ tamper_form.hidden_tag() }}
-          {{ tamper_form.tamper(class="btn btn-outline-danger btn-sm") }}
-        </form>
-        {% endif %}
-        <span class="text-muted small">
-          Rewrites the text in the database, leaving every signature untouched.
-        </span>
-      </div>
+      <div class="panel__body"><p class="small muted" style="margin:0">No signatures yet.</p></div>
       {% endif %}
     </div>
 
     {% if proposal.file %}
     <div class="panel">
       <div class="panel__head">
-        <div class="eyebrow">Attached file · encrypted at rest</div>
-        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('vaults.download_file', vid=vault.id, pid=proposal.proposal_uuid) }}">Download &amp; decrypt</a>
+        <span class="label">Attachment</span>
+        <a class="btn btn--ghost btn--sm push"
+           href="{{ url_for('vaults.download_file', vid=vault.id, pid=proposal.proposal_uuid) }}">Download</a>
       </div>
-      <div class="text-mono mb-1">{{ proposal.file.filename }}</div>
-      <div class="d-flex flex-wrap gap-2 align-items-center small text-muted">
-        <span class="chip chip--muted">{{ proposal.file.size_bytes }} B</span>
-        <span class="chip chip--muted">AES-256-GCM</span>
-        <span>key wrapped by</span>
-        <span class="algo-chip">{{ proposal.file.kem_alg_id }}</span>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>File</dt><dd class="mono">{{ proposal.file.filename }}</dd>
+          <dt>Size</dt><dd class="mono">{{ proposal.file.size_bytes }} bytes</dd>
+          <dt>Encryption</dt><dd><span class="tag">AES-256-GCM</span> key wrapped by <span class="tag">{{ proposal.file.kem_alg_id }}</span></dd>
+        </dl>
       </div>
-      <p class="text-muted small mb-0 mt-2">
-        The file's symmetric key never exists unencrypted at rest: it is encapsulated to the vault's
-        ML-KEM public key, and the encapsulating key is pinned so rotation cannot strand the file.
-      </p>
     </div>
     {% endif %}
   </div>
 
-  <div class="col-lg-5">
-    {# --- Quorum ---------------------------------------------------------------------------- #}
-    <div class="panel mb-3">
-      <div class="panel__head">
-        <div class="eyebrow">Quorum</div>
-        <span class="text-mono small">{{ approvals }} / {{ proposal.required_m }}</span>
-      </div>
-
-      <div class="quorum">
-        {% for i in range(proposal.required_n) %}
-          {% if i < approvals %}
-            <span class="quorum__slot approve" title="verified approval"></span>
-          {% elif i < approvals + rejections %}
-            <span class="quorum__slot reject" title="rejection"></span>
-          {% elif i < proposal.required_m %}
-            <span class="quorum__slot needed" title="still required"></span>
-          {% else %}
-            <span class="quorum__slot" title="beyond the threshold"></span>
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head"><span class="label">Status</span></div>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>State</dt><dd>{{ status_chip(proposal.status) }}</dd>
+          <dt>Approvals</dt><dd class="mono">{{ approvals }} of {{ proposal.required_m }} required</dd>
+          <dt>Rejections</dt><dd class="mono">{{ rejections }}</dd>
+          <dt>Approvers</dt><dd class="mono">{{ proposal.required_n }} at creation</dd>
+          {% if unsigned > 0 and proposal.status == 'open' %}
+          <dt>Outstanding</dt><dd class="mono">{{ unsigned }}</dd>
           {% endif %}
-        {% endfor %}
+          {% if my_vote %}
+          <dt>You</dt>
+          <dd>
+            {% if my_vote.decision == 'approve' %}<span class="chip chip--sealed">Approved</span>
+            {% else %}<span class="chip chip--broken">Rejected</span>{% endif %}
+          </dd>
+          {% elif not is_signer %}
+          <dt>You</dt><dd><span class="chip">View only</span></dd>
+          {% endif %}
+        </dl>
       </div>
+    </div>
 
-      <p class="small text-muted mb-0">
-        <strong>{{ approvals }}</strong> verified approval{{ '' if approvals == 1 else 's' }},
-        <strong>{{ rejections }}</strong> rejection{{ '' if rejections == 1 else 's' }}
-        of <strong>{{ proposal.required_n }}</strong> authorised signers.
-        {% if proposal.status == 'approved' %}
-          <span class="fw-semibold" style="color:var(--ok)">Threshold met — approved.</span>
-        {% elif proposal.status == 'rejected' %}
-          <span class="fw-semibold" style="color:var(--danger)">Rejected — the threshold can no longer be met.</span>
-        {% elif proposal.status == 'expired' %}
-          <span class="fw-semibold text-muted">Expired — the deadline passed before approval.</span>
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Integrity</span>
+        {# Distinctive phrasing: "Verified" alone also appears as a column header in the
+           signatures table, and tests/test_proposal_binding.py needs to tell them apart. #}
+        <span class="push">
+          {% if binding.ok %}<span class="chip chip--sealed">Content verified</span>
+          {% else %}<span class="chip chip--broken">Content altered</span>{% endif %}
+        </span>
+      </div>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>Recomputed</dt><dd><code class="hash" data-copy="{{ binding.recomputed_hash }}">{{ binding.recomputed_hash[:16] }}…</code></dd>
+          <dt>Signed</dt><dd><code class="hash" data-copy="{{ binding.recorded_hash }}">{{ binding.recorded_hash[:16] }}…</code></dd>
+          <dt>In audit</dt>
+          <dd>
+            {% if binding.ledger_hash %}
+              <code class="hash" data-copy="{{ binding.ledger_hash }}">{{ binding.ledger_hash[:16] }}…</code>
+            {% else %}<span class="chip chip--broken">missing</span>{% endif %}
+          </dd>
+          <dt>Reference</dt><dd><code class="hash" data-copy="{{ proposal.proposal_uuid }}">{{ proposal.proposal_uuid[:16] }}…</code></dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Transparency</span>
+        <span class="push">
+          {% if transparency.witnesses %}<span class="chip chip--sealed">Witnessed</span>
+          {% elif transparency.checkpoint %}<span class="chip chip--waiting">Unwitnessed</span>
+          {% else %}<span class="chip">Not checkpointed</span>{% endif %}
+        </span>
+      </div>
+      <div class="panel__body">
+        <dl class="meta">
+          {% if transparency.checkpoint %}
+          <dt>Log entries</dt><dd class="mono">{{ transparency.checkpoint.tree_size }}</dd>
+          <dt>Root</dt>
+          <dd><code class="hash" data-copy="{{ transparency.checkpoint.root_hash }}">{{ transparency.checkpoint.root_hash[:16] }}…</code></dd>
+          <dt>Signed by</dt><dd><span class="tag">{{ transparency.checkpoint.alg_id }}</span></dd>
+          {% endif %}
+          {% for w in transparency.witnesses %}
+          <dt>Witness</dt>
+          <dd>{{ w.witness_name }} <span class="tag">{{ w.alg_id }}</span>
+              <code class="hash" data-copy="{{ w.key_fingerprint() }}">{{ w.key_fingerprint() }}</code></dd>
+          {% endfor %}
+        </dl>
+        <a class="btn btn--quiet btn--sm" style="margin-top:.5rem"
+           href="{{ url_for('verify.index') }}">Check an export →</a>
+      </div>
+    </div>
+
+    {% if demo_enabled %}
+    <div class="panel dev">
+      <div class="panel__head"><span class="label">Developer</span></div>
+      <div class="panel__body">
+        {% if tampered %}
+        <form method="post" action="{{ url_for('vaults.demo_restore_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+          {{ restore_form.hidden_tag() }}
+          {{ restore_form.restore(class="btn btn--sealed btn--sm btn--block") }}
+        </form>
         {% else %}
-          Needs {{ [proposal.required_m - approvals, 0]|max }} more.
+        <form method="post" action="{{ url_for('vaults.demo_tamper_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+          {{ tamper_form.hidden_tag() }}
+          {{ tamper_form.tamper(class="btn btn--ghost btn--sm btn--block") }}
+        </form>
         {% endif %}
-      </p>
-      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
-        The tally counts only signatures that verify <em>right now</em> — a tampered signature row
-        silently stops counting rather than manufacturing an approval.
-      </p>
-    </div>
-
-    {# --- Signature provenance --------------------------------------------------------------- #}
-    <div class="panel mb-3">
-      <div class="panel__head">
-        <div class="eyebrow">Signatures</div>
-        <span class="chip chip--muted">{{ votes|length }} cast · {{ verified_votes|length }} verify</span>
       </div>
-
-      {% for v in votes %}
-      <div class="vote {{ v.sig.decision }}{{ ' unverified' if not v.verified else '' }}">
-        <div class="vote__head">
-          <span class="led {{ 'ok' if v.verified else 'bad' }}"></span>
-          <span class="vote__who">{{ v.sig.signer.email }}</span>
-          <span class="seal {{ 'bad' if v.sig.decision == 'reject' else '' }} ms-auto">
-            {{ 'approved' if v.sig.decision == 'approve' else 'rejected' }}
-          </span>
-        </div>
-        <div class="vote__meta">
-          <span class="algo-chip">{{ v.sig.alg_id }}</span>
-          <span class="chip chip--muted">{{ v.sig.signature|length }} B</span>
-          <code class="hashpill" data-copy="{{ v.sig.fingerprint() }}"
-                title="SHA-256 fingerprint of the signature bytes">sig {{ v.sig.fingerprint() }}</code>
-          <span class="ms-auto" style="color: {{ 'var(--ok)' if v.verified else 'var(--danger)' }}; font-weight:700;">
-            {{ '✓ verified' if v.verified else '✗ verification failed' }}
-          </span>
-        </div>
-        {% if v.sig.reason %}<div class="small fst-italic mt-1 text-muted">“{{ v.sig.reason }}”</div>{% endif %}
-      </div>
-      {% else %}
-      <p class="text-muted small mb-0">No votes yet.</p>
-      {% endfor %}
-
-      {% if pending > 0 and proposal.status == 'open' %}
-      <div class="text-muted small mt-2">
-        {{ pending }} authorised signer{{ '' if pending == 1 else 's' }} yet to vote.
-      </div>
-      {% endif %}
-
-      {% if votes %}
-      <p class="text-muted mb-0 mt-2" style="font-size:.75rem;">
-        Each signature is bound to the signer's registered key: the public key and algorithm are
-        pinned on the row, and verification re-checks that the key belongs to that signer. Rotating
-        a key never invalidates a vote it already cast.
-      </p>
-      {% endif %}
-    </div>
-
-    {# --- Voting ---------------------------------------------------------------------------- #}
-    {% if can_vote %}
-    <div class="panel">
-      <div class="panel__head">
-        <div class="eyebrow">Cast your vote</div>
-      </div>
-      <p class="small text-muted">
-        Signing produces a post-quantum signature over this proposal's canonical payload with your
-        private key. Your password unlocks that key for this one operation only — it is re-wrapped
-        immediately and never held in the session.
-      </p>
-      <form method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
-        {{ vote_form.hidden_tag() }}
-        <div class="mb-2">{{ vote_form.password(class="form-control form-control-sm", placeholder="Your password") }}</div>
-        <div class="mb-2">{{ vote_form.reason(class="form-control form-control-sm", placeholder="Reason (optional)") }}</div>
-        <div class="d-flex gap-2">
-          {{ vote_form.approve(class="btn btn-success btn-sm flex-fill") }}
-          {{ vote_form.reject(class="btn btn-outline-danger btn-sm flex-fill") }}
-        </div>
-      </form>
-    </div>
-    {% elif my_vote %}
-    <div class="panel">
-      <div class="d-flex align-items-center gap-2">
-        <span class="led {{ 'ok' if my_vote.decision == 'approve' else 'bad' }}"></span>
-        <div class="small">
-          You have already
-          <strong>{{ 'approved' if my_vote.decision == 'approve' else 'rejected' }}</strong>
-          this proposal. Each signer votes once — enforced by a uniqueness constraint, not just the UI.
-        </div>
-      </div>
-    </div>
-    {% elif not is_signer %}
-    <div class="panel small text-muted">
-      You are a viewer on this vault, so you cannot sign proposals.
-    </div>
-    {% elif proposal.status != 'open' %}
-    <div class="panel small text-muted">
-      This proposal is {{ proposal.status }} and no longer accepts votes.
     </div>
     {% endif %}
   </div>
