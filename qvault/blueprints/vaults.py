@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from base64 import b64decode
 from datetime import UTC
 
 from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
@@ -281,12 +282,35 @@ def export_proposal(vid: int, pid: str):
     proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
 
     bundle = export_service.build_decision_bundle(proposal)
+
+    # ?format=json still yields the bare bundle. The package is the better thing to hand a person,
+    # but the raw artefact is what the verifier consumes and what tooling should be able to fetch.
+    if request.args.get("format") == "json":
+        return Response(
+            export_service.bundle_bytes(bundle),
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{export_service.bundle_filename(proposal)}"'
+                )
+            },
+        )
+
+    approvals, _ = approval_service.tally(proposal)
+    certificate = render_template(
+        "export/certificate.html",
+        bundle=bundle,
+        approvals=approvals,
+        device_signed=sum(1 for s in bundle["signatures"] if s.get("custody") == "device"),
+        # Derived from the bundle rather than the ORM so the rows line up with it exactly.
+        signature_sizes=[len(b64decode(s["signature_b64"])) for s in bundle["signatures"]],
+    )
     return Response(
-        export_service.bundle_bytes(bundle),
-        mimetype="application/json",
+        export_service.build_decision_package(bundle, certificate_html=certificate),
+        mimetype="application/zip",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="{export_service.bundle_filename(proposal)}"'
+                f'attachment; filename="{export_service.package_filename(proposal)}"'
             )
         },
     )

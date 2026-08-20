@@ -29,7 +29,10 @@ request that nothing outside this process has ever seen.
 
 from __future__ import annotations
 
+import io
 import json
+import pathlib
+import zipfile
 from base64 import b64encode
 from datetime import UTC, datetime
 
@@ -121,6 +124,9 @@ def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> d
                 "signer_name": s.signer.display_name if s.signer else None,
                 "decision": s.decision,
                 "reason": s.reason,
+                # Which half of ADR-0016 produced this. Additive and ignored by older
+                # verifiers, which read the bundle with .get() rather than a strict schema.
+                "custody": s.custody,
                 "alg_id": s.alg_id,
                 "backend": s.backend,
                 "public_key_b64": b64encode(s.public_key).decode(),
@@ -209,3 +215,74 @@ def bundle_bytes(bundle: dict) -> bytes:
 def bundle_filename(proposal: Proposal) -> str:
     stem = proposal.proposal_uuid.split("-")[0]
     return f"decision-{stem}.qvault.json"
+
+
+# -- the downloadable package ---------------------------------------------------------------------
+
+_README = """Q-Vault decision package
+========================
+
+  {title}
+  {vault}
+  Exported {exported}
+
+This folder contains everything needed to check that the people named in this decision really
+approved this exact text -- WITHOUT trusting the server that produced it, and without an account.
+
+  certificate.html   The decision in readable form. Open it in any browser; print it to PDF.
+  decision.json      The machine-checkable record: the decision, every signature, the public keys
+                     needed to check them, and the transparency-log entries that place it in time.
+  verifier.html      A self-contained verifier. No internet, no install, no npm.
+
+TO VERIFY
+
+  1. Open verifier.html in a browser.
+  2. Load decision.json into it.
+
+It re-derives the payload hash from the decision's own contents and checks every signature against
+the public keys in the file. Change one character of the action text in decision.json and the
+signatures stop matching -- which is the entire point.
+
+The certificate is for reading. decision.json is the evidence.
+"""
+
+
+def build_decision_package(bundle: dict, *, certificate_html: str) -> bytes:
+    """A single downloadable file that a person can read AND a machine can check.
+
+    A bare .json is the honest artefact -- it is what the verifier consumes and what every
+    signature is checked against -- but handed to somebody it reads as a debugging dump rather
+    than a record of a decision. So the package leads with a certificate a human can open and
+    print, keeps the JSON alongside as the thing that actually carries the proof, and includes the
+    offline verifier so checking it needs nothing but a browser.
+
+    Takes an already-built ``bundle`` rather than a proposal: ``build_decision_bundle`` can create
+    a checkpoint and sync the witness, so calling it a second time here would mean one download
+    committing the log twice.
+
+    ``certificate_html`` is rendered by the caller: templates belong to the view layer, and this
+    service must stay importable by the offline verifier's purity test.
+    """
+    verifier = pathlib.Path(__file__).resolve().parent.parent / "static" / "verifier.html"
+
+    buffer = io.BytesIO()
+    # Deflate rather than stored: verifier.html carries an inlined PQC bundle and compresses well.
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("certificate.html", certificate_html)
+        archive.writestr("decision.json", bundle_bytes(bundle))
+        if verifier.exists():
+            archive.writestr("verifier.html", verifier.read_text(encoding="utf-8"))
+        archive.writestr(
+            "README.txt",
+            _README.format(
+                title=bundle["decision"]["title"],
+                vault=bundle["decision"]["vault_name"] or f"Vault {bundle['decision']['vault_id']}",
+                exported=bundle["exported_at"],
+            ),
+        )
+    return buffer.getvalue()
+
+
+def package_filename(proposal: Proposal) -> str:
+    stem = proposal.proposal_uuid.split("-")[0]
+    return f"decision-{stem}.qvault.zip"

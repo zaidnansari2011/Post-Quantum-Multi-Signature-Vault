@@ -20,7 +20,9 @@ works, so this doubles as an API.
 
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 
 from flask import Blueprint, current_app, render_template, request
 
@@ -38,6 +40,18 @@ def _read_submission() -> tuple[object | None, str | None]:
         raw = upload.read(MAX_BUNDLE_BYTES + 1)
         if len(raw) > MAX_BUNDLE_BYTES:
             return None, f"That file is larger than {MAX_BUNDLE_BYTES // 1024 // 1024} MB."
+        # Accept the decision package as well as the bare bundle. The export hands people a .zip,
+        # so refusing it here would mean the one file the product gives you is the one file this
+        # page will not take.
+        if raw[:4] == b"PK":
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                    names = [n for n in archive.namelist() if n.endswith("decision.json")]
+                    if not names:
+                        return None, "That package contains no decision.json."
+                    raw = archive.read(names[0])
+            except (zipfile.BadZipFile, KeyError) as exc:
+                return None, f"That package could not be opened: {exc}"
         text = raw.decode("utf-8", errors="replace")
     else:
         text = (request.form.get("bundle_text") or "").strip()
@@ -52,8 +66,7 @@ def _read_submission() -> tuple[object | None, str | None]:
 
 def _wants_json() -> bool:
     return (
-        request.args.get("format") == "json"
-        or request.accept_mimetypes.best == "application/json"
+        request.args.get("format") == "json" or request.accept_mimetypes.best == "application/json"
     )
 
 
