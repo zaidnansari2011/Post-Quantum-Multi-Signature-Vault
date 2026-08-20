@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_chip, tally %}
+{% block title %}Home — Q-Vault{% endblock %}
+{# NOT body--flush: that modifier removes the page gutters, which is right for an edge-to-edge
+   table and wrong for a panel layout — it pushed these panels flush against the rail and clipped
+   them at the window edge. #}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">
+      {{ (current_user.display_name or current_user.email).split(' ')[0] }}
+    </div>
+    <div class="head__sub">
+      {% if counts.needs_you %}
+        {{ counts.needs_you }} waiting on you · {{ counts.open }} open
+      {% else %}
+        Nothing waiting on you · {{ counts.open }} open
+      {% endif %}
+    </div>
+  </div>
+  {# No .head__figure here: the figures strip below IS this screen's moment of scale, and a big
+     "6 AWAITING YOU" would only restate the subtitle two inches to its left. #}
+  <div class="head__actions">
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.new_vault') }}">New vault</a>
+    <a class="btn btn--primary btn--sm" href="{{ url_for('approvals.index') }}">Approvals</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# The first signed-in screen used to contain no cryptographic fact at all. These four are the
+   state of the log this product's whole argument rests on, and every one of them is checkable by
+   a stranger through /verify. #}
+<div class="figures" style="margin-bottom:1rem">
+  <div class="figure">
+    <div class="figure__num">{{ log.entries if log.entries is not none else '—' }}</div>
+    <div class="figure__label">Audit entries</div>
+  </div>
+  <div class="figure">
+    <div class="figure__num">
+      {% if log.root %}<code class="hash" data-copy="{{ log.root }}">{{ log.root[:8] }}</code>{% else %}—{% endif %}
+    </div>
+    <div class="figure__label">Merkle root</div>
+  </div>
+  <div class="figure">
+    <div class="figure__num">{{ log.witnessed if log.witnessed else '—' }}</div>
+    <div class="figure__label">
+      {% if log.lag == 0 %}Witnessed &amp; current{% elif log.witnessed %}Witnessed ({{ log.lag }} behind){% else %}Not witnessed{% endif %}
+    </div>
+  </div>
+  <div class="figure">
+    <div class="figure__num">{{ log.checkpointed if log.checkpointed else '—' }}</div>
+    <div class="figure__label">Checkpointed{% if log.alg_id %} · {{ log.alg_id }}{% endif %}</div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Waiting on you</span>
+        {% if waiting_total > waiting|length %}
+          <a class="btn btn--quiet btn--sm push" href="{{ url_for('approvals.index') }}">
+            View all {{ waiting_total }}
+          </a>
+        {% endif %}
+      </div>
+      {% if waiting %}
+      <div class="scroll-x">
+        <table class="dt">
+          <tbody>
+            {% for r in waiting %}
+            {% set p = r.proposal %}
+            <tr class="is-unread">
+              <td>
+                <a class="dt__link truncate" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
+                <span class="dt__sub truncate">{{ p.vault.name }} · {{ p.creator.display_name or p.creator.email }}</span>
+              </td>
+              <td style="width:120px">
+                {# The tally already encodes both numbers — filled slots against the hatched gap
+                   to the threshold. A "1/2" beside a three-slot mark states a second, different
+                   denominator for the same fact. #}
+                {{ tally(r.signed, p.required_m, p.required_n) }}
+              </td>
+              <td class="num tiny muted nowrap" style="width:90px">
+                {{ p.expires_at.strftime('%d %b') if p.expires_at else '' }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="panel__body">
+        <p class="small muted" style="margin:0">Nothing needs your signature.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Open elsewhere</span>
+        <a class="btn btn--quiet btn--sm push" href="{{ url_for('approvals.index', tab='open') }}">All open</a>
+      </div>
+      {% if open_rows %}
+      <div class="scroll-x">
+        <table class="dt">
+          <tbody>
+            {% for r in open_rows %}
+            {% set p = r.proposal %}
+            <tr>
+              <td>
+                <a class="dt__link truncate" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
+                <span class="dt__sub truncate">{{ p.vault.name }}</span>
+              </td>
+              <td style="width:120px">
+                {# The tally already encodes both numbers — filled slots against the hatched gap
+                   to the threshold. A "1/2" beside a three-slot mark states a second, different
+                   denominator for the same fact. #}
+                {{ tally(r.signed, p.required_m, p.required_n) }}
+              </td>
+              <td style="width:110px">
+                {% if r.signed_by_me %}<span class="chip chip--sealed">Signed</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="panel__body"><p class="small muted" style="margin:0">Nothing open.</p></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Your vaults</span>
+        <a class="btn btn--quiet btn--sm push" href="{{ url_for('vaults.list_vaults') }}">All</a>
+      </div>
+      {% if vaults %}
+      <table class="dt">
+        <tbody>
+          {% for v in vaults %}
+          <tr>
+            <td>
+              <a class="dt__link truncate" href="{{ url_for('vaults.vault_detail', vid=v.id) }}">{{ v.name }}</a>
+              <span class="dt__sub">{{ v.policy.threshold_m }} of {{ v.signer_ids()|length }} to approve</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="panel__body">
+        <p class="small muted">You are not in a vault yet.</p>
+        <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">Create one</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Recent activity</span>
+        <a class="btn btn--quiet btn--sm push" href="{{ url_for('ledger.view') }}">Audit</a>
+      </div>
+      {% if activity %}
+      <table class="dt">
+        <tbody>
+          {% for a in activity %}
+          <tr>
+            <td>
+              <span class="small">{{ a.sentence }}</span>
+              <span class="dt__sub">{{ a.entry.timestamp[:10] }} {{ a.entry.timestamp[11:16] }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="panel__body"><p class="small muted" style="margin:0">Nothing recorded yet.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

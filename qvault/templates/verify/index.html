@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Verify a decision — Q-Vault{% endblock %}
+
+{# Rendered identically signed in or out: base.html chooses the block, and this page has to work
+   for someone who has never had an account here, which is most of the people it is for. #}
+{% macro page() %}
+<div class="verify">
+  <div class="verify__head">
+    <h1 class="verify__title">Verify a decision</h1>
+    <p class="verify__lead">
+      Check an exported Q-Vault decision. No account needed.
+    </p>
+  </div>
+
+  {% if error %}
+  <div class="banner banner--broken">
+    <div><div class="banner__title">Could not read that file</div>
+         <div class="banner__body">{{ error }}</div></div>
+  </div>
+  {% endif %}
+
+  {% if report %}
+  <div class="banner {% if report.ok %}banner--sealed{% else %}banner--broken{% endif %}">
+    <div>
+      <div class="banner__title">{{ report.summary }}</div>
+      {% if report.facts.title %}
+      <div class="banner__body">
+        {{ report.facts.title }}{% if report.facts.vault %} · {{ report.facts.vault }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if report.facts.action_text %}
+  <div class="panel">
+    <div class="panel__head">
+      <span class="label">Decision</span>
+      <span class="push tiny muted mono">{{ report.facts.status }}</span>
+    </div>
+    <div class="panel__body">
+      <p style="white-space:pre-wrap;margin:0 0 .75rem">{{ report.facts.action_text }}</p>
+      <dl class="meta">
+        <dt>Approvals required</dt><dd class="mono">{{ report.facts.required_m }} of {{ report.facts.required_n }}</dd>
+        <dt>Opened</dt><dd class="mono">{{ report.facts.created_at }}</dd>
+        <dt>Payload hash</dt>
+        <dd><code class="hash" data-copy="{{ report.facts.payload_hash }}">{{ report.facts.payload_hash[:24] }}…</code></dd>
+      </dl>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <div class="panel__head"><span class="label">Checks</span></div>
+    <ol class="checks">
+      {% for c in report.checks %}
+      <li class="checks__row {% if c.skipped %}is-skipped{% elif c.ok %}is-ok{% else %}is-bad{% endif %}">
+        <span class="checks__mark" aria-hidden="true">
+          {%- if c.skipped %}—{% elif c.ok %}&check;{% else %}&times;{% endif -%}
+        </span>
+        <span class="checks__text">
+          <span class="checks__title">{{ c.title }}</span>
+          <span class="checks__detail">{{ c.detail }}</span>
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  {% if report.fingerprints.log or report.fingerprints.witnesses %}
+  <div class="panel">
+    <div class="panel__head"><span class="label">Keys in this bundle</span></div>
+    <div class="panel__body">
+      <dl class="meta">
+        {% if report.fingerprints.log %}
+        <dt>Log</dt>
+        <dd><code class="hash" data-copy="{{ report.fingerprints.log }}">{{ report.fingerprints.log }}</code></dd>
+        {% endif %}
+        {% for w in report.fingerprints.witnesses %}
+        <dt>{{ w.name }}</dt>
+        <dd><code class="hash" data-copy="{{ w.fingerprint }}">{{ w.fingerprint }}</code></dd>
+        {% endfor %}
+      </dl>
+      <p class="tiny muted" style="margin:.75rem 0 0">
+        A bundle names its own keys, so these prove nothing on their own. Compare them against
+        fingerprints you obtained from somewhere other than the file, then enter them below.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div class="panel">
+    <div class="panel__head"><span class="label">{% if report %}Check another{% else %}Bundle{% endif %}</span></div>
+    <div class="panel__body">
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('verify.index') }}">
+        <div class="field">
+          <input class="input" type="file" name="bundle" accept=".json,application/json">
+        </div>
+        <details class="verify__more">
+          <summary>Pin the keys you expect</summary>
+          <div class="field">
+            <label class="label" for="expect_log">Log key fingerprint</label>
+            <input class="input mono" id="expect_log" name="expect_log" value="{{ expect_log }}"
+                   placeholder="16 hex characters" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="label" for="expect_witness">Witness key fingerprint</label>
+            <input class="input mono" id="expect_witness" name="expect_witness" value="{{ expect_witness }}"
+                   placeholder="16 hex characters" autocomplete="off">
+          </div>
+        </details>
+        <button class="btn btn--primary" type="submit">Verify</button>
+      </form>
+    </div>
+  </div>
+
+  <p class="verify__foot tiny muted">
+    This page runs the check on our server, so it is a convenience rather than evidence.
+    To check without trusting us: <code class="mono">python -m qvault.verify decision.qvault.json</code>
+  </p>
+</div>
+{% endmacro %}
+
+{% block content %}{{ page() }}{% endblock %}
+{% block anon_content %}{{ page() }}{% endblock %}

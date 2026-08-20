@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Transparency — Q-Vault{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div style="min-width:0">
+    <div class="head__title">Audit</div>
+    <div class="head__sub mono">{{ origin }}</div>
+  </div>
+  <div class="head__actions">
+    {% if witness.configured and witness.lag == 0 %}
+      <span class="chip chip--sealed">Witnessed &amp; current</span>
+    {% elif witness.configured and witness.latest_witnessed_size %}
+      <span class="chip chip--waiting">{{ witness.lag }} behind</span>
+    {% elif witness.configured %}
+      <span class="chip chip--broken">Never witnessed</span>
+    {% else %}
+      <span class="chip">No witness</span>
+    {% endif %}
+  </div>
+</div>
+<nav class="tabs" aria-label="Audit sections">
+  <a class="tab" href="{{ url_for('ledger.view') }}">Record</a>
+  <a class="tab" aria-current="page" href="{{ url_for('ledger.transparency') }}">Transparency</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+
+{% if witness.configured and witness.lag and witness.lag > 0 %}
+{# The one banner that survives: the log is still accepting entries but can no longer prove they
+   extend what an outside party already saw. That is what a rewrite looks like from outside. #}
+<div class="banner banner--broken">
+  <div>
+    <div class="banner__title">The witness has stopped co-signing</div>
+    <div class="banner__body">
+      {{ witness.latest_witnessed_size }} entries confirmed, {{ witness.latest_size }} published.
+      New checkpoints are not provable extensions of the last one
+      {{ witness.witnesses[0][0] if witness.witnesses else 'the witness' }} confirmed.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="split split--wide">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Checkpoints</span>
+        <span class="push tiny muted">newest first</span>
+      </div>
+      {% if checkpoints %}
+      <div class="scroll-x">
+        <table class="dt">
+          <thead>
+            <tr><th class="num" style="width:5rem">Entries</th><th>Merkle root</th>
+                <th style="width:9rem">Algorithm</th><th style="width:8rem">Witnesses</th>
+                <th class="num" style="width:11rem">Signed</th></tr>
+          </thead>
+          <tbody>
+            {% for c in checkpoints %}
+            <tr>
+              <td class="num mono">{{ c.tree_size }}</td>
+              <td><code class="hash" data-copy="{{ c.root_hash }}">{{ c.root_hash[:24] }}…</code></td>
+              <td><span class="tag">{{ c.alg_id }}</span></td>
+              <td>
+                {% if c.cosignatures %}
+                  {% for w in c.cosignatures %}<span class="chip chip--sealed">{{ w.witness_name }}</span>{% endfor %}
+                {% else %}<span class="tiny muted">—</span>{% endif %}
+              </td>
+              <td class="num tiny muted nowrap">{{ c.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <div class="empty__title">No checkpoints yet</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Log</span>
+        <span class="push">
+          {% if verified %}<span class="chip chip--sealed">Signature valid</span>
+          {% else %}<span class="chip chip--broken">Signature invalid</span>{% endif %}
+        </span>
+      </div>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>Entries</dt><dd class="mono">{{ tree_size }}</dd>
+          <dt>Root</dt><dd><code class="hash" data-copy="{{ current_root }}">{{ current_root[:16] }}…</code></dd>
+          {% if latest %}
+          <dt>Checkpointed</dt><dd class="mono">{{ latest.tree_size }}</dd>
+          <dt>Algorithm</dt><dd><span class="tag">{{ latest.alg_id }}</span></dd>
+          <dt>Key</dt>
+          <dd><code class="hash" data-copy="{{ latest.key.public_fingerprint() }}">{{ latest.key.public_fingerprint() }}</code></dd>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Witness</span>
+        <span class="push">
+          {% if witness.configured %}<span class="chip chip--sealed">Configured</span>
+          {% else %}<span class="chip">None</span>{% endif %}
+        </span>
+      </div>
+      <div class="panel__body">
+        {% if witness.witnesses %}
+        <dl class="meta">
+          {% for name, fingerprint, alg in witness.witnesses %}
+          <dt>{{ name }}</dt>
+          <dd><span class="tag">{{ alg }}</span>
+              <code class="hash" data-copy="{{ fingerprint }}">{{ fingerprint }}</code></dd>
+          {% endfor %}
+          <dt>Confirmed</dt><dd class="mono">{{ witness.latest_witnessed_size or '—' }} of {{ witness.latest_size }}</dd>
+        </dl>
+        {% elif witness.configured %}
+        <p class="small muted" style="margin:0">
+          {{ witness.url }} has not co-signed a checkpoint.
+        </p>
+        {% else %}
+        <p class="small muted" style="margin:0">
+          Set <code class="mono">WITNESS_URL</code> and run <code class="mono">python -m witness</code>.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head"><span class="label">Verify</span></div>
+      <div class="panel__body">
+        <a class="btn btn--ghost btn--sm btn--block" href="{{ url_for('verify.index') }}">
+          Check an exported decision
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

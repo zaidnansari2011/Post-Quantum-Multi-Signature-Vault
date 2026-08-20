@@ -1,0 +1,163 @@
+"""Bundle the noble ESM modules into one self-contained IIFE, without a node toolchain.
+
+Flat concatenation is not an option: `abytes` is exported by both @noble/hashes/utils.js and
+@noble/post-quantum/utils.js, and the latter imports the former. So each module keeps its own
+scope inside a tiny CommonJS-style runtime, which is what a real bundler does anyway.
+
+Correctness is not argued from this script — it is established by running the bundle in a real
+browser against signatures produced by the Python side (tests/test_offline_verifier.py).
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).parent
+PACKAGES = {"@noble/post-quantum": "pq", "@noble/hashes": "hashes", "@noble/curves": "curves"}
+
+IMPORT_RE = re.compile(r"^import\s+([\s\S]*?)\s+from\s+['\"]([^'\"]+)['\"];?[ \t]*$", re.M)
+BARE_IMPORT_RE = re.compile(r"^import\s+['\"]([^'\"]+)['\"];?[ \t]*$", re.M)
+EXPORT_STAR_RE = re.compile(r"^export\s+\*\s+from\s+['\"]([^'\"]+)['\"];?[ \t]*$", re.M)
+EXPORT_LIST_RE = re.compile(r"^export\s*\{([^}]*)\}\s*;?[ \t]*$", re.M)
+EXPORT_DECL_RE = re.compile(
+    r"^export\s+(?=(?:async\s+)?(?:const|let|var|function|class)\b)", re.M
+)
+DECL_NAME_RE = re.compile(
+    r"^export\s+(?:async\s+)?(?:const|let|var|function\s*\*?|class)\s+([A-Za-z_$][\w$]*)", re.M
+)
+
+
+def resolve(spec: str, from_id: str) -> str:
+    if spec.startswith("."):
+        return str((pathlib.PurePosixPath(from_id).parent / spec).as_posix()).replace("/./", "/")
+    for pkg, folder in PACKAGES.items():
+        if spec == pkg:
+            return f"{folder}/index.js"
+        if spec.startswith(pkg + "/"):
+            return folder + "/" + spec[len(pkg) + 1 :]
+    raise SystemExit(f"cannot resolve {spec!r} from {from_id}")
+
+
+def normalise(path: str) -> str:
+    parts: list[str] = []
+    for part in path.split("/"):
+        if part == "..":
+            parts.pop()
+        elif part not in ("", "."):
+            parts.append(part)
+    return "/".join(parts)
+
+
+def transform(module_id: str, source: str) -> tuple[str, list[str]]:
+    """Rewrite one ESM module into a runtime factory body. Returns (body, dependency ids)."""
+    deps: list[str] = []
+
+    def dep(spec: str) -> str:
+        target = normalise(resolve(spec, module_id))
+        deps.append(target)
+        return target
+
+    def on_import(match: re.Match) -> str:
+        clause, spec = match.group(1).strip(), match.group(2)
+        target = dep(spec)
+        if clause.startswith("*"):  # import * as ns from 'x'
+            name = clause.split(" as ")[-1].strip()
+            return f"const {name} = __req({target!r});"
+        if clause.startswith("{"):  # import { a, b as c } from 'x'
+            inner = clause.strip("{} \n\t")
+            bindings = []
+            for item in filter(None, (i.strip() for i in inner.split(","))):
+                if " as " in item:
+                    original, alias = (p.strip() for p in item.split(" as "))
+                    bindings.append(f"{original}: {alias}")
+                else:
+                    bindings.append(item)
+            return f"const {{ {', '.join(bindings)} }} = __req({target!r});"
+        raise SystemExit(f"unsupported import clause in {module_id}: {clause!r}")
+
+    exported: list[str] = [m.group(1) for m in DECL_NAME_RE.finditer(source)]
+    reexport: list[str] = []
+
+    for match in EXPORT_LIST_RE.finditer(source):
+        for item in filter(None, (i.strip() for i in match.group(1).split(","))):
+            if " as " in item:
+                original, alias = (p.strip() for p in item.split(" as "))
+                reexport.append(f"{alias}: {original}")
+            else:
+                reexport.append(item)
+
+    star_targets = [dep(m.group(1)) for m in EXPORT_STAR_RE.finditer(source)]
+
+    body = IMPORT_RE.sub(on_import, source)
+    body = BARE_IMPORT_RE.sub(lambda m: f"__req({dep(m.group(1))!r});", body)
+    body = EXPORT_STAR_RE.sub("", body)
+    body = EXPORT_LIST_RE.sub("", body)
+    body = EXPORT_DECL_RE.sub("", body)
+
+    tail = [f"Object.assign(__exports, __req({t!r}));" for t in star_targets]
+    names = [*exported, *reexport]
+    if names:
+        tail.append("Object.assign(__exports, { " + ", ".join(names) + " });")
+    return body + "\n" + "\n".join(tail), deps
+
+
+def build(entries: dict[str, str], out: pathlib.Path) -> None:
+    modules: dict[str, str] = {}
+    queue = [normalise(resolve(spec, "root.js")) for spec in entries.values()]
+    seen: set[str] = set()
+
+    while queue:
+        module_id = queue.pop()
+        if module_id in seen:
+            continue
+        seen.add(module_id)
+        path = ROOT / module_id
+        if not path.exists():
+            raise SystemExit(f"missing module file: {path}")
+        body, deps = transform(module_id, path.read_text(encoding="utf-8"))
+        modules[module_id] = body
+        queue.extend(d for d in deps if d not in seen)
+
+    parts = [
+        "/* Generated by scratchpad/npm/bundle.py — do not edit by hand.",
+        "   @noble/post-quantum 0.7.0, @noble/hashes 2.3.0, @noble/curves 2.3.0 (all MIT).",
+        "   See qvault/static/vendor/README.md. */",
+        "(function (global) {",
+        "'use strict';",
+        "var __defs = {}, __cache = {};",
+        "function __req(id) {",
+        "  if (__cache[id]) return __cache[id].exports;",
+        "  var m = __cache[id] = { exports: {} };",
+        "  __defs[id](m.exports, __req);",
+        "  return m.exports;",
+        "}",
+    ]
+    for module_id in sorted(modules):
+        parts.append(f"__defs[{module_id!r}] = function (__exports, __req) {{")
+        parts.append(modules[module_id])
+        parts.append("};")
+
+    exposed = ", ".join(
+        f"{name}: __req({normalise(resolve(spec, 'root.js'))!r}).{name}"
+        for name, spec in entries.items()
+    )
+    parts.append(f"global.PQC = {{ {exposed} }};")
+    parts.append("})(typeof globalThis !== 'undefined' ? globalThis : self);")
+
+    out.write_text("\n".join(parts), encoding="utf-8")
+    print(f"{out}  {len(out.read_bytes()):,} bytes  ({len(modules)} modules)")
+    for module_id in sorted(modules):
+        print(f"    {module_id}")
+
+
+if __name__ == "__main__":
+    build(
+        {
+            "ml_dsa65": "@noble/post-quantum/ml-dsa.js",
+            "ml_dsa87": "@noble/post-quantum/ml-dsa.js",
+            "slh_dsa_shake_256f": "@noble/post-quantum/slh-dsa.js",
+        },
+        pathlib.Path(sys.argv[1]),
+    )

@@ -1,142 +1,122 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Key rotation{% endblock %}
-{% block content %}
+{% block title %}Keys — Q-Vault{% endblock %}
 {% set active = rows | selectattr('key.status', 'equalto', 'active') | list %}
 {% set retired = rows | rejectattr('key.status', 'equalto', 'active') | list %}
 {% set due = rows | selectattr('due') | list %}
 
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
+{% block chrome %}
+<div class="head">
   <div>
-    <div class="eyebrow mb-1">Key lifecycle</div>
-    <h1 class="h2 mb-0">Rotation &amp; maintenance</h1>
+    <div class="head__title">Security</div>
+    <div class="head__sub">{{ rows|length }} keys · replacement after {{ config.KEY_MAX_AGE_DAYS }} days</div>
   </div>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    {% if demo_enabled %}
-    <form method="post" action="{{ url_for('admin.demo_expire_keys') }}">
-      {{ expire_form.hidden_tag() }}
-      {{ expire_form.submit(class="btn btn-outline-danger btn-sm") }}
-    </form>
+  <div class="head__actions">
+    {% if due %}
+      <span class="chip chip--waiting">{{ due|length }} due</span>
+    {% else %}
+      <span class="chip chip--sealed">All within date</span>
     {% endif %}
     <form method="post" action="{{ url_for('admin.run_maintenance') }}">
       {{ form.hidden_tag() }}
-      {{ form.submit(class="btn btn-primary btn-sm") }}
+      {{ form.submit(class="btn btn--ghost btn--sm") }}
     </form>
   </div>
 </div>
+{% include "admin/_nav.html" %}
+{% endblock %}
 
-{% if demo_enabled and not due %}
-<div class="panel mb-3" style="border-color: var(--warn-line); background: var(--warn-050);">
-  <div class="small">
-    <strong>Nothing is due yet — and that is correct.</strong>
-    Keys become due {{ config.KEY_MAX_AGE_DAYS }} days after they are created, so on a fresh
-    database a rotation run has nothing to do. Use <em>Age all keys past their deadline</em> to
-    move the deadlines forward (never the keys), then run maintenance to watch the real rotation
-    code path execute. The clock change is itself recorded in the ledger as
-    <code>demo_keys_expired</code>, so the audit trail never pretends the keys aged naturally.
+{% block content %}
+<div class="figures" style="margin-bottom:1rem">
+  <div class="figure"><div class="figure__num">{{ active|length }}</div><div class="figure__label">Active</div></div>
+  <div class="figure"><div class="figure__num">{{ retired|length }}</div><div class="figure__label">Retired, verifying</div></div>
+  <div class="figure">
+    <div class="figure__num" {% if due %}style="color:var(--waiting)"{% endif %}>{{ due|length }}</div>
+    <div class="figure__label">Past date</div>
   </div>
-</div>
-{% endif %}
-
-<p class="text-muted mb-3" style="max-width:68ch;">
-  Rotation is <strong>retire-but-retain</strong>: a rotated key is never deleted, so everything it
-  signed still verifies and everything it wrapped still decrypts. The custody boundary decides what
-  can rotate unattended — the scheduler holds the server's keys, but not yours.
-</p>
-
-<div class="stat-row mb-3">
-  <div class="stat">
-    <div class="stat__num" style="color:var(--ok);">{{ active | length }}</div>
-    <div class="stat__label">Active keys</div>
-  </div>
-  <div class="stat">
-    <div class="stat__num text-muted">{{ retired | length }}</div>
-    <div class="stat__label">Retired · still verify</div>
-  </div>
-  <div class="stat">
-    <div class="stat__num" style="color: {{ 'var(--warn)' if due else 'var(--ink)' }};">{{ due | length }}</div>
-    <div class="stat__label">Due for rotation</div>
-  </div>
-  <div class="stat">
-    <div class="stat__num" style="color: {{ 'var(--warn)' if user_keys_due else 'var(--ink)' }};">{{ user_keys_due | length }}</div>
-    <div class="stat__label">Awaiting user re-key</div>
+  <div class="figure">
+    <div class="figure__num" {% if user_keys_due %}style="color:var(--waiting)"{% endif %}>{{ user_keys_due|length }}</div>
+    <div class="figure__label">Awaiting owner</div>
   </div>
 </div>
 
-{# --- The custody boundary, stated plainly ------------------------------------------------- #}
-<div class="row g-3 mb-3">
-  <div class="col-md-6">
-    <div class="panel h-100">
-      <div class="panel__head">
-        <div class="eyebrow">Server-custodied · rotates automatically</div>
-        <span class="led ok"></span>
+<div class="split split--wide">
+  <div class="panel">
+    <div class="panel__head"><span class="label">Keys</span></div>
+    <div class="scroll-x">
+      <table class="dt">
+        <thead>
+          <tr><th class="num" style="width:50px">#</th><th>Scope</th><th>Purpose</th>
+              <th>Algorithm</th><th>Status</th><th>Custody</th><th>Replace by</th><th>Fingerprint</th></tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td class="num mono">{{ r.key.id }}</td>
+            <td class="small truncate">{{ r.scope }}</td>
+            <td class="mono">{{ r.key.role }}</td>
+            <td><span class="tag">{{ r.key.alg_id }}</span></td>
+            <td>
+              {% if r.due %}<span class="chip chip--waiting">Due</span>
+              {% elif r.key.status == 'active' %}<span class="chip chip--sealed">Active</span>
+              {% else %}<span class="chip">Retired</span>{% endif %}
+            </td>
+            <td>
+              {% if r.key.wrap_domain == 'master' %}<span class="chip">Server</span>
+              {% else %}<span class="chip">Owner</span>{% endif %}
+            </td>
+            <td class="tiny muted nowrap">{{ r.key.rotate_after.strftime('%d %b %Y') if r.key.rotate_after else '—' }}</td>
+            <td><code class="hash" data-copy="{{ r.key.public_fingerprint() }}">{{ r.key.public_fingerprint() }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel__head"><span class="label">Custody</span></div>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>Server</dt>
+          <dd class="small">The audit seal key and vault file keys. Replaced automatically.</dd>
+          <dt>Owner</dt>
+          <dd class="small">Personal signing keys, locked with a password the server never holds.
+            Flagged when due; replaced by the owner.</dd>
+        </dl>
       </div>
-      <p class="text-muted small mb-0">
-        The SYSTEM anchor key and each vault's ML-KEM key are wrapped under the server master key,
-        so the scheduler can replace them without a human present. Old anchors keep verifying under
-        the retained key, and every stored file pins the key that encapsulated it — so rotation can
-        never strand a file.
-      </p>
     </div>
-  </div>
-  <div class="col-md-6">
-    <div class="panel h-100">
-      <div class="panel__head">
-        <div class="eyebrow">User-custodied · flagged only</div>
-        <span class="led {{ 'warn' if user_keys_due else '' }}"></span>
+
+    {% if user_keys_due %}
+    <div class="panel">
+      <div class="panel__head"><span class="label">Awaiting their owner</span></div>
+      <table class="dt">
+        <tbody>
+          {% for k in user_keys_due %}
+          <tr>
+            <td class="truncate small">{{ k.owner.display_name or k.owner.email if k.owner else '—' }}</td>
+            <td><span class="tag">{{ k.alg_id }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if demo_enabled %}
+    <div class="panel dev">
+      <div class="panel__head"><span class="label">Developer</span></div>
+      <div class="panel__body">
+        <form method="post" action="{{ url_for('admin.demo_expire_keys') }}">
+          {{ expire_form.hidden_tag() }}
+          {{ expire_form.submit(class="btn btn--danger btn--sm btn--block") }}
+        </form>
+        <p class="tiny muted" style="margin:.4rem 0 0">
+          Moves deadlines forward, never the keys. Recorded in the audit trail.
+        </p>
       </div>
-      <p class="text-muted small mb-0">
-        A user's signing key is wrapped under a key derived from their password, which the server
-        never holds. It therefore <em>cannot</em> be rotated unattended — the job flags it, and the
-        owner re-issues it from their dashboard. That limitation is the security property working.
-      </p>
     </div>
-  </div>
-</div>
-
-{% if user_keys_due %}
-<div class="verify-hero mb-3" style="padding:.9rem 1.15rem;border-color:var(--warn-line);background:linear-gradient(180deg,var(--warn-050),#fff);">
-  <div class="verify-hero__icon" style="width:2.4rem;height:2.4rem;font-size:1.2rem;background:var(--warn);">!</div>
-  <div>
-    <div class="verify-hero__title" style="font-size:1rem;color:var(--warn);">
-      {{ user_keys_due|length }} user signing key{{ '' if user_keys_due|length == 1 else 's' }} due
-    </div>
-    <div class="verify-hero__sub small">Their owners must re-key interactively from their dashboard.</div>
-  </div>
-</div>
-{% endif %}
-
-<div class="panel">
-  <div class="panel__head">
-    <div class="eyebrow">All keys</div>
-    <span class="chip chip--muted">{{ rows | length }} total</span>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-sm mb-0 align-middle small">
-      <thead><tr>
-        <th>#</th><th>Scope</th><th>Role</th><th>Algorithm</th><th>Status</th>
-        <th>Rotate after</th><th>Fingerprint</th>
-      </tr></thead>
-      <tbody>
-      {% for r in rows %}
-        <tr {% if r.key.status != 'active' %}class="text-muted"{% endif %}>
-          <td class="text-mono">{{ r.key.id }}</td>
-          <td><span class="chip chip--muted">{{ r.scope }}</span></td>
-          <td class="text-mono">{{ r.key.role }}</td>
-          <td><span class="algo-chip">{{ r.key.alg_id }}</span></td>
-          <td>
-            <span class="led {{ 'warn' if r.due else ('ok' if r.key.status == 'active' else '') }} me-1"></span>
-            {{ r.key.status }}
-            {% if r.due %}<span class="chip" style="background:var(--warn-050);color:var(--warn);border-color:var(--warn-line);">due</span>{% endif %}
-            {% if r.key.can_verify and r.key.status == 'retired' %}
-              <span class="chip chip--muted">still verifies</span>
-            {% endif %}
-          </td>
-          <td class="text-mono">{{ r.key.rotate_after.strftime('%Y-%m-%d') if r.key.rotate_after else '—' }}</td>
-          <td><code class="hashpill" data-copy="{{ r.key.public_fingerprint() }}">{{ r.key.public_fingerprint() }}</code></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

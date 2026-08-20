@@ -1,0 +1,78 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  Any decision can be exported as a single file that someone outside this organisation can check
+  without an account, without a network connection, and without taking our word for anything. On a
+  decision page, use <strong>Export for verification</strong>.
+</p>
+
+<h3>Three ways to check one</h3>
+<table class="dt">
+  <thead><tr><th style="width:12rem">Method</th><th>Trusts</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a class="dt__link" href="{{ url_for('verify.index') }}">The verify page</a>
+          <span class="dt__sub">Drop the file in. No account needed.</span></td>
+      <td>This server. Convenient, but it is the same server that produced the file, so it is a
+          convenience rather than evidence.</td>
+    </tr>
+    <tr>
+      <td><code>python -m qvault.verify</code>
+          <span class="dt__sub">Exit code 0 verified, 1 not verified, 2 unreadable.</span></td>
+      <td>Nothing of ours at run time. Suitable as a gate in a pipeline.</td>
+    </tr>
+    <tr>
+      <td><a class="dt__link" href="{{ url_for('static', filename='verifier.html') }}" download>The offline verifier</a>
+          <span class="dt__sub">One HTML file. Save it, open it anywhere.</span></td>
+      <td>Nothing. It runs in the browser from a local file, with the post-quantum library bundled
+          inside it.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>What gets checked</h3>
+<p>
+  Each step closes a gap the one before it leaves open, so the order is the argument:
+</p>
+<ol>
+  <li>the decision text is the text that was hashed;</li>
+  <li>every signature is a valid post-quantum signature over exactly that;</li>
+  <li>each signer was authorised when the decision opened — not merely a member today;</li>
+  <li>the approval rule frozen at that same moment was satisfied;</li>
+  <li>the audit record's own entries for these events recompute;</li>
+  <li>those entries name these exact signature bytes, and no others;</li>
+  <li>the signers are the accounts the record registered;</li>
+  <li>those entries are provably inside a published Merkle tree;</li>
+  <li>that tree's root is signed by the log;</li>
+  <li>and countersigned by an independent witness.</li>
+</ol>
+
+<p>
+  Steps 1 to 4 are what an ordinary "export the signatures" format gives you, and they are worth
+  less than they look: whoever builds the file chooses what goes in it, so they could omit an
+  inconvenient rejection, or export a decision that never happened. Steps 5 to 10 are what stop
+  that. The last one is the only step that still holds if the operator of this system is the one
+  you are checking up on.
+</p>
+
+<h3>Pinning the keys</h3>
+<p>
+  A bundle names its own keys, so on its own it proves only that <em>some</em> log signed it. To
+  make it prove that <em>this</em> log signed it, get the fingerprints from somewhere other than
+  the file — they are on <strong>Audit → Transparency</strong>, and the witness prints its own on
+  startup — and require them:
+</p>
+<pre class="pre"><code>python -m qvault.verify decision.qvault.json \
+    --expect-log 4f2a9c1e77b30d85 \
+    --expect-witness 8c1d05fa2b6e4470</code></pre>
+
+<h3>Algorithms the browser cannot check</h3>
+<p>
+  The offline verifier checks ML-DSA-65 and ML-DSA-87. It does not check SLH-DSA, because the
+  implementation here is the SPHINCS+ round-3 submission and the browser library implements FIPS
+  205, which is derived from it but not byte-compatible. Rather than report genuine signatures as
+  forged, the page marks those as un-checkable and points at the command line, which uses the same
+  implementation that produced them.
+</p>
+{% endblock %}

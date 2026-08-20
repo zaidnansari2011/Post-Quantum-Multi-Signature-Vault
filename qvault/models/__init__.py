@@ -2,14 +2,17 @@
 so ``db.create_all()`` and Alembic can see them.
 
 Present: user, key, algorithm_config, ledger_entry (Phase 2); vault, vault_member, vault_policy,
-proposal, file (Phase 3); signature (Phase 4); ledger_anchor (Phase 5). Added in later phases:
-rotation_event.
+proposal, file (Phase 3); signature (Phase 4); ledger_anchor (Phase 5); log_checkpoint and
+witness_cosignature (transparency log, ADR-0015); device (device-held signing keys, ADR-0016).
+Added in later phases: rotation_event.
 """
 
 from __future__ import annotations
 
 from .anchor import LedgerAnchor
+from .checkpoint import LogCheckpoint, WitnessCosignature
 from .config_models import AlgorithmConfig
+from .device import Device
 from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
@@ -24,10 +27,13 @@ __all__ = [
     "AlgorithmConfig",
     "LedgerEntry",
     "LedgerAnchor",
+    "LogCheckpoint",
+    "WitnessCosignature",
     "Vault",
     "VaultMember",
     "VaultPolicy",
     "Proposal",
     "VaultFile",
     "Signature",
+    "Device",
 ]

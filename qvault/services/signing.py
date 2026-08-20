@@ -15,6 +15,7 @@ from qvault.crypto import canonical_json
 
 DS_PROPOSAL = b"QVAULT-SIG-v1:PROPOSAL"
 DS_VOTE = b"QVAULT-SIG-v1:VOTE"
+DS_DEVICE_ENROL = b"QVAULT-SIG-v1:DEVICE-ENROL"
 
 
 def proposal_signing_bytes(
@@ -80,3 +81,42 @@ def signing_bytes_for(proposal) -> bytes:
         nonce_hex=proposal.nonce.hex(),
         created_at_iso=proposal.created_at_iso,
     )
+
+
+def device_enrolment_bytes(
+    *, user_id: int, alg_id: str, public_key_b64: str, challenge: str
+) -> bytes:
+    """The exact bytes a device signs to prove it holds the private half it is enrolling.
+
+    Enrolment is the moment a new signing identity is admitted to the vault, so the server must
+    not take a public key on trust: without a proof of possession, anyone able to POST could
+    register a key **they do not hold** against a user, and every later signature by the real
+    holder of that key would be attributed to that user — deniable delegation of approval
+    authority, which is the exact property a multi-signature vault exists to prevent. Requiring a
+    signature here is the enrolment analogue of ADR-0010's verify-after-sign: never record a key
+    we have not just watched produce a valid signature under it.
+
+    It also catches the mundane failures loudly and early — a truncated base64 body, or a byte
+    format that drifted between the device's implementation and ours — at enrolment rather than at
+    the first vote, where the same symptom is indistinguishable from a compromised device.
+
+    Binds four things under a domain tag of its own:
+
+    - ``user_id`` — so an enrolment proof cannot be replayed against a different account;
+    - ``alg_id`` and ``public_key_b64`` — so the proof covers the exact key being registered, not
+      merely *some* key the device holds;
+    - ``challenge`` — the server-issued, master-key-MAC'd, time-bounded nonce, so a proof captured
+      once cannot be replayed later.
+
+    ``DS_DEVICE_ENROL`` keeps these bytes disjoint from ``DS_PROPOSAL`` and ``DS_VOTE``: an
+    enrolment proof can never be reinterpreted as a vote, nor a vote as an enrolment.
+    """
+    body = canonical_json(
+        {
+            "user_id": user_id,
+            "alg_id": alg_id,
+            "public_key": public_key_b64,
+            "challenge": challenge,
+        }
+    )
+    return DS_DEVICE_ENROL + b"|" + body

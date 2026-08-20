@@ -22,9 +22,12 @@ from qvault.models.key import Key
 from qvault.models.ledger import LedgerEntry
 from qvault.security import master_key
 from qvault.services.rotation_policy import rotation_deadline
+from qvault.transparency.statement import ENTRY_DS
+from qvault.transparency.statement import entry_hash as compute_entry_hash
 
-ENTRY_DS = b"QVAULT-LEDGER-v1|"
 GENESIS_PREV_HEX = sha256_hex(b"QVAULT-LEDGER-GENESIS-v1")
+
+__all__ = ["ENTRY_DS", "compute_entry_hash", "GENESIS_PREV_HEX"]
 
 # Domain-separated preimage for a SYSTEM head-anchor signature (distinct from the entry hash).
 ANCHOR_DS = b"QVAULT-LEDGER-ANCHOR-v1|"
@@ -36,41 +39,6 @@ class LedgerError(RuntimeError):
 
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def compute_entry_hash(
-    *,
-    seq: int,
-    timestamp: str,
-    actor: str,
-    event_type: str,
-    payload_hash: str,
-    prev_hash: str,
-    actor_id: int | None = None,
-    vault_id: int | None = None,
-    ref_type: str | None = None,
-    ref_id: str | None = None,
-) -> str:
-    """The one canonical entry-hash computation. Covers EVERY persisted, security-relevant
-    field (not only the six core ones) so that the routing metadata — actor_id, vault_id,
-    ref_type, ref_id — is authenticated too and cannot be silently altered in the database.
-    ``canonical_json`` sorts keys, so the literal order below does not affect the digest.
-    """
-    preimage = ENTRY_DS + canonical_json(
-        {
-            "seq": seq,
-            "timestamp": timestamp,
-            "actor": actor,
-            "actor_id": actor_id,
-            "event_type": event_type,
-            "vault_id": vault_id,
-            "ref_type": ref_type,
-            "ref_id": ref_id,
-            "payload_hash": payload_hash,
-            "prev_hash": prev_hash,
-        }
-    )
-    return sha256_hex(preimage)
 
 
 def _last_entry() -> LedgerEntry | None:
@@ -207,6 +175,10 @@ def ensure_system_key() -> Key:
     It is an ordinary signing ``Key`` with no human owner, wrapped under the server master key so
     it can sign unattended. Uniquely identified by ``role='sig'`` + ``wrap_domain='master'`` +
     ``owner_id IS NULL`` (vault KEM keys are master-wrapped too, but have ``role='kem'``).
+
+    All three terms are load-bearing and none may be dropped as redundant. Since Phase 1 there is
+    a third custody domain, ``'device'``, for keys whose private half the server has never held;
+    ``wrap_domain='master'`` is what keeps such a key out of the anchor trust path entirely.
     """
     key = Key.query.filter_by(
         role="sig", wrap_domain="master", owner_id=None, status="active"
@@ -319,6 +291,8 @@ def verify_anchor(anchor: LedgerAnchor) -> bool:
     key = db.session.get(Key, anchor.key_id)
     if key is None:
         return False
+    # All three terms are load-bearing — see ensure_system_key. wrap_domain in particular keeps
+    # a device-custodied key (Phase 1) out of the anchor trust path; do not simplify this away.
     if not (key.role == "sig" and key.wrap_domain == "master" and key.owner_id is None):
         return False
     if not master_key.verify_mac(key.public_key, key.public_key_mac):

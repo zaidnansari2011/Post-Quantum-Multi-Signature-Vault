@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q-Vault offline verifier</title>
+<!--
+  A single file that checks a Q-Vault decision with no server, no network and no install.
+  Save it, open it, drop a bundle on it. It works from file:// and from a USB stick in ten years.
+
+  This is a SECOND, INDEPENDENT implementation of the checks in qvault/verify/core.py. Nothing is
+  shared between them: different language, different JSON canonicaliser, different SHA-256,
+  different post-quantum library (@noble/post-quantum rather than PQClean via quantcrypt). Two
+  implementations agreeing is evidence; one implementation agreeing with itself is not, which is
+  why tests/test_offline_verifier.py runs this file in a real browser against bundles produced by
+  the Python side and requires the same verdict.
+-->
+<style>
+  :root {
+    --paper:#FBFBF9; --surface:#FFFFFF; --sunk:#F5F5F2; --rule:#E2E2DC;
+    --ink:#16181C; --ink-2:#4A4E56; --ink-3:#6A6F78;
+    --sealed:#1B6B4F; --waiting:#8A5A12; --broken:#A82D20;
+    --sealed-tint:#EDF5F1; --waiting-tint:#FBF3E4; --broken-tint:#FBEEEC;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2.5rem 1.25rem 4rem; background:var(--paper); color:var(--ink);
+         font:.875rem/1.55 var(--sans); }
+  main { max-width:44rem; margin:0 auto; }
+  h1 { font-size:1.3rem; font-weight:700; letter-spacing:-.01em; margin:0 0 .2rem; }
+  .lead { color:var(--ink-3); font-size:.82rem; margin:0 0 1.5rem; }
+  .panel { background:var(--surface); border:1px solid var(--rule); border-radius:6px;
+           margin-bottom:1rem; overflow:hidden; }
+  .panel__head { display:flex; align-items:center; gap:.5rem; padding:.55rem .9rem;
+                 border-bottom:1px solid var(--rule); background:var(--sunk); }
+  .label { font-size:.68rem; text-transform:uppercase; letter-spacing:.09em; font-weight:600;
+           color:var(--ink-3); }
+  .panel__body { padding:.9rem; }
+  .drop { border:1.5px dashed var(--rule); border-radius:6px; padding:2.25rem 1rem;
+          text-align:center; color:var(--ink-3); background:var(--surface); cursor:pointer;
+          transition:border-color .12s, background .12s; }
+  .drop:hover, .drop.over { border-color:var(--ink-3); background:var(--sunk); color:var(--ink); }
+  .drop strong { color:var(--ink); font-weight:600; display:block; margin-bottom:.2rem; }
+  .banner { display:flex; gap:.75rem; padding:.8rem .95rem; border:1px solid var(--rule);
+            border-left-width:3px; border-radius:6px; margin-bottom:1rem; }
+  .banner__title { font-weight:700; font-size:.95rem; }
+  .banner__body { font-size:.8rem; color:var(--ink-2); margin-top:.1rem; }
+  .banner.ok  { border-color:var(--sealed); background:var(--sealed-tint); }
+  .banner.bad { border-color:var(--broken); background:var(--broken-tint); }
+  .banner.ok  .banner__title { color:var(--sealed); }
+  .banner.bad .banner__title { color:var(--broken); }
+  ol.checks { list-style:none; margin:0; padding:0; }
+  .checks li { display:flex; gap:.7rem; align-items:baseline; padding:.55rem .9rem;
+               border-top:1px solid var(--rule); }
+  .checks li:first-child { border-top:0; }
+  .mark { flex:0 0 1rem; text-align:center; font-weight:700; }
+  .is-ok .mark { color:var(--sealed); } .is-bad .mark { color:var(--broken); }
+  .is-skip .mark { color:var(--ink-3); }
+  .ctitle { display:block; font-size:.84rem; }
+  .is-bad .ctitle { color:var(--broken); font-weight:600; }
+  .cdetail { display:block; font-family:var(--mono); font-size:.72rem; color:var(--ink-3);
+             margin-top:.12rem; word-break:break-word; }
+  dl.meta { display:grid; grid-template-columns:auto 1fr; gap:.3rem .9rem; margin:0;
+            font-size:.8rem; }
+  dl.meta dt { color:var(--ink-3); } dl.meta dd { margin:0; font-family:var(--mono); font-size:.76rem; }
+  .action { white-space:pre-wrap; margin:0 0 .75rem; font-size:.85rem; }
+  input[type=text] { font-family:var(--mono); font-size:.78rem; padding:.35rem .5rem;
+                     border:1px solid var(--rule); border-radius:4px; width:100%; background:var(--surface); }
+  .pins { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+  .pins label { display:block; font-size:.7rem; color:var(--ink-3); margin-bottom:.2rem; }
+  .foot { color:var(--ink-3); font-size:.72rem; text-align:center; margin-top:1.5rem; }
+  code { font-family:var(--mono); }
+  @media (max-width:34rem) { .pins { grid-template-columns:1fr; } }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#141519; --surface:#1B1D22; --sunk:#212429; --rule:#2E323A;
+            --ink:#E6E6E1; --ink-2:#B4B7BE; --ink-3:#868A92;
+            --sealed:#5FB58C; --waiting:#D4A045; --broken:#E0776A;
+            --sealed-tint:#16241E; --waiting-tint:#2A2113; --broken-tint:#2A1815; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Q-Vault offline verifier</h1>
+  <p class="lead">Runs entirely in this page. Nothing is uploaded.</p>
+
+  <div id="result"></div>
+
+  <div class="panel">
+    <div class="panel__head"><span class="label">Decision bundle</span></div>
+    <div class="panel__body">
+      <div class="drop" id="drop">
+        <strong>Drop a .qvault.json file here</strong>
+        or click to choose one
+      </div>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+      <div class="pins" style="margin-top:.8rem">
+        <div>
+          <label for="pinlog">Expected log key fingerprint</label>
+          <input type="text" id="pinlog" placeholder="optional" autocomplete="off" spellcheck="false">
+        </div>
+        <div>
+          <label for="pinwit">Expected witness key fingerprint</label>
+          <input type="text" id="pinwit" placeholder="optional" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    Post-quantum signatures verified with @noble/post-quantum (MIT), bundled into this file.
+  </p>
+</main>
+
+<script>/*__PQC_BUNDLE__*/</script>
+
+<script>
+'use strict';
+(function () {
+  const { ml_dsa65, ml_dsa87, sha256 } = globalThis.PQC;
+
+  // Only algorithms this page can actually check. SLH-DSA is deliberately absent: the backend's
+  // "SLH-DSA-SHAKE-256f" is PQClean's SPHINCS+ round-3, which is NOT byte-compatible with the
+  // FIPS 205 SLH-DSA that @noble implements. Shipping it would report genuine signatures as
+  // forged, which is far worse than admitting we cannot check them.
+  const ALGS = { 'ML-DSA-65': ml_dsa65, 'ML-DSA-87': ml_dsa87 };
+
+  // --- encoding -----------------------------------------------------------------------------
+  const enc = new TextEncoder();
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const hex = u8 => Array.from(u8, b => b.toString(16).padStart(2, '0')).join('');
+  const unhex = s => {
+    if (typeof s !== 'string' || s.length % 2) throw new Error('bad hex');
+    const out = new Uint8Array(s.length / 2);
+    for (let i = 0; i < out.length; i++) {
+      const byte = parseInt(s.substr(i * 2, 2), 16);
+      if (Number.isNaN(byte)) throw new Error('bad hex');
+      out[i] = byte;
+    }
+    return out;
+  };
+  const cat = (...parts) => {
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const p of parts) { out.set(p, at); at += p.length; }
+    return out;
+  };
+  const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+  // Must reproduce Python's json.dumps(sort_keys=True, separators=(',',':'), ensure_ascii=False)
+  // byte for byte. Only integers, strings, booleans, nulls, lists and objects occur in these
+  // structures — no floats, where the two languages' formatting would genuinely diverge.
+  function canonical(value) {
+    if (value === null) return 'null';
+    const t = typeof value;
+    if (t === 'number') {
+      if (!Number.isInteger(value)) throw new Error('non-integer number in canonical JSON');
+      return String(value);
+    }
+    if (t === 'boolean') return value ? 'true' : 'false';
+    if (t === 'string') return JSON.stringify(value);
+    if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+    if (t === 'object') {
+      return '{' + Object.keys(value).sort()
+        .map(k => JSON.stringify(k) + ':' + canonical(value[k])).join(',') + '}';
+    }
+    throw new Error('cannot canonicalise ' + t);
+  }
+  const cbytes = value => enc.encode(canonical(value));
+
+  // --- the domain-separated statements (mirrors qvault/transparency/statement.py) -----------
+  const DS_ENTRY      = enc.encode('QVAULT-LEDGER-v1|');
+  const DS_CHECKPOINT = enc.encode('QVAULT-CHECKPOINT-v1|');
+  const DS_WITNESS    = enc.encode('QVAULT-WITNESS-v1|');
+  const DS_PROPOSAL   = enc.encode('QVAULT-SIG-v1:PROPOSAL|');
+  const DS_VOTE       = enc.encode('QVAULT-SIG-v1:VOTE|');
+
+  const entryHash = e => hex(sha256(cat(DS_ENTRY, cbytes({
+    seq: e.seq, timestamp: e.timestamp, actor: e.actor,
+    actor_id: e.actor_id ?? null, event_type: e.event_type, vault_id: e.vault_id ?? null,
+    ref_type: e.ref_type ?? null, ref_id: e.ref_id ?? null,
+    payload_hash: e.payload_hash, prev_hash: e.prev_hash,
+  }))));
+
+  const proposalBytes = d => cat(DS_PROPOSAL, cbytes({
+    vault_id: d.vault_id, proposal_id: d.proposal_uuid, action_text: d.action_text,
+    file_sha256: d.file_sha256 ?? null,
+    policy: { M: d.required_m, N: d.required_n, signers: [...d.authorized_signers].sort((a, b) => a - b) },
+    nonce: d.nonce_hex, created_at: d.created_at_iso,
+  }));
+
+  const voteBytes = (payloadHash, decision, signerId) => cat(DS_VOTE, cbytes({
+    proposal_payload_hash: payloadHash, decision, signer_id: signerId,
+  }));
+
+  const checkpointBytes = c => cat(DS_CHECKPOINT, cbytes({
+    origin: c.origin, tree_size: c.tree_size, root_hash: c.root_hash,
+    head_seq: c.head_seq, head_hash: c.head_hash, timestamp: c.timestamp,
+  }));
+
+  const witnessBytes = (name, c) => cat(DS_WITNESS, cbytes({
+    witness: name,
+    checkpoint: { origin: c.origin, tree_size: c.tree_size, root_hash: c.root_hash,
+                  head_seq: c.head_seq, head_hash: c.head_hash, timestamp: c.timestamp },
+  }));
+
+  // --- RFC 6962 inclusion (mirrors qvault/transparency/merkle.py) ---------------------------
+  const leafHash  = data => sha256(cat(new Uint8Array([0x00]), data));
+  const nodeHash  = (l, r) => sha256(cat(new Uint8Array([0x01]), l, r));
+
+  function verifyInclusion(leaf, index, treeSize, proof, root) {
+    if (index < 0 || treeSize < 0 || index >= treeSize) return false;
+    let fn = index, sn = treeSize - 1, computed = leaf;
+    for (const sibling of proof) {
+      if (sn === 0) return false;
+      if ((fn & 1) || fn === sn) {
+        computed = nodeHash(sibling, computed);
+        while (fn !== 0 && (fn & 1) === 0) { fn >>= 1; sn >>= 1; }
+      } else {
+        computed = nodeHash(computed, sibling);
+      }
+      fn >>= 1; sn >>= 1;
+    }
+    return sn === 0 && eq(computed, root);
+  }
+
+  // --- the checks ---------------------------------------------------------------------------
+  function verifyBundle(bundle, pins) {
+    const checks = [];
+    const add = (key, title, ok, detail, skipped) =>
+      checks.push({ key, title, ok, detail, skipped: !!skipped });
+    const fingerprints = { log: null, witnesses: [] };
+    let facts = {};
+
+    try {
+      if (!bundle || typeof bundle !== 'object') throw new Error('bundle must be a JSON object');
+      const fmt = bundle.format;
+      if (fmt !== 'qvault.decision/1') {
+        throw new Error('this verifier understands qvault.decision/1, the bundle claims ' + fmt);
+      }
+      add('format', 'The file is a Q-Vault decision bundle', true, fmt);
+
+      const d = bundle.decision, log = bundle.log;
+      const sigs = bundle.signatures || [];
+
+      // 1. content
+      const recomputed = hex(sha256(proposalBytes(d)));
+      const contentOk = recomputed === d.payload_hash;
+      add('content', 'The decision text is the text that was signed', contentOk,
+          contentOk ? 'recomputed ' + recomputed.slice(0, 16) + '…'
+                    : 'recomputed ' + recomputed.slice(0, 16) + '…, bundle claims '
+                      + String(d.payload_hash).slice(0, 16) + '…');
+
+      facts = { title: d.title, vault: d.vault_name, action: d.action_text, status: d.status,
+                m: d.required_m, n: d.required_n, hash: recomputed, created: d.created_at_iso };
+
+      // 2. signatures
+      const verified = [];
+      const problems = [];
+      const unsupported = [];
+      const algsUsed = new Set();
+      for (const s of sigs) {
+        algsUsed.add(s.alg_id);
+        const alg = ALGS[s.alg_id];
+        const who = s.signer_email || s.signer_id;
+        if (!alg) { unsupported.push(who + ': ' + s.alg_id); continue; }
+        const msg = voteBytes(recomputed, s.decision, s.signer_id);
+        if (alg.verify(b64(s.signature_b64), msg, b64(s.public_key_b64))) {
+          verified.push(s);
+        } else {
+          problems.push(who + ': signature did not verify');
+        }
+      }
+      if (unsupported.length) {
+        add('signatures', 'Each signature is a valid post-quantum signature over it', false,
+            'cannot check in a browser: ' + unsupported.join('; ')
+            + ' — run `python -m qvault.verify` instead', true);
+      } else {
+        add('signatures', 'Each signature is a valid post-quantum signature over it',
+            !problems.length && sigs.length > 0,
+            problems.length ? problems.join('; ')
+              : sigs.length ? verified.length + ' of ' + sigs.length + ' verified using '
+                              + [...algsUsed].sort().join(', ')
+                            : 'the bundle carries no signatures');
+      }
+
+      // 3. authorisation
+      const authorised = new Set(d.authorized_signers || []);
+      const seen = new Set();
+      const authProblems = [];
+      for (const s of verified) {
+        if (!authorised.has(s.signer_id)) {
+          authProblems.push((s.signer_email || s.signer_id) + ' was not an authorised signer');
+        }
+        if (seen.has(s.signer_id)) {
+          authProblems.push((s.signer_email || s.signer_id) + ' signed more than once');
+        }
+        seen.add(s.signer_id);
+      }
+      add('authorisation', 'Every signer was authorised when the decision opened',
+          !authProblems.length,
+          authProblems.join('; ') || authorised.size + ' authorised signer(s)');
+
+      // 4. threshold
+      const approvals = verified.filter(s => s.decision === 'approve' && authorised.has(s.signer_id));
+      const rejections = verified.filter(s => s.decision === 'reject' && authorised.has(s.signer_id));
+      let met, detail;
+      if (d.status === 'approved') {
+        met = approvals.length >= d.required_m;
+        detail = approvals.length + ' of ' + d.required_m + ' required approvals';
+      } else if (d.status === 'rejected') {
+        met = rejections.length > d.required_n - d.required_m;
+        detail = rejections.length + ' rejection(s) make ' + d.required_m + ' approvals unreachable';
+      } else {
+        met = approvals.length < d.required_m;
+        detail = d.status + ': ' + approvals.length + ' of ' + d.required_m + ' approvals so far';
+      }
+      add('threshold', 'The approval rule was satisfied', met, detail);
+
+      // 5. log entries recompute
+      const entries = log.entries || [];
+      const bad = [];
+      const good = [];
+      for (const e of entries) {
+        if (hex(sha256(enc.encode(e.payload_json))) !== e.payload_hash) {
+          bad.push('entry ' + e.seq + ': stored payload does not match its hash'); continue;
+        }
+        if (entryHash(e) !== e.entry_hash) {
+          bad.push('entry ' + e.seq + ': fields do not hash to its recorded hash'); continue;
+        }
+        good.push(e);
+      }
+      add('log_entries', "The audit log's records of these events recompute", !bad.length,
+          bad.join('; ') || good.length + ' entries');
+
+      // 6. binding
+      const payloads = good.map(e => [e, JSON.parse(e.payload_json)]);
+      const binding = [];
+      const created = payloads.filter(([e]) => e.event_type === 'proposal_created').map(([, p]) => p);
+      if (!created.length) {
+        binding.push('the log entry that opened this decision is not in the bundle');
+      } else if (created[0].payload_hash !== recomputed) {
+        binding.push('the log recorded a different payload hash for this decision');
+      }
+      const signedEvents = new Set(
+        payloads.filter(([e]) => e.event_type === 'proposal_signed' && e.ref_id === d.proposal_uuid)
+                .map(([, p]) => p.signer_id + '|' + p.decision + '|' + p.signature_sha256));
+      for (const s of verified) {
+        const want = s.signer_id + '|' + s.decision + '|' + hex(sha256(b64(s.signature_b64)));
+        if (!signedEvents.has(want)) {
+          binding.push('the log has no record of ' + (s.signer_email || s.signer_id)
+                       + ' casting this exact signature');
+        }
+      }
+      if (signedEvents.size > verified.length && !unsupported.length) {
+        binding.push('the log records ' + signedEvents.size + ' signature(s) but the bundle carries '
+                     + verified.length + ' — the export is incomplete');
+      }
+      add('binding', 'The log records these exact signatures, and no others', !binding.length,
+          binding.join('; ') || signedEvents.size + ' signing event(s) matched');
+
+      // 6b. identity
+      const registrations = new Map(
+        payloads.filter(([e]) => e.event_type === 'user_registered')
+                .map(([, p]) => [p.user_id, p.email]));
+      const identity = [];
+      for (const s of verified) {
+        const recorded = registrations.get(s.signer_id);
+        if (recorded === undefined) {
+          identity.push('the log has no registration record for signer ' + s.signer_id);
+        } else if (s.signer_email && s.signer_email !== recorded) {
+          identity.push('the bundle calls signer ' + s.signer_id + ' ' + s.signer_email
+                        + ', the log recorded ' + recorded);
+        }
+      }
+      add('identity', 'The signers are the accounts the log recorded', !identity.length,
+          identity.join('; ') || [...registrations.values()].sort().join(', '));
+
+      // 7. inclusion
+      const cp = log.checkpoint;
+      const root = unhex(cp.root_hash);
+      const missing = [];
+      for (const e of good) {
+        const proof = (e.inclusion_proof || []).map(unhex);
+        if (!verifyInclusion(leafHash(unhex(e.entry_hash)), e.seq, cp.tree_size, proof, root)) {
+          missing.push('entry ' + e.seq + ': not in the published log');
+        }
+      }
+      add('inclusion', 'Those records are inside the published transparency log', !missing.length,
+          missing.join('; ') || 'proved against a log of ' + cp.tree_size + ' entries, root '
+                                + cp.root_hash.slice(0, 16) + '…');
+
+      // 8. checkpoint
+      if (cp.tree_size !== cp.head_seq + 1) {
+        add('checkpoint', 'The log signed that tree', false,
+            'tree_size ' + cp.tree_size + ' does not match head_seq ' + cp.head_seq
+            + ' + 1 — entries are missing from the middle');
+      } else {
+        const cs = log.checkpoint_signature;
+        const alg = ALGS[cs.alg_id];
+        fingerprints.log = hex(sha256(b64(cs.public_key_b64))).slice(0, 16);
+        if (!alg) {
+          add('checkpoint', 'The log signed that tree', false,
+              'cannot check ' + cs.alg_id + ' in a browser', true);
+        } else {
+          const valid = alg.verify(b64(cs.signature_b64), checkpointBytes(cp), b64(cs.public_key_b64));
+          add('checkpoint', 'The log signed that tree', valid,
+              valid ? cs.alg_id + ', log key ' + fingerprints.log
+                    : 'the checkpoint signature did not verify');
+        }
+      }
+
+      // 9. witness
+      const witnesses = log.witnesses || [];
+      const wProblems = [];
+      const wUnsupported = [];
+      for (const w of witnesses) {
+        const alg = ALGS[w.alg_id];
+        const fp = hex(sha256(b64(w.public_key_b64))).slice(0, 16);
+        if (!alg) { wUnsupported.push(w.witness + ': ' + w.alg_id); continue; }
+        if (alg.verify(b64(w.signature_b64), witnessBytes(w.witness, cp), b64(w.public_key_b64))) {
+          fingerprints.witnesses.push({ name: w.witness, fingerprint: fp });
+        } else {
+          wProblems.push(w.witness + ': co-signature did not verify');
+        }
+      }
+      if (!witnesses.length) {
+        add('witness', 'An independent witness countersigned it', false,
+            'no witness co-signature — nothing outside this log vouches that it only ever grew',
+            true);
+      } else if (wUnsupported.length && !fingerprints.witnesses.length) {
+        add('witness', 'An independent witness countersigned it', false,
+            'cannot check in a browser: ' + wUnsupported.join('; ')
+            + ' — run `python -m qvault.verify` instead', true);
+      } else {
+        add('witness', 'An independent witness countersigned it',
+            !wProblems.length && fingerprints.witnesses.length > 0,
+            wProblems.join('; ')
+            || fingerprints.witnesses.map(w => w.name + ' (' + w.fingerprint + ')').join(', '));
+      }
+
+      // 10. pins
+      if (pins.log) {
+        add('pinned_log', 'The log key is the one you expected',
+            !!fingerprints.log && fingerprints.log.startsWith(pins.log.toLowerCase()),
+            'expected ' + pins.log + ', found ' + fingerprints.log);
+      }
+      if (pins.witness) {
+        const found = fingerprints.witnesses.map(w => w.fingerprint);
+        add('pinned_witness', 'The witness key is the one you expected',
+            found.some(f => f.startsWith(pins.witness.toLowerCase())),
+            'expected ' + pins.witness + ', found ' + (found.join(', ') || 'none'));
+      }
+    } catch (err) {
+      add('format', 'The file is a Q-Vault decision bundle', false, String(err && err.message || err));
+    }
+
+    const graded = checks.filter(c => !c.skipped);
+    const ok = graded.length > 0 && graded.every(c => c.ok);
+    const firstBad = checks.find(c => !c.ok && !c.skipped);
+    const skipped = checks.filter(c => c.skipped).length;
+    return {
+      ok, checks, facts, fingerprints,
+      summary: ok
+        ? 'Verified' + (skipped ? ' (' + skipped + ' check(s) not applicable)' : '')
+        : 'NOT verified' + (firstBad ? ' — ' + firstBad.detail : ''),
+    };
+  }
+
+  // --- rendering ----------------------------------------------------------------------------
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function render(report) {
+    const f = report.facts;
+    let html = '<div class="banner ' + (report.ok ? 'ok' : 'bad') + '"><div>'
+      + '<div class="banner__title">' + esc(report.summary) + '</div>'
+      + (f.title ? '<div class="banner__body">' + esc(f.title)
+                   + (f.vault ? ' · ' + esc(f.vault) : '') + '</div>' : '')
+      + '</div></div>';
+
+    if (f.action) {
+      html += '<div class="panel"><div class="panel__head"><span class="label">Decision</span></div>'
+        + '<div class="panel__body"><p class="action">' + esc(f.action) + '</p><dl class="meta">'
+        + '<dt>Status</dt><dd>' + esc(f.status) + '</dd>'
+        + '<dt>Approvals required</dt><dd>' + esc(f.m) + ' of ' + esc(f.n) + '</dd>'
+        + '<dt>Opened</dt><dd>' + esc(f.created) + '</dd>'
+        + '<dt>Payload hash</dt><dd>' + esc(f.hash) + '</dd>'
+        + '</dl></div></div>';
+    }
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">Checks</span></div>'
+      + '<ol class="checks">';
+    for (const c of report.checks) {
+      const cls = c.skipped ? 'is-skip' : (c.ok ? 'is-ok' : 'is-bad');
+      const mark = c.skipped ? '—' : (c.ok ? '✓' : '×');
+      html += '<li class="' + cls + '"><span class="mark">' + mark + '</span><span>'
+        + '<span class="ctitle">' + esc(c.title) + '</span>'
+        + '<span class="cdetail">' + esc(c.detail) + '</span></span></li>';
+    }
+    html += '</ol></div>';
+
+    if (report.fingerprints.log || report.fingerprints.witnesses.length) {
+      html += '<div class="panel"><div class="panel__head"><span class="label">Keys in this bundle'
+        + '</span></div><div class="panel__body"><dl class="meta">';
+      if (report.fingerprints.log) {
+        html += '<dt>Log</dt><dd>' + esc(report.fingerprints.log) + '</dd>';
+      }
+      for (const w of report.fingerprints.witnesses) {
+        html += '<dt>' + esc(w.name) + '</dt><dd>' + esc(w.fingerprint) + '</dd>';
+      }
+      html += '</dl></div></div>';
+    }
+
+    document.getElementById('result').innerHTML = html;
+  }
+
+  // --- wiring -------------------------------------------------------------------------------
+  const drop = document.getElementById('drop');
+  const file = document.getElementById('file');
+
+  function handle(text) {
+    let bundle;
+    try {
+      bundle = JSON.parse(text);
+    } catch (err) {
+      render({ ok: false, summary: 'That is not valid JSON: ' + err.message,
+               checks: [], facts: {}, fingerprints: { log: null, witnesses: [] } });
+      return;
+    }
+    render(verifyBundle(bundle, {
+      log: document.getElementById('pinlog').value.trim(),
+      witness: document.getElementById('pinwit').value.trim(),
+    }));
+  }
+
+  drop.addEventListener('click', () => file.click());
+  file.addEventListener('change', e => {
+    if (e.target.files[0]) e.target.files[0].text().then(handle);
+  });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('over');
+  }));
+  drop.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) f.text().then(handle);
+  });
+
+  // The browser test drives this directly, and so can anyone scripting the page.
+  globalThis.qvaultVerify = (bundle, pins) => verifyBundle(bundle, pins || {});
+})();
+</script>
+</body>
+</html>

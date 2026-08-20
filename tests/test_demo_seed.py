@@ -47,21 +47,25 @@ def test_seed_builds_a_verifiable_demo_database(app, seed_module):
 
     result = seed_module.seed("standard")
 
-    assert User.query.count() == 4
-    assert Vault.query.count() == 2
-    assert Proposal.query.count() == 4
+    assert User.query.count() == len(seed_module.PEOPLE)
+    assert Vault.query.count() == 6
+    assert Proposal.query.count() >= 25, "the tables have to be full enough to read as dense"
 
-    # The states a demo needs on screen: one settled, one rejected, one still open.
-    statuses = {p.title: p.status for p in Proposal.query.all()}
-    assert statuses["Q3 supplier settlement"] == "approved"
-    assert statuses["Disable audit logging for maintenance"] == "rejected"
-    assert statuses["Emergency hardware purchase"] == "open"
+    # Every terminal state on screen. A demo where nothing is rejected or expired never renders
+    # the amber or red half of the palette at all, so the discipline is invisible.
+    assert set(result["by_status"]) == {"approved", "rejected", "expired", "open"}
+
+    titles = result["by_title"]
+    assert titles["Q3 supplier settlement"].status == "approved"
+    assert titles["Disable audit logging for maintenance"].status == "rejected"
+    assert titles["Emergency hardware purchase"].status == "open"
+    assert titles["Renew the Calderwood insurance policy"].status == "expired"
 
     # Everything it produced is genuine, not fabricated state.
     report = ledger_service.verify_ledger()
     assert report["ok"] is True, "a seeded demo database must verify like any other"
 
-    settled = result["proposals"]["settled"]
+    settled = titles["Q3 supplier settlement"]
     from qvault.services import approval_service
 
     assert approval_service.tally(settled) == (2, 0)
@@ -69,9 +73,41 @@ def test_seed_builds_a_verifiable_demo_database(app, seed_module):
     assert all(approval_service.verify_signature(s, settled) for s in settled.signatures)
 
 
+def test_the_seeded_ledger_runs_forwards_in_time(app, seed_module):
+    """An append-only log must advance in time as well as in sequence.
+
+    The seeder moves a clock to spread its history over weeks, and the first version did it grouped
+    by vault — producing a log where entry 131 was dated before entry 122. That verifies perfectly
+    and is the first thing an auditor would disbelieve, so the seeder asserts monotonicity itself;
+    this test is here so the assertion cannot be quietly deleted.
+    """
+    seed_module.seed("standard")
+
+    rows = LedgerEntry.query.order_by(LedgerEntry.seq).all()
+    stamps = [e.timestamp for e in rows]
+    assert stamps == sorted(stamps), "seeded ledger timestamps must never go backwards"
+    assert rows[0].event_type == "genesis", "genesis must be the oldest entry, not the newest"
+    assert len(set(stamps)) > len(stamps) // 2, "a real history is not all one instant"
+
+
+def test_a_decisions_two_creation_times_agree(app, seed_module):
+    """``created_at_iso`` is inside the signed payload; ``created_at`` is a column default that a
+    patched clock cannot reach. They silently disagreed, so one row claimed two creation dates."""
+    from datetime import UTC, datetime
+
+    from qvault.models.proposal import Proposal
+
+    seed_module.seed("standard")
+
+    for p in Proposal.query.all():
+        signed = datetime.fromisoformat(p.created_at_iso)
+        stored = p.created_at if p.created_at.tzinfo else p.created_at.replace(tzinfo=UTC)
+        assert abs((stored - signed).total_seconds()) <= 1, p.title
+
+
 def test_seed_attaches_a_real_encrypted_file(app, seed_module):
     result = seed_module.seed("standard")
-    proposal = result["proposals"]["with_file"]
+    proposal = result["by_title"]["Payroll adjustment schedule"]
     assert proposal.file is not None
     assert proposal.file.kem_key_id is not None, "the encapsulating key must be pinned"
 
@@ -84,9 +120,20 @@ def test_seed_attaches_a_real_encrypted_file(app, seed_module):
 def test_mid_stage_leaves_a_proposal_with_no_votes(app, seed_module):
     """So the presenter can cast the first signature live rather than describing one."""
     result = seed_module.seed("mid")
-    pending = result["proposals"]["pending"]
+    pending = result["by_title"]["Emergency hardware purchase"]
     assert pending.status == "open"
     assert len(pending.signatures) == 0
+
+
+def test_the_small_fixture_still_works(app, seed_module):
+    """Kept because a fast, minimal database is what most of the other demos want."""
+    from qvault.models.vault import Vault
+
+    result = seed_module.seed("standard", small=True)
+
+    assert Vault.query.count() == 2
+    assert 0 < len(result["proposals"]) < 20
+    assert ledger_service.verify_ledger()["ok"] is True
 
 
 # --- the rotation demo control ------------------------------------------------------------------
@@ -131,10 +178,10 @@ def test_rotation_after_ageing_keeps_everything_verifying(app, seed_module):
 
     from qvault.services import approval_service, config_service, file_crypto_service
 
-    settled = result["proposals"]["settled"]
+    settled = result["by_title"]["Q3 supplier settlement"]
     assert approval_service.tally(settled) == (2, 0), "votes survive a key rotation"
 
-    with_file = result["proposals"]["with_file"]
+    with_file = result["by_title"]["Payroll adjustment schedule"]
     plaintext = file_crypto_service.decrypt(with_file.vault, with_file.file)
     assert b"employee_id" in plaintext, "files uploaded before the rotation still decrypt"
 

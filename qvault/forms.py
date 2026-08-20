@@ -31,7 +31,9 @@ class RegisterForm(FlaskForm):
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
     password = PasswordField("Password", validators=[DataRequired()])
-    submit = SubmitField("Log in")
+    # "Sign in" everywhere — the page title, the H1 and the landing link all said Sign in while
+    # the button six inches below said Log in. An action keeps one name through a whole flow.
+    submit = SubmitField("Sign in")
 
 
 class VaultForm(FlaskForm):
@@ -51,6 +53,44 @@ class AddMemberForm(FlaskForm):
         "Role", choices=[("signer", "Signer"), ("viewer", "Viewer")], default="signer"
     )
     submit = SubmitField("Add member")
+
+
+class MemberRoleForm(FlaskForm):
+    user_id = IntegerField(validators=[DataRequired()])
+    role = SelectField(choices=[("signer", "Can approve"), ("viewer", "View only")])
+    submit = SubmitField("Save")
+
+
+class RemoveMemberForm(FlaskForm):
+    user_id = IntegerField(validators=[DataRequired()])
+    submit = SubmitField("Remove")
+
+
+class ThresholdForm(FlaskForm):
+    threshold_m = IntegerField(
+        "Approvals required", validators=[DataRequired(), NumberRange(min=1, max=50)]
+    )
+    submit = SubmitField("Save")
+
+
+class ProfileForm(FlaskForm):
+    display_name = StringField("Display name", validators=[DataRequired(), Length(max=255)])
+    submit = SubmitField("Save")
+
+
+class ChangePasswordForm(FlaskForm):
+    """Changing a password re-encrypts the user's private keys, so the current one is required —
+    it is the only thing that can unwrap them (see key_service.change_password)."""
+
+    current_password = PasswordField("Current password", validators=[DataRequired()])
+    new_password = PasswordField(
+        "New password", validators=[DataRequired(), Length(min=8, max=1024)]
+    )
+    confirm = PasswordField(
+        "Confirm new password",
+        validators=[DataRequired(), EqualTo("new_password", message="Passwords must match")],
+    )
+    submit = SubmitField("Change password")
 
 
 class ProposalForm(FlaskForm):

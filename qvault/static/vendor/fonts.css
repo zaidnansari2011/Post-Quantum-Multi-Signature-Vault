@@ -64,3 +64,19 @@
   src: url(fonts/JetBrainsMono-600.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+
+/* Archivo — the display face, used only for headings and status verdicts. One variable file
+   covering the whole weight range, pinned to the semi-expanded width (112%): the wider letterforms
+   read as official signage rather than product UI, which is the register a custody record wants.
+   Regenerate with:
+     curl "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;112,800"
+   and keep the latin subset only. */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 112%;
+  font-display: swap;
+  src: url(fonts/Archivo-var.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

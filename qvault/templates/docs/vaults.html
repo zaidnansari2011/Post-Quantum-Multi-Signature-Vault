@@ -1,0 +1,53 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  A <strong>vault</strong> is a group of people plus one rule: how many of them must agree before
+  anything in it happens. Decisions live inside a vault and inherit its rule.
+</p>
+
+<h3>Roles</h3>
+<ul>
+  <li><strong>Owner</strong> — created the vault. Can add and remove members, change roles, and set
+    the threshold. Counts as an approver. There is exactly one, and they cannot be removed.</li>
+  <li><strong>Can approve</strong> — signs decisions. These are the people the threshold counts.</li>
+  <li><strong>View only</strong> — sees the vault and its decisions but cannot sign. Nothing is ever
+    reported as waiting on them.</li>
+</ul>
+
+<h3>The threshold</h3>
+<p>
+  The threshold is how many approvals a decision needs. It cannot exceed the number of people who
+  can approve — a vault whose threshold nobody could ever meet would deadlock every future
+  decision, so the product refuses that rather than allowing it.
+</p>
+<p>
+  Changing the threshold affects new decisions only. Anything already open keeps the threshold it
+  was created with.
+</p>
+
+<h3>Changing membership</h3>
+<p>
+  Membership changes are about the vault's future, never its past. Every decision froze its own
+  list of eligible approvers when it opened, so removing someone does not invalidate a signature
+  they already gave, and adding someone does not entitle them to sign a decision that predates
+  them.
+</p>
+<p>
+  That is deliberate. If removing a member could retroactively strip their approval, an
+  administrator could reverse a decision by editing a membership list — which is precisely what
+  the frozen list exists to prevent.
+</p>
+<p>
+  Two changes are refused: removing or demoting the owner, and any change that would leave fewer
+  approvers than the threshold requires.
+</p>
+
+<h3>Files</h3>
+<p>
+  Each vault has its own ML-KEM key pair, used to protect files attached to its decisions. That
+  private key is held by the server under its master key rather than by any individual, because
+  every member of the vault needs to be able to read the files — a password-locked personal key
+  could not do that. Your <em>signing</em> key is the opposite: only your password opens it.
+</p>
+{% endblock %}
