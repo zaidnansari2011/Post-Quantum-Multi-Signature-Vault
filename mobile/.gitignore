@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Signing material. The keystore IS the app's identity: lose it and Android refuses to install any
+# future build over an existing one, which strands the ML-DSA seed held in that install's keychain.
+# Back it up somewhere outside this repo -- it must never be committed and must never be lost.
+credentials/
+*.keystore
