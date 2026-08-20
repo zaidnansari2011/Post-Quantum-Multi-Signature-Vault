@@ -78,16 +78,79 @@
             --sealed:#5FB58C; --waiting:#D4A045; --broken:#E0776A;
             --sealed-tint:#16241E; --waiting-tint:#2A2113; --broken-tint:#2A1815; }
   }
+
+  /* ---- decision-record mode ------------------------------------------------------------
+     Used only when a bundle is embedded in this file. The page is then a document about one
+     decision that happens to check itself, rather than a tool waiting for a file. */
+  .eyebrow { font-family:var(--mono); font-size:.64rem; letter-spacing:.14em;
+             text-transform:uppercase; color:var(--ink-3); margin-bottom:.45rem; }
+  .doc-title { font-size:1.45rem; font-weight:700; letter-spacing:-.015em; line-height:1.22;
+               margin:0 0 .3rem; }
+  .doc-sub { color:var(--ink-3); font-size:.8rem; margin:0 0 1.4rem; word-break:break-word; }
+  table.sigs { width:100%; border-collapse:collapse; font-size:.78rem; }
+  table.sigs th { text-align:left; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase;
+                  color:var(--ink-3); font-weight:600; padding:0 .7rem .4rem 0;
+                  border-bottom:1px solid var(--rule); white-space:nowrap; }
+  table.sigs td { padding:.5rem .7rem .5rem 0; border-bottom:1px solid var(--rule);
+                  vertical-align:top; }
+  table.sigs tr:last-child td { border-bottom:0; }
+  table.sigs td.n { font-family:var(--mono); text-align:right; white-space:nowrap; }
+  .scroll { overflow-x:auto; }
+  .chip { display:inline-block; font-size:.6rem; letter-spacing:.05em; text-transform:uppercase;
+          font-weight:600; padding:.1rem .4rem; border-radius:3px; border:1px solid;
+          white-space:nowrap; }
+  .chip.ok { color:var(--sealed); background:var(--sealed-tint); border-color:var(--sealed); }
+  .chip.no { color:var(--broken); background:var(--broken-tint); border-color:var(--broken); }
+  .chip.pl { color:var(--ink-2); background:var(--sunk); border-color:var(--rule); }
+  .note { border-left:2px solid var(--rule); padding:.1rem 0 .1rem .7rem; color:var(--ink-2);
+          font-size:.76rem; margin:.75rem 0 0; }
+  .note strong { color:var(--ink); }
+  .tiny { font-size:.7rem; color:var(--ink-3); }
+  details.more { margin-top:1rem; }
+  details.more > summary { cursor:pointer; font-size:.75rem; color:var(--ink-3); }
+  .hidden { display:none !important; }
+
+  /* Printing is the point of the certificate half: this file replaces a PDF, so it has to
+     survive Ctrl+P. Interactive furniture goes, colour is flattened, nothing is clipped. */
+  @media print {
+    :root { --paper:#fff; --surface:#fff; --sunk:#fff; --rule:#bbb;
+            --ink:#000; --ink-2:#333; --ink-3:#555; }
+    body { padding:0; font-size:10.5pt; }
+    main { max-width:none; }
+    .no-print, details.more, .drop, .pins { display:none !important; }
+    .panel { break-inside:avoid; border-color:#bbb; }
+    .banner { border-width:1px; border-left-width:3px; }
+    .scroll { overflow:visible; }
+    a[href]:after { content:""; }
+  }
 </style>
 </head>
 <body>
+
+<!--
+  THE EVIDENCE.
+
+  When this file is exported for a particular decision, the bundle is substituted into the script
+  tag below and the page becomes a self-verifying decision record: it renders the decision AND
+  re-checks every signature against it, on open, offline.
+
+  Left empty, the same file is the generic verifier and waits for you to drop a bundle on it. One
+  artefact, two modes, so there is only ever one implementation of the checks to keep honest.
+
+  Edit any character between the tags and reload: the document will show your edit and the
+  signatures will stop matching. That is the property this whole system exists to demonstrate.
+-->
+<script id="qvault-decision" type="application/json"></script>
+
 <main>
-  <h1>Q-Vault offline verifier</h1>
-  <p class="lead">Runs entirely in this page. Nothing is uploaded.</p>
+  <div id="dochead"></div>
+
+  <h1 id="pagetitle">Q-Vault offline verifier</h1>
+  <p class="lead" id="pagelead">Runs entirely in this page. Nothing is uploaded.</p>
 
   <div id="result"></div>
 
-  <div class="panel">
+  <div class="panel" id="loader">
     <div class="panel__head"><span class="label">Decision bundle</span></div>
     <div class="panel__body">
       <div class="drop" id="drop">
@@ -6136,6 +6199,130 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
     document.getElementById('result').innerHTML = html;
   }
 
+  // --- the decision-record view -------------------------------------------------------------
+  //
+  // Rendered FROM the embedded bundle rather than baked in as static HTML by the server, and that
+  // is the whole design. If the readable half were pre-rendered, editing the JSON would break the
+  // signatures while the page went on displaying the original wording — which invites exactly the
+  // wrong conclusion ("the document still says the right thing, so it must be fine"). Deriving
+  // both halves from the same bytes means a tampered file shows you the tampering AND tells you
+  // the signatures no longer cover it.
+
+  const checksHtml = report => {
+    let h = '<div class="panel"><div class="panel__head"><span class="label">'
+          + 'What was checked</span></div><ol class="checks">';
+    for (const c of report.checks) {
+      const cls = c.skipped ? 'is-skip' : (c.ok ? 'is-ok' : 'is-bad');
+      const mark = c.skipped ? '—' : (c.ok ? '✓' : '×');
+      h += '<li class="' + cls + '"><span class="mark">' + mark + '</span><span>'
+         + '<span class="ctitle">' + esc(c.title) + '</span>'
+         + '<span class="cdetail">' + esc(c.detail) + '</span></span></li>';
+    }
+    return h + '</ol></div>';
+  };
+
+  const keysHtml = report => {
+    const fp = report.fingerprints;
+    if (!fp.log && !fp.witnesses.length) return '';
+    let h = '<div class="panel"><div class="panel__head"><span class="label">Keys in this file'
+          + '</span></div><div class="panel__body"><dl class="meta">';
+    if (fp.log) h += '<dt>Log</dt><dd>' + esc(fp.log) + '</dd>';
+    for (const w of fp.witnesses) h += '<dt>' + esc(w.name) + '</dt><dd>' + esc(w.fingerprint) + '</dd>';
+    return h + '</dl><p class="note">Compare these against fingerprints the operator published '
+             + 'somewhere other than this file, then enter them below and reload. A fingerprint '
+             + 'that only ever came from the file it is vouching for proves nothing.</p>'
+             + '</div></div>';
+  };
+
+  const shortDate = v => String(v || '').slice(0, 16).replace('T', ' ');
+
+  function fingerprintOf(b64Key) {
+    try { return hex(sha256(b64(b64Key))).slice(0, 16); } catch (e) { return '—'; }
+  }
+  function sigBytes(b64Sig) {
+    try { return b64(b64Sig).length; } catch (e) { return 0; }
+  }
+
+  function renderDocument(bundle, report) {
+    const d = bundle.decision || {};
+    const sigs = bundle.signatures || [];
+    const log = bundle.log || {};
+    const cp = log.checkpoint || {};
+    const approvals = sigs.filter(s => s.decision === 'approve').length;
+    const deviceHeld = sigs.filter(s => s.custody === 'device').length;
+
+    document.getElementById('pagetitle').classList.add('hidden');
+    document.getElementById('pagelead').classList.add('hidden');
+
+    document.getElementById('dochead').innerHTML =
+        '<div class="eyebrow">Q-Vault &middot; Decision record</div>'
+      + '<h1 class="doc-title">' + esc(d.title || 'Untitled decision') + '</h1>'
+      + '<p class="doc-sub">' + esc(d.vault_name || ('Vault ' + d.vault_id)) + ' &middot; '
+      + esc(d.proposal_uuid || '') + '</p>';
+
+    let html = '<div class="banner ' + (report.ok ? 'ok' : 'bad') + '"><div>'
+      + '<div class="banner__title">' + esc(report.summary) + '</div>'
+      + '<div class="banner__body">Checked in this page just now, offline, against the evidence '
+      + 'embedded in this file. Nothing was contacted.</div></div></div>';
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">The action</span>'
+      + '</div><div class="panel__body"><p class="action">' + esc(d.action_text || '') + '</p>'
+      + '<dl class="meta">'
+      + '<dt>Status</dt><dd>' + esc(d.status || '') + '</dd>'
+      + '<dt>Approvals</dt><dd>' + approvals + ' of ' + esc(d.required_m)
+      + (deviceHeld ? ' &middot; ' + deviceHeld + ' device-held' : '') + '</dd>'
+      + '<dt>Rule</dt><dd>' + esc(d.required_m) + '-of-' + esc(d.required_n) + '</dd>'
+      + '<dt>Payload hash</dt><dd>' + esc(d.payload_hash || '') + '</dd>'
+      + '<dt>Attached file</dt><dd>' + esc(d.file_sha256 || 'none') + '</dd>'
+      + '<dt>Nonce</dt><dd>' + esc(d.nonce_hex || '') + '</dd>'
+      + '<dt>Opened</dt><dd>' + esc(d.created_at_iso || '') + '</dd>'
+      + '<dt>Exported</dt><dd>' + esc(bundle.exported_at || '') + '</dd>'
+      + '</dl>'
+      + '<p class="note">The payload hash covers the vault, the wording above, the attached file, '
+      + 'the ' + esc(d.required_m) + '-of-' + esc(d.required_n) + ' rule, who was permitted to '
+      + 'sign, the nonce and the timestamp &mdash; <strong>all at once</strong>. Alter any one of '
+      + 'them and every signature below stops matching.</p></div></div>';
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">Signatures ('
+      + sigs.length + ')</span></div><div class="panel__body"><div class="scroll"><table class="sigs">'
+      + '<thead><tr><th>Signer</th><th>Decision</th><th>Custody</th><th>Algorithm</th>'
+      + '<th class="n">Bytes</th><th>Key</th><th>Signed</th></tr></thead><tbody>';
+    for (const s of sigs) {
+      html += '<tr><td>' + esc(s.signer_name || s.signer_email || ('Signer ' + s.signer_id))
+        + (s.reason ? '<div class="tiny">' + esc(s.reason) + '</div>' : '') + '</td>'
+        + '<td><span class="chip ' + (s.decision === 'approve' ? 'ok' : 'no') + '">'
+        + esc(s.decision) + '</span></td>'
+        + '<td><span class="chip ' + (s.custody === 'device' ? 'ok' : 'pl') + '">'
+        + esc(s.custody || 'server') + '</span></td>'
+        + '<td class="n">' + esc(s.alg_id) + '</td>'
+        + '<td class="n">' + sigBytes(s.signature_b64).toLocaleString() + '</td>'
+        + '<td class="n">' + esc(fingerprintOf(s.public_key_b64)) + '</td>'
+        + '<td class="n">' + esc(shortDate(s.signed_at)) + '</td></tr>';
+    }
+    html += '</tbody></table></div>'
+      + '<p class="note"><strong>Custody</strong> is the difference between evidence and record. A '
+      + '<strong>device</strong> signature was made by a key generated on the signer\'s own '
+      + 'hardware that the Q-Vault server has never held, so not even a compromised server could '
+      + 'have produced it. A <strong>server</strong> signature was made by a key that server '
+      + 'unwrapped with the signer\'s password: genuine and attributable, but the server had the '
+      + 'means.</p></div></div>';
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">'
+      + 'Position in the transparency log</span></div><div class="panel__body"><dl class="meta">'
+      + '<dt>Log origin</dt><dd>' + esc(log.origin || '') + '</dd>'
+      + '<dt>Tree size</dt><dd>' + esc(cp.tree_size) + '</dd>'
+      + '<dt>Root hash</dt><dd>' + esc(cp.root_hash || '') + '</dd>'
+      + '<dt>Witnesses</dt><dd>' + esc((log.witnesses || []).map(w => w.witness).join(', ')
+      || 'none — this export carries one fewer independent signature') + '</dd>'
+      + '</dl><p class="note">A chained log stops entries being edited. It does not by itself stop '
+      + 'the whole log being replaced with a different, internally consistent one &mdash; which is '
+      + 'what an independent <strong>witness</strong> co-signature rules out, because the witness '
+      + 'saw an earlier state and will not vouch for a substitute.</p></div></div>';
+
+    html += checksHtml(report) + keysHtml(report);
+    document.getElementById('result').innerHTML = html;
+  }
+
   // --- wiring -------------------------------------------------------------------------------
   const drop = document.getElementById('drop');
   const file = document.getElementById('file');
@@ -6172,6 +6359,55 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
 
   // The browser test drives this directly, and so can anyone scripting the page.
   globalThis.qvaultVerify = (bundle, pins) => verifyBundle(bundle, pins || {});
+
+  // --- self-verifying mode ---------------------------------------------------------------
+  //
+  // An embedded bundle turns this file from a tool into a document. Everything below must be
+  // inert when the slot is empty, because that is how the generic verifier ships and how the
+  // browser test suite loads it.
+
+  const slot = document.getElementById('qvault-decision');
+  const embedded = slot ? slot.textContent.trim() : '';
+  if (embedded) {
+    let bundle = null;
+    try {
+      bundle = JSON.parse(embedded);
+    } catch (err) {
+      // A bundle that will not parse is still a finding, not a blank page: somebody edited this
+      // file. Say so in the same place a verdict would have appeared.
+      document.getElementById('result').innerHTML =
+          '<div class="banner bad"><div><div class="banner__title">NOT verified</div>'
+        + '<div class="banner__body">The evidence embedded in this file is not valid JSON: '
+        + esc(err.message) + '. It has been edited since it was exported.</div></div></div>';
+    }
+
+    if (bundle) {
+      globalThis.qvaultEmbedded = bundle;
+
+      // The loader stays reachable — this file is still a working verifier — but stops being the
+      // first thing you see, and never prints.
+      const loader = document.getElementById('loader');
+      if (loader && loader.parentNode) {
+        const det = document.createElement('details');
+        det.className = 'more no-print';
+        det.innerHTML = '<summary>Check a different decision file with this page</summary>';
+        loader.parentNode.insertBefore(det, loader);
+        det.appendChild(loader);
+      }
+
+      const runEmbedded = () => renderDocument(bundle, verifyBundle(bundle, {
+        log: document.getElementById('pinlog').value.trim(),
+        witness: document.getElementById('pinwit').value.trim(),
+      }));
+
+      // Pinning a fingerprint should take effect immediately; in document mode there is no
+      // "load the file" step to re-trigger the check.
+      for (const id of ['pinlog', 'pinwit']) {
+        document.getElementById(id).addEventListener('change', runEmbedded);
+      }
+      runEmbedded();
+    }
+  }
 })();
 </script>
 </body>

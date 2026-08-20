@@ -12,5 +12,13 @@ kind of constraint that erodes one convenient import at a time.
 from __future__ import annotations
 
 from .core import BUNDLE_FORMAT, Check, Report, verify_bundle
+from .reader import BundleFormatError, load_bundle
 
-__all__ = ["BUNDLE_FORMAT", "Check", "Report", "verify_bundle"]
+__all__ = [
+    "BUNDLE_FORMAT",
+    "BundleFormatError",
+    "Check",
+    "Report",
+    "load_bundle",
+    "verify_bundle",
+]

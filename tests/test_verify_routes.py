@@ -34,6 +34,7 @@ from qvault.services import (
     proposal_service,
     vault_service,
 )
+from qvault.verify import load_bundle
 
 PASSWORD = "password-123"
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -73,22 +74,21 @@ def login(client, email="ada@e.com"):
 
 
 def test_a_member_can_download_the_bundle(app, client, decision):
-    """The export is a package now, but its contents are the same evidence as before.
+    """The export's wrapper has changed twice; the evidence inside it has not.
 
-    The default download changed from a bare .json to a .zip carrying the bundle plus a readable
-    certificate and the offline verifier. What the bundle itself must contain did not change, so
-    those assertions are kept and simply read from inside the archive.
+    Bare .json, then a .zip package, now a self-verifying .html record. Each time, what the bundle
+    must CONTAIN stayed identical -- so those assertions are kept verbatim and simply read from
+    wherever the current default puts them.
     """
     login(client)
     resp = client.get(f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}/export")
 
     assert resp.status_code == 200
-    assert resp.mimetype == "application/zip"
+    assert resp.mimetype == "text/html"
     assert "attachment" in resp.headers["Content-Disposition"]
-    assert ".qvault.zip" in resp.headers["Content-Disposition"]
+    assert ".qvault.html" in resp.headers["Content-Disposition"]
 
-    with zipfile.ZipFile(io.BytesIO(resp.data)) as archive:
-        bundle = json.loads(archive.read("decision.json"))
+    bundle = load_bundle(resp.data)
     assert bundle["decision"]["proposal_uuid"] == decision.proposal_uuid
     assert len(bundle["signatures"]) == 2
     assert bundle["log"]["witnesses"], "the export should carry a witness co-signature"

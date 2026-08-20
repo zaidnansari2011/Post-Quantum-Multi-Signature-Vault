@@ -20,13 +20,9 @@ works, so this doubles as an API.
 
 from __future__ import annotations
 
-import io
-import json
-import zipfile
-
 from flask import Blueprint, current_app, render_template, request
 
-from qvault.verify import verify_bundle
+from qvault.verify import BundleFormatError, load_bundle, verify_bundle
 
 bp = Blueprint("verify", __name__, url_prefix="/verify")
 
@@ -34,34 +30,29 @@ MAX_BUNDLE_BYTES = 4 * 1024 * 1024
 
 
 def _read_submission() -> tuple[object | None, str | None]:
-    """Return ``(bundle, error)`` from either an upload or a paste."""
+    """Return ``(bundle, error)`` from either an upload or a paste.
+
+    Every artefact the export produces is accepted -- the self-verifying .html record, the .zip
+    package, and the bare .json. The reasoning, and the history of getting this wrong, lives in
+    ``qvault.verify.reader``: whatever the product hands somebody has to be what this page takes.
+    """
     upload = request.files.get("bundle")
     if upload is not None and upload.filename:
         raw = upload.read(MAX_BUNDLE_BYTES + 1)
         if len(raw) > MAX_BUNDLE_BYTES:
             return None, f"That file is larger than {MAX_BUNDLE_BYTES // 1024 // 1024} MB."
-        # Accept the decision package as well as the bare bundle. The export hands people a .zip,
-        # so refusing it here would mean the one file the product gives you is the one file this
-        # page will not take.
-        if raw[:4] == b"PK":
-            try:
-                with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-                    names = [n for n in archive.namelist() if n.endswith("decision.json")]
-                    if not names:
-                        return None, "That package contains no decision.json."
-                    raw = archive.read(names[0])
-            except (zipfile.BadZipFile, KeyError) as exc:
-                return None, f"That package could not be opened: {exc}"
-        text = raw.decode("utf-8", errors="replace")
     else:
-        text = (request.form.get("bundle_text") or "").strip()
+        raw = (request.form.get("bundle_text") or "").strip().encode("utf-8")
 
-    if not text:
+    if not raw.strip():
         return None, "Choose an exported decision file, or paste its contents."
+
     try:
-        return json.loads(text), None
-    except json.JSONDecodeError as exc:
-        return None, f"That is not valid JSON: {exc}"
+        return load_bundle(raw), None
+    except BundleFormatError as exc:
+        # The reader already phrases these for a person; this only sentence-cases them.
+        message = str(exc)
+        return None, message[:1].upper() + message[1:].rstrip(".") + "."
 
 
 def _wants_json() -> bool:
