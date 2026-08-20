@@ -132,7 +132,7 @@ it, never after.
 
 ---
 
-### 2.3 Build the mobile APK and switch on OTA updates — `TODO`
+### 2.3 Build the mobile APK and switch on OTA updates — `TODO` (steps 1-3 `DONE` 2026-08-20)
 
 The app is configured and frozen-ready; what remains needs an **Expo account**, which is yours.
 Do these **in order** — step 3 must happen before step 5, or the APK ships with updates disabled.
@@ -143,15 +143,13 @@ Do these **in order** — step 3 must happen before step 5, or the APK ships wit
 
 2. `cd q-vault/mobile && npx eas login`
 
-3. `npx eas init` — mints the project and writes `extra.eas.projectId` into `app.json`.
-   **Then set `updates.url` to `https://u.expo.dev/<that-same-uuid>`**, which `eas init` does not
-   do for you. I left both out deliberately: a placeholder URL produces a build that looks
-   update-capable and silently is not. Ping me and I will fill them in, or run
-   `npx eas update:configure` — but if it replaces `runtimeVersion` with a policy object, put the
-   static `"1"` back (see [ADR-0018](adr/0018-static-runtime-version.md)).
+3. ~~`npx eas init`~~ — **done.** Project `@zaid7864/qvault`, id
+   `abfa50c5-38c5-4fd7-a01d-7c0d0dd9c028`. It wrote `extra.eas.projectId` and `owner`, and left
+   `runtimeVersion: "1"` alone. I then set `updates.url`, which `eas init` does not do.
 
-   *Verify before building:* a correct config makes `expo.modules.updates.ENABLED` read `true` in
-   the generated manifest. It currently reads `false`, which is how I know the URL is still missing.
+   Verified in a real prebuild: `expo.modules.updates.ENABLED` now reads **`true`** (it read
+   `false` before the URL was set), `EXPO_UPDATE_URL` carries the project URL, and
+   `expo_runtime_version` resolves to `1`. The APK will be updatable.
 
 4. **Android keystore.** The first build offers to generate one — accept, then back it up with
    `npx eas credentials`. **This keystore is the app's identity for its lifetime.** A different one
