@@ -41,11 +41,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import create_engine, func, insert, select, text  # noqa: E402
 
-from qvault.extensions import db  # noqa: E402
-
 # Importing the package registers every model on db.metadata. No Flask app is needed for this,
 # and deliberately so — create_app() would run init_database() and seed a genesis entry.
 from qvault import models  # noqa: E402,F401
+from qvault.extensions import db  # noqa: E402
 
 BINARY_SENTINEL_TABLES = ("keys", "signatures", "ledger_anchors", "log_checkpoints")
 
@@ -104,7 +103,7 @@ def resync_sequences(dst_conn, tables) -> list[str]:
     return fixed
 
 
-# -- verification -----------------------------------------------------------------------------------
+# -- verification ---------------------------------------------------------------------------
 
 
 def verify_against_target(target_url: str) -> bool:
@@ -153,13 +152,16 @@ def verify_against_target(target_url: str) -> bool:
 
         decided = [p for p in Proposal.query.all() if p.status == "approved"]
         recount_ok = all(approval_service.tally(p)[0] >= p.required_m for p in decided)
-        _log(f"    approved proposals    : {len(decided)} re-tally correctly" if recount_ok
-             else "    approved proposals    : RE-TALLY MISMATCH")
+        _log(
+            f"    approved proposals    : {len(decided)} re-tally correctly"
+            if recount_ok
+            else "    approved proposals    : RE-TALLY MISMATCH"
+        )
         ok &= recount_ok
     return ok
 
 
-# -- entry point --------------------------------------------------------------------------------------
+# -- entry point ----------------------------------------------------------------------------
 
 
 def main() -> int:
@@ -201,7 +203,10 @@ def main() -> int:
     existing = table_counts(dst, tables)
     populated = {k: v for k, v in existing.items() if v > 0}
     if populated and not args.force:
-        _log(f"  REFUSING: target already holds rows in {list(populated)}. Use --force to overwrite.")
+        _log(
+            f"  REFUSING: target already holds rows in {list(populated)}."
+            " Use --force to overwrite."
+        )
         return 1
     if populated and args.force:
         _log("  --force: clearing target ...")
@@ -225,7 +230,9 @@ def main() -> int:
     if mismatched:
         _log(f"  ROW COUNT MISMATCH in {mismatched}")
         return 1
-    _log(f"  row counts match on all {len([n for n in before if before[n] > 0])} populated tables\n")
+    _log(
+        f"  row counts match on all {len([n for n in before if before[n] > 0])} populated tables\n"
+    )
 
     _log("  VERIFYING AGAINST POSTGRESQL")
     if not verify_against_target(args.target):

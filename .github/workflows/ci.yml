@@ -78,3 +78,53 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.lock.txt mypy
       - run: mypy qvault
+
+  mobile:
+    name: Mobile client
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        # Hoisted: Metro and pnpm's symlinked layout do not get along, and the same layout is what
+        # the pytest harnesses resolve @noble/post-quantum through.
+        run: pnpm install --node-linker=hoisted --frozen-lockfile
+
+      - name: Type check
+        working-directory: mobile
+        # Node's type stripping runs these files without checking them, so this is the only thing
+        # that would catch, say, a keygen wrapper that silently drops its seed argument.
+        run: pnpm typecheck
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock.txt
+
+      - name: Contract tests
+        # These are the only tests that run BOTH implementations against each other: the canonical
+        # bytes against CPython's, and the shipped signing flows against a real HTTP server.
+        run: pytest tests/test_mobile_canonical.py tests/test_mobile_e2e.py tests/test_device_interop.py -q
+        env:
+          SECRET_KEY: ci-secret-not-used-outside-ci
+          SERVER_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+
+      - name: Bundle check
+        working-directory: mobile
+        # Proves Metro resolves every import and Hermes compiles the result. Catches what a type
+        # check cannot: a module that exists to TypeScript but not to the bundler.
+        run: pnpm bundle:check

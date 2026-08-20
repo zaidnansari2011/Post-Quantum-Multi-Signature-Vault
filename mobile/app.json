@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Q-Vault",
+    "slug": "qvault",
+    "scheme": "qvault",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "extra": {
+      "apiBaseUrl": "https://qvault.livelyisland-19e02d3e.centralindia.azurecontainerapps.io"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.qvault.approvals",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Q-Vault uses Face ID to authorise a signature with the key held on this device."
+      }
+    },
+    "android": {
+      "package": "com.qvault.approvals",
+      "adaptiveIcon": {
+        "backgroundColor": "#15191C",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Q-Vault uses Face ID to authorise a signature with the key held on this device."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
