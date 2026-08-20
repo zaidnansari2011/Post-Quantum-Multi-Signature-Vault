@@ -11,3 +11,4 @@ minimumReleaseAgeExclude:
   - expo-modules-core@57.0.12
   - expo-modules-jsi@57.0.5
   - expo@57.0.15
+  - expo-updates@57.0.16

@@ -4,12 +4,12 @@
     "slug": "qvault",
     "scheme": "qvault",
     "version": "1.0.0",
+    "runtimeVersion": "1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "extra": {
-      "apiBaseUrl": "https://qvault.livelyisland-19e02d3e.centralindia.azurecontainerapps.io"
+      "apiBaseUrl": "https://project4.zaidansari.tech"
     },
     "ios": {
       "supportsTablet": true,
@@ -20,12 +20,18 @@
     },
     "android": {
       "package": "com.qvault.approvals",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#15191C",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
