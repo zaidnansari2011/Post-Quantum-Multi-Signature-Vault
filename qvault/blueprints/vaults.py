@@ -238,6 +238,11 @@ def proposal_detail(vid: int, pid: str):
         {"sig": s, "verified": approval_service.verify_signature(s, proposal)}
         for s in proposal.signatures
     ]
+    # Which signatures were made by a key this server never held. ADR-0016's whole claim is
+    # visible here or nowhere: without it a device-held signature is indistinguishable on screen
+    # from one the server unwrapped, and the distinction is the point of the system.
+    device_signed = sum(1 for s in proposal.signatures if s.custody == "device")
+
     my_vote = approval_service.vote_of(proposal, current_user.id)
     is_signer = current_user.id in {m.user_id for m in vault.signer_members()}
     can_vote = proposal.status == "open" and is_signer and my_vote is None
@@ -247,6 +252,7 @@ def proposal_detail(vid: int, pid: str):
         vault=vault,
         proposal=proposal,
         votes=votes,
+        device_signed=device_signed,
         approvals=approvals,
         rejections=rejections,
         binding=approval_service.verify_proposal_binding(proposal),
