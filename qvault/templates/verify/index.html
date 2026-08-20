@@ -94,11 +94,16 @@
     <div class="panel__body">
       <form method="post" enctype="multipart/form-data" action="{{ url_for('verify.index') }}">
         <div class="field">
-          {# .zip first: the export hands people a package, and a picker that hides it makes the
-             one file the product produces the one file this page appears to refuse. The route
-             unwraps it (see verify.py::_read_submission); the bare .json still works too. #}
+          {# EVERY format the export can produce, default first. This list has been wrong twice --
+             once holding only .json while the download was a .zip, then only .zip/.json while the
+             download had become .html -- and both times the symptom was identical: the single file
+             the user actually possessed was greyed out in the file dialog, so the page looked like
+             it was refusing their evidence. The route accepts all three either way
+             (verify.py::_read_submission -> qvault/verify/reader.py); this attribute only governs
+             what the OS dialog will show, which is exactly why it is easy to forget and impossible
+             for a route-level test to catch. #}
           <input class="input" type="file" name="bundle"
-                 accept=".zip,.json,application/zip,application/json">
+                 accept=".html,.zip,.json,text/html,application/zip,application/json">
         </div>
         <details class="verify__more">
           <summary>Pin the keys you expect</summary>
