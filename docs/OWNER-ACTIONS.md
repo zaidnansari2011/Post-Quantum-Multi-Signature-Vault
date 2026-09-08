@@ -218,6 +218,87 @@ a little per day until reverted:
 
 *Your effort:* one command if you keep the witness, four if you do not.
 
+### 2.6 Attachment uploads are lost on every restart — `TODO` (added 2026-08-25) — **demo-blocking**
+
+*Why it's yours:* it needs an Azure storage key and changes the running deployment.
+
+**The symptom.** Downloading any vault attachment on the deployed app returns
+*Internal Server Error*. Confirmed from the live container log:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory:
+  '/app/instance/storage/11/055a983e-8cf1-430f-bbc9-c5f0b8a292d0.bin'
+```
+
+**The cause.** `qvault` has **no volumes and no volume mounts** — verified with
+`az containerapp show`. So `/app/instance/storage/` is the container's own
+ephemeral filesystem, and every uploaded file is destroyed on restart, redeploy,
+scale event or revision change. The database rows survive independently (a
+`DATABASE_URL` is configured, pointing outside the container), which is why the
+UI still lists an attachment whose bytes are gone. That mismatch is the whole
+bug: the row promises a file that no longer exists.
+
+This affects **every** upload, not just one. Uploading a file during the demo and
+downloading it minutes later will work; anything uploaded before the last
+restart will not.
+
+**The fix — mount Azure Files at the storage path.** Reusing the storage account
+the witness already uses, with a new share:
+
+```
+# 1. a share for vault attachments
+az storage share-rm create --storage-account qvaultwitness260820     -g qvault-rg -n vault-files --quota 5
+
+# 2. register it with the Container Apps environment
+#    (get KEY from: az storage account keys list -n qvaultwitness260820 -g qvault-rg)
+az containerapp env storage set -n qvault-env -g qvault-rg     --storage-name vaultfiles     --azure-file-account-name qvaultwitness260820     --azure-file-account-key "<KEY>"     --azure-file-share-name vault-files     --access-mode ReadWrite
+
+# 3. attach it. Volumes need YAML - there are no CLI flags for this.
+az containerapp show -n qvault -g qvault-rg -o yaml > qvault.yaml
+```
+
+In `qvault.yaml`, under `properties.template` add:
+
+```yaml
+    volumes:
+      - name: vault-storage
+        storageType: AzureFile
+        storageName: vaultfiles
+```
+
+and under `properties.template.containers[0]` add:
+
+```yaml
+      volumeMounts:
+        - volumeName: vault-storage
+          mountPath: /app/instance/storage
+```
+
+then:
+
+```
+az containerapp update -n qvault -g qvault-rg --yaml qvault.yaml
+```
+
+**Mount only `/app/instance/storage`, not `/app/instance`.** The witness share
+needs `nobrl` because SQLite cannot take byte-range locks over SMB (§2.4).
+Mounting just the storage subdirectory keeps any SQLite file off the share
+entirely, so `nobrl` is not needed here — the share holds only opaque AES-GCM
+blobs, written once with `write_bytes()` and read with `read_bytes()`, never
+locked.
+
+**Two things this does not do:**
+
+1. **Files already uploaded are gone for good.** Encrypted bytes that were never
+   persisted cannot be recovered from the database row. Re-upload anything you
+   need *after* the mount is live — including `csl_iat1.pdf`.
+2. **The friendlier error needs a redeploy.** The code now raises
+   `CiphertextMissing` and shows "this attachment's encrypted data is missing
+   from server storage" instead of crashing, but the deployed image predates
+   that fix and will keep returning 500 until a new image ships.
+
+*Your effort:* three commands, one small YAML edit, then re-upload your files.
+
 ### 2.5 Publish the key fingerprints — `PARTLY DONE` (2026-08-21)
 
 *Why it's yours:* a fingerprint is only worth anything if it reaches the reader through a channel

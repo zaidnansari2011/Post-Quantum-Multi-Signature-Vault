@@ -41,6 +41,22 @@ class FileDecryptError(Exception):
     """Raised when stored ciphertext fails authentication (tampering or wrong key)."""
 
 
+class CiphertextMissing(FileDecryptError):
+    """Raised when the stored ciphertext file cannot be read from the storage directory.
+
+    A **subclass** of ``FileDecryptError`` so that every existing handler keeps degrading
+    gracefully rather than returning a 500 — but a distinct type, because this is *not* an
+    integrity failure. The row is intact and the keys are fine; the bytes are simply not
+    there. Telling a user "integrity check failed" in that situation misdescribes the fault
+    and sends them looking for tampering that did not happen.
+
+    The common causes are operational, not cryptographic: the instance directory is not on a
+    persistent volume (so uploads vanish on container restart), the app is running from a
+    different working directory than the one that wrote the file, or the storage mount is
+    unreadable.
+    """
+
+
 def _storage_dir() -> Path:
     d = Path(current_app.instance_path) / "storage"
     d.mkdir(parents=True, exist_ok=True)
@@ -111,7 +127,15 @@ def decrypt(vault, file) -> bytes:
         shared_secret = kem.decapsulate(dk_vault, file.kem_ciphertext)
         wrap_key = hkdf_sha256(shared_secret, info=_DEK_WRAP_INFO)
         dek = sym.decrypt(wrap_key, file.dek_wrap_nonce, file.wrapped_dek, _dek_aad(vault.id))
-        ciphertext = (_storage_dir() / file.ciphertext_path).read_bytes()
+        # OSError covers the absent file, an unreadable storage mount and a permission failure
+        # alike. Before this guard the FileNotFoundError escaped as an uncaught 500 — the one
+        # path in this function that could still do so, despite the note below.
+        try:
+            ciphertext = (_storage_dir() / file.ciphertext_path).read_bytes()
+        except OSError as exc:
+            raise CiphertextMissing(
+                f"stored ciphertext is missing or unreadable: {file.ciphertext_path}"
+            ) from exc
         plaintext = sym.decrypt(dek, file.aes_nonce, ciphertext, _file_aad(vault.id))
     except InvalidTag as exc:
         raise FileDecryptError(

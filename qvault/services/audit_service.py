@@ -58,6 +58,12 @@ SENTENCES = {
     "demo_keys_expired": "Key deadlines were moved forward for a demonstration.",
     "device_enrolled": "{who} enrolled a device that signs with a key this server cannot open.",
     "device_revoked": "{who} revoked a device; its past signatures still verify.",
+    # Making a confidential decision world-readable is a security-relevant act, so it is narrated
+    # in the same voice as any other. "Revoked the public record" rather than "unpublished": the
+    # sentence must not suggest that copies already downloaded were recalled, because they cannot
+    # be — see publication_service.
+    "decision_published": "{who} published a decision in {vault} to a public link.",
+    "decision_unpublished": "{who} revoked the public link for a decision in {vault}.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.

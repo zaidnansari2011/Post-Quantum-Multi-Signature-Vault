@@ -59,6 +59,7 @@ from qvault.services import (  # noqa: E402
     checkpoint_service,
     ledger_service,
     proposal_service,
+    publication_service,
     rotation_service,
     vault_service,
 )
@@ -439,6 +440,21 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
                 )
             proposals.append(proposal)
 
+    # Leave one decision already shared, so `/d/<uuid>` is a live page the moment the demo
+    # starts rather than something that first has to be created on stage. Chosen for being
+    # approved, unambiguous and free of any attachment, since the public record shows an
+    # attachment's hash and a reader should not have to wonder what they cannot see.
+    #
+    # Published LAST, under the frozen clock's final instant, because publication is a ledger
+    # event like any other and _assert_monotonic refuses a log that runs backwards.
+    published = next(
+        (p for p in proposals if p.title == "Q3 supplier settlement" and p.status == "approved"),
+        None,
+    )
+    if published is not None:
+        clock.advance(hours=1)
+        publication_service.publish(published, published.creator, commit=False)
+
     ledger_service.maybe_anchor()
     checkpoint_service.maybe_checkpoint()
     db.session.commit()
@@ -458,6 +474,7 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
         # indexing into a list whose order is the timeline's, not the author's.
         "by_title": {p.title: p for p in proposals},
         "by_status": by_status,
+        "published": published,
     }
 
 
@@ -502,6 +519,8 @@ def main(argv: list[str] | None = None) -> int:
         _line(f"  ledger     : {log['entries']} entries, head #{report['head_seq']}, "
               f"verified={report['ok']}")
         _line(f"  merkle root: {log['root']}")
+        if result.get("published") is not None:
+            _line(f"  public link: /d/{result['published'].proposal_uuid}")
         if app.config.get("WITNESS_URL"):
             _line()
             _line("  NOTE: reseeding mints a new SYSTEM key, so this is a different log. A witness")
@@ -513,10 +532,11 @@ def main(argv: list[str] | None = None) -> int:
         _line("Suggested demo path:")
         _line("  1. /                   the log's live state, then Approvals — real work waiting")
         _line("  2. a settled decision  signature provenance, then Export for verification")
-        _line("  3. /verify             drop that file in; nothing about it trusts the server")
-        _line("  4. /ledger/            the chain, then tamper an entry and restore it")
-        _line("  5. /ledger/transparency the witness, and what it refuses to co-sign")
-        _line("  6. /admin/crypto       switch algorithm; every stored artefact still verifies")
+        _line("  3. /d/<uuid>           the same decision as a link, verified for a stranger")
+        _line("  4. /verify             drop that file in; nothing about it trusts the server")
+        _line("  5. /ledger/            the chain, then tamper an entry and restore it")
+        _line("  6. /ledger/transparency the witness, and what it refuses to co-sign")
+        _line("  7. /admin/crypto       switch algorithm; every stored artefact still verifies")
         _line()
     return 0
 
