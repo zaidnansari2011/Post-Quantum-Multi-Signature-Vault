@@ -21,6 +21,23 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never executed at runtime
 __version__ = "0.1.0"
 
 
+def _glassbox_actor() -> str | None:
+    """Who triggered the request being traced, for the trace header.
+
+    A display name, never an email or an id: the trace page is a demonstration surface that gets
+    projected onto a wall and screenshotted into a dissertation, and it should not be the one
+    place in the product that leaks an address.
+    """
+    try:
+        from flask_login import current_user
+
+        if current_user.is_authenticated:
+            return current_user.display_name or f"user {current_user.id}"
+    except Exception:  # noqa: BLE001 - no session, no actor; never fail a request over a label
+        return None
+    return None
+
+
 def create_app(config_name: str | None = None) -> Flask:
     from flask import Flask, jsonify, request
     from werkzeug.exceptions import HTTPException
@@ -58,6 +75,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from .blueprints.auth import bp as auth_bp
     from .blueprints.core import bp as core_bp
     from .blueprints.docs import bp as docs_bp
+    from .blueprints.glassbox import bp as glassbox_bp
     from .blueprints.ledger import bp as ledger_bp
     from .blueprints.record import bp as record_bp
     from .blueprints.vaults import bp as vaults_bp
@@ -72,6 +90,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(docs_bp)
     app.register_blueprint(verify_bp)
+    # Every route inside 404s unless GLASSBOX_ENABLED, so registering it unconditionally keeps
+    # one gate in one place rather than splitting it between here and the blueprint.
+    app.register_blueprint(glassbox_bp)
     # The public record of a shared decision. GET-only and session-free, so it needs neither
     # login_required nor a CSRF exemption -- there is no form here to forge.
     app.register_blueprint(record_bp)
@@ -120,12 +141,46 @@ def create_app(config_name: str | None = None) -> Flask:
 
         from .security.demo_gate import demo_enabled
 
-        globals_ = {"demo_enabled": demo_enabled()}
+        globals_ = {
+            "demo_enabled": demo_enabled(),
+            # The rail needs to know whether to offer /trace at all. Read from config rather than
+            # from a url_for probe, so the link and the blueprint's 404 gate agree by sharing one
+            # source of truth instead of two.
+            "glassbox_enabled": bool(app.config.get("GLASSBOX_ENABLED")),
+        }
         if current_user.is_authenticated:
             from .services import inbox_service
 
             globals_["pending_count"] = inbox_service.awaiting_signature(current_user)
         return globals_
+
+    # --- Glass box: record what the cryptography did, for the /trace page (ADR-0020) ----------
+    # An operation is opened for *every* request, because whether a request does any cryptography
+    # is not knowable in advance, and closed in teardown — which runs even when the view raises,
+    # so a failed vote is traced rather than lost. `close_operation` discards operations that
+    # recorded no steps, so opening one unconditionally costs a dataclass that is immediately
+    # thrown away, and only requests that actually did cryptographic work reach the page.
+    #
+    # Registered here rather than in a blueprint: the steps worth seeing are appended by
+    # `after_request` (the head anchor and the Merkle checkpoint), which is outside every
+    # blueprint's view function.
+    @app.before_request
+    def _open_glassbox_operation():
+        from flask import g, request
+
+        from . import glassbox
+
+        g.glassbox = glassbox.open_operation(
+            request.endpoint or request.path, kind="request", actor=_glassbox_actor()
+        )
+
+    @app.teardown_request
+    def _close_glassbox_operation(exc):
+        from flask import g
+
+        from . import glassbox
+
+        glassbox.close_operation(g.pop("glassbox", None), failed=exc is not None)
 
     # --- Database: create tables + seed config/genesis --------------------
     from .services.bootstrap_service import init_database

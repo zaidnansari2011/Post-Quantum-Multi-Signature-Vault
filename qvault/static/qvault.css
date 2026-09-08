@@ -627,3 +627,110 @@ input[type="checkbox"] { accent-color: var(--ink); width: 14px; height: 14px; }
   .receipt__meta > dt.receipt__move-dt { grid-column: 1 / 2; }
   .receipt__meta > dd.receipt__move    { grid-column: 2 / -1; }
 }
+
+/* ============================================================================================
+   THE GLASS BOX (/trace) -- ADR-0020.
+   The one screen in this product that deliberately breaks rule 2. Everywhere else the interface
+   explains nothing; here, explanation IS the artefact, because the page exists to answer "how do
+   I know you actually did that?".
+
+   It keeps the other two rules, and adds one of its own: THE DARK SURFACE IS THE MACHINE'S SIDE.
+   Source code sits on `--chrome` -- the same achromatic near-black as the rail -- and the values
+   it operated on sit on light paper beside it. A reader can tell at a glance which half is the
+   claim and which half is the evidence, without a legend saying so.
+   ============================================================================================ */
+
+.trace { display: flex; flex-direction: column; gap: .9rem; }
+
+/* Live indicator. The only place in the product where a pulsing element is justified: it is
+   reporting an actual live connection, not decorating one. */
+.trace__live { display: inline-flex; align-items: center; gap: .4rem; font-size: .7rem;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); }
+.trace__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sealed);
+  animation: trace-pulse 1.6s ease-in-out infinite; }
+.trace__live[data-paused="1"] .trace__dot { background: var(--ink-3); animation: none; }
+@keyframes trace-pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+@media (prefers-reduced-motion: reduce) { .trace__dot { animation: none } }
+
+/* One operation: a request that did cryptographic work. */
+.op { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
+  overflow: hidden; }
+.op--running { border-color: var(--waiting-line); }
+.op--failed  { border-color: var(--broken-line); }
+.op__head { display: flex; align-items: baseline; gap: .55rem; padding: .6rem .85rem;
+  border-bottom: 1px solid var(--rule-2); background: var(--sunk); flex-wrap: wrap; }
+.op__seq { font-family: var(--mono); font-size: .68rem; color: var(--ink-3); }
+.op__title { font-weight: 600; font-size: .85rem; }
+.op__sub { font-size: .72rem; color: var(--ink-3); }
+.op__ms { margin-left: auto; font-family: var(--mono); font-size: .72rem; color: var(--ink-2); }
+
+/* A step. Numbered down the left so the sequence is countable, which is most of the point. */
+.step { border-top: 1px solid var(--rule-2); }
+.step:first-child { border-top: 0; }
+.step__head { display: flex; align-items: baseline; gap: .55rem; padding: .55rem .85rem;
+  cursor: pointer; user-select: none; }
+.step__head:hover { background: var(--sunk); }
+.step__n { font-family: var(--mono); font-size: .68rem; color: var(--ink-3);
+  min-width: 1.2rem; }
+.step__label { font-size: .82rem; font-weight: 500; }
+.step__ms { margin-left: auto; font-family: var(--mono); font-size: .7rem; color: var(--ink-3); }
+.step__body { padding: 0 .85rem .85rem 2.05rem; display: grid; gap: .75rem; }
+@media (min-width: 68rem) {
+  /* Code and values side by side once there is room for ~80 columns of mono plus a value list.
+     Below that they stack, because a horizontally-scrolling code panel next to a wrapping value
+     list is worse than either one at full width. */
+  .step__body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
+}
+
+/* The note: the only prose on the page, and it earns its place by saying WHY a step exists
+   rather than what it does. */
+.step__note { grid-column: 1 / -1; font-size: .78rem; color: var(--ink-2);
+  border-left: 2px solid var(--rule); padding-left: .6rem; margin: 0; }
+
+/* --- the machine's side -------------------------------------------------------------------- */
+.code { background: var(--chrome); border-radius: var(--radius); overflow: hidden;
+  min-width: 0; }
+.code__head { display: flex; align-items: baseline; gap: .5rem; padding: .4rem .65rem;
+  border-bottom: 1px solid var(--chrome-rule); font-family: var(--mono); font-size: .66rem;
+  color: var(--chrome-ink-2); }
+.code__head b { color: var(--chrome-ink); font-weight: 500; }
+/* Capped, and scrollable inside itself. `verify_consistency` is ~60 lines; at full height it
+   made one step four times taller than every other and the page lost its sequence. */
+.code pre { margin: 0; padding: .65rem; overflow: auto; max-height: 24rem; }
+.code code { font-family: var(--mono); font-size: .68rem; line-height: 1.55;
+  color: var(--chrome-ink); white-space: pre; }
+/* Muted rather than colourful. Rule 1 forbids decorative hue near data, and code is data here;
+   these are lightness steps on the chrome ink, plus one desaturated tint for literals. */
+.code .c { color: #6C7A80; font-style: italic; }   /* comment  */
+.code .s { color: #A8C4B4; }                       /* string   */
+.code .k { color: #C9D6DB; font-weight: 600; }     /* keyword  */
+.code .n { color: #9FB3BB; }                       /* name/num */
+.code__more { padding: .4rem .65rem; border-top: 1px solid var(--chrome-rule);
+  font-size: .64rem; color: var(--chrome-ink-2); }
+
+/* --- the evidence side --------------------------------------------------------------------- */
+.vals { min-width: 0; display: flex; flex-direction: column; gap: .5rem; }
+.vals__group { font-size: .6rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-3); }
+.val { min-width: 0; }
+.val__name { font-size: .72rem; color: var(--ink-2); display: flex; gap: .4rem;
+  align-items: baseline; flex-wrap: wrap; }
+.val__size { font-family: var(--mono); font-size: .64rem; color: var(--ink-3); }
+.val__body { font-family: var(--mono); font-size: .68rem; line-height: 1.5;
+  background: var(--sunk); border: 1px solid var(--rule-2); border-radius: 3px;
+  padding: .35rem .45rem; margin-top: .2rem; word-break: break-all; white-space: pre-wrap; }
+.val__body--digest { color: var(--ink); background: var(--sunk-2); }
+.val__body--withheld, .val__body--opaque { color: var(--ink-3); font-style: italic;
+  word-break: normal; }
+.val__note { font-size: .68rem; color: var(--ink-3); margin-top: .15rem; }
+
+/* "Check it yourself." The affordance that makes this page evidence instead of a claim: the
+   reader leaves the application, runs one command, and gets the same digest. */
+.val__check { margin-top: .25rem; }
+.val__check summary { font-size: .66rem; color: var(--ink-3); cursor: pointer; }
+.val__check summary:hover { color: var(--ink); }
+.val__check pre { margin: .25rem 0 0; padding: .35rem .45rem; background: var(--chrome);
+  color: var(--chrome-ink); border-radius: 3px; overflow-x: auto;
+  font-family: var(--mono); font-size: .64rem; }
+
+.trace__empty { text-align: center; padding: 3rem 1rem; color: var(--ink-3); }

@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
+from qvault import glassbox
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
@@ -447,15 +448,34 @@ def cast_vote(
     Raises :class:`ApprovalError` for a governance failure (closed proposal, non-signer, double
     vote, no key) and :class:`~qvault.services.key_service.KeyUnlockError` for a wrong password.
     """
+    glassbox.describe(
+        title="Cast an approval" if decision == "approve" else "Cast a rejection",
+        kind="sign",
+        subject=proposal.proposal_uuid,
+    )
+
     _authorize_vote(proposal, signer, decision, commit=commit)
 
     key = key_service.active_signing_key(signer)
     if key is None:
         raise ApprovalError("You have no active signing key to vote with.")
 
-    message = vote_signing_bytes(
-        proposal_payload_hash=proposal.payload_hash, decision=decision, signer_id=signer.id
-    )
+    with glassbox.step("Build the bytes to be signed", code=vote_signing_bytes) as trace:
+        trace.annotate(
+            "Three bindings under one domain tag: the proposal (via its payload hash, which "
+            "already covers the vault, action, file, M-of-N policy, signer set, nonce and "
+            "timestamp), the decision, and the signer. An approval can never be replayed as a "
+            "rejection, or attributed to anyone else."
+        )
+        trace.input("proposal payload hash", glassbox.Digest(proposal.payload_hash))
+        trace.input("decision", glassbox.Label(decision))
+        trace.input("signer id", glassbox.Label(signer.id))
+        message = vote_signing_bytes(
+            proposal_payload_hash=proposal.payload_hash, decision=decision, signer_id=signer.id
+        )
+        trace.output("message", glassbox.Text(message, note="exactly these bytes are signed"))
+        trace.output("sha256(message)", glassbox.Digest(sha256_hex(message)))
+
     # May raise KeyUnlockError on a wrong password — surfaced to the caller unchanged.
     sig_bytes = key_service.sign_with_key(signer, key, password, message)
 

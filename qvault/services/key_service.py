@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 
 from flask import current_app
 
+from qvault import glassbox
+from qvault.crypto import sha256_hex
 from qvault.crypto.kdf import derive_kek, new_salt
 from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
@@ -118,13 +120,35 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
             f"key {key.id} has no server-held private half (wrap_domain={key.wrap_domain!r})"
         )
 
-    kek = _derive_user_kek(user, password)
-    try:
-        return (
-            _registry()
-            .symmetric(_SYMMETRIC_ALG)
-            .decrypt(kek, key.secret_key_nonce, key.secret_key_wrapped, _WRAP_AAD)
+    with glassbox.step("Derive the key-encryption key (Argon2id)", code=derive_kek) as trace:
+        trace.input("password", glassbox.Withheld("never shown, never logged, never stored"))
+        trace.input("salt", glassbox.Hex(user.kek_salt, note="per-user, stored in the clear"))
+        trace.input(
+            "parameters", glassbox.Json(user.get_kdf_params(), note="Argon2id, OWASP-aligned")
         )
+        kek = _derive_user_kek(user, password)
+        trace.output(
+            "kek",
+            glassbox.Withheld("a password-equivalent secret; discarded when this call returns"),
+        )
+        trace.output("kek length", glassbox.Number(len(kek), unit="bytes"))
+
+    symmetric = _registry().symmetric(_SYMMETRIC_ALG)
+    try:
+        with glassbox.step(
+            "Unwrap the private key (AES-256-GCM)", code=symmetric.decrypt
+        ) as trace:
+            trace.input("wrapped key", glassbox.Hex(key.secret_key_wrapped))
+            trace.input("nonce", glassbox.Hex(key.secret_key_nonce, full=True))
+            trace.input("associated data", glassbox.Text(_WRAP_AAD, note="binds the wrap"))
+            secret_key = symmetric.decrypt(
+                kek, key.secret_key_nonce, key.secret_key_wrapped, _WRAP_AAD
+            )
+            trace.output(
+                "private key",
+                glassbox.Opaque(secret_key, why="the secret this whole system exists to protect"),
+            )
+            return secret_key
     except InvalidTag as exc:
         raise KeyUnlockError("incorrect password: could not unlock the signing key") from exc
     finally:
@@ -150,11 +174,36 @@ def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
     provider = _registry().signature(key.alg_id)
     secret_key = unlock_secret_key(user, key, password)
     try:
-        signature = provider.sign(secret_key, message)
+        with glassbox.step(f"Sign with {key.alg_id}", code=provider.sign) as trace:
+            trace.annotate(
+                "The provider hands the message to a compiled PQClean implementation. The "
+                "lattice arithmetic inside it is not Python and cannot be shown here; what is "
+                "shown is every input it received and the exact bytes it returned."
+            )
+            trace.input("message", glassbox.Text(message))
+            trace.input("private key", glassbox.Opaque(secret_key, why="held only in memory"))
+            signature = provider.sign(secret_key, message)
+            trace.output("signature", glassbox.Hex(signature))
     finally:
         del secret_key
 
-    if not provider.verify(key.public_key, message, signature):
+    with glassbox.step(
+        "Verify the signature before releasing it", code=provider.verify
+    ) as trace:
+        # ADR-0010's invariant, made visible. A reader who does not believe the claim in the
+        # docstring can watch this step run on every single signature the system produces.
+        trace.annotate(
+            "ADR-0010: never emit a signature we have not just verified. A faulted ML-DSA "
+            "signature can leak private key material, so this check runs before the bytes leave "
+            "this function."
+        )
+        trace.input("public key", glassbox.Hex(key.public_key))
+        trace.input("message", glassbox.Digest(sha256_hex(message), note="sha256 of the message"))
+        trace.input("signature", glassbox.Hex(signature))
+        accepted = provider.verify(key.public_key, message, signature)
+        trace.output("accepted", glassbox.Label(accepted))
+
+    if not accepted:
         # Do not return it, do not persist it, do not log the bytes. The caller's transaction
         # should abort; a signature that fails its own verification is evidence of a fault or a
         # corrupted key, not something to retry silently.

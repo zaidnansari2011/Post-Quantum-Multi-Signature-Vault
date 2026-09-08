@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 from flask import current_app
 
+from qvault import glassbox
 from qvault.crypto import canonical_json, sha256_hex
 from qvault.extensions import db
 from qvault.models.anchor import LedgerAnchor
@@ -99,20 +100,33 @@ def append(
     seq = last.seq + 1
     prev_hash = last.entry_hash
     timestamp = _utcnow_iso()
-    payload_bytes = canonical_json(payload)
-    payload_hash = sha256_hex(payload_bytes)
-    entry_hash = compute_entry_hash(
-        seq=seq,
-        timestamp=timestamp,
-        actor=actor,
-        event_type=event_type,
-        payload_hash=payload_hash,
-        prev_hash=prev_hash,
-        actor_id=actor_id,
-        vault_id=vault_id,
-        ref_type=ref_type,
-        ref_id=ref_id,
-    )
+
+    with glassbox.step(f"Append '{event_type}' to the audit chain", code=compute_entry_hash) as t:
+        t.annotate(
+            "Each entry's hash covers its own fields AND the previous entry's hash, under a "
+            "domain tag. Editing any past entry changes its hash, which breaks every link after "
+            "it -- that is the whole tamper-evidence property, and it is just this one line."
+        )
+        payload_bytes = canonical_json(payload)
+        payload_hash = sha256_hex(payload_bytes)
+        t.input("payload", glassbox.Text(payload_bytes, note="canonical JSON: sorted, no spaces"))
+        t.input("sha256(payload)", glassbox.Digest(payload_hash))
+        t.input("previous entry hash", glassbox.Digest(prev_hash, note=f"entry #{last.seq}"))
+        t.input("sequence", glassbox.Label(seq))
+        t.input("timestamp", glassbox.Label(timestamp))
+        entry_hash = compute_entry_hash(
+            seq=seq,
+            timestamp=timestamp,
+            actor=actor,
+            event_type=event_type,
+            payload_hash=payload_hash,
+            prev_hash=prev_hash,
+            actor_id=actor_id,
+            vault_id=vault_id,
+            ref_type=ref_type,
+            ref_id=ref_id,
+        )
+        t.output("this entry hash", glassbox.Digest(entry_hash, note=f"entry #{seq}"))
     entry = LedgerEntry(
         seq=seq,
         timestamp=timestamp,
