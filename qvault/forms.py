@@ -194,3 +194,25 @@ class RunBenchmarkForm(FlaskForm):
         "Iterations", validators=[Optional(), NumberRange(min=1, max=25)], default=3
     )
     submit = SubmitField("Run live")
+
+
+class PublishForm(FlaskForm):
+    """Share a decided decision at a public URL.
+
+    A form rather than a link because publishing is a state change on confidential data: it needs
+    a POST and a CSRF token, and it is written to the audit log with the member who chose it as
+    the actor (see ``qvault.services.publication_service``).
+    """
+
+    submit = SubmitField("Create public link")
+
+
+class UnpublishForm(FlaskForm):
+    """Stop serving a decision's public record.
+
+    Deliberately not called "delete" or "recall". Any bundle already downloaded stays valid and
+    verifiable forever -- that is the design, not a leak -- so the control withdraws this server's
+    copy and the surrounding copy says exactly that.
+    """
+
+    submit = SubmitField("Revoke link")

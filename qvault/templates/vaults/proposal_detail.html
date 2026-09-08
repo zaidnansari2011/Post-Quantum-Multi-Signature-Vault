@@ -52,6 +52,78 @@
 </div>
 {% endif %}
 
+{# What the machine just did. Shown only in the moment after signing, because that is the only
+   moment a person is asking "what did I actually do?" — every value here is also permanently
+   available in the table and panels below, so this is emphasis, never the sole home of a fact.
+
+   Deliberately NOT a `.head__figure`: this screen's one moment of scale is the approvals count in
+   the header (rule 4), and a second large number would compete with the outcome. The weight here
+   comes from real bytes on the page, not from type size. #}
+{% if receipt %}
+<div class="receipt">
+  <div class="receipt__head">
+    <span class="label">
+      {% if receipt.decision == 'approve' %}Approval signed{% else %}Rejection signed{% endif %}
+    </span>
+    <span class="push">
+      {% if receipt.verified %}<span class="chip chip--sealed">Verified</span>
+      {% else %}<span class="chip chip--broken">Did not verify</span>{% endif %}
+    </span>
+  </div>
+
+  {# The signature itself. The one artefact in this system whose size is a research finding
+     (ML-DSA 3,309 B against SLH-DSA 49,856 B at the same security category), so the bytes are
+     shown rather than described. #}
+  <div class="receipt__bytes">
+    <code class="receipt__hex">{{ receipt.preview_hex }}</code>
+    <span class="receipt__of">
+      first {{ receipt.preview_hex|length // 2 }} of {{ '{:,}'.format(receipt.size_bytes) }} bytes
+    </span>
+  </div>
+
+  <dl class="meta receipt__meta">
+    <dt>Algorithm</dt>
+    <dd>
+      <span class="tag">{{ receipt.alg_id }}</span>
+      {% if receipt.standard %}<span class="tiny muted">{{ receipt.standard }}{% if receipt.security_category %} · category {{ receipt.security_category }}{% endif %}</span>{% endif %}
+    </dd>
+    <dt>Custody</dt>
+    <dd>
+      {% if receipt.custody == 'device' %}
+        <span class="chip chip--sealed">Device</span>
+        <span class="tiny muted">this server has never held the key that produced it</span>
+      {% else %}
+        <span class="tag">Server</span>
+        <span class="tiny muted">unwrapped from your password for this signature, then discarded</span>
+      {% endif %}
+    </dd>
+    <dt>Signing key</dt>
+    <dd>{% if receipt.key_fingerprint %}<code class="hash" data-copy="{{ receipt.key_fingerprint }}">{{ receipt.key_fingerprint }}</code>{% else %}—{% endif %}</dd>
+    <dt>Re-verified in</dt>
+    <dd class="mono">{{ '%.2f'|format(receipt.verify_ms) }} ms</dd>
+    {% if receipt.ledger_seq is not none %}
+    <dt>Audit entry</dt>
+    <dd class="mono">#{{ receipt.ledger_seq }}
+      <code class="hash" data-copy="{{ receipt.ledger_entry_hash }}">{{ receipt.ledger_entry_hash[:16] }}…</code></dd>
+    {% endif %}
+    {% if receipt.root_after %}
+    {# A root only means something as something that moved, so the pair is ONE row. As two rows it
+       fell either side of the two-column split at wide widths and the reader met "now" above
+       "was" — an ordering claim rendered out of order. #}
+    <dt class="receipt__move-dt">Log root</dt>
+    <dd class="receipt__move">
+      {% if receipt.root_before %}
+      <code class="hash" data-copy="{{ receipt.root_before }}">{{ receipt.root_before[:16] }}…</code>
+      <span class="receipt__arrow" aria-hidden="true">→</span>
+      {% endif %}
+      <code class="hash" data-copy="{{ receipt.root_after }}">{{ receipt.root_after[:16] }}…</code>
+      <span class="tiny muted">{{ receipt.tree_size }} entries at this point</span>
+    </dd>
+    {% endif %}
+  </dl>
+</div>
+{% endif %}
+
 {# `split` not `split--wide`: the signatures table carries eight columns of cryptographic metadata
    and a 25rem sidebar clipped the last one off the screen. #}
 <div class="split">
@@ -232,6 +304,52 @@
         </dl>
         <a class="btn btn--quiet btn--sm" style="margin-top:.5rem"
            href="{{ url_for('verify.index') }}">Check an export →</a>
+      </div>
+    </div>
+
+    {# Sharing. The export has always produced a file anyone can verify; this turns that into a
+       link, which is what people actually send. Only offered once a decision has been reached —
+       an open vote made public invites outside pressure on the signers who have not voted. #}
+    <div class="panel">
+      <div class="panel__head">
+        <span class="label">Public record</span>
+        <span class="push">
+          {% if publication.published %}<span class="chip chip--sealed">Shared</span>
+          {% elif publication.publishable %}<span class="chip">Private</span>
+          {% else %}<span class="chip">Not yet decided</span>{% endif %}
+        </span>
+      </div>
+      <div class="panel__body">
+        {% if publication.published %}
+          {% set public_url = url_for('record.public_record', uuid=proposal.proposal_uuid, _external=True) %}
+          <div class="field">
+            <input class="input mono tiny" value="{{ public_url }}" readonly
+                   onfocus="this.select()" aria-label="Public link">
+          </div>
+          <div class="hstack">
+            <a class="btn btn--ghost btn--sm" href="{{ public_url }}" target="_blank" rel="noopener">Open</a>
+            <form method="post" action="{{ url_for('vaults.unpublish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+              {{ unpublish_form.hidden_tag() }}
+              {{ unpublish_form.submit(class="btn btn--quiet btn--sm") }}
+            </form>
+          </div>
+          <p class="tiny muted" style="margin:.75rem 0 0">
+            Anyone with this link can read the decision and check its signatures without an
+            account. Revoking stops this server serving it; copies already downloaded stay valid.
+          </p>
+        {% elif publication.publishable %}
+          <form method="post" action="{{ url_for('vaults.publish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+            {{ publish_form.hidden_tag() }}
+            {{ publish_form.submit(class="btn btn--primary btn--sm btn--block") }}
+          </form>
+          <p class="tiny muted" style="margin:.75rem 0 0">
+            Publishing is recorded in the audit log with your name against it.
+          </p>
+        {% else %}
+          <p class="small muted" style="margin:0">
+            Available once this decision is approved or rejected.
+          </p>
+        {% endif %}
       </div>
     </div>
 

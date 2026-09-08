@@ -570,3 +570,60 @@ input[type="checkbox"] { accent-color: var(--ink); width: 14px; height: 14px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ==============================================================================================
+   RECEIPT — what the machine did, in the moment after a signature.
+
+   The one screen element allowed to show raw cryptographic material at size. Everything else in
+   this interface renders a hash as a 12-character `.hash` chip, because a hash is an identifier
+   there. Here the bytes are the content: the point of the panel is that a signature is a real,
+   large, high-entropy object and not a boolean the server flipped.
+
+   Achromatic, like the rail. It carries no status colour of its own — the verified/not-verified
+   chip in its header does that — so an approval and a rejection get an identical frame. Tinting
+   this green on approve would make the panel read as a congratulation, and a rejection deserves
+   exactly the same evidentiary weight as an approval.
+   ============================================================================================ */
+
+.receipt {
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--surface); margin-bottom: 1rem; overflow: hidden;
+}
+.receipt__head {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .55rem .9rem; border-bottom: 1px solid var(--rule-2); background: var(--sunk);
+}
+
+/* The dark band is the whole device. Against a light working surface it reads as a window onto
+   the machine rather than another card, which is what makes the receipt land as an event. */
+.receipt__bytes {
+  background: var(--chrome); color: var(--chrome-ink);
+  padding: .8rem .9rem; display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap;
+}
+.receipt__hex {
+  font-family: var(--mono); font-size: .95rem; letter-spacing: .04em;
+  word-break: break-all; min-width: 0; color: var(--chrome-ink);
+}
+.receipt__of { font-size: .7rem; color: var(--chrome-ink-2); white-space: nowrap; margin-left: auto; }
+
+.receipt__meta { padding: .8rem .9rem; }
+
+/* Two columns where there is room: six to eight short rows in one narrow column left a tall thin
+   panel with the byte band stranded at the top of it. */
+@media (min-width: 60rem) {
+  .receipt__meta { grid-template-columns: minmax(6rem, auto) 1fr minmax(6rem, auto) 1fr; }
+}
+
+/* The before/after root pair. One row, never two: as two `.meta` rows it split across the
+   two-column grid above and presented "now" before "was". */
+.receipt__move { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.receipt__arrow { color: var(--ink-3); font-size: .8rem; }
+
+/* This row carries two hashes plus an arrow, so it takes a full row of the widened grid rather
+   than one half-width cell. The LABEL is placed too, not just the value: pinning only the value to
+   `2 / -1` let the label stay in the right-hand pair and pushed the value onto the line below it,
+   separating a label from the thing it labels. */
+@media (min-width: 60rem) {
+  .receipt__meta > dt.receipt__move-dt { grid-column: 1 / 2; }
+  .receipt__meta > dd.receipt__move    { grid-column: 2 / -1; }
+}

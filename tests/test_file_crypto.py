@@ -7,7 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from qvault.services import auth_service, file_crypto_service, vault_service
-from qvault.services.file_crypto_service import FileDecryptError, _storage_dir
+from qvault.services.file_crypto_service import (
+    CiphertextMissing,
+    FileDecryptError,
+    _storage_dir,
+)
 
 PLAINTEXT = b"Top-secret contract v2 - release the Q3 escrow funds.\n" * 40
 
@@ -85,3 +89,32 @@ def test_wrong_vault_cannot_decrypt(app):
     # Decapsulation under v2's key yields a different shared secret → DEK unwrap fails.
     with pytest.raises(FileDecryptError):
         file_crypto_service.decrypt(v2, SimpleNamespace(**meta))
+
+
+def test_missing_ciphertext_is_a_decrypt_error_not_a_crash(app):
+    """A ciphertext that is absent from storage must not escape as an uncaught OSError.
+
+    Regression: ``read_bytes()`` sat inside a guard that caught only ``InvalidTag``, so a
+    missing file surfaced as ``FileNotFoundError`` and the download route returned a 500
+    error page. The realistic cause is operational rather than cryptographic — an instance
+    directory that is not on a persistent volume loses every upload when the container
+    restarts, while the database rows survive and still advertise the file.
+    """
+    vault = _vault("gone")
+    meta = file_crypto_service.encrypt_and_store(vault, "doc.txt", PLAINTEXT, storage_key="k7")
+    (_storage_dir() / meta["ciphertext_path"]).unlink()
+
+    with pytest.raises(CiphertextMissing):
+        file_crypto_service.decrypt(vault, SimpleNamespace(**meta))
+
+
+def test_ciphertext_missing_still_satisfies_existing_handlers(app):
+    """It must stay a FileDecryptError, or the route's existing except clause stops catching it."""
+    assert issubclass(CiphertextMissing, FileDecryptError)
+
+    vault = _vault("subclass")
+    meta = file_crypto_service.encrypt_and_store(vault, "doc.txt", PLAINTEXT, storage_key="k8")
+    (_storage_dir() / meta["ciphertext_path"]).unlink()
+
+    with pytest.raises(FileDecryptError):  # the base class, as the blueprint catches it
+        file_crypto_service.decrypt(vault, SimpleNamespace(**meta))

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_chip, tally %}
+{% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
+
+{# Rendered identically signed in or out, like /verify: the reader this page is written for has
+   no account, and a member following the same link must see exactly what they are sharing. #}
+{% macro page() %}
+<div class="verify">
+
+  <div class="verify__head">
+    <h1 class="verify__title">{{ proposal.title }}</h1>
+    <p class="verify__lead">
+      {{ vault.name }} · {{ bundle.decision.created_at_iso[:10] }}
+    </p>
+  </div>
+
+  {# The verdict, computed here and now by running the same code a stranger runs offline. The one
+     place on this page that carries status colour. #}
+  <div class="banner {% if report.ok %}banner--sealed{% else %}banner--broken{% endif %}">
+    <div>
+      <div class="banner__title">
+        {# Counted against the authorised signer set, NOT against the threshold. "2 of 2 required"
+           beside a "2 of 3 must approve" policy row states two denominators for one fact and
+           reads as though the threshold were 2 of 2. #}
+        {% if report.ok %}
+          {% if proposal.status == 'approved' %}Approved by {{ approvals }} of {{ proposal.required_n }} authorised signers
+          {% else %}Rejected by {{ rejections }} of {{ proposal.required_n }} authorised signers{% endif %}
+        {% else %}{{ report.summary }}{% endif %}
+      </div>
+      <div class="banner__body">
+        {% if report.ok %}
+          Every signature, the audit entries behind them and the log's commitment to those entries
+          were checked when this page loaded.
+        {% else %}
+          This record did not pass verification. The detail is in the checks below.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head">
+      <span class="label">Decision</span>
+      <span class="push">{{ status_chip(proposal.status) }}</span>
+    </div>
+    <div class="panel__body">
+      <p style="white-space:pre-wrap;margin:0 0 .75rem">{{ proposal.action_text }}</p>
+      <dl class="meta">
+        <dt>Policy</dt>
+        <dd class="mono">{{ proposal.required_m }} of {{ proposal.required_n }} must approve</dd>
+        <dt>Approvals</dt><dd class="mono">{{ approvals }}</dd>
+        {% if rejections %}<dt>Rejections</dt><dd class="mono">{{ rejections }}</dd>{% endif %}
+        <dt>Opened</dt><dd class="mono">{{ bundle.decision.created_at_iso }}</dd>
+        <dt>Payload hash</dt>
+        <dd><code class="hash" data-copy="{{ proposal.payload_hash }}">{{ proposal.payload_hash[:24] }}…</code></dd>
+        {% if bundle.decision.file_sha256 %}
+        <dt>Attachment</dt>
+        <dd><code class="hash" data-copy="{{ bundle.decision.file_sha256 }}">{{ bundle.decision.file_sha256[:24] }}…</code>
+            <span class="tiny muted">hash only — the file itself stays encrypted</span></dd>
+        {% endif %}
+      </dl>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head">
+      <span class="label">Signatures</span>
+      <span class="push tiny muted">
+        {{ signatures|length }} recorded{% if device_signed %} · {{ device_signed }} device-held{% endif %}
+      </span>
+    </div>
+    <div class="scroll-x">
+      <table class="dt">
+        <thead>
+          <tr><th style="width:26%">Signer</th><th>Decision</th><th>Custody</th>
+              <th>Algorithm</th><th class="num">Bytes</th><th class="num" style="width:6rem">Signed</th></tr>
+        </thead>
+        <tbody>
+          {% for s in signatures %}
+          <tr>
+            <td>
+              <span class="dt__link truncate">{{ s.signer_name or s.signer_email or 'Signer ' ~ s.signer_id }}</span>
+              {% if s.reason %}<span class="dt__sub truncate">{{ s.reason }}</span>{% endif %}
+            </td>
+            <td>
+              {% if s.decision == 'approve' %}<span class="chip chip--sealed">Approve</span>
+              {% else %}<span class="chip chip--broken">Reject</span>{% endif %}
+            </td>
+            {# ADR-0016 in one column. "Device" is the claim no operator of a hosted signing
+               service can make about their own operators, so it is stated where a stranger reads
+               it, not only where a member does. #}
+            <td>
+              {% if s.custody == 'device' %}<span class="chip chip--sealed">Device</span>
+              {% else %}<span class="tag">Server</span>{% endif %}
+            </td>
+            <td><span class="tag">{{ s.alg_id }}</span></td>
+            <td class="num">{{ s.size_bytes }}</td>
+            <td class="num tiny muted nowrap">{{ (s.signed_at or '')[:10] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head"><span class="label">Checks</span></div>
+    <ol class="checks">
+      {% for c in report.checks %}
+      <li class="checks__row {% if c.skipped %}is-skipped{% elif c.ok %}is-ok{% else %}is-bad{% endif %}">
+        <span class="checks__mark" aria-hidden="true">
+          {%- if c.skipped %}—{% elif c.ok %}&check;{% else %}&times;{% endif -%}
+        </span>
+        <span class="checks__text">
+          <span class="checks__title">{{ c.title }}</span>
+          <span class="checks__detail">{{ c.detail }}</span>
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head">
+      <span class="label">Transparency log</span>
+      <span class="push">
+        {% if witnesses %}<span class="chip chip--sealed">Witnessed</span>
+        {% else %}<span class="chip chip--waiting">Unwitnessed</span>{% endif %}
+      </span>
+    </div>
+    <div class="panel__body">
+      <dl class="meta">
+        <dt>Origin</dt><dd class="mono">{{ log.origin }}</dd>
+        <dt>Entries</dt><dd class="mono">{{ log.checkpoint.tree_size }}</dd>
+        <dt>Root</dt>
+        <dd><code class="hash" data-copy="{{ log.checkpoint.root_hash }}">{{ log.checkpoint.root_hash[:24] }}…</code></dd>
+        <dt>Signed by</dt>
+        <dd><span class="tag">{{ log.checkpoint_signature.alg_id }}</span>
+            {% if report.fingerprints.log %}
+            <code class="hash" data-copy="{{ report.fingerprints.log }}">{{ report.fingerprints.log }}</code>
+            {% endif %}</dd>
+        {% for w in witnesses %}
+        <dt>Witness</dt>
+        <dd>{{ w.witness }} <span class="tag">{{ w.alg_id }}</span></dd>
+        {% endfor %}
+      </dl>
+      {% if witnesses %}
+      <p class="tiny muted" style="margin:.75rem 0 0">
+        A witness is an independent process that co-signs this log's checkpoints. Its signature is
+        the part of this record the operator of this server cannot produce.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel__head"><span class="label">Check this yourself</span></div>
+    <div class="panel__body">
+      <div class="hstack">
+        <a class="btn btn--primary btn--sm"
+           href="{{ url_for('record.public_record', uuid=proposal.proposal_uuid, format='html') }}">
+          Download record
+        </a>
+        <a class="btn btn--ghost btn--sm"
+           href="{{ url_for('record.public_record', uuid=proposal.proposal_uuid, format='json') }}">
+          Download bundle
+        </a>
+        <a class="btn btn--quiet btn--sm" href="{{ url_for('verify.index') }}">Verify a file →</a>
+      </div>
+      {# The honesty constraint /verify already holds to. A verdict rendered by the server that
+         produced the bundle is a convenience, not evidence, and saying so is the difference
+         between a transparency log and a badge. #}
+      <p class="tiny muted" style="margin:.75rem 0 0">
+        The result above was computed on this server, so it is a convenience rather than evidence.
+        The downloaded record re-checks its own signatures when you open it in a browser, offline,
+        with nothing installed — or run
+        <code class="mono">python -m qvault.verify decision-{{ proposal.proposal_uuid.split('-')[0] }}.qvault.json</code>.
+      </p>
+    </div>
+  </div>
+
+</div>
+{% endmacro %}
+
+{% block content %}{{ page() }}{% endblock %}
+{% block anon_content %}{{ page() }}{% endblock %}

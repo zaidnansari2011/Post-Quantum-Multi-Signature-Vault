@@ -5,7 +5,17 @@ from __future__ import annotations
 from base64 import b64decode
 from datetime import UTC
 
-from flask import Blueprint, Response, abort, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
@@ -17,8 +27,10 @@ from qvault.forms import (
     ProposalForm,
     ProposalRestoreForm,
     ProposalTamperForm,
+    PublishForm,
     RemoveMemberForm,
     ThresholdForm,
+    UnpublishForm,
     VaultForm,
     VoteForm,
 )
@@ -32,12 +44,15 @@ from qvault.services import (
     file_crypto_service,
     inbox_service,
     proposal_service,
+    publication_service,
+    receipt_service,
     vault_service,
 )
 from qvault.services.approval_service import ApprovalError
-from qvault.services.file_crypto_service import FileDecryptError
+from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptError
 from qvault.services.key_service import KeyUnlockError
 from qvault.services.proposal_service import ProposalError
+from qvault.services.publication_service import PublicationError
 from qvault.services.vault_service import MembershipError, PolicyError
 
 bp = Blueprint("vaults", __name__, url_prefix="/vaults")
@@ -262,6 +277,12 @@ def proposal_detail(vid: int, pid: str):
         is_signer=is_signer,
         can_vote=can_vote,
         vote_form=VoteForm(),
+        # Present only immediately after this member signed (or when someone follows a receipt
+        # link). Scoped to this proposal inside the service, which is the authorisation check.
+        receipt=receipt_service.for_signature_id(proposal, request.args.get("receipt")),
+        publication=publication_service.publication_state(proposal),
+        publish_form=PublishForm(),
+        unpublish_form=UnpublishForm(),
         demo_enabled=demo_enabled(),
         tampered=proposal_service.demo_proposal_is_tampered(proposal),
         tamper_form=ProposalTamperForm(),
@@ -335,6 +356,56 @@ def export_proposal(vid: int, pid: str):
     )
 
 
+@bp.post("/<int:vid>/proposals/<pid>/publish")
+@login_required
+def publish_proposal(vid: int, pid: str):
+    """Create the public link for a decided decision.
+
+    Membership is required to *publish* for the same reason it is required to export: until a
+    member chooses otherwise, a decision's contents are confidential. What publication changes is
+    who may read it, never what it says — the record served publicly is built from the same rows,
+    by the same code, as the one a member downloads.
+    """
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    if not PublishForm().validate_on_submit():
+        abort(400)
+    try:
+        publication_service.publish(proposal, current_user)
+    except PublicationError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Public link created. Anyone with the link can now read and verify this decision.",
+              "success")
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+
+
+@bp.post("/<int:vid>/proposals/<pid>/unpublish")
+@login_required
+def unpublish_proposal(vid: int, pid: str):
+    """Withdraw the public link.
+
+    The flash says "stops serving", not "revoked" or "deleted", because a bundle somebody already
+    downloaded remains valid forever and this cannot reach it. Overstating what this button does
+    would be the one kind of dishonesty this whole system exists to make impossible.
+    """
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    if not UnpublishForm().validate_on_submit():
+        abort(400)
+    try:
+        publication_service.unpublish(proposal, current_user)
+    except PublicationError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash(
+            "This server has stopped serving the public record. Copies already downloaded stay "
+            "valid and verifiable — that is by design.",
+            "success",
+        )
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+
+
 @bp.post("/<int:vid>/proposals/<pid>/demo/tamper")
 @login_required
 def demo_tamper_proposal(vid: int, pid: str):
@@ -394,7 +465,7 @@ def vote(vid: int, pid: str):
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
     decision = "approve" if approve else "reject"
     try:
-        approval_service.cast_vote(
+        signature = approval_service.cast_vote(
             proposal, current_user, form.password.data, decision, reason=form.reason.data
         )
     except KeyUnlockError:
@@ -402,8 +473,14 @@ def vote(vid: int, pid: str):
     except ApprovalError as exc:
         flash(str(exc), "danger")
     else:
-        verb = "Approval" if decision == "approve" else "Rejection"
-        flash(f"{verb} signed and recorded. Proposal is now {proposal.status}.", "success")
+        # Carry the new signature's id through the redirect so the detail page can render its
+        # receipt. A query parameter rather than the session: it survives a refresh and can be
+        # linked to, and there is nothing secret in a receipt for a signature already listed on
+        # the page it appears on. No flash here — the receipt states the outcome in far more
+        # detail than a one-line banner could, and two announcements of one event read as noise.
+        return redirect(
+            url_for("vaults.proposal_detail", vid=vid, pid=pid, receipt=signature.id)
+        )
     return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
 
@@ -416,6 +493,19 @@ def download_file(vid: int, pid: str):
         abort(404)
     try:
         plaintext = file_crypto_service.decrypt(vault, proposal.file)
+    except CiphertextMissing:
+        # Ordered before FileDecryptError: CiphertextMissing is a subclass, and the two need
+        # different words. Nothing failed to authenticate here — the bytes are absent.
+        current_app.logger.error(
+            "ciphertext missing for file id=%s path=%s", proposal.file.id,
+            proposal.file.ciphertext_path,
+        )
+        flash(
+            "This attachment's encrypted data is missing from server storage, so it cannot be "
+            "downloaded. The record and its signatures are unaffected.",
+            "danger",
+        )
+        return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
     except FileDecryptError:
         flash("Integrity check failed — the stored file could not be authenticated.", "danger")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
