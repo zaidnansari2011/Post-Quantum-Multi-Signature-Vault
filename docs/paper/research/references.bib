@@ -1,0 +1,1296 @@
+% =====================================================================
+% references.bib -- Q-Vault paper
+%
+% EVERY entry below was verified against a page that was actually
+% fetched during research (primary standard PDF, publisher landing
+% page, IACR ePrint page, arXiv abs page, IETF RFC Editor / datatracker
+% page, Crossref REST metadata, or the project's own installed source
+% tree). Nothing here comes from memory or from a search snippet alone.
+%
+% Works believed to exist but NOT fully verified are deliberately absent
+% from this file; they are listed in the "TO VERIFY" section of
+% related-work.md instead.
+%
+% Conventions:
+%   - RFC DOIs use the RFC Editor pattern 10.17487/RFCnnnn; each was
+%     confirmed to resolve in Crossref.
+%   - Preprints are @misc with an explicit note, never dressed up as
+%     journal papers.
+%   - Web specifications and project documents carry an urldate.
+%   - Where a source has no named author on the page, the corporate or
+%     project name is used and the note says so.
+% =====================================================================
+
+
+% ---------------------------------------------------------------------
+% 1. NIST POST-QUANTUM STANDARDS
+% ---------------------------------------------------------------------
+
+@techreport{nist-fips203,
+  author      = {{National Institute of Standards and Technology}},
+  title       = {Module-Lattice-Based Key-Encapsulation Mechanism Standard},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {Federal Information Processing Standards Publication},
+  number      = {FIPS 203},
+  year        = {2024},
+  month       = aug,
+  doi         = {10.6028/NIST.FIPS.203},
+  url         = {https://csrc.nist.gov/pubs/fips/203/final},
+  note        = {Published 13 August 2024. Specifies ML-KEM-512/768/1024, derived from
+                 the CRYSTALS-KYBER submission}
+}
+
+@techreport{nist-fips204,
+  author      = {{National Institute of Standards and Technology}},
+  title       = {Module-Lattice-Based Digital Signature Standard},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {Federal Information Processing Standards Publication},
+  number      = {FIPS 204},
+  year        = {2024},
+  month       = aug,
+  doi         = {10.6028/NIST.FIPS.204},
+  url         = {https://csrc.nist.gov/pubs/fips/204/final},
+  note        = {Published 13 August 2024. Specifies ML-DSA, derived from
+                 CRYSTALS-Dilithium}
+}
+
+@techreport{nist-fips205,
+  author      = {{National Institute of Standards and Technology}},
+  title       = {Stateless Hash-Based Digital Signature Standard},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {Federal Information Processing Standards Publication},
+  number      = {FIPS 205},
+  year        = {2024},
+  month       = aug,
+  doi         = {10.6028/NIST.FIPS.205},
+  url         = {https://csrc.nist.gov/pubs/fips/205/final},
+  note        = {Published 13 August 2024. Specifies SLH-DSA. Appendix A enumerates the
+                 differences from the SPHINCS+ submission and states that the FORS index
+                 extraction method "is not compatible with the method used in the
+                 reference implementation that was submitted along with the round three
+                 specification"; Sec. 10.2.1 defines the pure-mode message prefix}
+}
+
+@techreport{nist-ir8547,
+  author      = {Moody, Dustin and Perlner, Ray and Regenscheid, Andrew and
+                 Robinson, Angela and Cooper, David},
+  title       = {Transition to Post-Quantum Cryptography Standards},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {NIST Internal Report, Initial Public Draft},
+  number      = {NIST IR 8547 ipd},
+  year        = {2024},
+  month       = nov,
+  doi         = {10.6028/NIST.IR.8547.ipd},
+  url         = {https://csrc.nist.gov/pubs/ir/8547/ipd},
+  note        = {Published 12 November 2024}
+}
+
+@misc{nist-pqc-project,
+  author       = {{National Institute of Standards and Technology}},
+  title        = {Post-Quantum Cryptography Project},
+  howpublished = {NIST Computer Security Resource Center},
+  year         = {2017},
+  url          = {https://csrc.nist.gov/projects/post-quantum-cryptography},
+  urldate      = {2026-09-08},
+  note         = {Project created 3 January 2017; the three principal standards were
+                  released in 2024; Falcon (2022) and HQC (2025) were selected for
+                  further standardisation}
+}
+
+@techreport{nist-sp800-208,
+  author      = {Cooper, David A. and Apon, Daniel and Dang, Quynh H. and
+                 Davidson, Michael S. and Dworkin, Morris J. and Miller, Carl A.},
+  title       = {Recommendation for Stateful Hash-Based Signature Schemes},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {NIST Special Publication},
+  number      = {SP 800-208},
+  year        = {2020},
+  doi         = {10.6028/NIST.SP.800-208},
+  note        = {Bibliographic details taken from reference [12] of FIPS 205}
+}
+
+
+% ---------------------------------------------------------------------
+% 2. THE UNDERLYING SCHEMES
+% ---------------------------------------------------------------------
+
+@inproceedings{bos2018kyber,
+  author    = {Bos, Joppe and Ducas, L{\'e}o and Kiltz, Eike and Lepoint, Tancr{\`e}de and
+               Lyubashevsky, Vadim and Schanck, John M. and Schwabe, Peter and
+               Seiler, Gregor and Stehl{\'e}, Damien},
+  title     = {{CRYSTALS} -- {Kyber}: A {CCA}-Secure Module-Lattice-Based {KEM}},
+  booktitle = {2018 IEEE European Symposium on Security and Privacy (EuroS\&P)},
+  publisher = {IEEE},
+  year      = {2018},
+  pages     = {353--367},
+  doi       = {10.1109/EuroSP.2018.00032}
+}
+
+@article{ducas2018dilithium,
+  author  = {Ducas, L{\'e}o and Kiltz, Eike and Lepoint, Tancr{\`e}de and
+             Lyubashevsky, Vadim and Schwabe, Peter and Seiler, Gregor and
+             Stehl{\'e}, Damien},
+  title   = {{CRYSTALS-Dilithium}: A Lattice-Based Digital Signature Scheme},
+  journal = {IACR Transactions on Cryptographic Hardware and Embedded Systems},
+  volume  = {2018},
+  number  = {1},
+  pages   = {238--268},
+  year    = {2018},
+  doi     = {10.13154/tches.v2018.i1.238-268},
+  url     = {https://tches.iacr.org/index.php/TCHES/article/view/839}
+}
+
+@inproceedings{bernstein2019sphincsplus,
+  author    = {Bernstein, Daniel J. and H{\"u}lsing, Andreas and K{\"o}lbl, Stefan and
+               Niederhagen, Ruben and Rijneveld, Joost and Schwabe, Peter},
+  title     = {The {SPHINCS+} Signature Framework},
+  booktitle = {Proceedings of the 2019 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '19)},
+  publisher = {ACM},
+  year      = {2019},
+  doi       = {10.1145/3319535.3363229},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2019/1086. Introduces FORS and
+               tweakable hash functions}
+}
+
+@misc{sphincsplus-r3,
+  author       = {Aumasson, Jean-Philippe and Bernstein, Daniel J. and Beullens, Ward and
+                  Dobraunig, Christoph and Eichlseder, Maria and Fluhrer, Scott and
+                  Gazdag, Stefan-Lukas and H{\"u}lsing, Andreas and Kampanakis, Panos and
+                  K{\"o}lbl, Stefan and Lange, Tanja and Lauridsen, Martin M. and
+                  Mendel, Florian and Niederhagen, Ruben and Rechberger, Christian and
+                  Rijneveld, Joost and Schwabe, Peter and Westerbaan, Bas},
+  title        = {{SPHINCS+} -- Submission to the {NIST} post-quantum project, v.3},
+  year         = {2020},
+  howpublished = {NIST PQC Standardization Process, Round 3 submission},
+  note         = {The round-3 submission version, cited as reference [4] of FIPS 205.
+                  This is the specification lineage that PQClean's SPHINCS+
+                  implementations track}
+}
+
+@misc{sphincsplus-r31,
+  author       = {Aumasson, Jean-Philippe and Bernstein, Daniel J. and Beullens, Ward and
+                  Dobraunig, Christoph and Eichlseder, Maria and Fluhrer, Scott and
+                  Gazdag, Stefan-Lukas and H{\"u}lsing, Andreas and Kampanakis, Panos and
+                  K{\"o}lbl, Stefan and Lange, Tanja and Lauridsen, Martin M. and
+                  Mendel, Florian and Niederhagen, Ruben and Rechberger, Christian and
+                  Rijneveld, Joost and Schwabe, Peter and Westerbaan, Bas},
+  title        = {{SPHINCS+} -- Submission to the {NIST} post-quantum project, v.3.1},
+  year         = {2022},
+  url          = {https://sphincs.org/data/sphincs+-r3.1-specification.pdf},
+  note         = {FIPS 205 states that it is based on this version. Cited as reference
+                  [10] of FIPS 205}
+}
+
+@misc{rfc8391,
+  author = {H{\"u}lsing, Andreas and Butin, Denis and Gazdag, Stefan-Lukas and
+            Rijneveld, Joost and Mohaisen, Aziz},
+  title  = {{XMSS}: e{X}tended {M}erkle {S}ignature {S}cheme},
+  series = {Request for Comments},
+  number = {8391},
+  year   = {2018},
+  doi    = {10.17487/RFC8391},
+  note   = {IRTF, Informational. Bibliographic details from reference [11] of FIPS 205}
+}
+
+@inproceedings{merkle1989certified,
+  author    = {Merkle, Ralph C.},
+  title     = {A Certified Digital Signature},
+  booktitle = {Advances in Cryptology --- CRYPTO '89 Proceedings},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {435},
+  publisher = {Springer},
+  year      = {1989},
+  pages     = {218--238},
+  doi       = {10.1007/0-387-34805-0_21}
+}
+
+
+% ---------------------------------------------------------------------
+% 3. CRYPTO-AGILITY, ALGORITHM AGILITY AND PQC MIGRATION
+% ---------------------------------------------------------------------
+
+@misc{rfc7696,
+  author = {Housley, Russ},
+  title  = {Guidelines for Cryptographic Algorithm Agility and Selecting
+            Mandatory-to-Implement Algorithms},
+  series = {Request for Comments},
+  number = {7696},
+  year   = {2015},
+  month  = nov,
+  doi    = {10.17487/RFC7696},
+  url    = {https://www.rfc-editor.org/info/rfc7696/},
+  note   = {Best Current Practice, BCP 201. Requires that a protocol include a mechanism
+            to identify the algorithm in use, and warns that algorithm negotiation must
+            itself be integrity protected}
+}
+
+@techreport{nist-cswp39,
+  author      = {Barker, Elaine and Chen, Lily and Cooper, David and Moody, Dustin and
+                 Regenscheid, Andrew and Souppaya, Murugiah and Newhouse, Bill and
+                 Housley, Russ and Turner, Sean and Barker, William and Kent, Karen},
+  title       = {Considerations for Achieving Crypto Agility: Strategies and Practices},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {NIST Cybersecurity White Paper},
+  number      = {NIST CSWP 39-upd1},
+  year        = {2025},
+  month       = dec,
+  doi         = {10.6028/NIST.CSWP.39-upd1},
+  note        = {Published 19 December 2025. NOTE: the original CSWP 39 was withdrawn on
+                 29 June 2026 and superseded in its entirety by CSWP 39-upd1; cite the
+                 -upd1 version and DOI}
+}
+
+@misc{naether2024agility,
+  author        = {N{\"a}ther, Christian and Herzinger, Daniel and
+                   Stegh{\"o}fer, Jan-Philipp and Gazdag, Stefan-Lukas and
+                   Hirsch, Eduard and Loebenberger, Daniel},
+  title         = {Toward a Common Understanding of Cryptographic Agility ---
+                   A Systematic Review},
+  year          = {2024},
+  eprint        = {2411.08781},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  doi           = {10.48550/arXiv.2411.08781},
+  note          = {Preprint; v1 13 November 2024, v3 5 August 2026. Screens 84 sources,
+                   analyses 48, identifies six definition categories and proposes a
+                   canonical definition of cryptographic agility}
+}
+
+@inproceedings{alnahawi2023cryptoagility,
+  author    = {Alnahawi, Nouri and Schmitt, Nicolai and Wiesmaier, Alexander and
+               Heinemann, Andreas and Grasmeyer, Tobias},
+  title     = {On the State of Crypto-Agility},
+  booktitle = {18. Deutscher IT-Sicherheitskongress},
+  year      = {2023},
+  url       = {https://eprint.iacr.org/2023/487},
+  note      = {IACR Cryptology ePrint Archive, Report 2023/487. Surveys requirements,
+               characteristics and challenges of crypto-agility}
+}
+
+@misc{wiesmaier2021migration,
+  author        = {Wiesmaier, Alexander and Alnahawi, Nouri and Grasmeyer, Tobias and
+                   Gei{\ss}ler, Julian and Zeier, Alexander and Bauspie{\ss}, Pia and
+                   Heinemann, Andreas},
+  title         = {On {PQC} Migration and Crypto-Agility},
+  year          = {2021},
+  eprint        = {2106.09599},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  note          = {Preprint, submitted 17 June 2021. Literature survey of PQC migration
+                   challenges and their proposed solutions}
+}
+
+@inproceedings{badertscher2023agile,
+  author    = {Badertscher, Christian and Ciampi, Michele and Kiayias, Aggelos},
+  title     = {Agile Cryptography: A Universally Composable Approach},
+  booktitle = {Theory of Cryptography (TCC 2023)},
+  year      = {2023},
+  url       = {https://eprint.iacr.org/2022/1367},
+  note      = {IACR Cryptology ePrint Archive, Report 2022/1367. Formalises algorithm
+               updateability as an updatable ideal functionality in the UC model, and
+               captures which security properties survive an update}
+}
+
+@techreport{nccoe-sp1800-38,
+  author      = {Newhouse, William and Souppaya, Murugiah and Barker, William and
+                 Brown, Christopher},
+  title       = {Migration to Post-Quantum Cryptography: Preparation for Considering the
+                 Implementation and Adoption of Quantum Safe Cryptography},
+  institution = {National Institute of Standards and Technology,
+                 National Cybersecurity Center of Excellence},
+  type        = {NIST Special Publication, Preliminary Draft},
+  number      = {SP 1800-38A},
+  year        = {2023},
+  month       = apr,
+  url         = {https://csrc.nist.gov/pubs/sp/1800/38/iprd},
+  note        = {Initial preliminary draft, 24 April 2023; superseded by a later draft
+                 dated 19 December 2023. Volumes B and C cover cryptographic discovery
+                 and interoperability/performance testing}
+}
+
+@misc{rfc9958,
+  author = {Banerjee, Aritra and Reddy.K, Tirumaleswar and Schoinianakis, Dimitrios and
+            Hollebeek, Tim and Ounsworth, Mike},
+  title  = {Post-Quantum Cryptography for Engineers},
+  series = {Request for Comments},
+  number = {9958},
+  year   = {2026},
+  month  = aug,
+  doi    = {10.17487/RFC9958},
+  url    = {https://www.rfc-editor.org/info/rfc9958/},
+  note   = {Informational. Formerly draft-ietf-pquip-pqc-engineers; the IETF PQUIP
+            working group's engineering guidance on PQC migration}
+}
+
+@techreport{nist-sp800-57pt1r5,
+  author      = {Barker, Elaine},
+  title       = {Recommendation for Key Management: Part 1 --- General},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {NIST Special Publication},
+  number      = {SP 800-57 Part 1, Rev. 5},
+  year        = {2020},
+  month       = may,
+  doi         = {10.6028/NIST.SP.800-57pt1r5},
+  note        = {Sec. 7.4, Deactivated State: "Public signature verification keys may be
+                 used to verify the digital signatures that were generated before the end
+                 of the corresponding private key's originator-usage period." This is the
+                 standards-level statement of retire-but-retain}
+}
+
+
+% ---------------------------------------------------------------------
+% 4. TRANSPARENCY LOGS AND CERTIFICATE TRANSPARENCY
+% ---------------------------------------------------------------------
+
+@misc{rfc6962,
+  author = {Laurie, Ben and Langley, Adam and Kasper, Emilia},
+  title  = {Certificate Transparency},
+  series = {Request for Comments},
+  number = {6962},
+  year   = {2013},
+  month  = jun,
+  doi    = {10.17487/RFC6962},
+  url    = {https://www.rfc-editor.org/info/rfc6962/},
+  note   = {Experimental. Defines the Merkle Tree Hash with 0x00/0x01 leaf and node
+            prefixes, inclusion proofs, consistency proofs and signed tree heads.
+            Obsoleted by RFC 9162 but still what deployed logs implement}
+}
+
+@misc{rfc9162,
+  author = {Laurie, Ben and Messeri, Eran and Stradling, Rob},
+  title  = {Certificate Transparency Version 2.0},
+  series = {Request for Comments},
+  number = {9162},
+  year   = {2021},
+  month  = dec,
+  doi    = {10.17487/RFC9162},
+  url    = {https://www.rfc-editor.org/info/rfc9162/},
+  note   = {Experimental. Obsoletes RFC 6962}
+}
+
+@article{laurie2014ct,
+  author  = {Laurie, Ben},
+  title   = {Certificate Transparency},
+  journal = {Communications of the ACM},
+  volume  = {57},
+  number  = {10},
+  pages   = {40--46},
+  year    = {2014},
+  doi     = {10.1145/2659897}
+}
+
+@inproceedings{stark2019ctbreakweb,
+  author    = {Stark, Emily and Sleevi, Ryan and Muminovi{\'c}, Rijad and
+               O'Brien, Devon and Messeri, Eran and Porter Felt, Adrienne and
+               McMillion, Brendan and Tabriz, Parisa},
+  title     = {Does Certificate Transparency Break the Web? {M}easuring Adoption and
+               Error Rate},
+  booktitle = {2019 IEEE Symposium on Security and Privacy (SP)},
+  publisher = {IEEE},
+  year      = {2019},
+  pages     = {211--226},
+  doi       = {10.1109/SP.2019.00027}
+}
+
+@inproceedings{scheitle2018riseofct,
+  author    = {Scheitle, Quirin and Gasser, Oliver and Nolte, Theodor and Amann, Johanna
+               and Brent, Lexi and Carle, Georg and Holz, Ralph and
+               Schmidt, Thomas C. and W{\"a}hlisch, Matthias},
+  title     = {The Rise of Certificate Transparency and Its Implications on the
+               {I}nternet Ecosystem},
+  booktitle = {Proceedings of the Internet Measurement Conference 2018 (IMC '18)},
+  publisher = {ACM},
+  year      = {2018},
+  pages     = {343--349},
+  doi       = {10.1145/3278532.3278562},
+  note      = {Preprint: arXiv:1809.08325}
+}
+
+@inproceedings{li2019monitors,
+  author    = {Li, Bingyu and Lin, Jingqiang and Li, Fengjun and Wang, Qiongxiao and
+               Li, Qi and Jing, Jiwu and Wang, Congli},
+  title     = {Certificate Transparency in the Wild: Exploring the Reliability of
+               Monitors},
+  booktitle = {Proceedings of the 2019 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '19)},
+  publisher = {ACM},
+  year      = {2019},
+  pages     = {2505--2520},
+  doi       = {10.1145/3319535.3345653},
+  note      = {Empirical evidence that deployed CT monitors are unreliable -- the
+               practical case for an independent witness rather than a trusted monitor}
+}
+
+@inproceedings{kumar2018misissuance,
+  author    = {Kumar, Deepak and Wang, Zhengping and Hyder, Matthew and
+               Dickinson, Joseph and Beck, Gabrielle and Adrian, David and
+               Mason, Joshua and Durumeric, Zakir and Halderman, J. Alex and
+               Bailey, Michael},
+  title     = {Tracking Certificate Misissuance in the Wild},
+  booktitle = {2018 IEEE Symposium on Security and Privacy (SP)},
+  publisher = {IEEE},
+  year      = {2018},
+  pages     = {785--798},
+  doi       = {10.1109/SP.2018.00015},
+  note      = {Author order as deposited in Crossref; some secondary sources place Mason
+               before Beck -- check the published PDF before final submission}
+}
+
+@inproceedings{gustafsson2017ctlandscape,
+  author    = {Gustafsson, Josef and Overier, Gustaf and Arlitt, Martin and
+               Carlsson, Niklas},
+  title     = {A First Look at the {CT} Landscape: Certificate Transparency Logs in
+               Practice},
+  booktitle = {Passive and Active Measurement (PAM 2017)},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {10176},
+  publisher = {Springer},
+  year      = {2017},
+  pages     = {87--99},
+  doi       = {10.1007/978-3-319-54328-4_7}
+}
+
+@misc{nordberg-ctgossip,
+  author       = {Nordberg, Linus and Gillmor, Daniel Kahn and Ritter, Tom},
+  title        = {Gossiping in {CT}},
+  howpublished = {Internet-Draft draft-ietf-trans-gossip-05, IETF TRANS Working Group},
+  year         = {2018},
+  month        = jan,
+  url          = {https://datatracker.ietf.org/doc/draft-ietf-trans-gossip/},
+  urldate      = {2026-09-08},
+  note         = {EXPIRED without publication. Defines SCT Feedback, STH Pollination and
+                  the Trusted Auditor Relationship as defences against a log presenting a
+                  split view. Its expiry is itself evidence that reactive gossip lost to
+                  proactive witness cosigning}
+}
+
+@inproceedings{chuat2015gossip,
+  author    = {Chuat, Laurent and Szalachowski, Pawe{\l} and Perrig, Adrian and
+               Laurie, Ben and Messeri, Eran},
+  title     = {Efficient gossip protocols for verifying the consistency of certificate
+               logs},
+  booktitle = {2015 IEEE Conference on Communications and Network Security (CNS)},
+  publisher = {IEEE},
+  address   = {Florence, Italy},
+  year      = {2015},
+  pages     = {415--423},
+  doi       = {10.1109/CNS.2015.7346853},
+  note      = {Preprint: arXiv:1511.01514. The foundational academic gossip paper and the
+               direct antecedent of witness-style consistency checking}
+}
+
+@misc{meiklejohn2020thinkglobal,
+  author        = {Meiklejohn, Sarah and Kalinnikov, Pavel and Lin, Cindy S. and
+                   Hutchinson, Martin and Belvin, Gary and Raykova, Mariana and
+                   Cutter, Al},
+  title         = {Think Global, Act Local: Gossip and Client Audits in Verifiable Data
+                   Structures},
+  year          = {2020},
+  eprint        = {2011.04551},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  doi           = {10.48550/arXiv.2011.04551},
+  note          = {Preprint, 9 November 2020. Argues clients should audit for themselves
+                   rather than rely on trusted auditors}
+}
+
+@inproceedings{oxford2020quantitative,
+  author    = {Oxford, Michael and Parker, David and Ryan, Mark},
+  title     = {Quantitative Verification of Certificate Transparency Gossip Protocols},
+  booktitle = {2020 IEEE Conference on Communications and Network Security (CNS)},
+  publisher = {IEEE},
+  address   = {Avignon, France},
+  year      = {2020},
+  pages     = {1--9},
+  doi       = {10.1109/CNS48642.2020.9162197},
+  note      = {Probabilistic model checking of the split-world detection rate actually
+               achieved by gossip protocols}
+}
+
+@inproceedings{syta2016cosigning,
+  author    = {Syta, Ewa and Tamas, Iulia and Visher, Dylan and
+               Wolinsky, David Isaac and Jovanovic, Philipp and Gasser, Linus and
+               Gailly, Nicolas and Khoffi, Ismail and Ford, Bryan},
+  title     = {Keeping Authorities ``Honest or Bust'' with Decentralized Witness
+               Cosigning},
+  booktitle = {2016 IEEE Symposium on Security and Privacy (SP)},
+  publisher = {IEEE},
+  year      = {2016},
+  pages     = {526--545},
+  doi       = {10.1109/SP.2016.38},
+  note      = {Preprint: arXiv:1503.08768. The CoSi protocol -- the origin of the term
+               "witness cosigning" and the security argument for it}
+}
+
+@inproceedings{tomescu2017catena,
+  author    = {Tomescu, Alin and Devadas, Srinivas},
+  title     = {Catena: Efficient Non-equivocation via {B}itcoin},
+  booktitle = {2017 IEEE Symposium on Security and Privacy (SP)},
+  publisher = {IEEE},
+  year      = {2017},
+  pages     = {393--409},
+  doi       = {10.1109/SP.2017.19},
+  note      = {The expensive-external-anchor alternative to a witness: forking the log
+               requires a Bitcoin double-spend}
+}
+
+@inproceedings{cheval2023transparencyverification,
+  author    = {Cheval, Vincent and Moreira, Jos{\'e} and Ryan, Mark},
+  title     = {Automatic verification of transparency protocols},
+  booktitle = {2023 IEEE 8th European Symposium on Security and Privacy (EuroS\&P)},
+  publisher = {IEEE},
+  year      = {2023},
+  pages     = {107--121},
+  doi       = {10.1109/EuroSP57164.2023.00016},
+  note      = {Extended version: arXiv:2303.04500. ProVerif model of Certificate
+               Transparency including tree-extension proofs}
+}
+
+@misc{hicks2023soktransparency,
+  author        = {Hicks, Alexander},
+  title         = {{SoK}: Log Based Transparency Enhancing Technologies},
+  year          = {2023},
+  eprint        = {2305.01378},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  doi           = {10.48550/arXiv.2305.01378},
+  note          = {Preprint, 2 May 2023; no peer-reviewed venue on the arXiv record}
+}
+
+@inproceedings{melara2015coniks,
+  author    = {Melara, Marcela S. and Blankstein, Aaron and Bonneau, Joseph and
+               Felten, Edward W. and Freedman, Michael J.},
+  title     = {{CONIKS}: Bringing Key Transparency to End Users},
+  booktitle = {24th USENIX Security Symposium (USENIX Security '15)},
+  publisher = {USENIX Association},
+  year      = {2015},
+  url       = {https://eprint.iacr.org/2014/1004},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2014/1004. The ePrint carries
+               a revision correcting a security error in the VRF scheme -- cite the
+               corrected version. Page numbers (383--398) are from secondary indexes;
+               usenix.org blocks automated fetches}
+}
+
+@inproceedings{chase2019seemless,
+  author    = {Chase, Melissa and Deshpande, Apoorvaa and Ghosh, Esha and
+               Malvai, Harjasleen},
+  title     = {{SEEMless}: Secure End-to-End Encrypted Messaging with less Trust},
+  booktitle = {Proceedings of the 2019 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '19)},
+  publisher = {ACM},
+  year      = {2019},
+  pages     = {1639--1656},
+  doi       = {10.1145/3319535.3363202},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2018/607}
+}
+
+@inproceedings{malvai2023parakeet,
+  author    = {Malvai, Harjasleen and Kokoris-Kogias, Lefteris and Sonnino, Alberto and
+               Ghosh, Esha and {\"O}zt{\"u}rk, Ercan and Lewi, Kevin and Lawlor, Sean},
+  title     = {Parakeet: Practical Key Transparency for End-to-End Encrypted Messaging},
+  booktitle = {Network and Distributed System Security Symposium (NDSS 2023)},
+  publisher = {Internet Society},
+  year      = {2023},
+  doi       = {10.14722/ndss.2023.24545},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2023/081. Includes a
+               consensusless protocol for distributing short consistent commitments --
+               the same problem a witness solves}
+}
+
+@inproceedings{tomescu2019aad,
+  author    = {Tomescu, Alin and Bhupatiraju, Vivek and Papadopoulos, Dimitrios and
+               Papamanthou, Charalampos and Triandopoulos, Nikos and Devadas, Srinivas},
+  title     = {Transparency Logs via Append-Only Authenticated Dictionaries},
+  booktitle = {Proceedings of the 2019 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '19)},
+  publisher = {ACM},
+  year      = {2019},
+  pages     = {1299--1316},
+  doi       = {10.1145/3319535.3345652},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2018/721}
+}
+
+@misc{keytrans-architecture,
+  author       = {McMillion, Brendan},
+  title        = {Key Transparency Architecture},
+  howpublished = {Internet-Draft draft-ietf-keytrans-architecture,
+                  IETF KEYTRANS Working Group},
+  year         = {2026},
+  url          = {https://datatracker.ietf.org/doc/draft-ietf-keytrans-architecture/},
+  urldate      = {2026-09-08},
+  note         = {Revision 09, 29 June 2026; intended status Informational. Current
+                  standardisation of transparency-log roles: log, monitor, auditor,
+                  witness}
+}
+
+@misc{c2sp-tlog-witness,
+  author       = {{C2SP}},
+  title        = {Transparency Log Witness Protocol},
+  howpublished = {C2SP specification},
+  url          = {https://c2sp.org/tlog-witness},
+  urldate      = {2026-09-08},
+  note         = {THE closest prior art to a witness component. The witness verifies an
+                  RFC 6962 consistency proof from its recorded latest checkpoint and MUST
+                  respond 409 Conflict if the offered old size does not match; the check
+                  and the persist MUST be atomic. No named editors or version string
+                  appears on the page}
+}
+
+@misc{c2sp-tlog-cosignature,
+  author       = {{C2SP}},
+  title        = {Transparency Log Cosignatures},
+  howpublished = {C2SP specification, version 1.0.0},
+  url          = {https://c2sp.org/tlog-cosignature@v1.0.0},
+  urldate      = {2026-09-08},
+  note         = {Defines the timestamped cosignature format and its semantics: the
+                  cosigner asserts the largest consistent tree head it has observed for
+                  that log origin as of the given time}
+}
+
+@misc{c2sp-tlog-checkpoint,
+  author       = {{C2SP}},
+  title        = {Transparency Log Checkpoints},
+  howpublished = {C2SP specification},
+  url          = {https://c2sp.org/tlog-checkpoint},
+  urldate      = {2026-09-08},
+  note         = {Signed-note checkpoint format (origin line, decimal tree size, base64
+                  RFC 6962 root hash); clients MUST ignore unknown signatures precisely to
+                  enable log key rotation and witness cosigning}
+}
+
+@misc{sigsum-design,
+  author       = {{Sigsum Project}},
+  title        = {Sigsum Logging Design v0},
+  howpublished = {Sigsum project design document},
+  url          = {https://git.sigsum.org/sigsum/plain/doc/design.md},
+  urldate      = {2026-09-08},
+  note         = {Work in progress; no named authors or date on the document. Replaces
+                  CT's reactive gossip-audit model with proactive witness cosigning:
+                  witnesses poll at least once per minute, require tree heads no older
+                  than five minutes, and an attacker facing honest witnesses "can at most
+                  deny service"}
+}
+
+@misc{transparencydev-witness,
+  author       = {{Transparency.dev}},
+  title        = {Can {I} Get A Witness (Network)?},
+  howpublished = {transparency.dev blog},
+  url          = {https://blog.transparency.dev/can-i-get-a-witness-network},
+  urldate      = {2026-09-08},
+  note         = {No author byline or date on the page. States the operational rule that
+                  one witness proves append-only while a quorum of witnesses detects split
+                  views; describes the ArmoredWitness deployment of 15 devices}
+}
+
+@inproceedings{nikitin2017chainiac,
+  author    = {Nikitin, Kirill and Kokoris-Kogias, Eleftherios and Jovanovic, Philipp and
+               Gailly, Nicolas and Gasser, Linus and Khoffi, Ismail and Cappos, Justin and
+               Ford, Bryan},
+  title     = {{CHAINIAC}: Proactive Software-Update Transparency via Collectively Signed
+               Skipchains and Verified Builds},
+  booktitle = {26th USENIX Security Symposium (USENIX Security 2017)},
+  publisher = {USENIX Association},
+  year      = {2017},
+  pages     = {1271--1287},
+  note      = {Page numbers verified via OpenAlex only; usenix.org blocks automated
+               fetches. Applies collective witness signing to a software-update log}
+}
+
+@misc{cox2019tlog,
+  author       = {Cox, Russ},
+  title        = {Transparent Logs for Skeptical Clients},
+  howpublished = {research!rsc},
+  year         = {2019},
+  month        = mar,
+  url          = {https://research.swtch.com/tlog},
+  urldate      = {2026-09-08},
+  note         = {1 March 2019. Technical blog post, not peer reviewed. NOTE the exact
+                  title is "Skeptical Clients", not "Skeptics". Clearest short exposition
+                  of the model in which the log server is essentially untrusted}
+}
+
+@misc{cox2019sumdb,
+  author       = {Cox, Russ and Valsorda, Filippo},
+  title        = {Proposal: Secure the Public {G}o Module Ecosystem},
+  howpublished = {Go design document 25530-sumdb},
+  year         = {2019},
+  month        = apr,
+  url          = {https://go.googlesource.com/proposal/+/master/design/25530-sumdb.md},
+  urldate      = {2026-09-08},
+  note         = {24 April 2019. Specifies an auditor role and proxy-mediated gossip so
+                  that different users can detect that they are seeing different logs}
+}
+
+@misc{trillian-vds,
+  author       = {{Google TrustFabric Team}},
+  title        = {Verifiable Data Structures},
+  howpublished = {Trillian technical whitepaper},
+  year         = {2021},
+  month        = may,
+  url          = {https://github.com/google/trillian/blob/master/docs/VerifiableDataStructures-Latest.md},
+  urldate      = {2026-09-08},
+  note         = {The live document is corporately attributed; the widely repeated 2015
+                  Eijdenberg/Laurie/Cutter attribution does NOT appear on it. Cite
+                  corporately unless the archived 2015 version is located}
+}
+
+@misc{c2sp-static-ct-api,
+  author       = {{C2SP}},
+  title        = {The Static Certificate Transparency {API}},
+  howpublished = {C2SP specification, version 1.1.0},
+  url          = {https://c2sp.org/static-ct-api@v1.1.0},
+  urldate      = {2026-09-08},
+  note         = {Tiled static-asset read path for CT logs layered over RFC 6962
+                  submission; notes that witnesses may add further note signatures to
+                  checkpoints}
+}
+
+@inproceedings{newman2022sigstore,
+  author    = {Newman, Zachary and Meyers, John Speed and Torres-Arias, Santiago},
+  title     = {Sigstore: Software Signing for Everybody},
+  booktitle = {Proceedings of the 2022 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '22)},
+  publisher = {ACM},
+  address   = {Los Angeles, CA},
+  year      = {2022},
+  pages     = {2353--2367},
+  doi       = {10.1145/3548606.3560596},
+  note      = {The Rekor transparency log is the largest non-certificate deployment of
+               this pattern}
+}
+
+@misc{merkle-tree-certs,
+  author       = {Benjamin, David and O'Brien, Devon and Westerbaan, Bas and
+                  Valenta, Luke and Valsorda, Filippo},
+  title        = {Merkle Tree Certificates},
+  howpublished = {Internet-Draft draft-ietf-plants-merkle-tree-certs-05,
+                  IETF PLANTS Working Group},
+  year         = {2026},
+  month        = jul,
+  url          = {https://datatracker.ietf.org/doc/draft-ietf-plants-merkle-tree-certs/},
+  urldate      = {2026-09-08},
+  note         = {Version 05, 6 July 2026. The intersection of PQC and transparency:
+                  motivated explicitly by post-quantum signature size (ML-DSA-65 is 1952
+                  bytes of public key and 3309 bytes of signature) and defines cosigners
+                  that validate an append-only view and cosign checkpoints and subtrees}
+}
+
+
+% ---------------------------------------------------------------------
+% 5. TAMPER-EVIDENT LOGGING AND AUTHENTICATED DATA STRUCTURES
+% ---------------------------------------------------------------------
+
+@inproceedings{crosby2009tamperevident,
+  author    = {Crosby, Scott A. and Wallach, Dan S.},
+  title     = {Efficient Data Structures for Tamper-Evident Logging},
+  booktitle = {18th USENIX Security Symposium (USENIX Security '09)},
+  publisher = {USENIX Association},
+  year      = {2009},
+  url       = {https://www.usenix.org/conference/usenixsecurity09/technical-sessions/presentation/efficient-data-structures-tamper-evident},
+  note      = {The history tree. Defines tamper-evidence semantically in terms of an
+               auditing process, and gives logarithmic membership and incremental
+               (consistency) proofs; the paper contrasts an 800 MB hash-chain trace with a
+               3 KB proof at 80 million events}
+}
+
+@inproceedings{schneier1998securelogs,
+  author    = {Schneier, Bruce and Kelsey, John},
+  title     = {Cryptographic Support for Secure Logs on Untrusted Machines},
+  booktitle = {7th USENIX Security Symposium},
+  publisher = {USENIX Association},
+  year      = {1998},
+  pages     = {53--62},
+  url       = {https://www.usenix.org/conference/7th-usenix-security-symposium/cryptographic-support-secure-logs-untrusted-machines},
+  note      = {The classic forward-secure hash-chained audit log}
+}
+
+@article{haber1991timestamp,
+  author  = {Haber, Stuart and Stornetta, W. Scott},
+  title   = {How to time-stamp a digital document},
+  journal = {Journal of Cryptology},
+  volume  = {3},
+  number  = {2},
+  pages   = {99--111},
+  year    = {1991},
+  doi     = {10.1007/BF00196791},
+  note    = {The origin of linking-and-hashing for order-preserving, back-dating-resistant
+             records}
+}
+
+@inproceedings{tamassia2003ads,
+  author    = {Tamassia, Roberto},
+  title     = {Authenticated Data Structures},
+  booktitle = {Algorithms --- ESA 2003},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {2832},
+  publisher = {Springer},
+  year      = {2003},
+  pages     = {2--5},
+  doi       = {10.1007/978-3-540-39658-1_2},
+  note      = {The model: an untrusted responder answers queries on behalf of a trusted
+               source and supplies a proof of validity}
+}
+
+
+% ---------------------------------------------------------------------
+% 6. MULTI-SIGNATURE AND THRESHOLD SIGNATURES (CLASSICAL AND PQ)
+% ---------------------------------------------------------------------
+
+@article{sedghighadikolaei2025thresholdsurvey,
+  author    = {Sedghighadikolaei, Kiarash and Yavuz, Attila A.},
+  title     = {A Survey of Threshold Signatures: {NIST} Standards, Post-Quantum
+               Cryptography, Exotic Techniques, and Real-World Applications},
+  journal   = {ACM Computing Surveys},
+  volume    = {58},
+  number    = {6},
+  articleno = {143},
+  pages     = {1--39},
+  year      = {2025},
+  month     = dec,
+  doi       = {10.1145/3772274},
+  note      = {Published 9 December 2025. Sec. 7.2 states that SPHINCS+ requires 321,553
+               SHA-3 calls and that, with efficient garbled-circuit implementations,
+               thresholded execution is "estimated to be around 85 minutes" and could run
+               to several hundred minutes. Sec. 7.1 attributes the lattice difficulty to
+               rejection sampling requiring both garbled-circuit and secret-sharing MPC
+               plus daBit conversions. Preprint: arXiv:2311.05514}
+}
+
+@misc{desclavis2026thresholding,
+  author        = {De Sclavis, Francesco and Nardelli, Matteo and Pedicini, Marco},
+  title         = {Thresholding Post-Quantum Signatures},
+  year          = {2026},
+  eprint        = {2608.26792},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  note          = {Preprint, 27 August 2026. Classifies the tools used to build
+                   T-out-of-N schemes from post-quantum signatures across lattice, hash,
+                   group-action, isogeny and multivariate paradigms, and notes that
+                   applications remain dominated by pre-quantum signatures}
+}
+
+@inproceedings{delpino2025compactthreshold,
+  author    = {del Pino, Rafael and Niot, Guilhem},
+  title     = {Finally! {A} Compact Lattice-Based Threshold Signature},
+  booktitle = {Public-Key Cryptography (PKC 2025)},
+  year      = {2025},
+  url       = {https://eprint.iacr.org/2025/872},
+  note      = {IACR Cryptology ePrint Archive, Report 2025/872. Signature sizes close to a
+               single Dilithium signature, but only for thresholds of at most 8 users; the
+               abstract states that difficulties such as sharing a secret in small shares
+               and simulating rejecting transcripts "have kept such an efficient threshold
+               signature out of reach until now"}
+}
+
+@misc{porechna2026thresholdauth,
+  author        = {Porechna, Dariia},
+  title         = {Threshold Authorization Without Threshold Signatures:
+                   Signature-Agnostic {MPC} Custody},
+  year          = {2026},
+  eprint        = {2607.08226},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  note          = {Preprint, 9 July 2026. Argues for separating member authentication from
+                   threshold authorization because "standardized hash-based signatures
+                   resist efficient threshold signing, and lattice-based threshold
+                   protocols remain an emerging research track"; the payoff is that
+                   changing signature scheme becomes a key rotation rather than a protocol
+                   redesign}
+}
+
+@techreport{nist-ir8214c,
+  author      = {Brand{\~a}o, Lu{\'i}s T. A. N. and Peralta, Rene},
+  title       = {{NIST} First Call for Multi-Party Threshold Schemes},
+  institution = {National Institute of Standards and Technology},
+  address     = {Gaithersburg, MD},
+  type        = {NIST Internal Report, Second Public Draft},
+  number      = {NIST IR 8214C 2pd},
+  year        = {2025},
+  month       = mar,
+  doi         = {10.6028/NIST.IR.8214C.2pd},
+  url         = {https://csrc.nist.gov/pubs/ir/8214/c/2pd},
+  note        = {Published 27 March 2025. A CALL FOR SUBMISSIONS, not a standard: Class N
+                 now includes primitives selected by the NIST PQC process, which
+                 establishes that threshold versions of ML-DSA and SLH-DSA were still
+                 being solicited rather than standardised}
+}
+
+@misc{rfc9591,
+  author = {Connolly, Deirdre and Komlo, Chelsea and Goldberg, Ian and
+            Wood, Christopher A.},
+  title  = {The Flexible Round-Optimized {S}chnorr Threshold ({FROST}) Protocol for
+            Two-Round {S}chnorr Signatures},
+  series = {Request for Comments},
+  number = {9591},
+  year   = {2024},
+  month  = jun,
+  doi    = {10.17487/RFC9591},
+  url    = {https://www.rfc-editor.org/info/rfc9591/},
+  note   = {IRTF CFRG, Informational. The classical baseline: FROST depends only on a
+            prime-order group and a hash, so it has no direct post-quantum analogue}
+}
+
+@inproceedings{bellare2006multisig,
+  author    = {Bellare, Mihir and Neven, Gregory},
+  title     = {Multi-signatures in the plain public-key model and a general forking lemma},
+  booktitle = {Proceedings of the 13th ACM Conference on Computer and Communications
+               Security (CCS '06)},
+  publisher = {ACM},
+  year      = {2006},
+  pages     = {390--399},
+  doi       = {10.1145/1180405.1180453},
+  note      = {The paper's own stated baseline: "A trivial way to implement a
+               multi-signature scheme is to let the multi-signature of message m be the
+               list" of each signer's individual signature -- large, but requiring no
+               distributed key generation and no proofs of knowledge at registration}
+}
+
+@inproceedings{fleischhacker2022squirrel,
+  author    = {Fleischhacker, Nils and Simkin, Mark and Zhang, Zhenfei},
+  title     = {Squirrel: Efficient Synchronized Multi-Signatures from Lattices},
+  booktitle = {Proceedings of the 2022 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '22)},
+  publisher = {ACM},
+  year      = {2022},
+  doi       = {10.1145/3548606.3560655},
+  note      = {IACR ePrint 2022/694. Individual signature 52 KB, aggregate 771 KB, public
+               key 1 KB; bounded to 2^tau time steps -- i.e. a synchronized, a-priori
+               bounded setting, not general-purpose multi-signature}
+}
+
+@inproceedings{fleischhacker2023chipmunk,
+  author    = {Fleischhacker, Nils and Herold, Gottfried and Simkin, Mark and
+               Zhang, Zhenfei},
+  title     = {Chipmunk: Better Synchronized Multi-Signatures from Lattices},
+  booktitle = {Proceedings of the 2023 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '23)},
+  publisher = {ACM},
+  year      = {2023},
+  doi       = {10.1145/3576915.3623219},
+  note      = {IACR ePrint 2023/1820. 8192 individual signatures compress to about 136 KB
+               at 112-bit security, 5.6x smaller than Squirrel; still synchronized and
+               a-priori bounded}
+}
+
+
+% ---------------------------------------------------------------------
+% 7. PQC PERFORMANCE EVALUATION
+% ---------------------------------------------------------------------
+
+@inproceedings{kannwischer2019pqm4,
+  author    = {Kannwischer, Matthias J. and Rijneveld, Joost and Schwabe, Peter and
+               Stoffelen, Ko},
+  title     = {pqm4: Testing and Benchmarking {NIST} {PQC} on {ARM} {C}ortex-{M4}},
+  booktitle = {Second PQC Standardization Conference},
+  year      = {2019},
+  url       = {https://eprint.iacr.org/2019/844},
+  note      = {IACR Cryptology ePrint Archive, Report 2019/844. STM32F4DISCOVERY with
+               196 KiB RAM and 1 MiB flash; the canonical embedded PQC benchmarking
+               methodology}
+}
+
+@misc{kannwischer2024pqm4,
+  author       = {Kannwischer, Matthias J. and Krausz, Markus and Petri, Richard and
+                  Yang, Shang-Yi},
+  title        = {pqm4: Benchmarking {NIST} Additional Post-Quantum Signature Schemes on
+                  Microcontrollers},
+  year         = {2024},
+  howpublished = {IACR Cryptology ePrint Archive, Report 2024/112},
+  url          = {https://eprint.iacr.org/2024/112},
+  note         = {Preprint. STM32L4R5ZI with 640 KB RAM; also documents the code-quality
+                  failure modes that prevent some schemes from being benchmarked at all}
+}
+
+@misc{ebacs,
+  author       = {Bernstein, Daniel J. and Lange, Tanja},
+  title        = {{eBACS}: {ECRYPT} Benchmarking of Cryptographic Systems},
+  howpublished = {Web resource (SUPERCOP)},
+  url          = {https://bench.cr.yp.to},
+  urldate      = {2026-09-08},
+  note         = {Editors. Page version 2024.09.05. No journal paper exists; the site
+                  itself is the citable artefact, and asks that the download date be
+                  given}
+}
+
+@misc{commey2025consumerelectronics,
+  author        = {Commey, Daniel and Appiah, Benjamin and Klogo, Griffith S. and
+                   Bagyl-Bac, Winful and Gadze, James D. and Alsenani, Yousef and
+                   Crosby, Garth V.},
+  title         = {Performance Analysis and Deployment Considerations of Post-Quantum
+                   Cryptography for Consumer Electronics},
+  year          = {2025},
+  eprint        = {2505.02239},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CR},
+  doi           = {10.48550/arXiv.2505.02239},
+  note          = {Preprint, v2 12 June 2025. Single-machine comparison table (Apple M4):
+                   ML-DSA-44 sign 0.16 ms / 2420 B, ML-DSA-65 sign 0.26 ms / 3309 B,
+                   SPHINCS+-SHA2-128s sign 310.81 ms / 7856 B, SPHINCS+-SHA2-256s sign
+                   489.49 ms / 29792 B, Falcon-512 sign 0.11 ms / 655 B}
+}
+
+@inproceedings{paquin2020benchmarkingtls,
+  author    = {Paquin, Christian and Stebila, Douglas and Tamvada, Goutam},
+  title     = {Benchmarking Post-Quantum Cryptography in {TLS}},
+  booktitle = {Post-Quantum Cryptography (PQCrypto 2020)},
+  year      = {2020},
+  url       = {https://eprint.iacr.org/2019/1447},
+  note      = {IACR Cryptology ePrint Archive, Report 2019/1447. Packet loss above 3--5\%
+               significantly penalises algorithms whose messages fragment across many
+               packets -- the standard caveat against reading microbenchmarks as
+               protocol performance}
+}
+
+@inproceedings{sikeridis2020tls13,
+  author    = {Sikeridis, Dimitrios and Kampanakis, Panos and Devetsikiotis, Michael},
+  title     = {Post-Quantum Authentication in {TLS} 1.3: A Performance Study},
+  booktitle = {Network and Distributed System Security Symposium (NDSS 2020)},
+  publisher = {Internet Society},
+  year      = {2020},
+  doi       = {10.14722/ndss.2020.24203},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2020/071}
+}
+
+@inproceedings{sosnowski2023pqtls,
+  author    = {Sosnowski, Markus and Wiedner, Florian and Hauser, Eric and Steger, Lion and
+               Schoinianakis, Dimitrios and Gallenm{\"u}ller, Sebastian and Carle, Georg},
+  title     = {The Performance of Post-Quantum {TLS} 1.3},
+  booktitle = {Companion of the 19th International Conference on emerging Networking
+               EXperiments and Technologies (CoNEXT Companion '23)},
+  publisher = {ACM},
+  address   = {Paris, France},
+  year      = {2023},
+  doi       = {10.1145/3624354.3630585},
+  note      = {23 key agreements x 22 signature algorithms on identical hardware. Even the
+               fastest SPHINCS+ variant raised handshake latency and data usage by up to
+               20 times, and all SPHINCS+ configurations required multiple round trips
+               because server messages exceeded the initial congestion window}
+}
+
+@inproceedings{schwabe2020kemtls,
+  author    = {Schwabe, Peter and Stebila, Douglas and Wiggers, Thom},
+  title     = {Post-quantum {TLS} without handshake signatures},
+  booktitle = {Proceedings of the 2020 ACM SIGSAC Conference on Computer and
+               Communications Security (CCS '20)},
+  publisher = {ACM},
+  year      = {2020},
+  doi       = {10.1145/3372297.3423350},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2020/534. KEMTLS: less than
+               half the bandwidth of post-quantum TLS 1.3, and nearly 90\% fewer server
+               CPU cycles in the speed-optimised variant}
+}
+
+@inproceedings{buerstinghaus2020embedded,
+  author    = {B{\"u}rstinghaus-Steinbach, Kevin and Krau{\ss}, Christoph and
+               Niederhagen, Ruben and Schneider, Michael},
+  title     = {Post-Quantum {TLS} on Embedded Systems: Integrating and Evaluating
+               {K}yber and {SPHINCS+} with mbed {TLS}},
+  booktitle = {Proceedings of the 15th ACM Asia Conference on Computer and
+               Communications Security (AsiaCCS 2020)},
+  publisher = {ACM},
+  year      = {2020},
+  doi       = {10.1145/3320269.3384725},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2020/308. SPHINCS+ signature
+               size and signing cost limit the embedded SERVER role, while the client
+               (verifier) role remains feasible -- the signer/verifier asymmetry}
+}
+
+
+% ---------------------------------------------------------------------
+% 8. PQC IMPLEMENTATIONS AND LIBRARIES
+% ---------------------------------------------------------------------
+
+@inproceedings{stebila2016oqs,
+  author    = {Stebila, Douglas and Mosca, Michele},
+  title     = {Post-quantum Key Exchange for the {I}nternet and the {O}pen {Q}uantum
+               {S}afe Project},
+  booktitle = {Selected Areas in Cryptography --- SAC 2016},
+  series    = {Lecture Notes in Computer Science},
+  publisher = {Springer},
+  address   = {Cham},
+  year      = {2017},
+  pages     = {14--37},
+  doi       = {10.1007/978-3-319-69453-5_2},
+  note      = {Also IACR Cryptology ePrint Archive, Report 2016/1017. Introduces liboqs.
+               Page range per Crossref (some secondary sources say 1--24)}
+}
+
+@inproceedings{kannwischer2022pqclean,
+  author    = {Kannwischer, Matthias J. and Schwabe, Peter and Stebila, Douglas and
+               Wiggers, Thom},
+  title     = {Improving Software Quality in Cryptography Standardization Projects},
+  booktitle = {Security Standardisation Research (SSR 2022), IEEE European Symposium on
+               Security and Privacy Workshops},
+  year      = {2022},
+  url       = {https://eprint.iacr.org/2022/337},
+  note      = {IACR Cryptology ePrint Archive, Report 2022/337. The PQClean paper: a
+               continuous-integration testing framework holding vetted implementations of
+               NIST ROUND 3 candidate schemes -- note the scope is round 3, not the final
+               standards}
+}
+
+@misc{pqclean-repo,
+  author       = {{PQClean Project}},
+  title        = {{PQClean}: Clean, portable, tested implementations of post-quantum
+                  cryptography},
+  howpublished = {GitHub repository},
+  url          = {https://github.com/PQClean/PQClean},
+  urldate      = {2026-09-08},
+  note         = {ARCHIVED read-only on 4 August 2026. The README classifies SPHINCS+ as a
+                  "to-be standard" scheme, contains no FIPS 203/204/205 or SLH-DSA
+                  reference and no pre-standard warning, and directs users to the
+                  PQ Code Package slhdsa-c repository for standardised implementations}
+}
+
+@misc{pqclean-issue562,
+  author       = {{mkannwischer}},
+  title        = {Update {SPHINCS+}/{SLH-DSA} to be compliant with {FIPS} 205},
+  howpublished = {PQClean issue \#562, GitHub},
+  year         = {2024},
+  month        = aug,
+  url          = {https://github.com/PQClean/PQClean/issues/562},
+  urldate      = {2026-09-08},
+  note         = {Opened 14 August 2024, the day after FIPS 205 was published, and still
+                  OPEN when the repository was archived read-only on 4 August 2026.
+                  PQClean's SPHINCS+ was therefore never brought into line with FIPS 205.
+                  Author given as the GitHub handle of the submitter}
+}
+
+@misc{pqclean-issue526,
+  author       = {{blakehartin}},
+  title        = {{SPHINCS+} update as per {FIPS} 205 initial draft},
+  howpublished = {PQClean issue \#526, GitHub},
+  year         = {2023},
+  month        = nov,
+  url          = {https://github.com/PQClean/PQClean/issues/526},
+  urldate      = {2026-09-08},
+  note         = {Opened 19 November 2023, closed without the change. Enumerates the four
+                  modifications PQClean would need (WOTS_PRF and FORS_PRF address types,
+                  PK.seed as an input to PRF, SHA-512 in place of SHA-256 for categories 3
+                  and 5, and R and PK.seed into MGF1), which establishes that PQClean was
+                  still at the round-3 v3.0 specification at that date. Author given as
+                  the GitHub handle of the submitter}
+}
+
+@misc{liboqs-issue1894,
+  author       = {{Open Quantum Safe Project}},
+  title        = {{SLH-DSA}: integrate final standard},
+  howpublished = {liboqs issue \#1894, GitHub},
+  year         = {2024},
+  month        = aug,
+  url          = {https://github.com/open-quantum-safe/liboqs/issues/1894},
+  urldate      = {2026-09-08},
+  note         = {Opened 15 August 2024; closed, milestone 0.15.0. Records that liboqs at
+                  that time supported only Round 3 SPHINCS+, sourced from PQClean
+                  upstream, and that this differs from the finalized standard}
+}
+
+@misc{oqs-slhdsa-algpage,
+  author       = {{Open Quantum Safe Project}},
+  title        = {{SLH-DSA} --- liboqs algorithm datasheet},
+  howpublished = {openquantumsafe.org},
+  url          = {https://openquantumsafe.org/liboqs/algorithms/sig/slh-dsa.html},
+  urldate      = {2026-09-08},
+  note         = {The implementation is now sourced from pq-code-package/slhdsa-c with
+                  specification version "SLH-DSA" referencing FIPS 205 -- a different
+                  upstream from the earlier PQClean-derived SPHINCS+ entry}
+}
+
+@misc{quantcrypt,
+  author       = {{aabmets}},
+  title        = {{QuantCrypt}: Cross-platform {P}ython library for Post-Quantum
+                  Cryptography using precompiled {PQC}lean binaries},
+  howpublished = {GitHub repository, aabmets/quantcrypt},
+  url          = {https://github.com/aabmets/quantcrypt},
+  urldate      = {2026-09-08},
+  note         = {Archived read-only 4 September 2026, following PQClean. The README states
+                  that QuantCrypt "contains multiple variants of PQC algorithms that are
+                  standardized by NIST" but makes no explicit FIPS 205 / SLH-DSA
+                  compliance claim. In the installed source tree,
+                  quantcrypt/internal/constants.py maps class_name FAST_SPHINCS to
+                  pqclean_name "sphincs-shake-256f-simple" and SMALL_SPHINCS to
+                  "sphincs-shake-256s-simple". Author given as the repository owner
+                  handle; no personal name was verified}
+}
+
+@misc{noble-postquantum,
+  author       = {{noble-post-quantum contributors}},
+  title        = {@noble/post-quantum: {ML-KEM}, {ML-DSA} and {SLH-DSA} in {J}ava{S}cript},
+  howpublished = {npm package, version 0.7.0},
+  url          = {https://github.com/paulmillr/noble-post-quantum},
+  urldate      = {2026-09-08},
+  note         = {The installed package README describes SLH-DSA as "hash-based Winternitz
+                  signatures from FIPS-205" and exports slh_dsa_shake_256f among the
+                  twelve FIPS 205 parameter sets. The implementation applies the FIPS 205
+                  pure-mode prefix in its top-level sign/verify and exposes the unprefixed
+                  slh_sign_internal separately as .internal. Author field is the project
+                  name; no personal attribution was verified from a fetched page}
+}
+
+@misc{redhat-pqc-interop,
+  author       = {{Red Hat}},
+  title        = {Interoperability of {RHEL} 10 post-quantum cryptography},
+  howpublished = {Red Hat Customer Portal, article 7119430},
+  year         = {2025},
+  url          = {https://access.redhat.com/articles/7119430},
+  urldate      = {2026-09-08},
+  note         = {Updated 11 November 2025. States that the oqsprovider package in RHEL
+                  10.0 "provides an early draft version of SLH-DSA ..., the SPHINCS+
+                  algorithm, which will not be supported in the future", while RHEL 10.1
+                  supports only the NIST-standardized SLH-DSA variants. A vendor-level
+                  acknowledgement that pre-standard SPHINCS+ shipped under the SLH-DSA
+                  name}
+}
+
+@misc{saarinen2023slhdsa,
+  author       = {Saarinen, Markku-Juhani O.},
+  title        = {{FIPS} 205 {SLH-DSA} / {SPHINCS+} implementation ``from the spec'';
+                  findings},
+  howpublished = {NIST pqc-forum mailing list},
+  year         = {2023},
+  month        = nov,
+  url          = {https://groups.google.com/a/list.nist.gov/g/pqc-forum/c/n4J9zH0yo4Y},
+  urldate      = {2026-09-08},
+  note         = {27 November 2023. An independent implementation of FIPS 205 ipd written
+                  from the specification text, matching the reference KATs for all 12
+                  parameter sets; documents specification ambiguities in the ADRS member
+                  functions and in RBG usage during key generation}
+}
+
+@misc{celi2025acvp,
+  author       = {Celi, Christopher T.},
+  title        = {{ML-DSA} and {SLH-DSA} External Interface Test Vectors},
+  howpublished = {NIST pqc-forum mailing list thread},
+  year         = {2025},
+  month        = jan,
+  url          = {https://groups.google.com/a/list.nist.gov/g/pqc-forum/c/5Q3Zw6WGfPU},
+  urldate      = {2026-09-08},
+  note         = {NIST CAVP announcement (13 January 2025) of external-interface test
+                  vectors for SLH-DSA -- that is, conformance testing targets the
+                  context-string and pre-hash external interface, not the internal
+                  functions. Thread also contains replies from M.-J. O. Saarinen and
+                  K. Kwiatkowski}
+}
+
+@misc{cose-slhdsa,
+  author       = {Prorock, Michael and Steele, Orie and Tschofenig, Hannes},
+  title        = {{SLH-DSA} for {JOSE} and {COSE}},
+  howpublished = {Internet-Draft draft-ietf-cose-sphincs-plus-10, IETF COSE Working Group},
+  year         = {2026},
+  month        = jul,
+  url          = {https://www.ietf.org/archive/id/draft-ietf-cose-sphincs-plus-10.html},
+  urldate      = {2026-09-08},
+  note         = {The registered algorithms identify pure SLH-DSA as specified by slh_sign
+                  in FIPS 205 Sec. 10.2.1 and slh_verify in Sec. 10.3, and MUST NOT be
+                  used with hash_slh_sign or hash_slh_verify. The draft filename still
+                  reads "sphincs-plus" while the title reads SLH-DSA -- the naming
+                  confusion visible in the standards record itself}
+}
