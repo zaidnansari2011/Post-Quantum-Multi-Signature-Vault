@@ -131,6 +131,10 @@ class LedgerRestoreForm(FlaskForm):
     restore = SubmitField("Restore ledger")
 
 
+class TraceClearForm(FlaskForm):
+    clear = SubmitField("Clear")
+
+
 class ProposalTamperForm(FlaskForm):
     """Dev-only: rewrite an approved proposal's text behind its signatures' backs.
 

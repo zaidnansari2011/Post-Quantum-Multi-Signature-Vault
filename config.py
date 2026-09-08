@@ -79,11 +79,24 @@ class BaseConfig:
     BENCHMARK_LIVE_MAX_ITERATIONS = int(os.environ.get("BENCHMARK_LIVE_MAX_ITERATIONS", "5"))
     BENCHMARK_LIVE_BUDGET_S = float(os.environ.get("BENCHMARK_LIVE_BUDGET_S", "10"))
 
+    # Glass box (ADR-0020): the live cryptographic trace at /trace. OFF by default and
+    # administrator-only when on. It is an instrument for demonstration and for the dissertation,
+    # not a product feature -- it prints real intermediate values (canonical payloads, public
+    # keys, signatures, Merkle nodes) from live operations, and although the redaction layer is
+    # allowlist-based and withholds every secret by construction, the honest default for a page
+    # that exists to reveal internals is off.
+    GLASSBOX_ENABLED = os.environ.get("GLASSBOX_ENABLED", "false").lower() == "true"
+    # Raise on a value traced without a presenter instead of silently withholding it. Defaults to
+    # TESTING, so the suite fails on an unwrapped value rather than shipping a redaction that
+    # merely happened to be safe.
+    GLASSBOX_STRICT = os.environ.get("GLASSBOX_STRICT", "").lower() == "true" or None
+
 
 class DevConfig(BaseConfig):
     DEBUG = True
     SECRET_KEY = BaseConfig.SECRET_KEY or _DEV_SECRET
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "true").lower() == "true"
+    GLASSBOX_ENABLED = os.environ.get("GLASSBOX_ENABLED", "true").lower() == "true"
 
 
 class TestConfig(BaseConfig):
@@ -101,6 +114,11 @@ class TestConfig(BaseConfig):
     SCHEDULER_ENABLED = False  # tests drive the rotation/expiry jobs directly, no background thread
     LOG_ORIGIN = "qvault.test/ledger"
     WITNESS_URL = None  # tests drive the witness in-process; no sockets in the suite
+    # On in the suite so the instrumentation is exercised by every existing test that signs
+    # anything -- an unwrapped value or a broken presenter then fails a vote test, loudly, rather
+    # than waiting to be discovered on the /trace page during a demonstration.
+    GLASSBOX_ENABLED = True
+    GLASSBOX_STRICT = True
 
 
 class ProdConfig(BaseConfig):

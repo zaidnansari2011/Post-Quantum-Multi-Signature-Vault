@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from flask import current_app
 from sqlalchemy import select
 
+from qvault import glassbox
 from qvault.extensions import db
 from qvault.models.checkpoint import LogCheckpoint, WitnessCosignature
 from qvault.models.key import Key
@@ -164,7 +165,17 @@ def create_checkpoint(*, commit: bool = True) -> LogCheckpoint:
     if len(leaves) != head.seq + 1:
         raise LogError(f"tree size {len(leaves)} does not match head seq {head.seq}")
 
-    root = merkle_root(leaves).hex()
+    with glassbox.step("Recompute the Merkle root over the whole log", code=merkle_root) as t:
+        t.annotate(
+            "RFC 6962: leaves are SHA-256(0x00 || entry hash), internal nodes are "
+            "SHA-256(0x01 || left || right). Every ledger entry is folded into this one value, so "
+            "a single altered entry anywhere changes the root."
+        )
+        t.input("tree size", glassbox.Number(len(leaves), unit="entries"))
+        t.input("first leaf", glassbox.Hex(leaves[0], full=True))
+        t.input("last leaf", glassbox.Hex(leaves[-1], full=True))
+        root = merkle_root(leaves).hex()
+        t.output("root", glassbox.Digest(root))
 
     # Idempotent at an unchanged tree. Two checkpoints at the same size are at best clutter — and
     # were an actual bug: a second, unwitnessed row at a size the witness had already co-signed
@@ -194,7 +205,17 @@ def create_checkpoint(*, commit: bool = True) -> LogCheckpoint:
     message = checkpoint_bytes(statement)
     secret = master_key.unwrap_secret(key.secret_key_nonce, key.secret_key_wrapped)
     try:
-        signature = provider.sign(secret, message)
+        with glassbox.step("Sign the checkpoint with the log's own key", code=provider.sign) as t:
+            t.annotate(
+                "A signed tree head. This is what an independent witness is offered, and what "
+                "an exported decision package carries so a third party can check the log's state "
+                "without asking this server anything."
+            )
+            t.input("statement", glassbox.Json(statement))
+            t.input("algorithm", glassbox.Label(key.alg_id))
+            t.input("signing key", glassbox.Opaque(secret, why="server-custodied SYSTEM key"))
+            signature = provider.sign(secret, message)
+            t.output("checkpoint signature", glassbox.Hex(signature))
     finally:
         del secret
 
@@ -248,13 +269,32 @@ def maybe_checkpoint(*, commit: bool = True) -> LogCheckpoint | None:
         if last.tree_size >= len(leaves):
             return None
         proof = consistency_proof(leaves, last.tree_size)
-        if not verify_consistency(
-            old_size=last.tree_size,
-            old_root=bytes.fromhex(last.root_hash),
-            new_size=len(leaves),
-            new_root=merkle_root(leaves),
-            proof=proof,
-        ):
+        with glassbox.step(
+            "Prove the log still contains its own past", code=verify_consistency
+        ) as t:
+            t.annotate(
+                "Before signing a new root, check the previously signed root is still a prefix "
+                "of this tree. If it is not, history was edited -- and signing anyway would "
+                "launder the rewrite. The refusal stalls the checkpoint sequence, and that stall "
+                "is itself the alarm."
+            )
+            t.input("previously signed size", glassbox.Number(last.tree_size, unit="entries"))
+            t.input("previously signed root", glassbox.Digest(last.root_hash))
+            t.input("current size", glassbox.Number(len(leaves), unit="entries"))
+            t.input("current root", glassbox.Digest(merkle_root(leaves).hex()))
+            t.input(
+                "proof",
+                glassbox.Json([h.hex() for h in proof], note=f"{len(proof)} node hashes"),
+            )
+            consistent = verify_consistency(
+                old_size=last.tree_size,
+                old_root=bytes.fromhex(last.root_hash),
+                new_size=len(leaves),
+                new_root=merkle_root(leaves),
+                proof=proof,
+            )
+            t.output("consistent", glassbox.Label(consistent))
+        if not consistent:
             return None  # the signed past is no longer a prefix of the present: do not sign
     return create_checkpoint(commit=commit)
 

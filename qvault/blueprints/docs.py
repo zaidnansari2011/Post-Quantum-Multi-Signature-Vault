@@ -12,9 +12,14 @@ everything else.
 
 from __future__ import annotations
 
-from flask import Blueprint, abort, render_template
+from flask import Blueprint, abort, current_app, render_template
 
 bp = Blueprint("docs", __name__, url_prefix="/docs")
+
+#: Pages that describe a surface which may not exist in this deployment. Listing one when the
+#: thing it documents is switched off sends a reader to a 404 from our own table of contents, so
+#: the gate is applied to the page list rather than only to the feature.
+GATED = {"trace": "GLASSBOX_ENABLED"}
 
 # (slug, title, one-line summary) in reading order.
 PAGES = [
@@ -24,20 +29,27 @@ PAGES = [
     ("verifying", "Verifying a decision yourself", "Exporting a decision and checking it without trusting this server."),
     ("keys", "Keys and custody", "What your signing key is, where it lives, and who can open it."),
     ("algorithms", "Post-quantum algorithms", "The three standards in use, what they cost, and why they can be swapped."),
+    ("trace", "The live trace", "Watching the cryptography run, and checking its values yourself."),
 ]
 
 _TITLES = {slug: title for slug, title, _ in PAGES}
 
 
+def _visible_pages() -> list[tuple[str, str, str]]:
+    return [p for p in PAGES if p[0] not in GATED or current_app.config.get(GATED[p[0]])]
+
+
 @bp.get("/")
 def index():
-    return render_template("docs/index.html", pages=PAGES)
+    return render_template("docs/index.html", pages=_visible_pages())
 
 
 @bp.get("/<slug>")
 def page(slug: str):
     if slug not in _TITLES:
         abort(404)
+    if slug in GATED and not current_app.config.get(GATED[slug]):
+        abort(404)
     return render_template(
-        f"docs/{slug}.html", pages=PAGES, slug=slug, title=_TITLES[slug]
+        f"docs/{slug}.html", pages=_visible_pages(), slug=slug, title=_TITLES[slug]
     )

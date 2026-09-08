@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}Trace · Q-Vault{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Trace</div>
+    <div class="head__sub">
+      Live cryptographic operations. Drive the application in another window.
+    </div>
+  </div>
+  <div class="head__actions">
+    <span class="trace__live" id="live" data-paused="0">
+      <span class="trace__dot"></span><span id="live-text">Live</span>
+    </span>
+    <button class="btn btn--ghost btn--sm" type="button" id="pause">Pause</button>
+    <form method="post" action="{{ url_for('glassbox.clear') }}">
+      {{ clear_form.hidden_tag() }}
+      {{ clear_form.clear(class="btn btn--quiet btn--sm") }}
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# One renderer, not two. The first paint and every subsequent poll go through the same JavaScript
+   over the same JSON, so a server-rendered version cannot drift away from the live one -- which
+   on a page whose whole claim is "what you see is what ran" would be a particularly bad bug. #}
+<script type="application/json" id="seed">{{ initial | tojson }}</script>
+
+<div class="trace" id="stream"></div>
+
+<div class="trace__empty" id="empty">
+  Nothing recorded yet. Sign a decision, upload a file, or rotate a key.
+</div>
+
+<script>
+(function () {
+  var seed = JSON.parse(document.getElementById('seed').textContent);
+  var stream = document.getElementById('stream');
+  var empty = document.getElementById('empty');
+  var cursor = seed.cursor || 0;
+  var nodes = {};          // seq -> the <article> currently on screen
+  var open = {};           // "seq:index" -> is that step expanded
+  var paused = false;
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+
+  function ms(v) { return v === null || v === undefined ? '' : v.toFixed(2) + ' ms'; }
+
+  // --- source highlighting ---------------------------------------------------------------
+  // Escape first, then tokenise the escaped text in ONE pass with an alternation, so a keyword
+  // inside a string or a comment can never be re-highlighted -- the failure mode of the naive
+  // "replace each category in turn" approach, which mangles exactly the docstrings this page
+  // most wants to show.
+  var KEYWORDS = /\b(?:def|class|return|if|elif|else|for|while|try|except|finally|with|as|import|from|raise|not|and|or|in|is|None|True|False|lambda|yield|assert|pass|continue|break|global|nonlocal|await|async|del)\b/;
+  var TOKEN = new RegExp(
+    '("""[\\s\\S]*?"""|\'\'\'[\\s\\S]*?\'\'\')' +      // 1 triple-quoted
+    '|("(?:[^"\\\\\\n]|\\\\.)*"|\'(?:[^\'\\\\\\n]|\\\\.)*\')' +  // 2 single-line string
+    '|(#[^\\n]*)' +                                     // 3 comment
+    '|(' + KEYWORDS.source + ')' +                      // 4 keyword
+    '|(\\b\\d[\\w.]*\\b)',                              // 5 number
+    'g'
+  );
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function highlight(src) {
+    return escapeHtml(src).replace(TOKEN, function (m, tri, str, com, kw, num) {
+      if (tri) return '<span class="s">' + tri + '</span>';
+      if (str) return '<span class="s">' + str + '</span>';
+      if (com) return '<span class="c">' + com + '</span>';
+      if (kw) return '<span class="k">' + kw + '</span>';
+      if (num) return '<span class="n">' + num + '</span>';
+      return m;
+    });
+  }
+
+  function codePanel(src) {
+    var box = el('div', 'code');
+    var head = el('div', 'code__head');
+    head.appendChild(el('b', null, src.path));
+    head.appendChild(el('span', null, 'lines ' + src.first_line + '–' + src.last_line));
+    box.appendChild(head);
+    var pre = el('pre');
+    var code = el('code');
+    // innerHTML is safe here and only here: the argument is the output of highlight(), which
+    // escapes the source before inserting any markup of its own.
+    code.innerHTML = highlight(src.text);
+    pre.appendChild(code);
+    box.appendChild(pre);
+    if (src.truncated) {
+      box.appendChild(el('div', 'code__more', 'Excerpt truncated — see the file for the rest.'));
+    }
+    return box;
+  }
+
+  // --- values ----------------------------------------------------------------------------
+  function valueNode(v) {
+    var wrap = el('div', 'val');
+    var name = el('div', 'val__name');
+    name.appendChild(el('span', null, v.name));
+    if (v.size_bytes !== null && v.size_bytes !== undefined && v.kind !== 'opaque') {
+      name.appendChild(el('span', 'val__size', v.size_bytes.toLocaleString() + ' B'));
+    }
+    wrap.appendChild(name);
+
+    var body = el('div', 'val__body val__body--' + v.kind);
+    body.textContent = v.display + (v.truncated ? '…' : '');
+    wrap.appendChild(body);
+
+    if (v.detail) wrap.appendChild(el('div', 'val__note', v.detail));
+
+    if (v.check) {
+      var d = el('details', 'val__check');
+      d.appendChild(el('summary', null, 'Check this yourself'));
+      d.appendChild(el('pre', null, v.check));
+      wrap.appendChild(d);
+    }
+    return wrap;
+  }
+
+  function valuesPanel(step) {
+    var box = el('div', 'vals');
+    if (step.inputs.length) {
+      box.appendChild(el('div', 'vals__group', 'In'));
+      step.inputs.forEach(function (v) { box.appendChild(valueNode(v)); });
+    }
+    if (step.outputs.length) {
+      box.appendChild(el('div', 'vals__group', 'Out'));
+      step.outputs.forEach(function (v) { box.appendChild(valueNode(v)); });
+    }
+    if (step.error) {
+      var e = el('div', 'val');
+      e.appendChild(el('div', 'val__name', 'Failed'));
+      e.appendChild(el('div', 'val__body', step.error));
+      box.appendChild(e);
+    }
+    return box;
+  }
+
+  function stepNode(op, step) {
+    var key = op.seq + ':' + step.index;
+    var wrap = el('div', 'step');
+
+    var head = el('div', 'step__head');
+    head.appendChild(el('span', 'step__n', String(step.index + 1)));
+    head.appendChild(el('span', 'step__label', step.label));
+    head.appendChild(el('span', 'step__ms', ms(step.duration_ms)));
+    wrap.appendChild(head);
+
+    var body = el('div', 'step__body');
+    if (step.note) body.appendChild(el('p', 'step__note', step.note));
+    if (step.source) body.appendChild(codePanel(step.source));
+    body.appendChild(valuesPanel(step));
+    wrap.appendChild(body);
+
+    // Steps start expanded. This is an instrument for watching, not a log to go digging in --
+    // a page that opens fully collapsed would hide the very thing somebody navigated here for.
+    var isOpen = open[key] !== false;
+    body.hidden = !isOpen;
+    head.addEventListener('click', function () {
+      open[key] = body.hidden;
+      body.hidden = !body.hidden;
+    });
+    return wrap;
+  }
+
+  function opNode(op) {
+    var art = el('article', 'op' + (op.status === 'running' ? ' op--running'
+                                  : op.status === 'failed' ? ' op--failed' : ''));
+    var head = el('div', 'op__head');
+    head.appendChild(el('span', 'op__seq', '#' + op.seq));
+    head.appendChild(el('span', 'op__title', op.title));
+    var sub = [op.actor, op.subject].filter(Boolean).join(' · ');
+    if (sub) head.appendChild(el('span', 'op__sub', sub));
+    head.appendChild(el('span', 'op__ms',
+      op.status === 'running' ? 'running…' : ms(op.duration_ms)));
+    art.appendChild(head);
+    op.steps.forEach(function (s) { art.appendChild(stepNode(op, s)); });
+    return art;
+  }
+
+  function render(operations) {
+    operations.forEach(function (op) {
+      var next = opNode(op);
+      var existing = nodes[op.seq];
+      if (existing) {
+        existing.replaceWith(next);
+      } else {
+        stream.insertBefore(next, stream.firstChild);   // newest at the top
+      }
+      nodes[op.seq] = next;
+    });
+    empty.hidden = stream.children.length > 0;
+  }
+
+  render(seed.operations || []);
+
+  // --- polling ---------------------------------------------------------------------------
+  // 700 ms: fast enough that a step appears while the person who caused it is still looking at
+  // the other window, slow enough to be invisible in the server's own trace.
+  var liveText = document.getElementById('live-text');
+  var live = document.getElementById('live');
+
+  function poll() {
+    if (paused || document.hidden) return;
+    fetch('{{ url_for("glassbox.events") }}?after=' + cursor, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        cursor = data.cursor;
+        render(data.operations);
+        liveText.textContent = 'Live';
+      })
+      .catch(function () { liveText.textContent = 'Reconnecting'; });
+  }
+  setInterval(poll, 700);
+
+  document.getElementById('pause').addEventListener('click', function () {
+    paused = !paused;
+    this.textContent = paused ? 'Resume' : 'Pause';
+    live.setAttribute('data-paused', paused ? '1' : '0');
+    liveText.textContent = paused ? 'Paused' : 'Live';
+    if (!paused) poll();
+  });
+})();
+</script>
+{% endblock %}

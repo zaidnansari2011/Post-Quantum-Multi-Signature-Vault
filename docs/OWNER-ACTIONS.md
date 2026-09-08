@@ -474,6 +474,51 @@ the kind of thing an examiner will probe. Say the word and I'll switch it back.
 
 *Your effort:* one word, in `\projecttitle`.
 
+### 1.4 Decide whether the live trace is on for the demo — `TODO` (added 2026-09-09)
+
+The glass box (`/trace`, ADR-0020) shows real cryptographic values from live operations —
+canonical signing payloads, public keys, signatures, Merkle nodes — with the source that produced
+them. It is **off by default**, administrator-only, and 404s entirely when disabled.
+
+*Why it's yours:* it is an exposure decision, not a technical one. Everything it prints is public
+by construction and the redaction layer withholds every secret (there is a test that takes the
+whole serialised payload after a real vote and searches it for the private key and the password),
+but a page that exists to reveal internals is a judgement call on a deployment that other people
+can reach.
+
+*What I've prepared:* set `GLASSBOX_ENABLED=true` in the Container App's environment to turn it on
+(it is already on in local development). My recommendation: **on for the demo instance**, because
+it is the most persuasive answer to "how do you know it really does that?" — and off again
+afterwards, alongside §2.4.
+
+*Check it works:* sign in as the admin, open `/trace` in a second window, cast a vote in the
+first. You should see one operation and nine steps.
+
+### 4.4 The research paper — venue and submission — `TODO` (added 2026-09-09)
+
+Groundwork is in `docs/paper/research/`. Three things need you:
+
+1. **Choose a target.** My reading of the survey is IACR **ePrint** as a preprint this week (no
+   endorsement needed, free, where PQC people read), then a real venue. Note **arXiv is now a
+   genuine blocker**: since 21 January 2026 a first-time submitter needs prior arXiv authorship or
+   a personal endorsement, so it is not the quick option it used to be.
+2. **Submit under your own name and affiliation.** Author identity, ORCID and institutional
+   details are yours; I cannot create the accounts or agree to the licence terms.
+3. **Check the money before committing to an ACM venue.** ACM went fully open-access on
+   2026-01-01. If your university is not an ACM Open participant, SAC carries a **$500–750** fee.
+   Worth confirming with the department before a deadline forces the question.
+
+*Deadlines found (re-verify before relying on them):* SPACE 2026 cycle 2 — abstract 18 Sep,
+paper 25 Sep 2026. SEC@SAC 2027 — 2 Oct 2026. ACSAC 2026 posters — 19 Sep 2026.
+
+*One thing to be clear about before you write a word:* the SPHINCS+/FIPS-205 incompatibility is
+**already publicly documented** — FIPS 205 Appendix A states it outright, and it is recorded in
+liboqs #1894, PQClean #562 and a Red Hat RHEL 10 advisory. Presenting it as our discovery would be
+a credibility error in the paper and in the viva. What *is* ours is the narrower point: an
+algorithm identifier that names a NIST standard while binding to a pre-standard construction,
+undetectable from key and signature sizes, caught only by cross-implementation verification.
+Sources are in `docs/paper/research/related-work.md`.
+
 ### 4.3 The viva — `TODO`
 
 *Why it's yours:* you're in the room.
@@ -493,3 +538,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-08-06 | §4.2 closed (details supplied and built in); split the title wording out as §4.3. |
 | 2026-08-20 | Pre-demo verification. Added §2.4 (demo-day Azure spend to revert) and §2.5 (publish the witness fingerprint). |
 | 2026-08-21 | §2.5 partly closed: both fingerprints published off-platform; the slide is still yours. |
+| 2026-09-09 | Added §1.4 (turn the live trace on for the demo?) and §4.4 (paper venue + submission). |

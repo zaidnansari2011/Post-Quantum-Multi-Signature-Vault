@@ -23,6 +23,7 @@
   {%- elif name == 'docs' %}<path d="M4 2h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v3h3"/>
   {%- elif name == 'verify' %}<path d="M8 1.8 13 4v4c0 3-2.1 5.3-5 6.2C5.1 13.3 3 11 3 8V4z"/><path d="M5.8 8.2 7.3 9.7l3-3.4"/>
   {%- elif name == 'search' %}<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/>
+  {%- elif name == 'trace' %}<path d="M2 11.5 5 7l2.5 3L10 4.5l4 7"/><circle cx="5" cy="7" r="1"/><circle cx="10" cy="4.5" r="1"/>
   {%- endif %}
 </svg>
 {%- endmacro %}
@@ -73,6 +74,14 @@
          {% if request.blueprint == 'admin' %}aria-current="page"{% endif %}>
         {{ icon('security') }} Security
       </a>
+      {# An instrument, not a feature: offered only where it is switched on, and only to an
+         administrator. See ADR-0020. #}
+      {% if glassbox_enabled %}
+      <a class="side__link" href="{{ url_for('glassbox.index') }}"
+         {% if request.blueprint == 'glassbox' %}aria-current="page"{% endif %}>
+        {{ icon('trace') }} Trace
+      </a>
+      {% endif %}
       {% endif %}
       <a class="side__link" href="{{ url_for('account.index') }}"
          {% if request.blueprint == 'account' %}aria-current="page"{% endif %}>
