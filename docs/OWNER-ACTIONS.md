@@ -177,11 +177,72 @@ or any `plugins`/`android`/`ios`/`icon`/`scheme` value changes — and only then
 and `extra` never need it. ADR-0018 explains why this is a hand-maintained string rather than the
 fingerprint policy.
 
+**`runtimeVersion` is now `"2"` (2026-09-17).** The handset redesign (ADR-0022) added three native
+modules — `react-native-reanimated`, `react-native-gesture-handler`, `expo-haptics` — and
+`@expo/vector-icons` appended `expo-font` to `plugins`. That is exactly the case the rule is for.
+The bump is what stops the new bundle being offered to the 20 Aug APK, which contains none of that
+native code and would crash on launch, in a loop no further update could rescue. **Everything after
+this build is JavaScript and ships over the air** — layout, copy, colour, motion, and any screen
+built against an endpoint that already exists.
+
 **Decided against:** `expo-notifications`. Android push needs `google-services.json` compiled into
 the binary, so adding push later forces a new APK *even if* the module is already bundled —
 including it now buys nothing and puts `POST_NOTIFICATIONS` on a signing app's manifest for a
 feature that does not exist. If you want "a decision is waiting", `refetchInterval` on the inbox
 query does it with zero native surface and ships over the air.
+
+### 2.7 Create the Azure deploy credential for CI — `TODO` (added 2026-09-17) — **one command**
+
+Releasing has been manual since the first deployment, and the evidence that this does not work is
+that on 2026-09-17 production was serving commit `5cb611c` while `main` was six commits ahead: the
+decision-package export, the transparency-log work and the entire adversary lab were built, tested
+and never shipped. `.github/workflows/deploy.yml` now closes that — it waits for a green CI run on
+the same commit, then points the Container App at the freshly built image — but it needs one
+credential that only you can mint.
+
+*Why it's yours:* it creates a service principal under your subscription and stores a secret on
+your GitHub account. Both are your identity, and neither should be held by anyone else.
+
+**Step 1 — mint a scoped service principal.** Scoped to the resource group, not the subscription,
+so a leaked credential cannot touch anything outside `qvault-rg`:
+
+```bash
+az ad sp create-for-rbac \
+  --name "qvault-github-deploy" \
+  --role contributor \
+  --scopes /subscriptions/$(az account show --query id -o tsv)/resourceGroups/qvault-rg \
+  --sdk-auth
+```
+
+It prints a JSON object exactly once. Copy the whole thing, braces included.
+
+**Step 2 — store it as a repository secret** named `AZURE_CREDENTIALS`:
+
+```bash
+gh secret set AZURE_CREDENTIALS --repo zaidnansari2011/Post-Quantum-Multi-Signature-Vault
+```
+
+Paste the JSON when prompted, then press Ctrl+Z and Enter on Windows (Ctrl+D elsewhere). Or use
+GitHub → Settings → Secrets and variables → Actions → New repository secret.
+
+**Step 3 — prove it works** without waiting for a merge. Run the workflow by hand against a commit
+already built and in GHCR:
+
+```bash
+gh workflow run deploy.yml -f sha=<the commit sha>
+gh run watch
+```
+
+A green run means merged-to-main now means deployed, and §2.4's manual `az containerapp update`
+stops being something anybody has to remember.
+
+*What I've prepared:* the workflow, the CI gate that refuses to deploy a commit whose tests did not
+pass, and the health check that waits for the new revision to actually reach `Running` rather than
+reporting success the moment Azure accepts the request.
+
+*One thing to know:* the credential expires. `create-for-rbac` issues a one-year secret by default,
+so this will need redoing around September 2027 — the failure mode is a red deploy job with an
+authentication error, not a silent one.
 
 ### 2.4 Post-demo: turn the demo-day Azure spend back down — `TODO` (added 2026-08-20)
 
@@ -422,8 +483,28 @@ works without an Apple Developer account**. For an installable Android APK later
 `eas build -p android`.
 
 Worth doing on the demo itself: have one person approve in the app and another approve in the web
-UI on the same decision. The decision screen shows a `device key` / `server key` chip per vote, so
-both custody models appear side by side on one record.
+UI on the same decision. The decision screen names the custody of every vote — "key held on their
+device" against "key held on the server" — so both models appear side by side on one record.
+
+**Added 2026-09-17, after the redesign (ADR-0022).** The app was rebuilt for an approver rather
+than ported from the console, so there is now a second kind of check to make, and it is the kind
+only you can make: **does it feel like a product a senior person would actually use.** Specific
+things to look at, because each was a deliberate call I could have got wrong:
+
+1. **The queue.** Sorted by deadline, not recency. Headline is a sentence ("Three decisions need
+   you"), not a counter. Is the urgency colouring right — only the under-six-hours band is red?
+2. **The quorum marks.** A decision's progress is drawn as filled/empty marks rather than written
+   as `2/3`. Does that read instantly, or does it need a number after all?
+3. **The seal.** Approve something that completes a threshold and watch the last mark close. It is
+   the one animation in the product and it fires only when *your* signature completed it. It should
+   feel like a thing being set, not like a notification.
+4. **The confirm sheet.** Approving now restates the decision verbatim before the biometric prompt.
+   Is that one tap too many, or does it feel proportionate to something irreversible?
+5. **The assurance line.** All the cryptography collapsed to "Verified on this device" with the
+   detail one tap away. Tap it. Then decide whether the collapsed form is still enough for a viva
+   audience, or whether the demo wants it expanded by default.
+
+If any of those is wrong it is a JavaScript change and ships over the air — no new APK.
 
 ## 4. Submission and delivery
 
@@ -493,6 +574,35 @@ afterwards, alongside §2.4.
 
 *Check it works:* sign in as the admin, open `/trace` in a second window, cast a vote in the
 first. You should see one operation and nine steps.
+
+### 1.5 Decide whether the adversary lab is on for the demo — `TODO` (added 2026-09-12)
+
+The adversary lab (`/admin/attack`, ADR-0021) runs ten attacks against the system and against
+controls, and it is the answer to *"you showed me it works, show me it is hard to break."* Like the
+trace it is **off by default**, administrator-only, and 404s when disabled.
+
+*Why it's yours:* the same exposure judgement as §1.4, plus one more consideration. The page
+publishes, in public, the exact mechanism that defeats each attack and the exact control under which
+each attack succeeds. I consider that a feature — it is what makes the claims checkable — but on a
+deployment other people can reach it is your call, not mine.
+
+*What I've prepared:* set `ATTACK_LAB_ENABLED=true` in the Container App's environment (already on
+in local development). My recommendation: **on for the demo instance**, then off with §2.4. One
+thing to know: the in-request run executes only the algorithm-level attacks, which need no
+database. The database-backed ones forge signature rows and edit ledger entries, so they run only
+in `scripts/run_attack_lab.py` against a throwaway in-memory application — the page reports those
+from the committed `docs/attack-lab/latest.json` and says so on screen. There is a test that fails
+if that ever changes, and it checks the data rather than the configuration.
+
+*Check it works:* sign in as the admin, open `/admin/attack`, press "Run the algorithm attacks
+now". You should get six live attacks, all "as expected", in roughly fifteen seconds, and the
+recorded run below it showing all ten.
+
+*One thing to say out loud in the demo,* because it is the honest framing and it is better coming
+from you than from a question: the Shor demonstration factors a **9-bit** modulus, not 2048. The
+algorithm is the real one and runs to completion; the parameter is scaled because simulating the
+quantum register costs O(2^t). The claim is "the algorithm that breaks RSA runs here and its cost is
+polynomial", never "we broke RSA-2048".
 
 ### 4.4 The research paper — venue and submission — `TODO` (added 2026-09-09)
 
