@@ -2,9 +2,19 @@ name: CI
 
 # Lint, test and prove the crypto core actually runs — on Windows (the development machine) and
 # on Linux, because "it works on my laptop" is not a claim a security project should rest on.
+#
+# EVERY BRANCH, not just main. This used to read `branches: [main]`, which meant that in the two
+# months this project spent on `phase2-mobile-app` — the device API, the transparency log, the
+# glass-box trace and the entire adversary lab — CI ran exactly zero times. The image build ran on
+# every branch and is silent about tests, so a green tick appeared on each push while nothing was
+# being checked at all. `black` drifted a major version behind the code in that window and nobody
+# found out.
+#
+# The cost of running the suite on a feature branch is a few minutes of a free runner. The cost of
+# not running it is discovering two months of drift in the pull request that was supposed to ship.
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 

@@ -1,0 +1,128 @@
+name: Deploy to Azure
+
+# The missing last mile.
+#
+# Until this existed, `build-image.yml` pushed an image to GHCR and nothing told Azure to run it,
+# so releasing meant remembering to type `az containerapp update` by hand. It was not remembered:
+# on 2026-09-17 production was serving `5cb611c`, six commits behind main, with the transparency
+# log and the whole adversary lab built, tested and undeployed. A release step that depends on
+# someone remembering is a release step that silently stops happening.
+#
+# WHY `workflow_run` RATHER THAN `push`. The image has to exist before anything can deploy it, and
+# only the build workflow knows when that is true. Triggering on push would race the build and
+# usually lose.
+#
+# WHY THE TEST GATE IS EXPLICIT. `build-image.yml` does not run the suite -- it only proves the
+# image assembles and that the PQC backend imports inside it. Deploying on a green *build* would
+# therefore ship code no test had run against. The gate below waits for the CI workflow to reach a
+# conclusion for the same commit and refuses to deploy unless it succeeded. It is deliberately a
+# hard failure rather than a skip: a deployment that quietly does not happen is the problem this
+# file exists to fix.
+
+on:
+  workflow_run:
+    workflows: ["Build container image"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to deploy (must already be built and pushed to GHCR)"
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  APP_NAME: qvault
+  RESOURCE_GROUP: qvault-rg
+  IMAGE_REPO: ghcr.io/zaidnansari2011/post-quantum-multi-signature-vault
+
+jobs:
+  deploy:
+    name: Release to Container Apps
+    runs-on: ubuntu-24.04
+    # A failed or cancelled build has nothing worth deploying.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Resolve the commit being deployed
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "sha=${{ inputs.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require a green CI run for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          # CI and the image build start together, and the suite is much the slower of the two, so
+          # the build finishing tells us nothing about the tests yet. Poll until CI reaches a
+          # conclusion for this exact commit.
+          for attempt in $(seq 1 60); do
+            conclusion=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0].conclusion // "pending"')
+            case "$conclusion" in
+              success)
+                echo "CI passed for $SHA."
+                exit 0 ;;
+              pending|null|"")
+                echo "attempt $attempt: CI has not concluded yet, waiting..."
+                sleep 20 ;;
+              *)
+                echo "::error::CI concluded '$conclusion' for $SHA. Refusing to deploy."
+                exit 1 ;;
+            esac
+          done
+          echo "::error::Timed out waiting for CI on $SHA. Refusing to deploy."
+          exit 1
+
+      - name: Sign in to Azure
+        # Created by the repository owner; see docs/OWNER-ACTIONS.md section 2.7 for the exact
+        # command that mints it and the scope it is limited to.
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Point the Container App at the new image
+        run: |
+          az containerapp update \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE_REPO:${{ steps.target.outputs.sha }}"
+
+      - name: Wait for the new revision to become healthy
+        run: |
+          # `az containerapp update` returns as soon as the revision is created, not when it is
+          # serving. Reporting success at that point would mark a failed rollout green.
+          for attempt in $(seq 1 30); do
+            state=$(az containerapp revision list \
+              --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
+              --query "sort_by([?properties.active], &properties.createdTime)[-1].properties.runningState" -o tsv)
+            echo "attempt $attempt: revision state = $state"
+            if [ "$state" = "Running" ]; then
+              echo "Deployed ${{ steps.target.outputs.sha }}."
+              exit 0
+            fi
+            if [ "$state" = "Failed" ] || [ "$state" = "Degraded" ]; then
+              echo "::error::The new revision reported '$state'."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::The new revision never reached Running."
+          exit 1
+
+      - name: Report
+        run: |
+          echo "### Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$IMAGE_REPO:${{ steps.target.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
