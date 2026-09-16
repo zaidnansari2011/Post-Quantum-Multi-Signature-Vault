@@ -16,6 +16,7 @@ from flask_login import current_user
 from qvault.extensions import db
 from qvault.forms import (
     ExpireKeysForm,
+    RunAttackLabForm,
     RunBenchmarkForm,
     RunMaintenanceForm,
     SwitchAlgorithmForm,
@@ -275,3 +276,83 @@ def run_maintenance():
         "success",
     )
     return redirect(url_for("admin.rotation"))
+
+
+# --- the adversary lab (ADR-0021) ----------------------------------------------------------------
+
+
+def _stored_attack_report() -> dict | None:
+    """Load the committed adversary-lab report, or None if it is missing or malformed.
+
+    Same discipline as ``_stored_report``: the file is ordinary user-writable data, so a truncated
+    or hand-edited one must produce the empty state rather than a 500.
+    """
+    from qvault.attack import report as attack_report
+
+    path = pathlib.Path(current_app.config["ATTACK_REPORT_PATH"])
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if attack_report.is_renderable(data) else None
+
+
+def _require_attack_lab() -> None:
+    """404 when the lab is disabled, matching the glassbox route's posture.
+
+    404 rather than 403: whether this instance exposes an attack lab is not information a visitor
+    needs, and a 403 confirms the route exists.
+    """
+    if not current_app.config.get("ATTACK_LAB_ENABLED"):
+        abort(404)
+
+
+@bp.get("/attack")
+@admin_required
+def attack_lab():
+    _require_attack_lab()
+    return render_template(
+        "admin/attack.html",
+        stored=_stored_attack_report(),
+        live=None,
+        form=RunAttackLabForm(),
+    )
+
+
+@bp.post("/attack/run")
+@admin_required
+def run_attack_lab():
+    """Re-run the algorithm-level attacks inside the request.
+
+    **Only** the algorithm-level ones. The database-backed attacks forge signature rows and edit
+    ledger entries; running them here would corrupt the live database to prove a point about not
+    corrupting the live database. They come from the committed report instead, and the template
+    labels which is which — a run that quietly attacked real data would be exactly the kind of
+    demonstration aid ADR-0011 forbids.
+    """
+    from qvault.attack import lab as attack_lab_module
+
+    _require_attack_lab()
+    if not RunAttackLabForm().validate_on_submit():
+        flash("Could not start the attack lab.", "danger")
+        return redirect(url_for("admin.attack_lab"))
+
+    live = attack_lab_module.run(
+        include_system=False, backend=current_app.extensions["crypto"].backend
+    )
+    breached = live["summary"]["breached"] + live["summary"]["vacuous"] + live["summary"]["error"]
+    if breached:
+        flash(
+            f"{breached} attack(s) did not behave as expected — see the detail below. "
+            "This is a finding, not a display problem.",
+            "danger",
+        )
+    else:
+        flash(
+            f"{live['summary']['as_expected']} of {live['summary']['total']} attacks behaved as "
+            "expected, each confirmed by its control.",
+            "success",
+        )
+    return render_template(
+        "admin/attack.html", stored=_stored_attack_report(), live=live, form=RunAttackLabForm()
+    )

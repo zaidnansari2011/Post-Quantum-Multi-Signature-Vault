@@ -1,0 +1,646 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-09-12T18:21:50+00:00",
+  "machine": {
+    "python": "3.13.5",
+    "platform": "Windows-11-10.0.26100-SP0",
+    "processor": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD"
+  },
+  "backend": "quantcrypt",
+  "summary": {
+    "total": 10,
+    "as_expected": 10,
+    "breached": 0,
+    "vacuous": 0,
+    "error": 0,
+    "all_clear": true
+  },
+  "cost": {
+    "rsa_2048": {
+      "classical": {
+        "bits": 2048,
+        "anchor": "RSA-250 (829 bits, 2700 core-years, 2020)",
+        "gnfs_ratio_to_anchor": 233007987032.17957,
+        "core_years": 629121564986884.9,
+        "core_years_human": "6.3e14",
+        "times_age_of_universe": 45588.51920194818,
+        "with_one_million_cores_years": 629121564.9868848,
+        "assumptions": [
+          "GNFS asymptotics govern the ratio between the anchor and the target size",
+          "no algorithmic improvement between now and the attempt",
+          "the anchor's core-years transfer to other hardware unchanged"
+        ]
+      },
+      "quantum": {
+        "bits": 2048,
+        "logical_qubits": 4099,
+        "toffoli_gates_order": 8589934592.0,
+        "scaling": "polynomial - O(n^3) gates, O(n) logical qubits",
+        "source": "Beauregard, quant-ph/0205095 (logical); Gidney & Ekera (physical)",
+        "physical_estimates": [
+          {
+            "year": 2019,
+            "source": "Gidney & Ekera, arXiv:1905.09749",
+            "physical_qubits": 20000000,
+            "wall_clock": "8 hours"
+          },
+          {
+            "year": 2025,
+            "source": "Gidney, arXiv:2505.15917",
+            "physical_qubits": 1000000,
+            "wall_clock": "under 1 week"
+          }
+        ]
+      },
+      "headline": "Classically 6.3e14 core-years (45589x the age of the universe on one core). Quantumly, under 1 week on 1,000,000 noisy qubits (Gidney, arXiv:2505.15917)."
+    },
+    "ecdsa_p256": {
+      "curve": "P-256",
+      "group_bits": 256,
+      "classical_group_operations_log2": 128.0,
+      "classical_method": "Pollard's rho on the curve group - no sub-exponential attack known",
+      "quantum_logical_qubits": 1536,
+      "quantum_scaling": "polynomial - Shor's discrete-log variant, O(n^3) gates",
+      "note": "P-256 is a smaller quantum target than RSA-2048: fewer logical qubits, fewer gates. Compact classical keys buy no quantum margin."
+    },
+    "regulatory": {
+      "deprecated_after": 2030,
+      "disallowed_after": 2035,
+      "source": "NIST IR 8547 ipd, Table 3, p20",
+      "note": "The migration deadline is a published date, not a forecast of when a quantum computer arrives. It binds regardless of whether the machine is late."
+    }
+  },
+  "attacks": [
+    {
+      "id": "shor-key-recovery",
+      "title": "Recover a signing key by factoring, then forge an approval",
+      "question": "Can you actually break RSA, or are you just citing a paper?",
+      "capability": "The victim's public key. Nothing else - no secret, no side channel.",
+      "goal": "Forge an approval that the real verifier accepts",
+      "defence": "None available to RSA. Key recovery defeats every padding scheme.",
+      "defence_ref": "qvault/attack/shor.py",
+      "control_note": "the identical pipeline pointed at ML-DSA-65",
+      "kind": "contrast",
+      "standard": "Shor 1994; Gidney 2025 (arXiv:2505.15917) for the 2048-bit estimate",
+      "status": "as-expected",
+      "headline": "Succeeded against the classical algorithm; no traction post-quantum",
+      "elapsed_ms": 1845.67,
+      "real": {
+        "verdict": "succeeded",
+        "note": "The victim's key is a scale model; the attack is not. Key recovery defeats any padding, so the textbook signing in toy_rsa.py is not what lost.",
+        "steps": [
+          {
+            "label": "Victim publishes a signing key",
+            "detail": "RSA at a scaled 9-bit modulus (see toy_rsa.py for exactly how this differs from RSA-2048)",
+            "value": "n=437, e=17"
+          },
+          {
+            "label": "Attacker's starting knowledge",
+            "detail": "the public key, and nothing else - no secret, no side channel, no implementation flaw",
+            "value": "n=437, e=17"
+          },
+          {
+            "label": "Quantum order-finding",
+            "detail": "statevector simulation over a 18-qubit control register; the textbook circuit for this modulus needs 27 qubits in total",
+            "value": "262,144 amplitudes held, measured k=26479, phase=26479/262144, order r=198 in 1 shot(s)"
+          },
+          {
+            "label": "Modulus factored",
+            "detail": "1 order-finding round(s), 748 ms on this CPU",
+            "value": "437 = 23 x 19"
+          },
+          {
+            "label": "Private exponent recovered",
+            "detail": "a single modular inverse once the factors are known - no brute force, and nothing the key owner can do about it",
+            "value": "d=35"
+          },
+          {
+            "label": "Forged approval submitted to the real verifier",
+            "detail": "the canonical vote payload for decision='approve' by signer 7, signed with the recovered key",
+            "value": "verify() returned True"
+          },
+          {
+            "label": "What this does and does not show",
+            "detail": "the algorithm ran to completion at a scaled parameter. At 2048 bits the same algorithm needs 4,099 logical qubits and cubic gate count, against 6.3e14 core-years classically",
+            "value": "2.3e+11x the work of RSA-250, the largest modulus ever factored"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "blocked",
+        "note": "This is the state of public knowledge, not a proof. No lower bound on quantum lattice algorithms is known, which is exactly why the project also demonstrates agility: the response to a break is to switch algorithms, not to have bet correctly.",
+        "steps": [
+          {
+            "label": "Victim publishes a signing key",
+            "detail": "ML-DSA-65, FIPS 204 - the project's default",
+            "value": "public key 1952 bytes"
+          },
+          {
+            "label": "Step 1 of the pipeline: obtain a modulus to factor",
+            "detail": "an ML-DSA public key is (rho, t1): a 32-byte seed and a vector of packed polynomial coefficients. There is no integer modulus, no group element, and no order to find",
+            "value": "no input available"
+          },
+          {
+            "label": "Why the attack has no formulation rather than merely failing",
+            "detail": "The ML-DSA secret is a pair of short vectors over a polynomial ring, and recovering it is a Module-LWE problem. There is no group element whose order encodes it, so there is no period for phase estimation to find. Shor's algorithm does not fail against ML-DSA; it has no input to be given.",
+            "value": "3 preconditions required, 0 present"
+          },
+          {
+            "label": "Fallback: blind forgery, the best attack actually available",
+            "detail": "2,000 random signatures of the correct length submitted to the real verifier. The signature space is 2^26472, so the expected number of successes is 2000 / 2^26472",
+            "value": "0 accepted"
+          },
+          {
+            "label": "Best known quantum improvement",
+            "detail": "Grover-accelerated lattice sieving \u2014 sub-quadratic at best, leaving the cost exponential in the lattice dimension. This is the reason NIST's categories are expressed against both classical and quantum attack cost.",
+            "value": "still exponential"
+          }
+        ]
+      }
+    },
+    {
+      "id": "harvest-now-decrypt-later",
+      "title": "Record an encrypted file now, decrypt it after the quantum computer arrives",
+      "question": "Why migrate today if no quantum computer exists today?",
+      "capability": "A recorded copy of the wrapped key and the ciphertext - a stolen backup.",
+      "goal": "Read a file that was encrypted years before the attack",
+      "defence": "ML-KEM-768 wrapping: the recording gives the attacker no factoring target.",
+      "defence_ref": "qvault/crypto/providers/quantcrypt_kem.py",
+      "control_note": "the identical capture wrapped with ML-KEM-768 instead of RSA",
+      "kind": "contrast",
+      "standard": "NIST IR 8547 ipd - the migration timeline this threat drives",
+      "status": "as-expected",
+      "headline": "Succeeded against the classical algorithm; no traction post-quantum",
+      "elapsed_ms": 1580.32,
+      "real": {
+        "verdict": "succeeded",
+        "note": "This is why confidentiality cannot wait for a quantum computer to appear. A signature forged in 2035 is an attack on 2035; a file recorded in 2026 is an attack on 2026, carried out later.",
+        "steps": [
+          {
+            "label": "2026: attacker records the traffic",
+            "detail": "public key, RSA-wrapped data-encryption key, and the AES-256-GCM blob. The AES layer is at full strength and is never attacked",
+            "value": "n=403, wrapped DEK 2 B (scaled modulus; RSA-2048 would be 256 B), ciphertext 128 B"
+          },
+          {
+            "label": "2026: attacker tries to read it",
+            "detail": "AES-256-GCM with an unknown key - nothing to do but store the capture and wait",
+            "value": "no plaintext"
+          },
+          {
+            "label": "Years later: a quantum computer exists",
+            "detail": "the recorded capture is still valid. Rotating the key in the meantime would not have helped - the ciphertext was already taken",
+            "value": "403 = 31 x 13, d=53"
+          },
+          {
+            "label": "Data-encryption key unwrapped, file decrypted",
+            "detail": "the AES-256-GCM tag verifies, because this is the genuine key",
+            "value": "112 bytes recovered: 'BOARD MINUTES - CONFIDENTIAL'"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "blocked",
+        "note": "The capture stays a capture. Note what is *not* claimed: ML-KEM is not proven unbreakable, only that no published attack applies. The system's answer to that residual risk is agility - the ability to change algorithm without losing the data.",
+        "steps": [
+          {
+            "label": "2026: attacker records the traffic",
+            "detail": "the identical capture - public key, wrapped data-encryption key, AES-256-GCM blob",
+            "value": "public key 1184 B, wrapped DEK 1088 B"
+          },
+          {
+            "label": "Attempt the pipeline that worked against RSA",
+            "detail": "step 1 needs an integer modulus to factor. An ML-KEM public key is a seed plus packed polynomial coefficients over a module lattice; there is nothing to factor",
+            "value": "no input available"
+          },
+          {
+            "label": "Fallback: guess the 256-bit data-encryption key",
+            "detail": "the AES-256-GCM authentication tag rejects a wrong key. The search space is 2^256, and Grover's algorithm reduces that to about 2^128 operations - still out of reach, and the reason ML-KEM-768 targets NIST category 3",
+            "value": "1 attempt, accepted=False"
+          }
+        ]
+      }
+    },
+    {
+      "id": "signature-bit-flip",
+      "title": "Alter an approved decision by one bit",
+      "question": "What happens if someone edits a signed approval?",
+      "capability": "Write access to the signature bytes in transit or at rest.",
+      "goal": "Have a modified approval accepted as genuine",
+      "defence": "ML-DSA verification over the exact canonical bytes (ADR-0010).",
+      "defence_ref": "qvault/crypto/providers/quantcrypt_signature.py",
+      "control_note": "the verifier reduced to a signature-length check",
+      "kind": "defence",
+      "standard": "FIPS 204",
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 7.88,
+      "real": {
+        "verdict": "blocked",
+        "note": null,
+        "steps": [
+          {
+            "label": "Genuine approval signed",
+            "detail": "ML-DSA-65 over the canonical vote payload",
+            "value": "signature 3309 bytes, sha256 00fd9da6d0b749a8f3a4dd829bad151d"
+          },
+          {
+            "label": "One bit flipped",
+            "detail": "the least significant bit of byte 0 - the smallest possible change",
+            "value": "sha256 80d7e2e4f061d904c4154246600eafe7"
+          },
+          {
+            "label": "Submitted to the real verifier",
+            "detail": "",
+            "value": "verify() returned False"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Verifier replaced with a length check",
+            "detail": "accept any 3309-byte blob - the 'signature as opaque token' mistake",
+            "value": "accepted=True"
+          }
+        ]
+      }
+    },
+    {
+      "id": "algorithm-confusion",
+      "title": "Forge under an algorithm you control, then name it in the request",
+      "question": "Your system supports several algorithms - can I pick the weak one?",
+      "capability": "Full control of the submitted artefact, including its algorithm label.",
+      "goal": "Have the system verify a forgery under an attacker-chosen algorithm",
+      "defence": "alg_id, backend and public_key are pinned to the signer's Key row (ADR-0001).",
+      "defence_ref": "qvault/models/signature.py",
+      "control_note": "the verifier resolving alg_id from the attacker's own claim",
+      "kind": "defence",
+      "standard": "the JWT 'alg' confusion class (CVE-2015-9235 and successors)",
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 2.37,
+      "real": {
+        "verdict": "blocked",
+        "note": null,
+        "steps": [
+          {
+            "label": "Victim's registered key",
+            "detail": "alg_id and public key are pinned to the signer's Key row at the moment of signing",
+            "value": "pinned alg_id=ML-DSA-65"
+          },
+          {
+            "label": "Attacker forges under an algorithm they own",
+            "detail": "a valid RSA-TOY-9 signature over the identical payload, made with a key they generated themselves",
+            "value": "claimed alg_id=RSA-TOY-9, signature 2 bytes"
+          },
+          {
+            "label": "Verification resolves the provider from the PINNED alg_id",
+            "detail": "the attacker's claim is never consulted, so the forgery is checked as ML-DSA against the victim's real public key",
+            "value": "verify() returned False"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Verifier resolves alg_id from the submitted artefact",
+            "detail": "the attacker names the algorithm and supplies the matching public key - the same shape as JWT alg confusion",
+            "value": "accepted=True under RSA-TOY-9"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cross-context-replay",
+      "title": "Reuse one genuine approval somewhere it was never given",
+      "question": "Could an approval of one thing be replayed as approval of another?",
+      "capability": "A copy of one valid signature - no key, no forgery needed.",
+      "goal": "Make a genuine signature authorise a different decision, proposal or signer",
+      "defence": "Domain-separated canonical payloads: DS_VOTE binds every deciding field.",
+      "defence_ref": "qvault/services/signing.py",
+      "control_note": "a payload that signs only the decision word",
+      "kind": "defence",
+      "standard": "domain separation, NIST SP 800-185",
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 10.06,
+      "real": {
+        "verdict": "blocked",
+        "note": "Every field the decision depends on is inside the signed bytes, behind the DS_VOTE domain tag, so there is no context the signature can be moved to.",
+        "steps": [
+          {
+            "label": "One genuine approval, signed once",
+            "detail": "decision=approve on proposal A by signer 7",
+            "value": "signature sha256 9358d13ef15bf6048542f1e523beb992"
+          },
+          {
+            "label": "Replay: flip the decision to reject",
+            "detail": "the same signature bytes, presented against a different canonical payload",
+            "value": "verify() returned False"
+          },
+          {
+            "label": "Replay: move the vote to another proposal",
+            "detail": "the same signature bytes, presented against a different canonical payload",
+            "value": "verify() returned False"
+          },
+          {
+            "label": "Replay: attribute the vote to another signer",
+            "detail": "the same signature bytes, presented against a different canonical payload",
+            "value": "verify() returned False"
+          },
+          {
+            "label": "Replay: reuse it to enrol an attacker-controlled device",
+            "detail": "the same signature bytes, presented against a different canonical payload",
+            "value": "verify() returned False"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Weakened payload: the decision word alone",
+            "detail": "no domain separation, no proposal binding, no signer binding",
+            "value": "signed bytes = b'approve'"
+          },
+          {
+            "label": "Replay onto any other proposal",
+            "detail": "the bytes carry nothing that identifies which proposal was approved, so the same signature is a valid approval of every proposal in the system",
+            "value": "accepted=True"
+          }
+        ]
+      }
+    },
+    {
+      "id": "offline-password-guessing",
+      "title": "Guess passwords offline against a stolen database",
+      "question": "If the database leaks, how long do the signing keys last?",
+      "capability": "The entire database: salts, wrapped private keys, everything but passwords.",
+      "goal": "Recover a password and unwrap the signing key it protects",
+      "defence": "Argon2id at memory-hard parameters, with a unique salt per user.",
+      "defence_ref": "qvault/crypto/kdf.py",
+      "control_note": "the password store weakened to a single unsalted SHA-256",
+      "kind": "defence",
+      "standard": "OWASP password storage; RFC 9106 (Argon2)",
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 2060.43,
+      "real": {
+        "verdict": "blocked",
+        "note": null,
+        "steps": [
+          {
+            "label": "Stolen database",
+            "detail": "Argon2id at the application's parameters: t=3, m=64 MiB, p=4",
+            "value": "salt 16 bytes, 400 candidate passwords"
+          },
+          {
+            "label": "Dictionary attack, 2-second budget",
+            "detail": "each guess must pay the full Argon2id cost; there is no shortcut and no precomputation, because the salt is unique per user",
+            "value": "40 of 400 candidates tried, 19.9 guesses/sec"
+          },
+          {
+            "label": "Extrapolated cost",
+            "detail": "at the measured rate, an eight-character lowercase-alphanumeric space (36^8) would take 4,502 years of one machine's time",
+            "value": "19.9 guesses/sec"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Password store weakened to one SHA-256 pass",
+            "detail": "no salt, no iteration count - a design still found in production systems",
+            "value": "400 candidates in 0.48 ms (839,278 guesses/sec)"
+          },
+          {
+            "label": "Result",
+            "detail": "the same dictionary, the same machine, the same budget",
+            "value": "recovered 'correct-horse-battery-staple'"
+          }
+        ]
+      }
+    },
+    {
+      "id": "forged-vote-row",
+      "title": "Manufacture an approval by writing straight to the database",
+      "question": "What if someone gets into your database?",
+      "capability": "Direct SQL write access. No password, no session, no route involved.",
+      "goal": "Reach the M-of-N threshold with an approval nobody gave",
+      "defence": "tally() counts only signatures that currently verify.",
+      "defence_ref": "qvault/services/approval_service.py",
+      "control_note": "a tally that counts the decision column instead of verifying",
+      "kind": "defence",
+      "standard": null,
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 798.02,
+      "real": {
+        "verdict": "blocked",
+        "note": "The attacker can write whatever they like into the signatures table. They cannot make it verify, and only verification counts.",
+        "steps": [
+          {
+            "label": "Starting state",
+            "detail": "one genuine rejection; the proposal needs 2 approvals of 3 signers",
+            "value": "tally approvals=0 rejections=1"
+          },
+          {
+            "label": "Attacker writes an approval row directly",
+            "detail": "a real signature blob, copied from the genuine rejection, relabelled as an approval and attributed to a different signer",
+            "value": "row id=2, decision=approve, signer_id=2"
+          },
+          {
+            "label": "The database now contains the approval",
+            "detail": "counting rows would report it",
+            "value": "1 row(s) with decision=approve"
+          },
+          {
+            "label": "The tally verifies instead of counting",
+            "detail": "approval_service.tally re-verifies every signature against the proposal's canonical payload, so a row whose signature does not verify contributes nothing",
+            "value": "tally approvals=0 rejections=1"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": "Two inserted rows, no valid signatures, and the proposal is approved.",
+        "steps": [
+          {
+            "label": "Tally weakened to counting the decision column",
+            "detail": "the shape almost every approval workflow uses: trust the row, the signature is decoration",
+            "value": "approvals 0 -> 2, threshold is 2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "post-freeze-signer",
+      "title": "Join the signer list after the vote opened, then vote",
+      "question": "Can the membership be changed to change the outcome?",
+      "capability": "Permission to administer vault membership.",
+      "goal": "Vote on a proposal that opened before the attacker was authorised",
+      "defence": "The proposal freezes its authorised-signer set at creation.",
+      "defence_ref": "qvault/models/proposal.py",
+      "control_note": "authorisation checked against live membership rather than the snapshot",
+      "kind": "defence",
+      "standard": null,
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 635.69,
+      "real": {
+        "verdict": "blocked",
+        "note": "Membership may change; who could decide *this* proposal may not. The snapshot is what makes the second sentence true.",
+        "steps": [
+          {
+            "label": "Proposal opens and freezes its signer list",
+            "detail": "the set of authorised signers is captured on the proposal row at creation",
+            "value": "snapshot = [7, 8]"
+          },
+          {
+            "label": "Attacker is added to the vault afterwards",
+            "detail": "through the real membership service - this part succeeds, and should: vault membership is allowed to change",
+            "value": "intruder id=9 is now a vault member"
+          },
+          {
+            "label": "Attacker votes on the already-open proposal",
+            "detail": "the vote is checked against the frozen snapshot, not the live membership",
+            "value": "accepted=False (ApprovalError: You are not an authorised signer for this proposal.)"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Authorisation weakened to 'is a current vault member'",
+            "detail": "the natural implementation, and the one that loses: it answers a question about now, when the question is about when the proposal opened",
+            "value": "live members [10, 11, 12] vs frozen snapshot [10, 11]"
+          },
+          {
+            "label": "Attacker's vote under the weakened check",
+            "detail": "they joined after the freeze, so only the live check lets them in",
+            "value": "accepted=True"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ledger-edit",
+      "title": "Edit the audit trail to hide what happened",
+      "question": "The log is in the same database - why would I believe it?",
+      "capability": "Direct SQL write access to the ledger table.",
+      "goal": "Change a recorded event and leave the log self-consistent",
+      "defence": "Hash-chained entries: each commits to its predecessor's digest.",
+      "defence_ref": "qvault/services/ledger_service.py",
+      "control_note": "an append-only audit table with no hash chaining",
+      "kind": "defence",
+      "standard": null,
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 550.48,
+      "real": {
+        "verdict": "blocked",
+        "note": "Detection, not prevention. A database writer can always change a row; what they cannot do is leave the chain consistent afterwards.",
+        "steps": [
+          {
+            "label": "Audit trail before the attack",
+            "detail": "a hash chain: each entry commits to the previous entry's digest, and the head is signed by the SYSTEM anchor key",
+            "value": "37 entries, chain_ok=True, anchor_ok=True, overall ok=True"
+          },
+          {
+            "label": "Attacker edits a committed entry",
+            "detail": "entry seq=36, payload_json replaced by direct database write and confirmed re-read from the database",
+            "value": "payload sha256 ee3d7d34a7b1b42c -> 38dfe37a585a7144"
+          },
+          {
+            "label": "Chain re-verified",
+            "detail": "the edited entry's digest no longer matches the one its successor commits to, so the walk stops at the tampered row",
+            "value": "chain_ok=False, first break at seq=36, overall ok=False"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Integrity check weakened to 'the rows are all there, in order'",
+            "detail": "what a timestamped audit table actually guarantees: that nothing was deleted, not that nothing was changed",
+            "value": "before=True, after=True"
+          },
+          {
+            "label": "Result",
+            "detail": "the entry now says something it never said, and the log agrees with itself",
+            "value": "undetected=True"
+          }
+        ]
+      }
+    },
+    {
+      "id": "file-tamper",
+      "title": "Alter a stored file without the key",
+      "question": "Encryption hides the file - but can someone change it?",
+      "capability": "Write access to the encrypted blob at rest.",
+      "goal": "Change the contents of an encrypted attachment undetected",
+      "defence": "AES-256-GCM: the authentication tag covers the ciphertext.",
+      "defence_ref": "qvault/crypto/symmetric.py",
+      "control_note": "AES-256-CTR, i.e. encryption without authentication",
+      "kind": "defence",
+      "standard": null,
+      "status": "as-expected",
+      "headline": "Blocked \u2014 and the control confirms the named mechanism is what blocked it",
+      "elapsed_ms": 0.57,
+      "real": {
+        "verdict": "blocked",
+        "note": "The tag makes the file tamper-evident, not merely unreadable: the difference between 'nobody can read this' and 'nobody can change this without being caught'.",
+        "steps": [
+          {
+            "label": "File encrypted at rest",
+            "detail": "AES-256-GCM, the key wrapped under the vault's ML-KEM keypair",
+            "value": "68 B plaintext -> 84 B ciphertext+tag"
+          },
+          {
+            "label": "Attacker flips one bit of the stored ciphertext",
+            "detail": "no key required; this is a write to the blob on disk",
+            "value": "byte 8: 0x2e -> 0x6e"
+          },
+          {
+            "label": "Download attempted",
+            "detail": "GCM recomputes the authentication tag over the ciphertext it was given",
+            "value": "decrypt raised InvalidTag"
+          }
+        ]
+      },
+      "control": {
+        "verdict": "succeeded",
+        "note": null,
+        "steps": [
+          {
+            "label": "Authentication removed: AES-256-CTR instead of GCM",
+            "detail": "confidentiality without integrity - still a common configuration",
+            "value": "68 B ciphertext, no tag"
+          },
+          {
+            "label": "Attacker edits the amount through the ciphertext",
+            "detail": "CTR is a stream cipher, so a flipped ciphertext bit flips exactly that plaintext bit. The attacker never learns the key and never needs to",
+            "value": "recovered plaintext now reads: '850,000'"
+          },
+          {
+            "label": "Decryption succeeds and reports no error",
+            "detail": "",
+            "value": "silently altered=True"
+          }
+        ]
+      }
+    }
+  ],
+  "elapsed_s": 7.49
+}

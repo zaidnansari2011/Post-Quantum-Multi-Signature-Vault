@@ -1,6 +1,6 @@
 {
   "schema": "qvault-benchmark/1",
-  "generated_at": "2026-08-04T15:42:55+00:00",
+  "generated_at": "2026-09-12T17:43:05+00:00",
   "backend": "quantcrypt",
   "environment": {
     "python": "3.13.5",
@@ -13,12 +13,75 @@
   },
   "parameters": {
     "iterations": 50,
-    "warmup": 5,
+    "warmup": 3,
     "message_size_bytes": 256,
     "time_budget_s": 20.0
   },
-  "elapsed_s": 3.54,
+  "elapsed_s": 9.33,
   "signatures": [
+    {
+      "alg_id": "ECDSA-P256",
+      "family": "ECDSA",
+      "human_name": "ECDSA P-256 (SHA-256)",
+      "nist_standard": "FIPS 186-5 - classical, NOT post-quantum",
+      "security_category": 0,
+      "backend": "cryptography",
+      "pqclean_name": null,
+      "sizes": {
+        "public_key": 91,
+        "secret_key": 138,
+        "signature": 64
+      },
+      "measured_sizes": {
+        "public_key": 91,
+        "secret_key": 138,
+        "signature": 64
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 0.046642,
+          "median_ms": 0.04485,
+          "stdev_ms": 0.03049992365330023,
+          "min_ms": 0.0296,
+          "max_ms": 0.2472,
+          "p95_ms": 0.064,
+          "ops_per_sec": 22296.54403567447
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 0.125088,
+          "median_ms": 0.10435,
+          "stdev_ms": 0.10903705911856064,
+          "min_ms": 0.0849,
+          "max_ms": 0.8681,
+          "p95_ms": 0.1645,
+          "ops_per_sec": 9583.133684714901
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 0.10032,
+          "median_ms": 0.09445,
+          "stdev_ms": 0.01934177038517036,
+          "min_ms": 0.0825,
+          "max_ms": 0.1864,
+          "p95_ms": 0.1239,
+          "ops_per_sec": 10587.612493382741
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    },
     {
       "alg_id": "ML-DSA-65",
       "family": "ML-DSA",
@@ -44,39 +107,39 @@
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 0.766926,
-          "median_ms": 0.75435,
-          "stdev_ms": 0.038118825013478096,
-          "min_ms": 0.7302,
-          "max_ms": 0.9272,
-          "p95_ms": 0.8681,
-          "ops_per_sec": 1325.6445946841652
+          "mean_ms": 1.0192100000000002,
+          "median_ms": 0.96875,
+          "stdev_ms": 0.2779786794423087,
+          "min_ms": 0.7786,
+          "max_ms": 2.3231,
+          "p95_ms": 1.5023,
+          "ops_per_sec": 1032.258064516129
         },
         "sign": {
           "op": "sign",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 2.045798,
-          "median_ms": 1.71395,
-          "stdev_ms": 1.3309439258170825,
-          "min_ms": 1.199,
-          "max_ms": 10.284,
-          "p95_ms": 3.121,
-          "ops_per_sec": 583.4475918200648
+          "mean_ms": 1.828548,
+          "median_ms": 1.7344499999999998,
+          "stdev_ms": 0.4753195398844007,
+          "min_ms": 1.2271,
+          "max_ms": 3.0985,
+          "p95_ms": 2.6616,
+          "ops_per_sec": 576.5516446135663
         },
         "verify": {
           "op": "verify",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 0.6628660000000001,
-          "median_ms": 0.6265499999999999,
-          "stdev_ms": 0.09995970537151048,
-          "min_ms": 0.5992,
-          "max_ms": 1.2037,
-          "p95_ms": 0.8245,
-          "ops_per_sec": 1596.041816295587
+          "mean_ms": 0.685006,
+          "median_ms": 0.629,
+          "stdev_ms": 0.15511049834862622,
+          "min_ms": 0.5927,
+          "max_ms": 1.4102,
+          "p95_ms": 1.0523,
+          "ops_per_sec": 1589.825119236884
         }
       },
       "rejects_tampered_signature": true,
@@ -107,39 +170,102 @@
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 0.8463419999999999,
-          "median_ms": 0.81105,
-          "stdev_ms": 0.10429582943116515,
-          "min_ms": 0.779,
-          "max_ms": 1.314,
-          "p95_ms": 1.1044,
-          "ops_per_sec": 1232.96960729918
+          "mean_ms": 1.06535,
+          "median_ms": 0.9213,
+          "stdev_ms": 0.259862000465082,
+          "min_ms": 0.8375,
+          "max_ms": 1.6015,
+          "p95_ms": 1.5668,
+          "ops_per_sec": 1085.42277216976
         },
         "sign": {
           "op": "sign",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 1.731444,
-          "median_ms": 1.60345,
-          "stdev_ms": 0.43970764923981026,
-          "min_ms": 1.2475,
-          "max_ms": 3.2711,
-          "p95_ms": 2.4817,
-          "ops_per_sec": 623.6552433814587
+          "mean_ms": 2.118528,
+          "median_ms": 2.0172999999999996,
+          "stdev_ms": 0.49816650279411845,
+          "min_ms": 1.3844,
+          "max_ms": 3.2497,
+          "p95_ms": 3.0856,
+          "ops_per_sec": 495.7120904178854
         },
         "verify": {
           "op": "verify",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 0.75153,
-          "median_ms": 0.7155499999999999,
-          "stdev_ms": 0.09693911038610256,
-          "min_ms": 0.6689,
-          "max_ms": 1.0833,
-          "p95_ms": 1.0187,
-          "ops_per_sec": 1397.5263783103908
+          "mean_ms": 1.0893380000000001,
+          "median_ms": 1.1069499999999999,
+          "stdev_ms": 0.18492464531505248,
+          "min_ms": 0.783,
+          "max_ms": 1.7713,
+          "p95_ms": 1.3176,
+          "ops_per_sec": 903.3831699715436
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    },
+    {
+      "alg_id": "RSA-2048-PSS",
+      "family": "RSA",
+      "human_name": "RSA-2048 (PSS, SHA-256)",
+      "nist_standard": "FIPS 186-5 / RFC 8017 - classical, NOT post-quantum",
+      "security_category": 0,
+      "backend": "cryptography",
+      "pqclean_name": null,
+      "sizes": {
+        "public_key": 294,
+        "secret_key": 1218,
+        "signature": 256
+      },
+      "measured_sizes": {
+        "public_key": 294,
+        "secret_key": 1216,
+        "signature": 256
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 50.741202,
+          "median_ms": 44.9109,
+          "stdev_ms": 29.980850012227975,
+          "min_ms": 14.8245,
+          "max_ms": 184.7194,
+          "p95_ms": 93.9615,
+          "ops_per_sec": 22.266309515062048
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 1.0411299999999999,
+          "median_ms": 0.96985,
+          "stdev_ms": 0.17498904951161828,
+          "min_ms": 0.8893,
+          "max_ms": 1.5917,
+          "p95_ms": 1.3686,
+          "ops_per_sec": 1031.0872815383823
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 0.05907,
+          "median_ms": 0.05865,
+          "stdev_ms": 0.003971390030645468,
+          "min_ms": 0.0451,
+          "max_ms": 0.0729,
+          "p95_ms": 0.0655,
+          "ops_per_sec": 17050.298380221655
         }
       },
       "rejects_tampered_signature": true,
@@ -149,7 +275,7 @@
       "alg_id": "SLH-DSA-SHAKE-256f",
       "family": "SLH-DSA",
       "human_name": "SPHINCS+ SHAKE-256f (category 5)",
-      "nist_standard": "FIPS 205",
+      "nist_standard": "SPHINCS+ round 3 (basis of FIPS 205; not interoperable with it)",
       "security_category": 5,
       "backend": "quantcrypt",
       "pqclean_name": "sphincs-shake-256f-simple",
@@ -170,39 +296,39 @@
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 2.553608,
-          "median_ms": 2.5027,
-          "stdev_ms": 0.14183646351934143,
-          "min_ms": 2.4314,
-          "max_ms": 3.1613,
-          "p95_ms": 2.8306,
-          "ops_per_sec": 399.5684660566588
+          "mean_ms": 3.0702480000000003,
+          "median_ms": 2.89805,
+          "stdev_ms": 0.6064082060319246,
+          "min_ms": 2.5203,
+          "max_ms": 4.9607,
+          "p95_ms": 4.7766,
+          "ops_per_sec": 345.05960904746297
         },
         "sign": {
           "op": "sign",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 39.139914,
-          "median_ms": 38.657349999999994,
-          "stdev_ms": 2.0605090792613283,
-          "min_ms": 37.3252,
-          "max_ms": 49.8682,
-          "p95_ms": 43.0556,
-          "ops_per_sec": 25.8683018882567
+          "mean_ms": 48.217116,
+          "median_ms": 47.962,
+          "stdev_ms": 3.452875457387447,
+          "min_ms": 41.2498,
+          "max_ms": 57.2246,
+          "p95_ms": 54.6724,
+          "ops_per_sec": 20.849839456236186
         },
         "verify": {
           "op": "verify",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 1.8036260000000002,
-          "median_ms": 1.76795,
-          "stdev_ms": 0.09831296924846171,
-          "min_ms": 1.7142,
-          "max_ms": 2.0795,
-          "p95_ms": 2.0493,
-          "ops_per_sec": 565.6268559631211
+          "mean_ms": 2.8985320000000003,
+          "median_ms": 3.0313499999999998,
+          "stdev_ms": 0.6751519854409805,
+          "min_ms": 1.8787,
+          "max_ms": 5.0147,
+          "p95_ms": 3.8061,
+          "ops_per_sec": 329.88602437857725
         }
       },
       "rejects_tampered_signature": true,
@@ -236,39 +362,101 @@
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 0.651962,
-          "median_ms": 0.6364,
-          "stdev_ms": 0.07402092062245592,
-          "min_ms": 0.6194,
-          "max_ms": 1.1403,
-          "p95_ms": 0.733,
-          "ops_per_sec": 1571.3387806411063
+          "mean_ms": 0.8702960000000001,
+          "median_ms": 0.8423,
+          "stdev_ms": 0.16069974278327967,
+          "min_ms": 0.6675,
+          "max_ms": 1.2514,
+          "p95_ms": 1.1548,
+          "ops_per_sec": 1187.225454113736
         },
         "encapsulate": {
           "op": "encapsulate",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 1.052078,
-          "median_ms": 1.01705,
-          "stdev_ms": 0.10134627303035301,
-          "min_ms": 0.9858,
-          "max_ms": 1.4589,
-          "p95_ms": 1.2724,
-          "ops_per_sec": 983.2358291136129
+          "mean_ms": 1.774086,
+          "median_ms": 1.76405,
+          "stdev_ms": 0.4087176471674822,
+          "min_ms": 1.1085,
+          "max_ms": 3.4249,
+          "p95_ms": 2.4159,
+          "ops_per_sec": 566.8773560840112
         },
         "decapsulate": {
           "op": "decapsulate",
           "iterations": 50,
           "requested_iterations": 50,
           "budget_exhausted": false,
-          "mean_ms": 0.7504000000000001,
-          "median_ms": 0.73385,
-          "stdev_ms": 0.049971118189022196,
-          "min_ms": 0.7138,
-          "max_ms": 1.0039,
-          "p95_ms": 0.8308,
-          "ops_per_sec": 1362.6762962458267
+          "mean_ms": 1.195316,
+          "median_ms": 1.14675,
+          "stdev_ms": 0.26349596547273385,
+          "min_ms": 0.7923,
+          "max_ms": 1.8757,
+          "p95_ms": 1.5937,
+          "ops_per_sec": 872.0296490080664
+        }
+      }
+    },
+    {
+      "alg_id": "RSA-2048-OAEP",
+      "family": "RSA",
+      "human_name": "RSA-2048 key transport (OAEP, SHA-256)",
+      "nist_standard": "RFC 8017 / SP 800-56B - classical, NOT post-quantum",
+      "security_category": 0,
+      "backend": "cryptography",
+      "pqclean_name": null,
+      "sizes": {
+        "public_key": 294,
+        "secret_key": 1218,
+        "ciphertext": 256,
+        "shared_secret": 32
+      },
+      "measured_sizes": {
+        "public_key": 294,
+        "secret_key": 1217,
+        "ciphertext": 256,
+        "shared_secret": 32
+      },
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 39.772366000000005,
+          "median_ms": 37.4761,
+          "stdev_ms": 22.725002079940722,
+          "min_ms": 9.1762,
+          "max_ms": 116.5616,
+          "p95_ms": 88.3352,
+          "ops_per_sec": 26.683673060964185
+        },
+        "encapsulate": {
+          "op": "encapsulate",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 0.038108,
+          "median_ms": 0.0378,
+          "stdev_ms": 0.0009290855719469545,
+          "min_ms": 0.0373,
+          "max_ms": 0.0418,
+          "p95_ms": 0.0408,
+          "ops_per_sec": 26455.026455026455
+        },
+        "decapsulate": {
+          "op": "decapsulate",
+          "iterations": 50,
+          "requested_iterations": 50,
+          "budget_exhausted": false,
+          "mean_ms": 1.182882,
+          "median_ms": 1.1997,
+          "stdev_ms": 0.1394693041935927,
+          "min_ms": 0.9208,
+          "max_ms": 1.5371,
+          "p95_ms": 1.4055,
+          "ops_per_sec": 833.541718763024
         }
       }
     }

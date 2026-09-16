@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Adversary lab — Q-Vault{% endblock %}
+
+{#
+  The page's whole job is to put two runs of the same attack next to each other. A column of
+  "blocked" proves nothing; "blocked here, succeeded there" identifies the mechanism. So every
+  macro below renders the pair, and none of them can render one side alone.
+#}
+
+{% macro status_chip(status) %}
+  {%- if status == 'as-expected' %}<span class="chip chip--sealed">as expected</span>
+  {%- elif status == 'BREACHED' %}<span class="chip chip--broken">breached</span>
+  {%- elif status == 'VACUOUS' %}<span class="chip chip--broken">vacuous</span>
+  {%- else %}<span class="chip chip--waiting">error</span>{% endif -%}
+{% endmacro %}
+
+{% macro verdict_chip(verdict, good) %}
+  {#- Colour tracks the claim, not the verdict: "succeeded" is the expected result for a contrast
+      attack and a failure for a defence attack. -#}
+  <span class="chip {{ 'chip--sealed' if good else 'chip--broken' }}">{{ verdict }}</span>
+{% endmacro %}
+
+{% macro run_column(title, run, expected, subtitle) %}
+<div class="atk__run">
+  <div class="atk__runhead">
+    <span class="atk__runtitle">{{ title }}</span>
+    {{ verdict_chip(run.verdict, run.verdict == expected) }}
+    {% if subtitle %}<span class="tiny muted">{{ subtitle }}</span>{% endif %}
+  </div>
+  <ol class="atk__steps">
+    {% for step in run.steps %}
+    <li class="atk__step">
+      <div class="atk__label">{{ step.label }}</div>
+      {% if step.detail %}<p class="atk__detail">{{ step.detail }}</p>{% endif %}
+      {% if step.value %}<div class="atk__val">{{ step.value }}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% if run.note %}<p class="atk__note">{{ run.note }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro attack_card(n, a) %}
+{% set contrast = a.kind == 'contrast' %}
+<div class="atk {{ 'atk--failed' if a.status != 'as-expected' }}">
+  <div class="atk__head">
+    <span class="atk__n">{{ '%02d'|format(n) }}</span>
+    <span class="atk__title">{{ a.title }}</span>
+    <span class="atk__status">
+      <span class="atk__ms">{{ '%.0f'|format(a.elapsed_ms) }} ms</span>
+      {{ status_chip(a.status) }}
+    </span>
+  </div>
+
+  <div class="atk__q">&ldquo;{{ a.question }}&rdquo;</div>
+
+  <div class="atk__model">
+    <div class="atk__field">
+      <div class="atk__key">Attacker has</div>
+      <div class="atk__v">{{ a.capability }}</div>
+    </div>
+    <div class="atk__field">
+      <div class="atk__key">Trying to</div>
+      <div class="atk__v">{{ a.goal }}</div>
+    </div>
+    <div class="atk__field">
+      <div class="atk__key">Decided by</div>
+      <div class="atk__v">{{ a.defence }} <span class="tag">{{ a.defence_ref }}</span></div>
+    </div>
+    <div class="atk__field">
+      <div class="atk__key">Control</div>
+      <div class="atk__v">{{ a.control_note }}{% if a.standard %}
+        <span class="tiny muted">· {{ a.standard }}</span>{% endif %}</div>
+    </div>
+  </div>
+
+  <div class="atk__runs">
+    {{ run_column(
+         'Against RSA / ECDSA' if contrast else 'Against Q-Vault as built',
+         a.real, 'succeeded' if contrast else 'blocked', none) }}
+    {{ run_column(
+         'Against the post-quantum algorithm' if contrast else 'Against the control',
+         a.control, 'blocked' if contrast else 'succeeded', none) }}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro summary_figures(rep) %}
+<div class="figures">
+  <div class="figure">
+    <div class="figure__num">{{ rep.summary.as_expected }}/{{ rep.summary.total }}</div>
+    <div class="figure__label">As expected</div>
+    <div class="figure__sub">each confirmed by its control</div>
+  </div>
+  <div class="figure">
+    <div class="figure__num">{{ rep.summary.breached }}</div>
+    <div class="figure__label">Breached</div>
+    <div class="figure__sub">attack achieved its goal</div>
+  </div>
+  <div class="figure">
+    <div class="figure__num">{{ rep.summary.vacuous }}</div>
+    <div class="figure__label">Vacuous</div>
+    <div class="figure__sub">control failed to discriminate</div>
+  </div>
+  <div class="figure">
+    <div class="figure__num">{{ rep.summary.error }}</div>
+    <div class="figure__label">Errored</div>
+    <div class="figure__sub">never counted as a defence</div>
+  </div>
+</div>
+{% endmacro %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Adversary lab</div>
+    <div class="head__sub">
+      {% if stored %}Reference run {{ stored.generated_at[:10] }} · {{ stored.summary.total }} attacks
+      {% else %}No reference run recorded{% endif %}
+    </div>
+  </div>
+  <div class="head__actions">
+    <form method="post" action="{{ url_for('admin.run_attack_lab') }}" class="hstack hstack--tight">
+      {{ form.hidden_tag() }}
+      <button type="submit" class="btn btn--ghost btn--sm">Run the algorithm attacks now</button>
+    </form>
+  </div>
+</div>
+{% include "admin/_nav.html" %}
+{% endblock %}
+
+{% block content %}
+
+{% if live %}
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel__head">
+    <span class="label">Live run</span>
+    <span class="push tiny muted">
+      just now · {{ live.elapsed_s }} s · {{ live.summary.total }} algorithm-level attacks,
+      re-run in this request
+    </span>
+  </div>
+  <div class="panel__body">{{ summary_figures(live) }}</div>
+</div>
+{% for a in live.attacks %}{{ attack_card(loop.index, a) }}{% endfor %}
+{% endif %}
+
+{% if stored %}
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel__head">
+    <span class="label">{{ 'Reference run' if live else 'Last recorded run' }}</span>
+    <span class="push tiny muted">
+      {{ stored.generated_at }} · {{ stored.machine.platform }} · Python {{ stored.machine.python }}
+      · {{ stored.backend }} · {{ stored.elapsed_s }} s
+    </span>
+  </div>
+  {% if not live %}<div class="panel__body">{{ summary_figures(stored) }}</div>{% endif %}
+  <div class="panel__body" style="padding-top:0">
+    <p class="small muted measure" style="margin:0">
+      The database-backed attacks forge signature rows, edit ledger entries and alter stored files.
+      They run only in <span class="mono">scripts/run_attack_lab.py</span>, against a throwaway
+      in-memory database built for them, so they are reported from this recorded run rather than
+      re-run here. The algorithm-level attacks need no database and are the ones the button above
+      repeats live.
+    </p>
+  </div>
+</div>
+
+{% if stored.cost and stored.cost.rsa_2048 %}
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel__head"><span class="label">The same attack at real parameters</span></div>
+  <div class="scroll-x">
+    <table class="dt">
+      <thead>
+        <tr><th>Target</th><th>Classically</th><th>Quantumly</th><th>Source</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="tag">RSA-2048</span></td>
+          <td>
+            <span class="mono">{{ stored.cost.rsa_2048.classical.core_years_human }}</span> core-years
+            <span class="dt__sub">{{ '%.0f'|format(stored.cost.rsa_2048.classical.times_age_of_universe) }}x the age of the universe on one core</span>
+          </td>
+          <td>
+            <span class="mono">{{ stored.cost.rsa_2048.quantum.physical_estimates[-1].wall_clock }}</span>
+            <span class="dt__sub">{{ '{:,}'.format(stored.cost.rsa_2048.quantum.physical_estimates[-1].physical_qubits) }} noisy qubits · {{ stored.cost.rsa_2048.quantum.scaling }}</span>
+          </td>
+          <td class="small muted">
+            {{ stored.cost.rsa_2048.classical.anchor }}
+            <span class="dt__sub">{{ stored.cost.rsa_2048.quantum.physical_estimates[-1].source }}</span>
+          </td>
+        </tr>
+        <tr>
+          <td><span class="tag">{{ stored.cost.ecdsa_p256.curve }}</span></td>
+          <td>
+            <span class="mono">2^{{ '%.0f'|format(stored.cost.ecdsa_p256.classical_group_operations_log2) }}</span> group operations
+            <span class="dt__sub">{{ stored.cost.ecdsa_p256.classical_method }}</span>
+          </td>
+          <td>
+            <span class="mono">{{ '{:,}'.format(stored.cost.ecdsa_p256.quantum_logical_qubits) }}</span> logical qubits
+            <span class="dt__sub">{{ stored.cost.ecdsa_p256.quantum_scaling }}</span>
+          </td>
+          <td class="small muted">{{ stored.cost.ecdsa_p256.note }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% if stored.cost.regulatory %}
+  <div class="panel__body" style="padding-top:.5rem">
+    <span class="tiny muted">
+      Classical signatures deprecated after {{ stored.cost.regulatory.deprecated_after }},
+      disallowed after {{ stored.cost.regulatory.disallowed_after }} —
+      {{ stored.cost.regulatory.source }}. {{ stored.cost.regulatory.note }}
+    </span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not live %}
+  {% for a in stored.attacks %}{{ attack_card(loop.index, a) }}{% endfor %}
+{% else %}
+  {# The live run already showed the algorithm-level attacks; show only what it could not run. #}
+  {% set database_attacks = stored.attacks | rejectattr('id', 'in', live.attacks | map(attribute='id') | list) | list %}
+  {% if database_attacks %}
+  <div class="panel" style="margin-bottom:1rem">
+    <div class="panel__head"><span class="label">Database-backed attacks, from the recorded run</span></div>
+  </div>
+  {% for a in database_attacks %}{{ attack_card(loop.index + live.attacks|length, a) }}{% endfor %}
+  {% endif %}
+{% endif %}
+
+{% elif not live %}
+<div class="empty">
+  <div class="empty__title">No adversary-lab run recorded</div>
+  <div class="empty__sub">
+    Run <span class="mono">.venv\Scripts\python scripts\run_attack_lab.py</span> to produce
+    <span class="mono">docs/attack-lab/latest.json</span>, or use the button above to run the
+    algorithm-level attacks now.
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
