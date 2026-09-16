@@ -108,8 +108,7 @@ def public_record(uuid: str):
         # counts on screen describe the artefact a reader can download rather than a parallel
         # query that could disagree with it.
         signatures=[
-            dict(s, size_bytes=len(b64decode(s["signature_b64"])))
-            for s in bundle["signatures"]
+            dict(s, size_bytes=len(b64decode(s["signature_b64"]))) for s in bundle["signatures"]
         ],
         log=bundle["log"],
         witnesses=bundle["log"]["witnesses"],

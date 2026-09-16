@@ -251,7 +251,6 @@ def _true_order(a: int, n: int) -> int:
     return order
 
 
-
 # The number of multiples of a convergent's denominator to test when confirming an order.
 # 64 is generous: the shortfall is gcd(s, r), and a gcd larger than this would need a measured
 # numerator sharing an enormous factor with the order.

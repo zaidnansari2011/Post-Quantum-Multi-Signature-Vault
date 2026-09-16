@@ -187,9 +187,7 @@ def test_every_membership_change_is_recorded(app, cast, action, event):
     elif action == "demote":
         vault_service.change_member_role(vault, chen.id, "viewer", actor_id=ada.id)
 
-    entry = (
-        LedgerEntry.query.filter_by(event_type=event).order_by(LedgerEntry.seq.desc()).first()
-    )
+    entry = LedgerEntry.query.filter_by(event_type=event).order_by(LedgerEntry.seq.desc()).first()
     assert entry is not None, f"{event} should be in the audit record"
     assert entry.vault_id == vault.id
     assert entry.actor == f"user:{ada.id}"

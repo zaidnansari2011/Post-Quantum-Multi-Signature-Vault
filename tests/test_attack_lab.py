@@ -252,7 +252,9 @@ def test_a_confirmed_order_is_reported_alongside_the_raw_convergent():
 
 
 def test_the_state_vector_simulation_holds_a_real_normalised_state():
-    """If the amplitudes did not form a valid quantum state, the measurement would be meaningless."""
+    """If the amplitudes did not form a valid quantum state, the measurement would be
+    meaningless.
+    """
     probs, held = shor._order_distribution_statevector(7, 143, 16, random.Random())
     assert held == 1 << 16
     assert math.isclose(sum(probs), 1.0, rel_tol=1e-9)
@@ -277,7 +279,9 @@ def test_the_qft_matches_a_direct_discrete_fourier_transform():
     ]
     actual = list(state)
     shor._qft_in_place(actual)
-    for got, want in zip(actual, expected):
+    # strict: the butterfly and the direct DFT must produce the same number of amplitudes. If they
+    # ever do not, that is the finding, and a silent truncation would hide it behind a pass.
+    for got, want in zip(actual, expected, strict=True):
         assert abs(got - want) < 1e-9
 
 
@@ -292,7 +296,9 @@ def test_the_qft_is_unitary():
 
 
 def test_recovered_rsa_exponent_is_the_real_private_key():
-    """Factoring must yield the actual private exponent, not merely one that works on one message."""
+    """Factoring must yield the actual private exponent, not merely one that works on one
+    message.
+    """
     key = toy_rsa.generate(9, rng=random.Random(8))
     recovered = shor.recover_rsa_exponent(key.e, key.p, key.q)
     message = b"a message the attacker chooses"
@@ -331,7 +337,9 @@ def test_the_toy_rsa_modulus_is_balanced():
 
 
 def test_the_toy_rsa_key_is_a_working_keypair():
-    """It must be real RSA at a small size, not a prop: sign, verify, and reject a tampered message."""
+    """It must be real RSA at a small size, not a prop: sign, verify, and reject a tampered
+    message.
+    """
     provider = toy_rsa.ToyRSASignatureProvider(9, rng=random.Random(2))
     keypair = provider.keygen()
     message = b"approve the transfer"
@@ -361,7 +369,11 @@ def test_the_toy_rsa_kem_round_trips():
 
 
 def test_the_classical_projection_is_monotonic_in_key_size():
-    assert cost.gnfs_log_operations(2048) > cost.gnfs_log_operations(1024) > cost.gnfs_log_operations(512)
+    assert (
+        cost.gnfs_log_operations(2048)
+        > cost.gnfs_log_operations(1024)
+        > cost.gnfs_log_operations(512)
+    )
 
 
 def test_the_projection_states_its_assumptions():
@@ -384,7 +396,9 @@ def test_the_measured_factoring_curve_finds_real_factors():
 
 def test_the_factoring_curve_reports_truncation_by_returning_fewer_points():
     """A budget that cannot be met must shorten the curve rather than fabricate it."""
-    samples = cost.classical_factoring_curve((16, 24, 32, 40, 48), rng=random.Random(), budget_s=0.0)
+    samples = cost.classical_factoring_curve(
+        (16, 24, 32, 40, 48), rng=random.Random(), budget_s=0.0
+    )
     assert len(samples) == 1  # the first sample always runs; the budget stops the rest
 
 

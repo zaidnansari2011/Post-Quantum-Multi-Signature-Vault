@@ -185,74 +185,286 @@ def _script(people, vaults):
     A, R = "approve", "reject"
     entries = [
         # --- Treasury: 2 of 3 -----------------------------------------------------------------
-        (treasury, ada, "Q2 supplier settlement", "Release 38,400 to Meridian Components Ltd against invoice MC-2026-0288.",
-         [(ada, A, "Invoice and delivery note checked."), (brij, A, "Matches the purchase order.")], 34),
-        (treasury, brij, "Annual audit fee", "Release 21,000 to Harlow & Vance LLP for the 2025/26 statutory audit.",
-         [(brij, A, "Engagement letter on file."), (chen, A, None)], 31),
-        (treasury, ada, "Currency hedge rollover", "Roll the EUR/GBP forward contract of 250,000 to the September maturity.",
-         [(ada, A, "Within the delegated hedging policy."), (brij, A, "Rate confirmed with the desk.")], 27),
-        (treasury, brij, "Duplicate invoice payment", "Release 14,750 to Kestrel Logistics against invoice KL-9912.",
-         [(brij, R, "This is the second submission of KL-9912. Already paid on the 14th."), (ada, R, "Confirmed duplicate.")], 24),
-        (treasury, ada, "Q3 supplier settlement", "Release 42,000 to Meridian Components Ltd against invoice MC-2026-0417.",
-         [(ada, A, "Invoice checked."), (brij, A, "Matches the purchase order.")], 19),
-        (treasury, chen, "Penetration test engagement", "Release 18,500 to Ostrava Security for the Q4 external assessment.",
-         [(chen, A, "Scope agreed."), (ada, A, "Budgeted.")], 15),
-        (treasury, brij, "Unbudgeted marketing spend", "Release 60,000 to Aperture Media for the autumn campaign.",
-         [(brij, R, "No approved budget line for this."), (chen, R, "Agreed — bring it through planning first.")], 12),
-        (treasury, ada, "Payroll adjustment schedule", "Apply the attached banded adjustments from the next payroll run.",
-         [(ada, A, "Prepared and checked by finance.")], 9),
-        (treasury, brij, "Office lease deposit", "Release 33,000 to Calderwood Estates as the deposit on the Leeds unit.",
-         [(brij, A, "Lease reviewed by legal.")], 5),
-        (treasury, ada, "Emergency hardware purchase", "Release 8,500 to Northbridge Systems for replacement HSM appliances.",
-         [(ada, A, "Urgent, verified.")], 2),
-
+        (
+            treasury,
+            ada,
+            "Q2 supplier settlement",
+            "Release 38,400 to Meridian Components Ltd against invoice MC-2026-0288.",
+            [
+                (ada, A, "Invoice and delivery note checked."),
+                (brij, A, "Matches the purchase order."),
+            ],
+            34,
+        ),
+        (
+            treasury,
+            brij,
+            "Annual audit fee",
+            "Release 21,000 to Harlow & Vance LLP for the 2025/26 statutory audit.",
+            [(brij, A, "Engagement letter on file."), (chen, A, None)],
+            31,
+        ),
+        (
+            treasury,
+            ada,
+            "Currency hedge rollover",
+            "Roll the EUR/GBP forward contract of 250,000 to the September maturity.",
+            [
+                (ada, A, "Within the delegated hedging policy."),
+                (brij, A, "Rate confirmed with the desk."),
+            ],
+            27,
+        ),
+        (
+            treasury,
+            brij,
+            "Duplicate invoice payment",
+            "Release 14,750 to Kestrel Logistics against invoice KL-9912.",
+            [
+                (brij, R, "This is the second submission of KL-9912. Already paid on the 14th."),
+                (ada, R, "Confirmed duplicate."),
+            ],
+            24,
+        ),
+        (
+            treasury,
+            ada,
+            "Q3 supplier settlement",
+            "Release 42,000 to Meridian Components Ltd against invoice MC-2026-0417.",
+            [(ada, A, "Invoice checked."), (brij, A, "Matches the purchase order.")],
+            19,
+        ),
+        (
+            treasury,
+            chen,
+            "Penetration test engagement",
+            "Release 18,500 to Ostrava Security for the Q4 external assessment.",
+            [(chen, A, "Scope agreed."), (ada, A, "Budgeted.")],
+            15,
+        ),
+        (
+            treasury,
+            brij,
+            "Unbudgeted marketing spend",
+            "Release 60,000 to Aperture Media for the autumn campaign.",
+            [
+                (brij, R, "No approved budget line for this."),
+                (chen, R, "Agreed — bring it through planning first."),
+            ],
+            12,
+        ),
+        (
+            treasury,
+            ada,
+            "Payroll adjustment schedule",
+            "Apply the attached banded adjustments from the next payroll run.",
+            [(ada, A, "Prepared and checked by finance.")],
+            9,
+        ),
+        (
+            treasury,
+            brij,
+            "Office lease deposit",
+            "Release 33,000 to Calderwood Estates as the deposit on the Leeds unit.",
+            [(brij, A, "Lease reviewed by legal.")],
+            5,
+        ),
+        (
+            treasury,
+            ada,
+            "Emergency hardware purchase",
+            "Release 8,500 to Northbridge Systems for replacement HSM appliances.",
+            [(ada, A, "Urgent, verified.")],
+            2,
+        ),
         # --- Incident response: 2 of 3 --------------------------------------------------------
-        (incident, chen, "Rotate compromised deploy token", "Revoke the CI deploy token ending 9f21 and issue a replacement.",
-         [(chen, A, "Token appeared in a public gist."), (brij, A, "Confirmed. Rotate now.")], 30),
-        (incident, chen, "Disable audit logging for maintenance", "Temporarily suspend the audit ledger during the storage migration.",
-         [(chen, R, "Proposed it to test the control; do not do this."), (brij, R, "The ledger is the control. Rejected.")], 26),
-        (incident, ada, "Isolate build agent 04", "Remove build agent 04 from the pool pending forensic imaging.",
-         [(ada, A, "Anomalous outbound traffic."), (chen, A, "Imaged and isolated.")], 18),
-        (incident, chen, "Force password reset, finance group", "Invalidate all sessions and require a reset for the 14 finance accounts.",
-         [(chen, A, "Credential stuffing attempts observed.")], 6),
-        (incident, brij, "Restore from the 03:00 snapshot", "Roll the reporting database back to the 03:00 snapshot to clear the corrupt partition.",
-         [], 1),
-
+        (
+            incident,
+            chen,
+            "Rotate compromised deploy token",
+            "Revoke the CI deploy token ending 9f21 and issue a replacement.",
+            [(chen, A, "Token appeared in a public gist."), (brij, A, "Confirmed. Rotate now.")],
+            30,
+        ),
+        (
+            incident,
+            chen,
+            "Disable audit logging for maintenance",
+            "Temporarily suspend the audit ledger during the storage migration.",
+            [
+                (chen, R, "Proposed it to test the control; do not do this."),
+                (brij, R, "The ledger is the control. Rejected."),
+            ],
+            26,
+        ),
+        (
+            incident,
+            ada,
+            "Isolate build agent 04",
+            "Remove build agent 04 from the pool pending forensic imaging.",
+            [(ada, A, "Anomalous outbound traffic."), (chen, A, "Imaged and isolated.")],
+            18,
+        ),
+        (
+            incident,
+            chen,
+            "Force password reset, finance group",
+            "Invalidate all sessions and require a reset for the 14 finance accounts.",
+            [(chen, A, "Credential stuffing attempts observed.")],
+            6,
+        ),
+        (
+            incident,
+            brij,
+            "Restore from the 03:00 snapshot",
+            (
+                "Roll the reporting database back to the 03:00 snapshot to clear the "
+                "corrupt partition."
+            ),
+            [],
+            1,
+        ),
         # --- Production access: 3 of 5 --------------------------------------------------------
-        (production, elif_, "Grant standing production read", "Add Femi Adeyemi to the production read-only role indefinitely.",
-         [(elif_, R, "Standing access defeats the point of break-glass."), (chen, R, "Use a time-boxed grant."), (femi, R, "Withdrawing — I'll take the 4-hour grant.")], 28),
-        (production, femi, "Break-glass: payment reconciliation", "Grant Elif Demir four hours of production write access to reconcile the stuck settlement batch.",
-         [(femi, A, "Customer impact confirmed."), (chen, A, "Time-boxed, logged."), (elif_, A, "Accepting the grant.")], 22),
-        (production, elif_, "Schema migration 0042", "Apply migration 0042 (add settlement_batch.reconciled_at) to production.",
-         [(elif_, A, "Tested on staging."), (femi, A, "Reviewed."), (chen, A, "No data exposure.")], 16),
-        (production, femi, "Decommission legacy reporting host", "Power off and wipe reporting-legacy-02 after the 30-day retention window.",
-         [(femi, A, "Retention window elapsed."), (elif_, A, None)], 8),
-        (production, elif_, "Raise the API rate limit for Northwind", "Increase the Northwind integration limit from 60 to 600 requests per minute.",
-         [(elif_, A, "Load tested.")], 3),
-
+        (
+            production,
+            elif_,
+            "Grant standing production read",
+            "Add Femi Adeyemi to the production read-only role indefinitely.",
+            [
+                (elif_, R, "Standing access defeats the point of break-glass."),
+                (chen, R, "Use a time-boxed grant."),
+                (femi, R, "Withdrawing — I'll take the 4-hour grant."),
+            ],
+            28,
+        ),
+        (
+            production,
+            femi,
+            "Break-glass: payment reconciliation",
+            (
+                "Grant Elif Demir four hours of production write access to reconcile the "
+                "stuck settlement batch."
+            ),
+            [
+                (femi, A, "Customer impact confirmed."),
+                (chen, A, "Time-boxed, logged."),
+                (elif_, A, "Accepting the grant."),
+            ],
+            22,
+        ),
+        (
+            production,
+            elif_,
+            "Schema migration 0042",
+            "Apply migration 0042 (add settlement_batch.reconciled_at) to production.",
+            [
+                (elif_, A, "Tested on staging."),
+                (femi, A, "Reviewed."),
+                (chen, A, "No data exposure."),
+            ],
+            16,
+        ),
+        (
+            production,
+            femi,
+            "Decommission legacy reporting host",
+            "Power off and wipe reporting-legacy-02 after the 30-day retention window.",
+            [(femi, A, "Retention window elapsed."), (elif_, A, None)],
+            8,
+        ),
+        (
+            production,
+            elif_,
+            "Raise the API rate limit for Northwind",
+            "Increase the Northwind integration limit from 60 to 600 requests per minute.",
+            [(elif_, A, "Load tested.")],
+            3,
+        ),
         # --- Contracts: 2 of 4 ----------------------------------------------------------------
-        (contracts, gita, "Meridian Components master agreement", "Execute the two-year master supply agreement with Meridian Components Ltd.",
-         [(gita, A, "Terms acceptable; liability cap agreed."), (ada, A, "Commercially approved.")], 29),
-        (contracts, ada, "Aperture Media retainer", "Execute the twelve-month retainer with Aperture Media at 5,000 per month.",
-         [(ada, R, "Paused pending the marketing budget review.")], 13),
-        (contracts, gita, "Data processing addendum, Northwind", "Execute the GDPR data processing addendum with Northwind Analytics.",
-         [(gita, A, "Standard clauses, no transfers outside the UK/EEA."), (femi, A, "Technical measures confirmed.")], 7),
-        (contracts, gita, "Ostrava Security NDA", "Execute the mutual non-disclosure agreement with Ostrava Security s.r.o.",
-         [(gita, A, "Mutual, two years.")], 4),
-
+        (
+            contracts,
+            gita,
+            "Meridian Components master agreement",
+            "Execute the two-year master supply agreement with Meridian Components Ltd.",
+            [
+                (gita, A, "Terms acceptable; liability cap agreed."),
+                (ada, A, "Commercially approved."),
+            ],
+            29,
+        ),
+        (
+            contracts,
+            ada,
+            "Aperture Media retainer",
+            "Execute the twelve-month retainer with Aperture Media at 5,000 per month.",
+            [(ada, R, "Paused pending the marketing budget review.")],
+            13,
+        ),
+        (
+            contracts,
+            gita,
+            "Data processing addendum, Northwind",
+            "Execute the GDPR data processing addendum with Northwind Analytics.",
+            [
+                (gita, A, "Standard clauses, no transfers outside the UK/EEA."),
+                (femi, A, "Technical measures confirmed."),
+            ],
+            7,
+        ),
+        (
+            contracts,
+            gita,
+            "Ostrava Security NDA",
+            "Execute the mutual non-disclosure agreement with Ostrava Security s.r.o.",
+            [(gita, A, "Mutual, two years.")],
+            4,
+        ),
         # --- Key custody: 3 of 3 --------------------------------------------------------------
-        (custody, chen, "Retire the 2024 signing key", "Move the 2024 organisational signing key to verify-only and archive its shares.",
-         [(chen, A, "Superseded by the 2026 key."), (ada, A, "Verify-only, not deleted."), (femi, A, "Archived.")], 20),
-        (custody, chen, "Export a copy of the master key", "Export the server master key to the shared operations vault for convenience.",
-         [(chen, R, "Written to test the control. This must never be approved.")], 11),
-
+        (
+            custody,
+            chen,
+            "Retire the 2024 signing key",
+            "Move the 2024 organisational signing key to verify-only and archive its shares.",
+            [
+                (chen, A, "Superseded by the 2026 key."),
+                (ada, A, "Verify-only, not deleted."),
+                (femi, A, "Archived."),
+            ],
+            20,
+        ),
+        (
+            custody,
+            chen,
+            "Export a copy of the master key",
+            "Export the server master key to the shared operations vault for convenience.",
+            [(chen, R, "Written to test the control. This must never be approved.")],
+            11,
+        ),
         # --- Release approvals: 1 of 2 --------------------------------------------------------
-        (release, femi, "Release 4.2.0 to production", "Promote build 4.2.0 (a91c7f2) from staging to production.",
-         [(femi, A, "Regression suite green.")], 21),
-        (release, elif_, "Release 4.2.1 hotfix", "Promote hotfix build 4.2.1 (dd10b84) addressing the settlement timeout.",
-         [(elif_, A, "Verified against the reported case.")], 10),
-        (release, femi, "Release 4.3.0 to production", "Promote build 4.3.0 (7c02e11) from staging to production.",
-         [], 1),
+        (
+            release,
+            femi,
+            "Release 4.2.0 to production",
+            "Promote build 4.2.0 (a91c7f2) from staging to production.",
+            [(femi, A, "Regression suite green.")],
+            21,
+        ),
+        (
+            release,
+            elif_,
+            "Release 4.2.1 hotfix",
+            "Promote hotfix build 4.2.1 (dd10b84) addressing the settlement timeout.",
+            [(elif_, A, "Verified against the reported case.")],
+            10,
+        ),
+        (
+            release,
+            femi,
+            "Release 4.3.0 to production",
+            "Promote build 4.3.0 (7c02e11) from staging to production.",
+            [],
+            1,
+        ),
     ]
     return [entry for entry in entries if entry[0] is not None]
 
@@ -344,19 +556,49 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
 
         # (owner, name, description, threshold, signers, viewers)
         specs = [
-            (ada, "Treasury", "Payments above the delegated limit require two signatures.", 2,
-             [brij, chen], [dara]),
-            (chen, "Incident response", "Break-glass actions. Any two responders.", 2,
-             [brij, ada], []),
-            (femi, "Production access", "Changes to production. Three of five engineers.", 3,
-             [elif_, chen, ada, brij], [dara]),
-            (gita, "Contracts", "Anything that binds the company. Two of four.", 2,
-             [ada, femi, brij], [dara]),
+            (
+                ada,
+                "Treasury",
+                "Payments above the delegated limit require two signatures.",
+                2,
+                [brij, chen],
+                [dara],
+            ),
+            (
+                chen,
+                "Incident response",
+                "Break-glass actions. Any two responders.",
+                2,
+                [brij, ada],
+                [],
+            ),
+            (
+                femi,
+                "Production access",
+                "Changes to production. Three of five engineers.",
+                3,
+                [elif_, chen, ada, brij],
+                [dara],
+            ),
+            (
+                gita,
+                "Contracts",
+                "Anything that binds the company. Two of four.",
+                2,
+                [ada, femi, brij],
+                [dara],
+            ),
             # 3-of-3 — the highest bar in the demo, and the one where a single rejection is fatal.
             (chen, "Key custody", "Key material. Unanimous.", 3, [ada, femi], [dara]),
             # 1-of-2 — the lightweight end, so the tally component is seen at both extremes.
-            (femi, "Release approvals", "Promoting a build. Either engineer may approve.", 1,
-             [elif_], []),
+            (
+                femi,
+                "Release approvals",
+                "Promoting a build. Either engineer may approve.",
+                1,
+                [elif_],
+                [],
+            ),
         ]
         if small:
             specs = specs[:2]
@@ -380,10 +622,12 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
         # performed by the REAL job rather than by writing "expired" into a column — the demo must
         # never show a state the application could not have produced.
         stale_spec = (
-            vaults[3 if len(vaults) > 3 else 0], gita,
+            vaults[3 if len(vaults) > 3 else 0],
+            gita,
             "Renew the Calderwood insurance policy",
             "Renew the buildings policy with Calderwood Underwriting for a further twelve months.",
-            [], 23,
+            [],
+            23,
         )
 
         # Oldest first. Written grouped by vault because that reads well as a script; executed in
@@ -421,7 +665,10 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
             deadline = clock.t + timedelta(days=5 if stale else 14)
 
             proposal = proposal_service.create_proposal(
-                vault, proposer, title, action,
+                vault,
+                proposer,
+                title,
+                action,
                 deadline=deadline,
                 file_bytes=attachment[0] if attachment else None,
                 filename=attachment[1] if attachment else None,
@@ -433,9 +680,7 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
                     continue
                 clock.advance(hours=3, minutes=11)
                 _stamp(
-                    approval_service.cast_vote(
-                        proposal, signer, PASSWORD, decision, reason=reason
-                    ),
+                    approval_service.cast_vote(proposal, signer, PASSWORD, decision, reason=reason),
                     clock.t,
                 )
             proposals.append(proposal)
@@ -514,10 +759,14 @@ def main(argv: list[str] | None = None) -> int:
         _line("Seeded a demonstration database.")
         _line(f"  users      : {len(result['users'])}  (password for all: {PASSWORD})")
         _line(f"  vaults     : {len(result['vaults'])}")
-        _line(f"  decisions  : {len(result['proposals'])}  "
-              + ", ".join(f"{n} {s}" for s, n in sorted(result["by_status"].items())))
-        _line(f"  ledger     : {log['entries']} entries, head #{report['head_seq']}, "
-              f"verified={report['ok']}")
+        _line(
+            f"  decisions  : {len(result['proposals'])}  "
+            + ", ".join(f"{n} {s}" for s, n in sorted(result["by_status"].items()))
+        )
+        _line(
+            f"  ledger     : {log['entries']} entries, head #{report['head_seq']}, "
+            f"verified={report['ok']}"
+        )
         _line(f"  merkle root: {log['root']}")
         if result.get("published") is not None:
             _line(f"  public link: /d/{result['published'].proposal_uuid}")

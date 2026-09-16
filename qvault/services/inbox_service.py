@@ -126,16 +126,20 @@ def _settled(now: datetime):
     """Decided one way or another — including deadline-expired rows the sweep has not reached."""
     return or_(
         Proposal.status.in_(("approved", "rejected", "expired")),
-        and_(Proposal.status == "open", Proposal.expires_at.is_not(None), Proposal.expires_at <= now),
+        and_(
+            Proposal.status == "open", Proposal.expires_at.is_not(None), Proposal.expires_at <= now
+        ),
     )
 
 
 def _unsigned_by(user: User):
     """No signature by this user on this proposal. One vote per signer is a DB constraint, so
     presence of a row is the whole test."""
-    return ~select(Signature.id).where(
-        Signature.proposal_id == Proposal.id, Signature.signer_id == user.id
-    ).exists()
+    return (
+        ~select(Signature.id)
+        .where(Signature.proposal_id == Proposal.id, Signature.signer_id == user.id)
+        .exists()
+    )
 
 
 def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
@@ -264,8 +268,10 @@ def counts(user: User, *, now: datetime | None = None) -> dict[str, int]:
     now = now or datetime.now(UTC)
     out = {}
     for tab in TABS:
-        stmt = select(func.count()).select_from(Proposal).where(
-            Proposal.vault_id.in_(_member_vault_ids(user))
+        stmt = (
+            select(func.count())
+            .select_from(Proposal)
+            .where(Proposal.vault_id.in_(_member_vault_ids(user)))
         )
         condition = _tab_condition(user, tab, now)
         if condition is not None:
@@ -277,23 +283,24 @@ def counts(user: User, *, now: datetime | None = None) -> dict[str, int]:
 def awaiting_signature(user: User, *, now: datetime | None = None) -> int:
     """How many decisions are waiting on this user — the navigation badge."""
     now = now or datetime.now(UTC)
-    return db.session.scalar(
-        select(func.count())
-        .select_from(Proposal)
-        .where(
-            Proposal.vault_id.in_(_member_vault_ids(user)),
-            _tab_condition(user, "needs_you", now),
+    return (
+        db.session.scalar(
+            select(func.count())
+            .select_from(Proposal)
+            .where(
+                Proposal.vault_id.in_(_member_vault_ids(user)),
+                _tab_condition(user, "needs_you", now),
+            )
         )
-    ) or 0
+        or 0
+    )
 
 
 def vaults_for_filter(user: User) -> list[Vault]:
     """The vaults this user can filter by, newest first — the options in the vault dropdown."""
     return list(
         db.session.scalars(
-            select(Vault)
-            .where(Vault.id.in_(_member_vault_ids(user)))
-            .order_by(Vault.name.asc())
+            select(Vault).where(Vault.id.in_(_member_vault_ids(user))).order_by(Vault.name.asc())
         )
     )
 

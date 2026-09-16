@@ -185,7 +185,9 @@ def verify_all_artefacts(*, detail: bool = False) -> dict:
                     "verified": passed,
                     "size_bytes": len(sig.signature),
                     "created_at": sig.created_at,
-                    "who": (sig.signer.display_name or sig.signer.email) if sig.signer else "someone",
+                    "who": (
+                        (sig.signer.display_name or sig.signer.email) if sig.signer else "someone"
+                    ),
                     "what": sig.proposal.title if sig.proposal else "a decision",
                     "action": "approved" if sig.decision == "approve" else "rejected",
                     "key_status": sig.key.status if sig.key else "unknown",

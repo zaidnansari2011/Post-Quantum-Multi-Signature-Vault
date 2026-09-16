@@ -21,9 +21,7 @@ IMPORT_RE = re.compile(r"^import\s+([\s\S]*?)\s+from\s+['\"]([^'\"]+)['\"];?[ \t
 BARE_IMPORT_RE = re.compile(r"^import\s+['\"]([^'\"]+)['\"];?[ \t]*$", re.M)
 EXPORT_STAR_RE = re.compile(r"^export\s+\*\s+from\s+['\"]([^'\"]+)['\"];?[ \t]*$", re.M)
 EXPORT_LIST_RE = re.compile(r"^export\s*\{([^}]*)\}\s*;?[ \t]*$", re.M)
-EXPORT_DECL_RE = re.compile(
-    r"^export\s+(?=(?:async\s+)?(?:const|let|var|function|class)\b)", re.M
-)
+EXPORT_DECL_RE = re.compile(r"^export\s+(?=(?:async\s+)?(?:const|let|var|function|class)\b)", re.M)
 DECL_NAME_RE = re.compile(
     r"^export\s+(?:async\s+)?(?:const|let|var|function\s*\*?|class)\s+([A-Za-z_$][\w$]*)", re.M
 )

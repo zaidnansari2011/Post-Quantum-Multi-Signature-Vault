@@ -41,9 +41,7 @@ def member(app, admin):
 
 
 def _login(client, email):
-    return client.post(
-        "/login", data={"email": email, "password": PASSWORD}, follow_redirects=True
-    )
+    return client.post("/login", data={"email": email, "password": PASSWORD}, follow_redirects=True)
 
 
 # --- access ------------------------------------------------------------------------------------

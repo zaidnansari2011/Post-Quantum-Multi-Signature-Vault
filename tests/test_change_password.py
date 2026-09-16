@@ -11,8 +11,13 @@ from __future__ import annotations
 import pytest
 
 from qvault.models.key import Key
-from qvault.services import approval_service, auth_service, key_service, proposal_service
-from qvault.services import vault_service
+from qvault.services import (
+    approval_service,
+    auth_service,
+    key_service,
+    proposal_service,
+    vault_service,
+)
 from qvault.services.key_service import KeyUnlockError
 
 OLD = "old-password-123"

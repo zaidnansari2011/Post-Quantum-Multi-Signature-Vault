@@ -67,7 +67,10 @@ def _entries_for(proposal: Proposal, signer_ids: list[int]) -> list[LedgerEntry]
 
 
 def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> dict:
-    """Assemble the bundle. Creates a checkpoint on demand if the newest events are not yet in one."""
+    """Assemble the bundle.
+
+    Creates a checkpoint on demand if the newest events are not yet in one.
+    """
     signatures = sorted(proposal.signatures, key=lambda s: s.created_at)
     signer_ids = [s.signer_id for s in signatures]
     entries = _entries_for(proposal, signer_ids)

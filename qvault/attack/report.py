@@ -155,12 +155,19 @@ def to_markdown(report: dict) -> str:
         ]
         if a.get("standard"):
             lines.append(f"- **Reference:** {a['standard']}")
-        lines += [f"- **Status:** {_STATUS_LABEL.get(a['status'], a['status'])} - {a['headline']}", ""]
+        lines += [
+            f"- **Status:** {_STATUS_LABEL.get(a['status'], a['status'])} - {a['headline']}",
+            "",
+        ]
         for side, label in (
             ("real", "Against the real system" if a["kind"] != CONTRAST else "Against RSA/ECDSA"),
             (
                 "control",
-                "Against the control" if a["kind"] != CONTRAST else "Against the post-quantum algorithm",
+                (
+                    "Against the control"
+                    if a["kind"] != CONTRAST
+                    else "Against the post-quantum algorithm"
+                ),
             ),
         ):
             run = a[side]

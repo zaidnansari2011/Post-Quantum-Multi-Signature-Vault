@@ -25,8 +25,13 @@ import random
 from ..extensions import db
 from ..models.ledger import LedgerEntry
 from ..models.signature import Signature
-from ..services import approval_service, auth_service, proposal_service, vault_service
-from ..services import ledger_service
+from ..services import (
+    approval_service,
+    auth_service,
+    ledger_service,
+    proposal_service,
+    vault_service,
+)
 from .harness import Attack, Run, blocked, succeeded
 
 PASSWORD = "attack-lab-password-2026"
@@ -440,7 +445,7 @@ def file_tamper_control(_: random.Random) -> Run:
     target = plaintext.index(b"250,000")
     corrupted = bytearray(blob)
     # "250,000" -> "850,000": flip the bits that differ, in the ciphertext.
-    for i, (old, new) in enumerate(zip(b"250,000", b"850,000")):
+    for i, (old, new) in enumerate(zip(b"250,000", b"850,000", strict=True)):
         corrupted[target + i] ^= old ^ new
     recovered = ctr(bytes(corrupted))
     run.step(

@@ -150,7 +150,9 @@ def act_one_forge(out: Out, message: str, rng: random.Random) -> None:
     result = shor.shor_factor(public["n"], rng=rng)
     elapsed = (time.perf_counter() - started) * 1000
     if not result.succeeded:  # pragma: no cover - probabilistic; re-run
-        out.bad("The simulated order-finding exhausted its rounds. Re-run -- Shor is probabilistic.")
+        out.bad(
+            "The simulated order-finding exhausted its rounds. Re-run -- Shor is probabilistic."
+        )
         return
     last = result.order_runs[-1]
     out.value("simulation mode:", last.mode)
@@ -165,7 +167,10 @@ def act_one_forge(out: Out, message: str, rng: random.Random) -> None:
             "those draws away rather than counting a win it could not have at real scale."
         )
     p, q = result.factors
-    out.good(f"FACTORED:  {public['n']} = {p} x {q}    ({len(result.order_runs)} round(s), {elapsed:.0f} ms)")
+    out.good(
+        f"FACTORED:  {public['n']} = {p} x {q}    "
+        f"({len(result.order_runs)} round(s), {elapsed:.0f} ms)"
+    )
 
     out.step(
         "Recovering the private exponent.",
@@ -236,14 +241,16 @@ def act_two_scale(out: Out, rng: random.Random) -> None:
     out.value("anchor:", classical["anchor"])
     out.value("RSA-2048 / RSA-250 work:", f"{classical['gnfs_ratio_to_anchor']:.1e}x")
     out.value("RSA-2048 classically:", f"{classical['core_years_human']} core-years")
-    out.value("  = times age of universe:", f"{classical['times_age_of_universe']:,.0f}x (one core)")
-    out.value("RSA-2048 with Shor:", f"{latest['wall_clock']}, {latest['physical_qubits']:,} qubits")
+    out.value(
+        "  = times age of universe:", f"{classical['times_age_of_universe']:,.0f}x (one core)"
+    )
+    out.value(
+        "RSA-2048 with Shor:", f"{latest['wall_clock']}, {latest['physical_qubits']:,} qubits"
+    )
     out.value("  source:", latest["source"])
     out.value("Shor's scaling:", quantum["scaling"])
 
-    out.good(
-        "Classical cost grows super-polynomially. Shor's grows as the cube of the key size."
-    )
+    out.good("Classical cost grows super-polynomially. Shor's grows as the cube of the key size.")
     out.say(
         "So the algorithm you just watched is the one that runs in a week on a machine "
         "people are building. The only thing I scaled down is the key, because I simulated "

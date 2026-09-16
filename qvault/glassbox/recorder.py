@@ -32,7 +32,7 @@ import threading
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import perf_counter_ns
 
 from qvault.glassbox import source as source_module
@@ -43,17 +43,17 @@ from qvault.glassbox.redaction import Rendered, present
 MAX_OPERATIONS = 60
 
 _lock = threading.Lock()
-_operations: deque["Operation"] = deque(maxlen=MAX_OPERATIONS)
+_operations: deque[Operation] = deque(maxlen=MAX_OPERATIONS)
 _seq = itertools.count(1)
 
 #: The operation open in this context, if any. Set by :func:`operation`, read by :func:`step`.
-_current: contextvars.ContextVar["Operation | None"] = contextvars.ContextVar(
+_current: contextvars.ContextVar[Operation | None] = contextvars.ContextVar(
     "glassbox_current_operation", default=None
 )
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 @dataclass

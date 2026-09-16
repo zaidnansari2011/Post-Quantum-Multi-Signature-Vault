@@ -12,8 +12,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from qvault.services import approval_service, auth_service, proposal_service, vault_service
-from qvault.services import inbox_service
+from qvault.services import (
+    approval_service,
+    auth_service,
+    inbox_service,
+    proposal_service,
+    vault_service,
+)
 from qvault.services.approval_service import ApprovalError
 from qvault.services.inbox_service import Filters
 
@@ -102,9 +107,7 @@ def test_decorate_agrees_with_the_needs_you_query(app, people, treasury):
 
     for person in (ada, latecomer):
         page = inbox_service.search(person, Filters(tab="all", per_page=100))
-        rows = inbox_service.decorate(
-            page.items, person, inbox_service.signer_vault_ids(person)
-        )
+        rows = inbox_service.decorate(page.items, person, inbox_service.signer_vault_ids(person))
         assert sum(1 for r in rows if r["needs_me"]) == inbox_service.awaiting_signature(person)
 
 
@@ -137,9 +140,10 @@ def test_a_future_deadline_stays_open(app, people, treasury):
     future = datetime.now(UTC) + timedelta(days=1)
     proposal_service.create_proposal(treasury, ada, "Live", "x", deadline=future)
     assert inbox_service.search(ada, Filters(tab="open")).total == 1
-    assert inbox_service.effective_status(
-        inbox_service.search(ada, Filters(tab="open")).items[0]
-    ) == "open"
+    assert (
+        inbox_service.effective_status(inbox_service.search(ada, Filters(tab="open")).items[0])
+        == "open"
+    )
 
 
 def test_settled_covers_approved_and_rejected(app, people, treasury):
@@ -172,9 +176,9 @@ def test_search_treats_wildcards_as_literal_text(app, people, treasury):
     proposal_service.create_proposal(treasury, ada, "Hardware purchase", "x")
 
     assert inbox_service.search(ada, Filters(tab="all", query="100%")).total == 1
-    assert inbox_service.search(ada, Filters(tab="all", query="%")).total == 1, (
-        "a bare % should match only the title that literally contains one"
-    )
+    assert (
+        inbox_service.search(ada, Filters(tab="all", query="%")).total == 1
+    ), "a bare % should match only the title that literally contains one"
 
 
 def test_filtering_by_vault_cannot_reach_another_tenant(app, people, treasury):

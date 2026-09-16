@@ -99,9 +99,7 @@ def shor_breaks_rsa(rng: random.Random) -> Run:
             result.redrawn_lucky_bases,
         )
     rounds = len(result.order_runs)
-    round_note = (
-        f"{rounds} order-finding round(s), {result.elapsed_ms:.0f} ms on this CPU"
-    )
+    round_note = f"{rounds} order-finding round(s), {result.elapsed_ms:.0f} ms on this CPU"
     if rounds > 3:
         # Worth naming: a reader who knows Shor will wonder why it took so many attempts.
         round_note += (
@@ -323,7 +321,8 @@ def harvest_now_decrypt_later_mlkem(rng: random.Random) -> Run:
     if leaked:  # pragma: no cover
         return succeeded("a random 256-bit key authenticated")
     run.note = (
-        "The capture stays a capture. Note what is *not* claimed: ML-KEM is not proven unbreakable, "
+        "The capture stays a capture. Note what is *not* claimed: ML-KEM is not proven "
+        "unbreakable, "
         "only that no published attack applies. The system's answer to that residual risk is "
         "agility - the ability to change algorithm without losing the data."
     )

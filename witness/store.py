@@ -73,9 +73,7 @@ class WitnessStore:
     # --- the pinned log identity ---------------------------------------------------------
 
     def known_log(self, origin: str) -> sqlite3.Row | None:
-        return self._conn.execute(
-            "SELECT * FROM origins WHERE origin = ?", (origin,)
-        ).fetchone()
+        return self._conn.execute("SELECT * FROM origins WHERE origin = ?", (origin,)).fetchone()
 
     def pin_log(self, origin: str, alg_id: str, public_key: bytes) -> None:
         """Trust-on-first-use. The first key seen for an origin is the key for that origin.
@@ -142,9 +140,7 @@ class WitnessStore:
     def violations(self, origin: str | None = None, limit: int = 50) -> list[sqlite3.Row]:
         if origin is None:
             return list(
-                self._conn.execute(
-                    "SELECT * FROM violations ORDER BY id DESC LIMIT ?", (limit,)
-                )
+                self._conn.execute("SELECT * FROM violations ORDER BY id DESC LIMIT ?", (limit,))
             )
         return list(
             self._conn.execute(

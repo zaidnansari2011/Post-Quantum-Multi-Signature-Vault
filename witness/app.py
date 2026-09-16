@@ -144,7 +144,9 @@ def create_witness_app(
         #    unrelated party could park a huge tree_size here and lock the real log out forever.
         message = checkpoint_bytes(statement)
         if not registry.signature(log_alg_id).verify(log_public_key, message, log_signature):
-            store.record_violation(origin, "bad_signature", "log signature did not verify", statement)
+            store.record_violation(
+                origin, "bad_signature", "log signature did not verify", statement
+            )
             return _bad("log signature over the checkpoint did not verify", 409)
 
         # 3. Monotonicity and consistency — the reason this process exists.
@@ -172,7 +174,9 @@ def create_witness_app(
                         f"{statement['root_hash']}",
                         statement,
                     )
-                    return _bad(f"fork: a different root was already co-signed at size {new_size}", 409)
+                    return _bad(
+                        f"fork: a different root was already co-signed at size {new_size}", 409
+                    )
                 # Same size, same root. Reissue the stored signature only if the offered statement
                 # is byte-identical to the one it was made over — matching on (size, root) alone
                 # was a bug: a checkpoint re-created after a restart carries a new `timestamp`, so
@@ -308,7 +312,8 @@ _PAGE = """<!doctype html>
   <table style="margin-top:.75rem">
     <tr><th style="width:12rem">Size</th><th>Root</th><th style="width:14rem">Seen</th></tr>
     {% for h in o.history %}
-      <tr><td>{{ h.tree_size }}</td><td class="hash">{{ h.root_hash }}</td><td>{{ h.seen_at }}</td></tr>
+      <tr><td>{{ h.tree_size }}</td><td class="hash">{{ h.root_hash }}</td>
+          <td>{{ h.seen_at }}</td></tr>
     {% endfor %}
   </table>
 {% endfor %}

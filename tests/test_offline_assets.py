@@ -61,11 +61,14 @@ def test_the_vendored_assets_are_actually_present():
     assert not missing, f"vendored assets missing: {missing}"
 
     fonts = list((STATIC / "vendor" / "fonts").glob("*.woff2"))
-    assert len(fonts) >= 6, f"expected the Archivo + Inter + JetBrains Mono weights, found {len(fonts)}"
+    assert (
+        len(fonts) >= 6
+    ), f"expected the Archivo + Inter + JetBrains Mono weights, found {len(fonts)}"
 
 
 def test_no_bootstrap_class_survives_in_a_template():
-    """Bootstrap was dropped for the project's own design system. A stray `col-lg-6` or `btn-primary`
+    """Bootstrap was dropped for the project's own design system. A stray `col-lg-6` or
+    `btn-primary`
     left in a template is now dead markup that silently renders as an unstyled block — which looks
     like a bug in the design rather than the leftover it is."""
     # (?![-\w]) rather than \b: \b would match inside this design system's own `row-flex` and

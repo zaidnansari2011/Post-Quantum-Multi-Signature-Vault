@@ -158,10 +158,9 @@ def test_the_script_is_runnable_as_a_file():
     """``python scripts/demo_attack.py`` must work, not just the imported module."""
     sys.argv = ["demo_attack.py", "Approve", "--act", "1", "--fast", "--no-colour"]
     with pytest.raises(SystemExit) as exit_info:
-        runpy.run_path(
-            str(__import__("pathlib").Path(demo_attack.__file__)), run_name="__main__"
-        )
+        runpy.run_path(str(__import__("pathlib").Path(demo_attack.__file__)), run_name="__main__")
     assert exit_info.value.code == 0
+
 
 def test_the_pace_is_controllable_and_fast_means_no_pauses():
     """The default pace is tuned for narration, so tests and CI must be able to switch it off.

@@ -375,8 +375,10 @@ def publish_proposal(vid: int, pid: str):
     except PublicationError as exc:
         flash(str(exc), "danger")
     else:
-        flash("Public link created. Anyone with the link can now read and verify this decision.",
-              "success")
+        flash(
+            "Public link created. Anyone with the link can now read and verify this decision.",
+            "success",
+        )
     return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
 
@@ -478,9 +480,7 @@ def vote(vid: int, pid: str):
         # linked to, and there is nothing secret in a receipt for a signature already listed on
         # the page it appears on. No flash here — the receipt states the outcome in far more
         # detail than a one-line banner could, and two announcements of one event read as noise.
-        return redirect(
-            url_for("vaults.proposal_detail", vid=vid, pid=pid, receipt=signature.id)
-        )
+        return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid, receipt=signature.id))
     return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
 
@@ -497,7 +497,8 @@ def download_file(vid: int, pid: str):
         # Ordered before FileDecryptError: CiphertextMissing is a subclass, and the two need
         # different words. Nothing failed to authenticate here — the bytes are absent.
         current_app.logger.error(
-            "ciphertext missing for file id=%s path=%s", proposal.file.id,
+            "ciphertext missing for file id=%s path=%s",
+            proposal.file.id,
             proposal.file.ciphertext_path,
         )
         flash(

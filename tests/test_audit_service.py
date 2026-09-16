@@ -75,7 +75,9 @@ def test_export_rows_carry_the_hashes_and_a_sentence(app, two_tenants):
     ada, _, _, _ = two_tenants
     rows = list(audit_service.export(ada, Filters()))
     header, first = rows[0], rows[1]
-    record = dict(zip(header, first))
+    # strict: a row with more or fewer fields than the header is a broken export, not a row to
+    # quietly truncate into a dict that then passes the assertions below.
+    record = dict(zip(header, first, strict=True))
     assert record["description"], "an export a human cannot read is not an audit trail"
     assert len(record["entry_hash"]) == 64
     assert len(record["payload_hash"]) == 64
@@ -115,7 +117,10 @@ def test_a_date_range_narrows_the_result(app, two_tenants):
     all_entries = audit_service.search(ada, Filters(per_page=500)).total
     assert audit_service.search(ada, Filters(date_from="2099-01-01", per_page=500)).total == 0
     assert audit_service.search(ada, Filters(date_to="1999-01-01", per_page=500)).total == 0
-    assert audit_service.search(ada, Filters(date_from="2000-01-01", per_page=500)).total == all_entries
+    assert (
+        audit_service.search(ada, Filters(date_from="2000-01-01", per_page=500)).total
+        == all_entries
+    )
 
 
 def test_narration_names_people_and_vaults(app, two_tenants):

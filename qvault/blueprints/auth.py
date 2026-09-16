@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from qvault.forms import LoginForm, RegisterForm, ReissueKeyForm
-from qvault.models.config_models import AlgorithmConfig
 from qvault.services import auth_service, key_service
 from qvault.services.auth_service import EmailTakenError
 from qvault.services.key_service import KeyUnlockError

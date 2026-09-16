@@ -13,8 +13,6 @@ None of these controls are strawmen invented to lose — each is a design that h
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import random
 import time
 
@@ -299,8 +297,13 @@ def password_guessing_real(_: random.Random) -> Run:
         return succeeded(f"the password was recovered within the budget: {found!r}")
     run.step(
         "Extrapolated cost",
-        "at the measured rate, an eight-character lowercase-alphanumeric space (36^8) would take "
-        f"{36 ** 8 / rate / 31_557_600:,.0f} years of one machine's time" if rate else "rate too low",
+        (
+            "at the measured rate, an eight-character lowercase-alphanumeric space "
+            "(36^8) would take "
+            f"{36 ** 8 / rate / 31_557_600:,.0f} years of one machine's time"
+            if rate
+            else "rate too low"
+        ),
         f"{rate:.1f} guesses/sec",
     )
     return run
@@ -382,7 +385,9 @@ def attacks(rng: random.Random | None = None) -> list[Attack]:
             id="offline-password-guessing",
             title="Guess passwords offline against a stolen database",
             question="If the database leaks, how long do the signing keys last?",
-            capability="The entire database: salts, wrapped private keys, everything but passwords.",
+            capability=(
+                "The entire database: salts, wrapped private keys, everything but passwords."
+            ),
             goal="Recover a password and unwrap the signing key it protects",
             defence="Argon2id at memory-hard parameters, with a unique salt per user.",
             defence_ref="qvault/crypto/kdf.py",

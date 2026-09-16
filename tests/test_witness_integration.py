@@ -259,7 +259,7 @@ def test_an_export_after_the_witness_moved_on_is_still_witnessed(app, witness):
 
 
 def test_an_unreachable_witness_never_breaks_the_application(app, witness, monkeypatch):
-    """"Not yet witnessed" is a true and useful statement. A stack trace is not."""
+    """ "Not yet witnessed" is a true and useful statement. A stack trace is not."""
 
     def unreachable(*args, **kwargs):
         raise OSError("connection refused")
