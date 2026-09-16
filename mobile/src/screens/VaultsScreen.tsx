@@ -17,14 +17,33 @@
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
-import { Banner, Card, Chip, Empty, PageTitle, Row, Screen, Skeleton } from '../ui/index.tsx';
+import Feather from '@expo/vector-icons/Feather';
+
+import {
+  Banner,
+  Button,
+  Card,
+  Chip,
+  Empty,
+  HeaderAction,
+  PageTitle,
+  Row,
+  Screen,
+  Skeleton,
+} from '../ui/index.tsx';
 import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { VaultSummary } from '../api/schemas.ts';
 
-export default function VaultsScreen({ onOpen }: { onOpen: (vaultId: number) => void }) {
+export default function VaultsScreen({
+  onOpen,
+  onCreate,
+}: {
+  onOpen: (vaultId: number) => void;
+  onCreate: () => void;
+}) {
   const { token, handleUnauthorized } = useEnrolledSession();
 
   const query = useQuery({
@@ -63,7 +82,16 @@ export default function VaultsScreen({ onOpen }: { onOpen: (vaultId: number) => 
         )}
         ListHeaderComponent={
           <View>
-            <PageTitle title="Vaults" />
+            <PageTitle
+              title="Vaults"
+              trailing={
+                <HeaderAction
+                  label="Create a vault"
+                  onPress={onCreate}
+                  icon={<Feather name="plus" size={22} color={color.chromeInk} />}
+                />
+              }
+            />
             {transportFailure ? (
               <View style={{ marginBottom: space.md }}>
                 <Banner
@@ -88,7 +116,8 @@ export default function VaultsScreen({ onOpen }: { onOpen: (vaultId: number) => 
           ) : transportFailure ? null : (
             <Empty
               title="You are not on any vaults yet."
-              detail="A vault owner adds you, and it appears here."
+              detail="A vault sets who must approve a decision, and how many of them."
+              action={<Button label="Create a vault" onPress={onCreate} full={false} />}
             />
           )
         }

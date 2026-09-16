@@ -5,6 +5,7 @@ import {
   castVoteResponse,
   challengeResponse,
   createProposalResponse,
+  createVaultResponse,
   devicesResponse,
   enrolResponse,
   meResponse,
@@ -78,6 +79,48 @@ export function fetchProposal(token: string, uuid: string, signal?: AbortSignal)
     path: `/api/v1/proposals/${encodeURIComponent(uuid)}`,
     token,
     signal,
+  });
+}
+
+/**
+ * Create a vault, with its signers, in one call.
+ *
+ * Members go with the create rather than following it: `create_proposal` refuses when M exceeds
+ * the signer count, so a 3-of-N vault created alone would reject every decision raised in it until
+ * somebody remembered a second request. One round trip also means a dropped connection cannot
+ * leave a half-built vault behind.
+ */
+export function createVault(args: {
+  token: string;
+  name: string;
+  description?: string;
+  thresholdM: number;
+  memberEmails: string[];
+}) {
+  return request(createVaultResponse, {
+    method: 'POST',
+    path: '/api/v1/vaults',
+    token: args.token,
+    body: {
+      name: args.name,
+      description: args.description ?? '',
+      threshold_m: args.thresholdM,
+      member_emails: args.memberEmails,
+    },
+  });
+}
+
+export function addVaultMember(args: {
+  token: string;
+  vaultId: number;
+  email: string;
+  role?: 'signer' | 'viewer';
+}) {
+  return request(createVaultResponse, {
+    method: 'POST',
+    path: `/api/v1/vaults/${args.vaultId}/members`,
+    token: args.token,
+    body: { email: args.email, role: args.role ?? 'signer' },
   });
 }
 
