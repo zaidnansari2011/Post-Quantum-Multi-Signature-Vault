@@ -94,7 +94,10 @@ def test_classical_providers_declare_themselves_quantum_vulnerable(provider):
     assert provider.meta.quantum_vulnerable is True
     assert provider.meta.security_category == 0
     assert "Shor" in (provider.meta.broken_by or "")
-    assert "NOT post-quantum" in provider.meta.nist_standard or "breakable" in provider.meta.nist_standard
+    assert (
+        "NOT post-quantum" in provider.meta.nist_standard
+        or "breakable" in provider.meta.nist_standard
+    )
 
 
 def test_post_quantum_providers_are_not_flagged(registry):
@@ -152,7 +155,8 @@ def test_rsa_kem_rejects_implicitly_like_ml_kem(registry):
 
     The interface was written against ML-KEM, whose Fujisaki-Okamoto transform returns a
     pseudorandom secret for an invalid ciphertext. RSA-OAEP raises instead, so this provider had to
-    implement implicit rejection to conform — the same defence whose absence enabled Bleichenbacher's
+    implement implicit rejection to conform — the same defence whose absence enabled
+    Bleichenbacher's
     attack. This test pins that behaviour so it cannot be "simplified" back into a raise.
     """
     provider = registry.kem("RSA-2048-OAEP")
@@ -182,7 +186,9 @@ def test_two_keys_reject_the_same_ciphertext_differently(registry):
     provider = registry.kem("RSA-2048-OAEP")
     a, b = provider.keygen(), provider.keygen()
     garbage = bytes(256)
-    assert provider.decapsulate(a.secret_key, garbage) != provider.decapsulate(b.secret_key, garbage)
+    assert provider.decapsulate(a.secret_key, garbage) != provider.decapsulate(
+        b.secret_key, garbage
+    )
 
 
 # --- 4. the registry can still be built without them ---------------------------------------------

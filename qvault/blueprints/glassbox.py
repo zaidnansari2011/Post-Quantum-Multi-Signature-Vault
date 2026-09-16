@@ -19,7 +19,16 @@ advertise itself to someone probing for it.
 
 from __future__ import annotations
 
-from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from qvault import glassbox
 from qvault.forms import TraceClearForm

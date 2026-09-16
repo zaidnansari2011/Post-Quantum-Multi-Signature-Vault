@@ -163,7 +163,9 @@ def test_the_leaf_cache_is_extended_not_rebuilt(app):
 
 
 def test_the_leaf_cache_is_discarded_when_history_changes_underneath_it(app):
-    """A rewrite moves the tip's chain hash; the cache must notice rather than serve stale leaves."""
+    """A rewrite moves the tip's chain hash; the cache must notice rather than serve stale
+    leaves.
+    """
     append(app, 6)
     before = list(checkpoint_service.leaf_hashes())
 

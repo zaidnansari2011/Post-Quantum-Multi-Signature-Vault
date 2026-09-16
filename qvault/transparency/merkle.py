@@ -156,7 +156,8 @@ def verify_inclusion(
     proof: Sequence[bytes],
     root: bytes,
 ) -> bool:
-    """True if ``proof`` shows ``leaf`` sits at ``index`` in the tree of ``tree_size`` with ``root``.
+    """True if ``proof`` shows ``leaf`` sits at ``index`` in the tree of ``tree_size``
+    with ``root``.
 
     Note the final ``sn == 0``: it requires the proof to have exactly the right length. Without
     it a truncated proof could stop early on a partially-recomputed value that happened to match,

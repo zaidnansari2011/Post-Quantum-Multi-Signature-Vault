@@ -19,7 +19,6 @@ still runs on a machine that has not done ``playwright install``.
 from __future__ import annotations
 
 import copy
-import json
 import pathlib
 from base64 import b64decode, b64encode
 
@@ -36,9 +35,7 @@ from qvault.services import (
 )
 from qvault.verify import verify_bundle
 
-playwright_api = pytest.importorskip(
-    "playwright.sync_api", reason="playwright is not installed"
-)
+playwright_api = pytest.importorskip("playwright.sync_api", reason="playwright is not installed")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERIFIER = ROOT / "qvault" / "static" / "verifier.html"
@@ -123,7 +120,9 @@ def agree(app, page, bundle, pins=None):
     js_failed = {c["key"] for c in js["checks"] if not c["ok"] and not c["skipped"]}
     py_failed = {c.key for c in py.failures}
     assert js["ok"] == py.ok, f"verdicts differ: browser={js['ok']} python={py.ok}\n{js['summary']}"
-    assert js_failed == py_failed, f"different checks failed: browser={js_failed} python={py_failed}"
+    assert (
+        js_failed == py_failed
+    ), f"different checks failed: browser={js_failed} python={py_failed}"
     return js
 
 
@@ -139,9 +138,9 @@ def test_the_committed_verifier_matches_its_sources():
     sys.path.insert(0, str(ROOT / "scripts"))
     from build_verifier import render
 
-    assert VERIFIER.read_text(encoding="utf-8") == render(), (
-        "qvault/static/verifier.html is out of date — run scripts/build_verifier.py"
-    )
+    assert (
+        VERIFIER.read_text(encoding="utf-8") == render()
+    ), "qvault/static/verifier.html is out of date — run scripts/build_verifier.py"
 
 
 def test_the_verifier_fetches_nothing():
@@ -164,7 +163,7 @@ def test_the_verifier_fetches_nothing():
     # No element that loads a subresource, and no ES module import that would need a server.
     for tag in ("<link", "<img", "<iframe", "<object", "<embed", 'type="module"'):
         assert tag not in html.lower(), f"the offline verifier contains {tag}"
-    assert not re.search(r'\bimport\s*\(', html), "dynamic import needs a module loader"
+    assert not re.search(r"\bimport\s*\(", html), "dynamic import needs a module loader"
 
 
 # --------------------------------------------------------------------------------------------
@@ -283,7 +282,7 @@ def test_a_tampered_merkle_proof_is_rejected_in_the_browser_too(app, page, bundl
         first[0] ^= 0xFF
         entry["inclusion_proof"][0] = bytes(first).hex()
     else:
-        entry["inclusion_proof"] = [("aa" * 32)]
+        entry["inclusion_proof"] = ["aa" * 32]
 
     report = agree(app, page, forged)
     assert "inclusion" in {c["key"] for c in report["checks"] if not c["ok"]}
@@ -295,9 +294,7 @@ def test_a_forged_checkpoint_signature_is_rejected_in_the_browser_too(app, page,
     raw[-1] ^= 0xFF
     forged["log"]["checkpoint_signature"]["signature_b64"] = b64encode(bytes(raw)).decode()
 
-    assert "checkpoint" in {
-        c["key"] for c in agree(app, page, forged)["checks"] if not c["ok"]
-    }
+    assert "checkpoint" in {c["key"] for c in agree(app, page, forged)["checks"] if not c["ok"]}
 
 
 def test_a_forged_witness_co_signature_is_rejected_in_the_browser_too(app, page, bundle):
@@ -324,9 +321,12 @@ def test_a_relabelled_signer_is_rejected_in_the_browser_too(app, page, bundle):
 @pytest.mark.parametrize("field", ["required_m", "nonce_hex", "created_at_iso", "vault_id"])
 def test_every_signed_field_is_covered_in_the_browser_too(app, page, bundle, field):
     forged = copy.deepcopy(bundle)
-    forged["decision"][field] = {"required_m": 1, "nonce_hex": "00" * 16,
-                                 "created_at_iso": "2020-01-01T00:00:00+00:00",
-                                 "vault_id": 99}[field]
+    forged["decision"][field] = {
+        "required_m": 1,
+        "nonce_hex": "00" * 16,
+        "created_at_iso": "2020-01-01T00:00:00+00:00",
+        "vault_id": 99,
+    }[field]
     assert agree(app, page, forged)["ok"] is False
 
 
@@ -510,9 +510,7 @@ def test_pinning_a_fingerprint_is_reachable_without_hunting_for_it(app, browser,
 
         p.fill("#pinwit", expected)
         p.dispatch_event("#pinwit", "change")
-        p.wait_for_function(
-            "document.querySelectorAll('.checks li').length > 11", timeout=30_000
-        )
+        p.wait_for_function("document.querySelectorAll('.checks li').length > 11", timeout=30_000)
         titles = p.locator(".checks li .ctitle").all_inner_texts()
         assert "The witness key is the one you expected" in titles
         assert p.locator(".banner__title").first.inner_text().startswith("Verified")

@@ -240,9 +240,7 @@ def export(user: User, filters: Filters):
 
 def event_types_present(user: User) -> list[str]:
     """Event types that actually occur in this reader's scope — the options in the filter."""
-    rows = db.session.scalars(
-        select(distinct(LedgerEntry.event_type)).where(_scope(user))
-    ).all()
+    rows = db.session.scalars(select(distinct(LedgerEntry.event_type)).where(_scope(user))).all()
     known = [e for e in FILTERABLE_EVENTS if e in set(rows)]
     unknown = sorted(set(rows) - set(FILTERABLE_EVENTS))
     return known + unknown
@@ -267,7 +265,9 @@ def vaults_present(user: User) -> list[Vault]:
 def actors_present(user: User) -> list[User]:
     """People who appear as an actor in this reader's scope."""
     ids = db.session.scalars(
-        select(distinct(LedgerEntry.actor_id)).where(_scope(user), LedgerEntry.actor_id.is_not(None))
+        select(distinct(LedgerEntry.actor_id)).where(
+            _scope(user), LedgerEntry.actor_id.is_not(None)
+        )
     ).all()
     if not ids:
         return []

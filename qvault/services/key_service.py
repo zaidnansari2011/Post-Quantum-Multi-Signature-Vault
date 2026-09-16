@@ -135,9 +135,7 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
 
     symmetric = _registry().symmetric(_SYMMETRIC_ALG)
     try:
-        with glassbox.step(
-            "Unwrap the private key (AES-256-GCM)", code=symmetric.decrypt
-        ) as trace:
+        with glassbox.step("Unwrap the private key (AES-256-GCM)", code=symmetric.decrypt) as trace:
             trace.input("wrapped key", glassbox.Hex(key.secret_key_wrapped))
             trace.input("nonce", glassbox.Hex(key.secret_key_nonce, full=True))
             trace.input("associated data", glassbox.Text(_WRAP_AAD, note="binds the wrap"))
@@ -187,9 +185,7 @@ def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
     finally:
         del secret_key
 
-    with glassbox.step(
-        "Verify the signature before releasing it", code=provider.verify
-    ) as trace:
+    with glassbox.step("Verify the signature before releasing it", code=provider.verify) as trace:
         # ADR-0010's invariant, made visible. A reader who does not believe the claim in the
         # docstring can watch this step run on every single signature the system produces.
         trace.annotate(
@@ -255,9 +251,7 @@ def password_wrapped_keys(user: User) -> list[Key]:
     decrypt vault files. Anything that re-derives or re-wraps password-protected material must use
     this function, or it will eventually reach for a master-wrapped key with a password KEK.
     """
-    return (
-        Key.query.filter_by(owner_id=user.id, wrap_domain="password").order_by(Key.id).all()
-    )
+    return Key.query.filter_by(owner_id=user.id, wrap_domain="password").order_by(Key.id).all()
 
 
 def change_password(

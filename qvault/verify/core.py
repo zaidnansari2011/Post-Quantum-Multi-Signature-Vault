@@ -164,7 +164,9 @@ def verify_bundle(
     report.ok = bool(graded) and all(c.ok for c in graded)
     if report.ok:
         skipped = [c for c in report.checks if c.skipped]
-        report.summary = "Verified" + (f" ({len(skipped)} check(s) not applicable)" if skipped else "")
+        report.summary = "Verified" + (
+            f" ({len(skipped)} check(s) not applicable)" if skipped else ""
+        )
     else:
         first = report.failures[0] if report.failures else None
         report.summary = f"NOT verified — {first.detail}" if first else "NOT verified"
@@ -191,9 +193,7 @@ def _verify_into(
     family, _, major = fmt.rpartition("/")
     expected_family, _, expected_major = BUNDLE_FORMAT.rpartition("/")
     if family != expected_family or major != expected_major:
-        raise _Malformed(
-            f"this verifier understands {BUNDLE_FORMAT}, the bundle claims {fmt}"
-        )
+        raise _Malformed(f"this verifier understands {BUNDLE_FORMAT}, the bundle claims {fmt}")
     add(Check("format", "The file is a Q-Vault decision bundle", True, fmt))
 
     decision = _need(bundle, "decision", "bundle")
@@ -206,7 +206,9 @@ def _verify_into(
     # 1. The content is what was hashed
     # ---------------------------------------------------------------------------------------
     signers_claimed = _need(decision, "authorized_signers", "decision")
-    if not isinstance(signers_claimed, list) or not all(isinstance(s, int) for s in signers_claimed):
+    if not isinstance(signers_claimed, list) or not all(
+        isinstance(s, int) for s in signers_claimed
+    ):
         raise _Malformed("decision.authorized_signers must be a list of integers")
 
     recomputed_bytes = proposal_signing_bytes(
@@ -285,13 +287,15 @@ def _verify_into(
             "Each signature is a valid post-quantum signature over it",
             not problems and bool(signatures),
             (
-                f"{len(verified)} of {len(signatures)} verified"
-                + (f" using {', '.join(sorted(algs))}" if algs else "")
-                if not problems
-                else "; ".join(problems)
-            )
-            if signatures
-            else "the bundle carries no signatures",
+                (
+                    f"{len(verified)} of {len(signatures)} verified"
+                    + (f" using {', '.join(sorted(algs))}" if algs else "")
+                    if not problems
+                    else "; ".join(problems)
+                )
+                if signatures
+                else "the bundle carries no signatures"
+            ),
         )
     )
 
@@ -301,7 +305,9 @@ def _verify_into(
     # ---------------------------------------------------------------------------------------
     authorised = set(signers_claimed)
     intruders = [
-        str(s.get("signer_email", s["signer_id"])) for s in verified if s["signer_id"] not in authorised
+        str(s.get("signer_email", s["signer_id"]))
+        for s in verified
+        if s["signer_id"] not in authorised
     ]
     seen: set[int] = set()
     duplicates = []
@@ -438,15 +444,15 @@ def _verify_into(
             identity.append(f"the log has no registration record for signer {s['signer_id']}")
         elif claimed is not None and claimed != recorded:
             identity.append(
-                f"the bundle calls signer {s['signer_id']} {claimed!r}, the log recorded {recorded!r}"
+                f"the bundle calls signer {s['signer_id']} {claimed!r}, "
+                f"the log recorded {recorded!r}"
             )
     add(
         Check(
             "identity",
             "The signers are the accounts the log recorded",
             not identity,
-            "; ".join(identity)
-            or ", ".join(sorted(str(v) for v in registrations.values() if v)),
+            "; ".join(identity) or ", ".join(sorted(str(v) for v in registrations.values() if v)),
         )
     )
 
@@ -509,7 +515,11 @@ def _verify_into(
         report.fingerprints["log"] = log_fp
 
         if not registry.has_signature(cp_alg):
-            add(Check("checkpoint", "The log signed that tree", False, f"unknown algorithm {cp_alg}"))
+            add(
+                Check(
+                    "checkpoint", "The log signed that tree", False, f"unknown algorithm {cp_alg}"
+                )
+            )
         else:
             valid = registry.signature(cp_alg).verify(
                 cp_key, checkpoint_bytes(checkpoint), cp_bytes
@@ -519,9 +529,11 @@ def _verify_into(
                     "checkpoint",
                     "The log signed that tree",
                     valid,
-                    f"{cp_alg}, log key {log_fp}"
-                    if valid
-                    else "the checkpoint signature did not verify",
+                    (
+                        f"{cp_alg}, log key {log_fp}"
+                        if valid
+                        else "the checkpoint signature did not verify"
+                    ),
                 )
             )
 
@@ -543,7 +555,9 @@ def _verify_into(
         if not registry.has_signature(alg):
             witness_problems.append(f"{name}: unknown algorithm {alg}")
             continue
-        if registry.signature(alg).verify(key, witness_bytes(witness=name, statement=checkpoint), sig):
+        if registry.signature(alg).verify(
+            key, witness_bytes(witness=name, statement=checkpoint), sig
+        ):
             good_witnesses.append((name, sha256_hex(key)[:16]))
         else:
             witness_problems.append(f"{name}: co-signature did not verify")
@@ -566,8 +580,7 @@ def _verify_into(
                 "witness",
                 "An independent witness countersigned it",
                 not witness_problems and bool(good_witnesses),
-                "; ".join(witness_problems)
-                or ", ".join(f"{n} ({f})" for n, f in good_witnesses),
+                "; ".join(witness_problems) or ", ".join(f"{n} ({f})" for n, f in good_witnesses),
             )
         )
 

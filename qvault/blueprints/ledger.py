@@ -71,9 +71,7 @@ def transparency():
     accepting entries but can no longer prove they extend what the witness already saw — which is
     what a rewrite or a truncation looks like from the outside.
     """
-    checkpoints = (
-        LogCheckpoint.query.order_by(LogCheckpoint.tree_size.desc()).limit(25).all()
-    )
+    checkpoints = LogCheckpoint.query.order_by(LogCheckpoint.tree_size.desc()).limit(25).all()
     latest = checkpoints[0] if checkpoints else None
     return render_template(
         "ledger/transparency.html",

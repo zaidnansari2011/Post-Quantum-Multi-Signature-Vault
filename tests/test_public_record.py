@@ -39,9 +39,7 @@ def make_decision(*, m: int = 1, decided: bool = True, reject: bool = False):
         vault, ada, "Wire to escrow", "Wire 250,000 EUR to escrow account GB29 NWBK."
     )
     if decided:
-        approval_service.cast_vote(
-            proposal, ada, PASSWORD, "reject" if reject else "approve"
-        )
+        approval_service.cast_vote(proposal, ada, PASSWORD, "reject" if reject else "approve")
     return ada, vault, proposal
 
 
@@ -278,8 +276,8 @@ def test_member_can_publish_and_revoke_through_the_ui(client, app):
 def test_an_open_decision_offers_no_publish_control(client, app):
     _, vault, proposal = make_decision(m=2, decided=False)
     login(client)
-    body = client.get(
-        f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}"
-    ).get_data(as_text=True)
+    body = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
     assert "Not yet decided" in body
     assert "Create public link" not in body

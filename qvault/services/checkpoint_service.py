@@ -222,7 +222,9 @@ def create_checkpoint(*, commit: bool = True) -> LogCheckpoint:
     # Verify before persisting (ADR-0010). A checkpoint that does not verify is worse than none:
     # it is published, third parties fetch it, and every one of them reports our log as broken.
     if not provider.verify(key.public_key, message, signature):
-        raise LogError(f"checkpoint over tree_size {statement['tree_size']} failed self-verification")
+        raise LogError(
+            f"checkpoint over tree_size {statement['tree_size']} failed self-verification"
+        )
 
     checkpoint = LogCheckpoint(
         origin=statement["origin"],
@@ -317,7 +319,9 @@ def verify_checkpoint(checkpoint: LogCheckpoint) -> bool:
     if not master_key.verify_mac(key.public_key, key.public_key_mac):
         return False
     provider = current_app.extensions["crypto"].signature(checkpoint.alg_id)
-    return provider.verify(key.public_key, checkpoint_bytes(checkpoint.statement()), checkpoint.signature)
+    return provider.verify(
+        key.public_key, checkpoint_bytes(checkpoint.statement()), checkpoint.signature
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -368,9 +372,11 @@ def _read_error(exc: urllib.error.HTTPError) -> dict:
         parsed = json.loads(body)
     except json.JSONDecodeError:
         return {"error": f"HTTP {exc.code}: {body[:200]}"}
-    return parsed if isinstance(parsed, dict) and parsed.get("error") else {
-        "error": f"HTTP {exc.code}: {body[:200]}"
-    }
+    return (
+        parsed
+        if isinstance(parsed, dict) and parsed.get("error")
+        else {"error": f"HTTP {exc.code}: {body[:200]}"}
+    )
 
 
 def _post(url: str, body: dict, timeout: float) -> dict:
@@ -475,7 +481,11 @@ def sync_witness(checkpoint: LogCheckpoint | None = None, *, commit: bool = True
         return {"configured": True, "witnessed": False, "reason": f"unknown witness alg {alg_id}"}
     message = witness_bytes(witness=name, statement=checkpoint.statement())
     if not registry.signature(alg_id).verify(public_key, message, signature):
-        return {"configured": True, "witnessed": False, "reason": "witness signature did not verify"}
+        return {
+            "configured": True,
+            "witnessed": False,
+            "reason": "witness signature did not verify",
+        }
 
     # Deliberately NOT appended to the ledger. Recording "checkpoint N was witnessed" as a ledger
     # event would grow the very tree that was just co-signed, so the witness would sit permanently
@@ -561,8 +571,6 @@ def witness_state() -> dict:
             }
         ),
         "lag": (
-            latest.tree_size - witnessed.checkpoint.tree_size
-            if latest and witnessed
-            else None
+            latest.tree_size - witnessed.checkpoint.tree_size if latest and witnessed else None
         ),
     }

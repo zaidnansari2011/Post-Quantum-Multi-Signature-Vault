@@ -33,7 +33,7 @@ MAX_LINES = 130
 #: needs in order to go and look at it themselves.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-_CACHE: dict[str, "Source"] = {}
+_CACHE: dict[str, Source] = {}
 
 
 @dataclass(frozen=True)

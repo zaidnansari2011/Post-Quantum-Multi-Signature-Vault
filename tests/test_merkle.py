@@ -249,9 +249,7 @@ def test_consistency_with_itself_needs_no_proof():
     leaves = leaves_for(12)
     root = merkle_root(leaves)
     assert consistency_proof(leaves, 12) == []
-    assert verify_consistency(
-        old_size=12, old_root=root, new_size=12, new_root=root, proof=[]
-    )
+    assert verify_consistency(old_size=12, old_root=root, new_size=12, new_root=root, proof=[])
 
 
 def test_a_log_that_shrank_is_never_consistent():
@@ -320,9 +318,7 @@ def test_a_tampered_consistency_proof_is_rejected(old_size):
 def test_the_empty_proof_only_extends_the_empty_tree():
     leaves = leaves_for(7)
     root = merkle_root(leaves)
-    assert verify_consistency(
-        old_size=0, old_root=EMPTY_ROOT, new_size=7, new_root=root, proof=[]
-    )
+    assert verify_consistency(old_size=0, old_root=EMPTY_ROOT, new_size=7, new_root=root, proof=[])
     assert not verify_consistency(
         old_size=3,
         old_root=merkle_root(leaves[:3]),

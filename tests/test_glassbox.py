@@ -23,7 +23,6 @@ from qvault import glassbox
 from qvault.glassbox import recorder, redaction, source
 from qvault.services import signing
 
-
 # ------------------------------------------------------------------------------------------
 # 1. Redaction
 # ------------------------------------------------------------------------------------------

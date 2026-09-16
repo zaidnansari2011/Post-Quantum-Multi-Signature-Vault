@@ -23,12 +23,32 @@ GATED = {"trace": "GLASSBOX_ENABLED"}
 
 # (slug, title, one-line summary) in reading order.
 PAGES = [
-    ("approvals", "How approvals work", "Proposing a decision, signing it, and what a threshold means."),
-    ("vaults", "Vaults and members", "Grouping people, setting how many must agree, and who can do what."),
-    ("audit", "The audit record", "What is recorded, why it cannot be quietly edited, and how to read it."),
-    ("verifying", "Verifying a decision yourself", "Exporting a decision and checking it without trusting this server."),
+    (
+        "approvals",
+        "How approvals work",
+        "Proposing a decision, signing it, and what a threshold means.",
+    ),
+    (
+        "vaults",
+        "Vaults and members",
+        "Grouping people, setting how many must agree, and who can do what.",
+    ),
+    (
+        "audit",
+        "The audit record",
+        "What is recorded, why it cannot be quietly edited, and how to read it.",
+    ),
+    (
+        "verifying",
+        "Verifying a decision yourself",
+        "Exporting a decision and checking it without trusting this server.",
+    ),
     ("keys", "Keys and custody", "What your signing key is, where it lives, and who can open it."),
-    ("algorithms", "Post-quantum algorithms", "The three standards in use, what they cost, and why they can be swapped."),
+    (
+        "algorithms",
+        "Post-quantum algorithms",
+        "The three standards in use, what they cost, and why they can be swapped.",
+    ),
     ("trace", "The live trace", "Watching the cryptography run, and checking its values yourself."),
 ]
 

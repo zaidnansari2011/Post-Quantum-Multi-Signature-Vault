@@ -290,7 +290,9 @@ def test_a_different_log_key_for_a_known_origin_is_refused(client, log_key, regi
     )
     assert resp.status_code == 409
     assert "pinned" in resp.get_json()["error"]
-    assert [v["kind"] for v in witness.config["WITNESS_STORE"].violations(ORIGIN)] == ["key_changed"]
+    assert [v["kind"] for v in witness.config["WITNESS_STORE"].violations(ORIGIN)] == [
+        "key_changed"
+    ]
 
 
 def test_an_unsigned_checkpoint_is_refused(client, log_key, witness):
@@ -368,9 +370,7 @@ def test_the_default_witness_algorithm_differs_from_the_logs(tmp_path):
     """
     from witness.identity import DEFAULT_WITNESS_ALG, load_or_create
 
-    identity = load_or_create(
-        tmp_path / "k.json", name="w", registry=build_registry(), alg_id=None
-    )
+    identity = load_or_create(tmp_path / "k.json", name="w", registry=build_registry(), alg_id=None)
     assert identity.alg_id == DEFAULT_WITNESS_ALG == "ML-DSA-87"
     assert identity.alg_id != "ML-DSA-65", "the witness must not share the log's parameters"
 
@@ -389,7 +389,9 @@ def test_the_key_is_stable_across_restarts(tmp_path, registry_mod):
     from witness.identity import load_or_create
 
     first = load_or_create(tmp_path / "k.json", name="w", registry=registry_mod, alg_id="ML-DSA-65")
-    second = load_or_create(tmp_path / "k.json", name="w", registry=registry_mod, alg_id="ML-DSA-65")
+    second = load_or_create(
+        tmp_path / "k.json", name="w", registry=registry_mod, alg_id="ML-DSA-65"
+    )
     assert first.public_key == second.public_key
     assert first.fingerprint() == second.fingerprint()
 

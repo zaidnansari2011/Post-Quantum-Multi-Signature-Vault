@@ -1,6 +1,6 @@
 """Run the Q-Vault adversary lab and write the report (ADR-0021).
 
-    .venv\\Scripts\\python scripts\\run_attack_lab.py              # everything, writes docs/attack-lab/
+    .venv\\Scripts\\python scripts\\run_attack_lab.py      # all of it, writes docs/attack-lab/
     .venv\\Scripts\\python scripts\\run_attack_lab.py --no-system   # algorithm-level attacks only
     .venv\\Scripts\\python scripts\\run_attack_lab.py --seed 7      # reproducible, for a figure
     .venv\\Scripts\\python scripts\\run_attack_lab.py --only shor-key-recovery
@@ -24,7 +24,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from qvault.attack import lab, report as report_module  # noqa: E402
+from qvault.attack import lab  # noqa: E402
+from qvault.attack import report as report_module
 from qvault.attack.harness import AS_EXPECTED  # noqa: E402
 
 DEFAULT_OUT = pathlib.Path("docs/attack-lab")

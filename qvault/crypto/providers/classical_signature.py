@@ -73,7 +73,6 @@ _VERIFY_FAILURES = (InvalidSignature, UnsupportedAlgorithm, ValueError, TypeErro
 # private key, and the target of that attack is the key's own owner.
 
 
-
 class RSA2048PSSProvider(SignatureProvider):
     """RSA-2048 with PSS padding and SHA-256 — the classical baseline for signatures.
 
@@ -126,9 +125,7 @@ class RSA2048PSSProvider(SignatureProvider):
     def _padding() -> padding.PSS:
         # A digest-length salt (32 B) rather than MAX_LENGTH: it is the FIPS 186-5 recommendation
         # and keeps the signature length deterministic, which the size assertions rely on.
-        return padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()), salt_length=hashes.SHA256.digest_size
-        )
+        return padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=hashes.SHA256.digest_size)
 
 
 class ECDSAP256Provider(SignatureProvider):

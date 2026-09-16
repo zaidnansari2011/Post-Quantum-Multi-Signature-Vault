@@ -45,7 +45,10 @@ def main() -> None:
     identity = app.config["WITNESS_IDENTITY"]
     print(f"witness {identity.name!r} — {identity.alg_id}, fingerprint {identity.fingerprint()}")
     print(f"  state {args.state}   key {args.key}")
-    print(f"  publish this fingerprint; verifiers pin it with --expect-witness {identity.fingerprint()}")
+    print(
+        f"  publish this fingerprint; verifiers pin it with "
+        f"--expect-witness {identity.fingerprint()}"
+    )
     app.run(host=args.host, port=args.port)
 
 
