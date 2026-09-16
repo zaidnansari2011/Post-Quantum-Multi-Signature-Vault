@@ -65,8 +65,9 @@ src/api/        zod schemas mirroring api.py, HTTP client, one function per rout
 src/custody.ts  the port the signing flows need from key storage
 src/keystore.ts the Expo implementation of that port
 src/flows.ts    enrolment and voting — no Expo imports, so it is testable off-device
-src/ui/         the component vocabulary, ported from qvault.css
-src/screens/    enrol, inbox, decision, device
+src/time.ts     how the app talks about time: relative language, coarse urgency bands
+src/ui/         the component vocabulary, plus Seal, Assurance, Sheet, TabBar
+src/screens/    enrol, home, decision, activity, account
 tools/          Node harnesses used by the pytest suite
 ```
 
@@ -76,11 +77,34 @@ a real server in CI instead of only by hand on a phone.
 
 ## Design
 
-The tokens in [`src/theme.ts`](src/theme.ts) are the ones in `qvault/static/qvault.css`, and the
-three rules carry over: colour never decorates data (only `sealed` / `waiting` / `broken`), the
-interface explains nothing, and each screen has exactly one moment of scale. Row density is
-relaxed — a 38px row is not tappable — but the palette, type scale and mono treatment are
-unchanged, so the two clients read as one product.
+Designed for an approver rather than ported from the console — see
+[ADR-0022](../docs/adr/0022-handset-client-for-an-approver.md) for the full argument. The previous
+version of [`src/theme.ts`](src/theme.ts) was a direct port of `qvault.css`, and it carried across
+three console habits that do not survive the move to a phone: uppercase tracked micro-labels, a
+monospace face for ordinary labels, and metadata joined with middle dots. None of those are here.
+
+What carries over is the part that is semantic rather than decorative: **colour never decorates
+data.** `sealed` / `waiting` / `broken` keep their exact values from the web client and remain the
+only saturated hues in the system. There is no brand accent, and no button is coloured to attract
+a tap.
+
+What is specific to this client:
+
+- **A quorum is drawn, not written.** `2/3 approved` is a number you have to parse; three marks
+  with two filled is a state you take in without reading. [`src/ui/Seal.tsx`](src/ui/Seal.tsx).
+- **Two typefaces with a job each.** Source Serif 4 sets the decision, because the decision is a
+  document; Public Sans sets the interface around it. Monospace is restricted to hashes and
+  fingerprints — values a reader compares character by character.
+- **Cryptography is quiet when it holds and loud when it fails.** One line, expandable; on an
+  integrity mismatch it opens, cannot be collapsed, and the signing controls withdraw.
+  [`src/ui/Assurance.tsx`](src/ui/Assurance.tsx).
+- **One orchestrated moment.** The seal closes when *your* signature completes the quorum, and only
+  then. Everywhere else, motion answers something the person just did.
+
+**Import fonts and icons by their subpath, never from the package root.** Metro bundles any asset
+it can see a `require` for, so `@expo-google-fonts/public-sans` pulls all eighteen faces and
+`@expo/vector-icons` pulls all nine icon families. The root form put 34 `.ttf` files in the build;
+the subpath form puts six. That is about 2MB, in the APK and in every OTA update.
 
 There is no NativeWind. It cannot share anything with a Flask/Jinja front end, so it would buy no
 synchronisation while adding a babel, metro and CSS-interop layer to debug.

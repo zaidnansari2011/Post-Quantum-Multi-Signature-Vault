@@ -4,12 +4,15 @@ import { request } from './client.ts';
 import {
   castVoteResponse,
   challengeResponse,
+  createProposalResponse,
   devicesResponse,
   enrolResponse,
   meResponse,
   proposalDetailResponse,
   proposalsResponse,
   revokeResponse,
+  vaultDetailResponse,
+  vaultsResponse,
 } from './schemas.ts';
 import type { Decision } from '../crypto/signing.ts';
 
@@ -75,6 +78,41 @@ export function fetchProposal(token: string, uuid: string, signal?: AbortSignal)
     path: `/api/v1/proposals/${encodeURIComponent(uuid)}`,
     token,
     signal,
+  });
+}
+
+export function fetchVaults(token: string, signal?: AbortSignal) {
+  return request(vaultsResponse, { path: '/api/v1/vaults', token, signal });
+}
+
+export function fetchVault(token: string, vaultId: number, signal?: AbortSignal) {
+  return request(vaultDetailResponse, { path: `/api/v1/vaults/${vaultId}`, token, signal });
+}
+
+/**
+ * Raise a decision.
+ *
+ * No attachment: the canonical signing payload binds an attached file's SHA-256, so a version that
+ * uploaded one without binding it would produce decisions whose signatures did not cover the
+ * document they are about. The web client keeps that job until this path is built to the same
+ * standard.
+ */
+export function createProposal(args: {
+  token: string;
+  vaultId: number;
+  title: string;
+  actionText: string;
+  expiresInHours?: number | null;
+}) {
+  return request(createProposalResponse, {
+    method: 'POST',
+    path: `/api/v1/vaults/${args.vaultId}/proposals`,
+    token: args.token,
+    body: {
+      title: args.title,
+      action_text: args.actionText,
+      expires_in_hours: args.expiresInHours ?? null,
+    },
   });
 }
 

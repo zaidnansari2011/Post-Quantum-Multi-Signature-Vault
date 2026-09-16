@@ -2,23 +2,41 @@
 // a third-party native module -- which Expo Go does not bundle, so it would fail on exactly the
 // devices this is meant to run on -- the randomness ML-DSA signing needs is supplied explicitly
 // from expo-crypto. See setRandomSource in src/crypto/algorithms.ts.
+//
+// Navigation is a tab bar over a stack, replacing the flat three-screen stack this app used to be.
+// The old shape had no route to anything except the approvals list and a decision, and reached the
+// device screen through a fingerprint printed in the list footer. Tabs make the product's surfaces
+// addressable: the queue, the record of what has been decided, and the person's own key.
+//
+// The decision screen is pushed above the tabs rather than living inside one, because it is
+// reachable from both the queue and the record and it is modal in intent -- someone on it is doing
+// one thing, and the tab bar would invite them to wander off mid-signature.
+import 'react-native-gesture-handler';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View } from 'react-native';
 
 import { setApiBaseUrl } from './src/config.ts';
-import { SessionProvider, useSession } from './src/session.tsx';
+import { SessionProvider, useSession, useEnrolledSession } from './src/session.tsx';
 import { Loading, Screen } from './src/ui/index.tsx';
+import { TabBar } from './src/ui/TabBar.tsx';
+import { useAppFonts } from './src/ui/fonts.ts';
 import { color } from './src/theme.ts';
+import * as api from './src/api/endpoints.ts';
 import EnrolScreen from './src/screens/EnrolScreen.tsx';
-import InboxScreen from './src/screens/InboxScreen.tsx';
-import ProposalScreen from './src/screens/ProposalScreen.tsx';
-import DeviceScreen from './src/screens/DeviceScreen.tsx';
+import HomeScreen from './src/screens/HomeScreen.tsx';
+import ActivityScreen from './src/screens/ActivityScreen.tsx';
+import AccountScreen from './src/screens/AccountScreen.tsx';
+import DecisionScreen from './src/screens/DecisionScreen.tsx';
+import VaultsScreen from './src/screens/VaultsScreen.tsx';
+import VaultScreen from './src/screens/VaultScreen.tsx';
+import NewDecisionScreen from './src/screens/NewDecisionScreen.tsx';
 
 // Set before any request can be made. `extra.apiBaseUrl` lets a teammate point a build at a
 // different server without touching source.
@@ -26,12 +44,14 @@ const configured = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined
 if (configured) setApiBaseUrl(configured);
 
 export type RootStackParamList = {
-  Inbox: undefined;
-  Proposal: { uuid: string };
-  Device: undefined;
+  Tabs: undefined;
+  Decision: { uuid: string };
+  Vault: { vaultId: number };
+  NewDecision: { vaultId: number; vaultName: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tabs = createBottomTabNavigator();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +63,56 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * The badge count.
+ *
+ * Read from the same query key the queue uses, so the number on the tab and the number of cards on
+ * the screen cannot disagree -- a badge that outlives its list is how an approvals app trains
+ * someone to ignore it.
+ */
+function useAwaitingCount(): number | undefined {
+  const { token } = useEnrolledSession();
+  const { data } = useQuery({
+    queryKey: ['proposals', 'awaiting'],
+    queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
+  });
+  const n = data?.proposals.length ?? 0;
+  return n > 0 ? n : undefined;
+}
+
+function MainTabs({
+  onOpen,
+  onOpenVault,
+}: {
+  onOpen: (uuid: string) => void;
+  onOpenVault: (vaultId: number) => void;
+}) {
+  const awaiting = useAwaitingCount();
+
+  return (
+    <Tabs.Navigator
+      tabBar={(props) => <TabBar {...props} />}
+      screenOptions={{
+        headerShown: false,
+        sceneStyle: { backgroundColor: color.paper },
+      }}
+    >
+      <Tabs.Screen name="Home" options={{ title: 'Approvals', tabBarBadge: awaiting }}>
+        {() => <HomeScreen onOpen={onOpen} />}
+      </Tabs.Screen>
+      <Tabs.Screen name="Vaults" options={{ title: 'Vaults' }}>
+        {() => <VaultsScreen onOpen={onOpenVault} />}
+      </Tabs.Screen>
+      <Tabs.Screen name="Activity" options={{ title: 'Activity' }}>
+        {() => <ActivityScreen onOpen={onOpen} />}
+      </Tabs.Screen>
+      <Tabs.Screen name="Account" options={{ title: 'Account' }}>
+        {() => <AccountScreen />}
+      </Tabs.Screen>
+    </Tabs.Navigator>
+  );
+}
 
 function Routes() {
   const { status } = useSession();
@@ -60,28 +130,55 @@ function Routes() {
   if (status === 'anonymous') return <EnrolScreen />;
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.paper } }}>
-      <Stack.Screen name="Inbox">
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: color.paper },
+      }}
+    >
+      <Stack.Screen name="Tabs">
         {({ navigation }) => (
-          <InboxScreen
-            onOpen={(uuid) => navigation.navigate('Proposal', { uuid })}
-            onOpenDevice={() => navigation.navigate('Device')}
+          <MainTabs
+            onOpen={(uuid) => navigation.navigate('Decision', { uuid })}
+            onOpenVault={(vaultId) => navigation.navigate('Vault', { vaultId })}
           />
         )}
       </Stack.Screen>
-      <Stack.Screen name="Proposal">
+      <Stack.Screen name="Decision">
         {({ navigation, route }) => (
-          <ProposalScreen uuid={route.params.uuid} onBack={() => navigation.goBack()} />
+          <DecisionScreen uuid={route.params.uuid} onBack={() => navigation.goBack()} />
         )}
       </Stack.Screen>
-      <Stack.Screen name="Device">
-        {({ navigation }) => <DeviceScreen onBack={() => navigation.goBack()} />}
+      <Stack.Screen name="Vault">
+        {({ navigation, route }) => (
+          <VaultScreen
+            vaultId={route.params.vaultId}
+            onBack={() => navigation.goBack()}
+            onOpenDecision={(uuid) => navigation.navigate('Decision', { uuid })}
+            onRaise={(vaultId, vaultName) =>
+              navigation.navigate('NewDecision', { vaultId, vaultName })
+            }
+          />
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="NewDecision">
+        {({ navigation, route }) => (
+          <NewDecisionScreen
+            vaultId={route.params.vaultId}
+            vaultName={route.params.vaultName}
+            onBack={() => navigation.goBack()}
+            // Replace rather than push: going "back" from a decision you just raised should return
+            // to the vault, not to a filled-in form that would raise a second copy if resubmitted.
+            onRaised={(uuid) => navigation.replace('Decision', { uuid })}
+          />
+        )}
       </Stack.Screen>
     </Stack.Navigator>
   );
 }
 
 export default function App() {
+  const fontsReady = useAppFonts();
   // Ensures the light chrome assumption holds even if the OS is in dark mode: the app commits to
   // one visual world, as the web client does.
   const [ready, setReady] = useState(false);
@@ -91,11 +188,12 @@ export default function App() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
-          <NavigationContainer>{ready ? <Routes /> : null}</NavigationContainer>
+          <NavigationContainer>{ready && fontsReady ? <Routes /> : null}</NavigationContainer>
         </SessionProvider>
       </QueryClientProvider>
-      {/* Light glyphs: the header underneath is the dark chrome surface. */}
-      <StatusBar style="light" />
+      {/* Dark glyphs: every root screen is light paper. The tab bar is dark, but it sits at the
+          bottom of the screen and the status bar is not over it. */}
+      <StatusBar style="dark" />
     </SafeAreaProvider>
   );
 }
