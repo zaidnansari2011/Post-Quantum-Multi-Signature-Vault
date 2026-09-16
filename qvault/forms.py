@@ -220,3 +220,12 @@ class UnpublishForm(FlaskForm):
     """
 
     submit = SubmitField("Revoke link")
+
+
+class RunAttackLabForm(FlaskForm):
+    """Admin control for an in-request adversary-lab run (ADR-0021).
+
+    No fields: the run takes no parameters, and everything that could be tuned (which attacks,
+    which seed) belongs to ``scripts/run_attack_lab.py``, where the result is a committed artefact
+    rather than a page. The form exists for its CSRF token and its submit button.
+    """

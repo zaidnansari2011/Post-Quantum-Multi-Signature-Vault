@@ -79,6 +79,19 @@ class BaseConfig:
     BENCHMARK_LIVE_MAX_ITERATIONS = int(os.environ.get("BENCHMARK_LIVE_MAX_ITERATIONS", "5"))
     BENCHMARK_LIVE_BUDGET_S = float(os.environ.get("BENCHMARK_LIVE_BUDGET_S", "10"))
 
+    # The adversary lab (ADR-0021). The stored report is written by
+    # ``scripts/run_attack_lab.py`` and is the only source for the database-backed attacks --
+    # those forge rows and edit ledger entries, so they must never run against a live database.
+    # The /attack page re-runs the algorithm-level attacks in-request, which need no database.
+    ATTACK_REPORT_PATH = os.environ.get(
+        "ATTACK_REPORT_PATH", str(_REPO_ROOT / "docs" / "attack-lab" / "latest.json")
+    )
+    ATTACK_LAB_ENABLED = os.environ.get("ATTACK_LAB_ENABLED", "false").lower() == "true"
+    # Wall-clock cap on an in-request lab run. The Shor simulation is the expensive part (a
+    # ~1s state-vector transform per order-finding round), so the cap exists to stop an admin
+    # tying up the single worker rather than to bound anything unbounded.
+    ATTACK_LAB_BUDGET_S = float(os.environ.get("ATTACK_LAB_BUDGET_S", "45"))
+
     # Glass box (ADR-0020): the live cryptographic trace at /trace. OFF by default and
     # administrator-only when on. It is an instrument for demonstration and for the dissertation,
     # not a product feature -- it prints real intermediate values (canonical payloads, public
@@ -97,6 +110,7 @@ class DevConfig(BaseConfig):
     SECRET_KEY = BaseConfig.SECRET_KEY or _DEV_SECRET
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "true").lower() == "true"
     GLASSBOX_ENABLED = os.environ.get("GLASSBOX_ENABLED", "true").lower() == "true"
+    ATTACK_LAB_ENABLED = os.environ.get("ATTACK_LAB_ENABLED", "true").lower() == "true"
 
 
 class TestConfig(BaseConfig):
@@ -119,6 +133,7 @@ class TestConfig(BaseConfig):
     # than waiting to be discovered on the /trace page during a demonstration.
     GLASSBOX_ENABLED = True
     GLASSBOX_STRICT = True
+    ATTACK_LAB_ENABLED = True
 
 
 class ProdConfig(BaseConfig):

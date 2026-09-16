@@ -734,3 +734,63 @@ input[type="checkbox"] { accent-color: var(--ink); width: 14px; height: 14px; }
   font-family: var(--mono); font-size: .64rem; }
 
 .trace__empty { text-align: center; padding: 3rem 1rem; color: var(--ink-3); }
+
+/* --- the adversary lab (ADR-0021) ------------------------------------------------------------
+   One card per attack, and inside it two columns: what happened against the real system, and what
+   happened against the control. The side-by-side layout IS the argument -- a single "blocked"
+   column would be the unfalsifiable version of this page -- so the two runs are never collapsed
+   or stacked while there is room to set them next to each other.
+
+   Colour follows rule 2 (status only): green where the claim held, red where it did not. Note
+   that "the attack succeeded" is green in a contrast row and red in a defence row, because the
+   colour tracks the CLAIM, not the verdict. */
+.atk { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: .85rem; }
+.atk--failed { border-color: var(--broken-line); }
+.atk__head { display: flex; align-items: baseline; gap: .55rem; padding: .6rem .85rem;
+  border-bottom: 1px solid var(--rule-2); background: var(--sunk); flex-wrap: wrap; }
+.atk__n { font-family: var(--mono); font-size: .68rem; color: var(--ink-3); min-width: 1.4rem; }
+.atk__title { font-weight: 600; font-size: .85rem; }
+.atk__status { margin-left: auto; display: flex; align-items: baseline; gap: .5rem; }
+.atk__ms { font-family: var(--mono); font-size: .7rem; color: var(--ink-3); }
+
+/* The sceptic's question, in their words. The one piece of prose the page earns. */
+.atk__q { padding: .5rem .85rem; font-size: .8rem; color: var(--ink-2); font-style: italic;
+  border-bottom: 1px solid var(--rule-2); }
+
+/* The threat model, as metadata rather than paragraphs. */
+.atk__model { display: grid; gap: .5rem 1.1rem; padding: .6rem .85rem;
+  border-bottom: 1px solid var(--rule-2); }
+@media (min-width: 56rem) { .atk__model { grid-template-columns: 1fr 1fr; } }
+.atk__field { min-width: 0; }
+.atk__key { font-size: .6rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-3); }
+.atk__v { font-size: .78rem; color: var(--ink); }
+
+.atk__runs { display: grid; }
+@media (min-width: 62rem) { .atk__runs { grid-template-columns: 1fr 1fr; } }
+.atk__run { padding: .6rem .85rem .75rem; min-width: 0; }
+.atk__run + .atk__run { border-top: 1px solid var(--rule-2); }
+@media (min-width: 62rem) {
+  .atk__run + .atk__run { border-top: 0; border-left: 1px solid var(--rule-2); }
+}
+.atk__runhead { display: flex; align-items: baseline; gap: .45rem; margin-bottom: .5rem;
+  flex-wrap: wrap; }
+.atk__runtitle { font-size: .6rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-3); }
+
+.atk__steps { list-style: none; margin: 0; padding: 0; counter-reset: atkstep; }
+.atk__step { border-top: 1px solid var(--rule-2); padding: .4rem 0; }
+.atk__step:first-child { border-top: 0; padding-top: 0; }
+.atk__label { font-size: .78rem; font-weight: 500; color: var(--ink); }
+.atk__detail { font-size: .72rem; color: var(--ink-3); margin: .1rem 0 0; }
+/* The value is the evidence. Mono, sunk, and never truncated -- a digest that has been shortened
+   for layout cannot be checked, which would defeat the purpose of showing it. */
+.atk__val { font-family: var(--mono); font-size: .68rem; line-height: 1.5;
+  background: var(--sunk); border: 1px solid var(--rule-2); border-radius: 3px;
+  padding: .25rem .4rem; margin-top: .25rem; white-space: pre-wrap; color: var(--ink);
+  /* `anywhere`, not `break-all`: a 64-character digest must wrap, but a value line that mixes
+     prose with numbers must not be split mid-word. break-all did exactly that. */
+  overflow-wrap: anywhere; }
+.atk__note { font-size: .74rem; color: var(--ink-2); border-left: 2px solid var(--rule);
+  padding-left: .6rem; margin: .6rem 0 0; }

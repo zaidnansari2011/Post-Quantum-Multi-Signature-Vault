@@ -62,15 +62,41 @@ quantcrypt/PQClean). Regenerate with `python scripts/run_benchmark.py`; full met
 
 | Algorithm | Standard | Keygen | Sign | Verify | Public key | Signature |
 |---|---|---:|---:|---:|---:|---:|
-| ML-DSA-65 | FIPS 204, cat 3 | 0.75 ms | 1.71 ms | 0.63 ms | 1 952 B | 3 309 B |
-| ML-DSA-87 | FIPS 204, cat 5 | 0.81 ms | 1.60 ms | 0.72 ms | 2 592 B | 4 627 B |
-| SLH-DSA-SHAKE-256f | FIPS 205, cat 5 | 2.50 ms | 38.66 ms | 1.77 ms | **64 B** | **49 856 B** |
-| ML-KEM-768 | FIPS 203, cat 3 | 0.64 ms | encaps 1.02 ms | decaps 0.73 ms | 1 184 B | 1 088 B ct |
+| ML-DSA-65 | FIPS 204, cat 3 | 0.97 ms | 1.73 ms | 0.63 ms | 1 952 B | 3 309 B |
+| ML-DSA-87 | FIPS 204, cat 5 | 0.92 ms | 2.02 ms | 1.11 ms | 2 592 B | 4 627 B |
+| SLH-DSA-SHAKE-256f | SPHINCS+ r3, cat 5 | 2.90 ms | 47.96 ms | 3.03 ms | **64 B** | **49 856 B** |
+| ML-KEM-768 | FIPS 203, cat 3 | 0.84 ms | encaps 1.76 ms | decaps 1.15 ms | 1 184 B | 1 088 B ct |
+| RSA-2048-PSS | classical | 44.91 ms | 0.97 ms | **0.06 ms** | 294 B | 256 B |
+| ECDSA-P256 | classical | **0.05 ms** | **0.10 ms** | 0.09 ms | **91 B** | **64 B** |
+| RSA-2048-OAEP | classical | 37.48 ms | encaps 0.04 ms | decaps 1.20 ms | 294 B | 256 B ct |
 
-That last row is the trade-off the agility layer exists to let you make: **23× slower to sign and
-15× the signature size, for a 64-byte public key and security resting on nothing but a hash
-function.** Every measured operation is correctness-checked, and each verifier is separately shown
-to *reject* a tampered signature — otherwise an always-true verifier would post the best numbers.
+The classical rows are the comparison baseline the project argues against, registered through the
+same interface and measured by the same harness (ADR-0021). Read as *ratios* — laptop absolutes do
+not travel — they say something more specific than "post-quantum costs more":
+
+- **Post-quantum wins decisively on key generation, and only there.** ML-DSA-65 generates a keypair
+  **46× faster** than RSA-2048 and ML-KEM-768 **45× faster**, because RSA keygen has to search for
+  primes. Against ECDSA it loses even this (22×).
+- **On signing and verification it loses, modestly to RSA and heavily to ECDSA.** RSA-2048 signs
+  1.8× faster and verifies **10.7×** faster; ECDSA-P256 signs **17×** faster and verifies 6.7×
+  faster. ML-KEM decapsulation is at parity with RSA (1.15 ms against 1.20 ms), while RSA
+  encapsulation — a public-key operation with e=65537 — is 47× faster.
+- **The real cost of migration is size, not CPU time.** ML-DSA-65's signature is **52× larger** than
+  ECDSA-P256's (3 309 B against 64 B) and its public key 21× larger. ECDSA is the honest comparator,
+  and bandwidth and storage are where the bill arrives.
+- SLH-DSA is the trade the agility layer exists to let you make: **28× slower to sign than ML-DSA
+  and 15× its signature size, for a public key 30× smaller and security resting on nothing but a
+  hash function.**
+
+One methodological note, because it changed the answer: the first version of these providers
+deserialised the RSA private key on every call with OpenSSL's full consistency check, which costs
+**35.6 ms against the 0.59 ms signature itself** — so the first run reported RSA signing at 32 ms
+and the conclusion "ML-DSA signs 21× faster than RSA", which is false. The giveaway was a 60×
+disagreement with a figure already sitting in this project's own `/docs/algorithms` page. Details in
+[ADR-0021](docs/adr/0021-adversary-lab.md).
+
+Every measured operation is correctness-checked, and each verifier is separately shown to *reject*
+a tampered signature — otherwise an always-true verifier would post the best numbers.
 
 ## Quickstart (Windows)
 
@@ -108,6 +134,78 @@ debug/testing configuration, three deliberate attacks are available:
 Each is reversible, and the key-ageing control writes its own `demo_keys_expired` entry into the
 ledger — a demonstration aid must never make the system claim something untrue.
 
+## Proving it is hard to break
+
+The tamper demos above show individual properties failing. The **adversary lab** is the systematic
+version: ten scripted attacks, each with a stated threat model, each run **twice**.
+
+```
+.venv\Scripts\python scripts\run_attack_lab.py        # writes docs/attack-lab/latest.{json,md}
+```
+
+Every attack runs once against the system as built and once against a **control** — the same attack
+code against a variant with the named mechanism removed, or against the algorithm being defended. An
+attack blocked in *both* runs is reported `VACUOUS` and fails the suite, because it has demonstrated
+nothing. A suite in which everything is "blocked" is indistinguishable from a suite whose attacks
+never really attacked; the disagreement between the two runs is the evidence, and it is what makes
+each defence attributable to a specific mechanism.
+
+| Attack | Threat model | Decided by |
+|---|---|---|
+| Recover a signing key by factoring, then forge an approval | the victim's public key, nothing else | nothing — key recovery defeats any padding |
+| Record a file now, decrypt it after the quantum computer arrives | a stolen backup of the wrapped key and ciphertext | ML-KEM-768 wrapping leaves no factoring target |
+| Alter an approved decision by one bit | write access to the signature bytes | ML-DSA verification over the canonical bytes |
+| Forge under an algorithm you control, then name it in the request | full control of the submitted artefact | `alg_id` pinned to the signer's key row |
+| Reuse one genuine approval where it was never given | a copy of one valid signature | domain-separated canonical payloads |
+| Guess passwords offline against a stolen database | the entire database, minus passwords | Argon2id, unique salt per user |
+| Manufacture an approval by writing straight to the database | direct SQL write access | the tally counts only signatures that verify |
+| Join the signer list after the vote opened, then vote | permission to administer membership | the proposal's frozen signer snapshot |
+| Edit the audit trail to hide what happened | direct SQL write access | hash-chained entries, signed head anchor |
+| Alter a stored file without the key | write access to the blob at rest | AES-256-GCM's authentication tag |
+
+`/admin/attack` re-runs the algorithm-level attacks live. The database-backed ones forge signature
+rows and edit ledger entries, so they run only in the CLI against a throwaway in-memory
+application — never against real data, which a test enforces by checking the data rather than the
+configuration.
+
+**Shor's algorithm is implemented and runs to completion.** It factors a genuine RSA modulus,
+recovers the private exponent, and forges a signature the unmodified verifier accepts. The modulus
+is scaled to 9 bits, because simulating the order-finding register costs O(2^t) with t ≈ 2·log₂N —
+so the claim is not "RSA-2048 is broken today", it is that *the algorithm that breaks RSA runs here
+and its cost is polynomial*. `qvault/attack/cost.py` carries that across the gap by keeping two
+things apart: semiprimes really factored on this machine and timed, versus the RSA-2048 projection
+anchored on the published RSA-250 result and the quantum estimates quoted from Gidney & Ekerå.
+Full reasoning, and the five findings the work produced, in
+[ADR-0021](docs/adr/0021-adversary-lab.md).
+
+### Performing it, rather than reporting it
+
+The lab and the page both produce a *report*, and a report is something you read. The demonstration
+script is something you **do**, in front of someone, on **their** input:
+
+```
+.venv\Scripts\python scripts\demo_attack.py
+.venv\Scripts\python scripts\demo_attack.py "Approve the transfer of 250,000"
+.venv\Scripts\python scripts\demo_attack.py --act 1        # just the forgery
+.venv\Scripts\python scripts\demo_attack.py --no-colour    # for a projector
+```
+
+It runs in three acts, each answering the objection the previous one raises. **One:** the audience
+types the decision they want forged; shown only the public key, Shor's algorithm factors it, the
+private exponent is recovered and printed beside the signer's real one, their sentence is signed,
+and the application's *real* `verify()` accepts it. **Two:** *"that key was tiny"* — real semiprimes
+factored live at increasing widths with timings, then the RSA-2048 projection, measured where it can
+be measured and cited where it cannot. **Three:** the same attack pointed at the ML-DSA key, which
+does not fail so much as have nothing to work with.
+
+Nothing in it is a mock: every provider is the one the application resolves through, every
+verification is the real one, and the attacker is never handed the private key. A test sabotages
+`verify` to prove the demonstration reports failure rather than asserting its own success.
+
+**What it does not prove:** that ML-DSA, SLH-DSA or ML-KEM are secure — no experiment can, and the
+project cites NIST's process rather than claiming it — nor that Q-Vault has no vulnerabilities. It
+proves these named attacks fail, and that each failure is attributable.
+
 ## Project structure
 
 ```
@@ -118,6 +216,8 @@ q-vault/
 │  │  ├─ interfaces.py      #   SignatureProvider / KEMProvider / SymmetricProvider
 │  │  ├─ registry.py        #   alg_id → provider, resolved at runtime
 │  │  └─ providers/         #   the ONLY place a PQC backend may be imported
+│  │                        #   (incl. the RSA/ECDSA classical baseline)
+│  ├─ attack/               # ★ the adversary lab: harness, Shor, cost model, attacks
 │  ├─ models/               # user, key, vault, proposal, signature, ledger, anchor
 │  ├─ services/             # auth, key, vault, proposal, approval, ledger,
 │  │                        # file_crypto, config, rotation, benchmark
@@ -125,9 +225,9 @@ q-vault/
 │  ├─ security/             # master_key, decorators, demo_gate
 │  ├─ scheduler.py          # APScheduler: rotation + proposal expiry
 │  └─ templates/ static/
-├─ scripts/                 # run_benchmark.py, seed_demo.py
-├─ tests/                   # 668 tests
-└─ docs/                    # specification, ADRs, benchmark results
+├─ scripts/                 # run_benchmark.py, run_attack_lab.py, demo_attack.py, seed_demo.py
+├─ tests/                   # 913 tests
+└─ docs/                    # specification, ADRs, benchmark + attack-lab results
 ```
 
 `tests/test_module_boundaries.py` enforces the central architectural rule by scanning the source:
@@ -155,7 +255,12 @@ the runtime algorithm switch would no longer be safe.
   [0013 interface states its conclusion](docs/adr/0013-interface-states-its-conclusion.md) ·
   [0014 product not demonstration](docs/adr/0014-product-not-demonstration.md) ·
   [0015 transparency log and witness](docs/adr/0015-transparency-log-and-witness.md) ·
-  [0016 device-held signing keys](docs/adr/0016-device-held-signing-keys.md)
+  [0016 device-held signing keys](docs/adr/0016-device-held-signing-keys.md) ·
+  [0017 seed-derived device keys](docs/adr/0017-seed-derived-device-keys.md) ·
+  [0018 static runtime version](docs/adr/0018-static-runtime-version.md) ·
+  [0019 self-verifying decision record](docs/adr/0019-self-verifying-decision-record.md) ·
+  [0020 glass-box live trace](docs/adr/0020-glass-box-live-trace.md) ·
+  [0021 adversary lab](docs/adr/0021-adversary-lab.md)
 
 ## Known limitations
 

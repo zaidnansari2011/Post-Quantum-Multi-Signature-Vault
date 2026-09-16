@@ -7,4 +7,8 @@
      {% if request.endpoint == 'admin.rotation' %}aria-current="page"{% endif %}>Keys</a>
   <a class="tab" href="{{ url_for('admin.benchmark') }}"
      {% if request.endpoint == 'admin.benchmark' %}aria-current="page"{% endif %}>Performance</a>
+  {% if config.ATTACK_LAB_ENABLED %}
+  <a class="tab" href="{{ url_for('admin.attack_lab') }}"
+     {% if request.endpoint in ('admin.attack_lab', 'admin.run_attack_lab') %}aria-current="page"{% endif %}>Adversary lab</a>
+  {% endif %}
 </div>
