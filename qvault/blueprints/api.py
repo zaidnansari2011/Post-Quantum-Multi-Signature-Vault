@@ -22,22 +22,25 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, g, jsonify, request
 
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
-from qvault.models.vault import VaultMember
+from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
     approval_service,
     auth_service,
     device_service,
     key_service,
+    proposal_service,
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
+from qvault.services.proposal_service import ProposalError
 from qvault.services.signing import signing_bytes_for
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
@@ -189,6 +192,135 @@ def revoke_device(device_id: int):
     except DeviceError as exc:
         return _error(exc.code, exc.message, 409)
     return jsonify(ok=True, device=_device_json(device, current_id=g.api_device.id))
+
+
+# -- vaults ---------------------------------------------------------------------------------------
+
+
+def _member_of(user, vid: int) -> Vault | None:
+    """The vault, if this user is a member of it. Membership is checked here rather than trusted
+    from a client-supplied id: every vault view below is reachable with any integer."""
+    vault = db.session.get(Vault, vid)
+    if vault is None or not vault.is_member(user.id):
+        return None
+    return vault
+
+
+def _vault_summary(vault: Vault, user) -> dict:
+    """What a list row needs, and nothing that costs a query per vault to produce.
+
+    ``open_count`` is the number of decisions in this vault still awaiting *this* signer, not the
+    number open overall -- a list that says "4 open" next to a vault where none of the four needs
+    you is a number that trains people to ignore it.
+    """
+    signers = vault.signer_ids()
+    member = vault.member_for(user.id)
+    awaiting = 0
+    for p in vault.proposals:
+        if p.status != "open":
+            continue
+        if approval_service.vote_of(p, user.id) is not None:
+            continue
+        if user.id in set(json.loads(p.authorized_signers_snapshot)):
+            awaiting += 1
+    return {
+        "vault_id": vault.id,
+        "name": vault.name,
+        "description": vault.description,
+        "role": member.member_role if member else None,
+        "threshold_m": vault.policy.threshold_m if vault.policy else None,
+        "signer_count": len(signers),
+        "member_count": len(vault.members),
+        "awaiting_me": awaiting,
+        "kem_alg_id": vault.kem_alg_id,
+    }
+
+
+@bp.get("/vaults")
+@device_token_required
+def list_vaults():
+    user = g.api_user
+    vault_ids = _visible_vault_ids(user)
+    if not vault_ids:
+        return jsonify(ok=True, vaults=[])
+    vaults = Vault.query.filter(Vault.id.in_(vault_ids)).order_by(Vault.name.asc()).all()
+    return jsonify(ok=True, vaults=[_vault_summary(v, user) for v in vaults])
+
+
+@bp.get("/vaults/<int:vid>")
+@device_token_required
+def vault_detail(vid: int):
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        # 404 rather than 403, so the endpoint does not confirm that a vault exists to someone who
+        # cannot see it.
+        return _error("unknown_vault", "No such vault.", 404)
+
+    detail = _vault_summary(vault, user)
+    detail["members"] = [
+        {
+            "user_id": m.user_id,
+            "name": m.user.display_name if m.user else None,
+            "email": m.user.email if m.user else None,
+            "role": m.member_role,
+            "is_me": m.user_id == user.id,
+        }
+        for m in vault.members
+    ]
+    recent = sorted(vault.proposals, key=lambda p: p.id, reverse=True)[:50]
+    detail["proposals"] = [_proposal_summary(p, user) for p in recent]
+    return jsonify(ok=True, vault=detail)
+
+
+@bp.post("/vaults/<int:vid>/proposals")
+@device_token_required
+def create_proposal(vid: int):
+    """Raise a decision from the handset.
+
+    No attachment. The canonical signing payload binds the SHA-256 of an attached file, so
+    supporting uploads means getting multipart, a plaintext hash and at-rest encryption right on
+    this path too -- and a half-done version that accepted a file without binding it would produce
+    decisions whose signatures did not cover the document they are about. The web client keeps
+    that job until this path is built to the same standard; ``file_sha256`` stays null here, which
+    is the same shape the device already handles for an attachment-free decision.
+    """
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        return _error("unknown_vault", "No such vault.", 404)
+
+    body = _body()
+    title = (body.get("title") or "").strip()
+    action_text = (body.get("action_text") or "").strip()
+    if not title:
+        return _error("title_required", "A title is required.", 422)
+    if not action_text:
+        return _error("action_required", "Describe what is being decided.", 422)
+    if len(title) > 255:
+        return _error("title_too_long", "Titles are limited to 255 characters.", 422)
+
+    deadline = None
+    hours = body.get("expires_in_hours")
+    if hours is not None:
+        try:
+            hours = float(hours)
+        except (TypeError, ValueError):
+            return _error("bad_deadline", "expires_in_hours must be a number.", 422)
+        if hours <= 0:
+            return _error("bad_deadline", "A deadline must be in the future.", 422)
+        deadline = datetime.now(UTC) + timedelta(hours=hours)
+
+    try:
+        proposal = proposal_service.create_proposal(
+            vault, user, title, action_text, deadline=deadline
+        )
+    except ProposalError as exc:
+        # The commonest case is a policy that needs more signatures than the vault has signers,
+        # which is a governance answer rather than a malformed request.
+        return _error("policy_error", str(exc), 422)
+
+    return jsonify(ok=True, proposal=_proposal_summary(proposal, user)), 201
 
 
 # -- proposals ------------------------------------------------------------------------------------
