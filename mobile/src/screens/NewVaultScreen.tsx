@@ -24,7 +24,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   ActionBar,
@@ -32,12 +32,16 @@ import {
   Button,
   Card,
   Divider,
+  Empty,
   Field,
+  Loading,
   NavBar,
   Row,
   Screen,
   feedback,
 } from '../ui/index.tsx';
+import { Sheet } from '../ui/Sheet.tsx';
+import type { Person } from '../api/schemas.ts';
 import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
@@ -55,29 +59,28 @@ export default function NewVaultScreen({
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [emailDraft, setEmailDraft] = useState('');
-  const [emails, setEmails] = useState<string[]>([]);
+  const [picked, setPicked] = useState<Person[]>([]);
+  const [picking, setPicking] = useState(false);
   const [thresholdM, setThresholdM] = useState(1);
   const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
 
   // The owner signs too, so N is the invited signers plus you.
-  const signerCount = emails.length + 1;
+  const signerCount = picked.length + 1;
   const ready = name.trim().length > 0;
 
-  function addEmail() {
-    const candidate = emailDraft.trim().toLowerCase();
-    if (!candidate) return;
-    if (emails.includes(candidate)) {
-      setEmailDraft('');
-      return;
-    }
-    setEmails([...emails, candidate]);
-    setEmailDraft('');
-  }
+  // Only fetched when the sheet is open: a list of colleagues is not needed to name a vault.
+  const peopleQuery = useQuery({
+    queryKey: ['people'],
+    queryFn: ({ signal }) => api.fetchPeople(token, signal),
+    enabled: picking,
+  });
 
-  function removeEmail(email: string) {
-    const next = emails.filter((e) => e !== email);
-    setEmails(next);
+  function toggle(person: Person) {
+    const already = picked.some((p) => p.user_id === person.user_id);
+    const next = already
+      ? picked.filter((p) => p.user_id !== person.user_id)
+      : [...picked, person];
+    setPicked(next);
     // Keep the policy meetable: dropping a signer can strand a threshold above the new N.
     if (thresholdM > next.length + 1) setThresholdM(next.length + 1);
   }
@@ -89,7 +92,7 @@ export default function NewVaultScreen({
         name: name.trim(),
         description: description.trim(),
         thresholdM,
-        memberEmails: emails,
+        memberIds: picked.map((p) => p.user_id),
       }),
     onSuccess: (result) => {
       feedback.signed();
@@ -147,17 +150,17 @@ export default function NewVaultScreen({
                 </Text>
                 <Text style={s.owner}>you, owner</Text>
               </View>
-              {emails.map((email) => (
-                <View key={email}>
+              {picked.map((person) => (
+                <View key={person.user_id}>
                   <Divider />
                   <View style={s.signer}>
                     <Text style={s.signerName} numberOfLines={1}>
-                      {email}
+                      {person.name}
                     </Text>
                     <Pressable
-                      onPress={() => removeEmail(email)}
+                      onPress={() => toggle(person)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Remove ${email}`}
+                      accessibilityLabel={`Remove ${person.name}`}
                       hitSlop={10}
                       disabled={create.isPending}
                     >
@@ -168,29 +171,15 @@ export default function NewVaultScreen({
               ))}
             </Card>
 
-            <Row gap={space.sm} align="flex-start">
-              <View style={{ flex: 1 }}>
-                <Field
-                  label="Add a signer by email"
-                  value={emailDraft}
-                  onChangeText={setEmailDraft}
-                  placeholder="colleague@example.com"
-                  keyboardType="email-address"
-                  onSubmitEditing={addEmail}
-                  returnKeyType="done"
-                  editable={!create.isPending}
-                />
-              </View>
-            </Row>
+            {/* Chosen, not typed. The server only accepts people who already have an account, so
+                a free-text address can only ever be right by luck or wrong by one character -- and
+                on a phone it is usually the second. */}
             <Button
-              label="Add signer"
+              label="Choose signers"
               variant="secondary"
-              onPress={addEmail}
-              disabled={emailDraft.trim().length === 0 || create.isPending}
+              onPress={() => setPicking(true)}
+              disabled={create.isPending}
             />
-            {/* Stated rather than discovered on submit: the server refuses an unknown address, and
-                finding that out after filling the whole form is a bad way to learn it. */}
-            <Text style={s.hint}>They must already have a Q-Vault account.</Text>
           </View>
 
           <View style={{ gap: space.sm }}>
@@ -234,6 +223,58 @@ export default function NewVaultScreen({
           />
         </ActionBar>
       </KeyboardAvoidingView>
+
+      {/* Multi-select and stays open: adding four people should be four taps, not four round trips
+          through a sheet that closes itself each time. The tick is the state, so nothing has to be
+          remembered between them. */}
+      <Sheet visible={picking} onClose={() => setPicking(false)} title="Choose signers">
+        {peopleQuery.isLoading ? (
+          <Loading />
+        ) : (peopleQuery.data?.people.length ?? 0) === 0 ? (
+          <Empty
+            title="Nobody else has an account yet."
+            detail="Signers must already be registered on this Q-Vault."
+          />
+        ) : (
+          <ScrollView style={s.pickList} showsVerticalScrollIndicator={false}>
+            <Card>
+              {(peopleQuery.data?.people ?? []).map((person, i) => {
+                const on = picked.some((p) => p.user_id === person.user_id);
+                return (
+                  <View key={person.user_id}>
+                    {i > 0 ? <Divider /> : null}
+                    <Pressable
+                      onPress={() => toggle(person)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: on }}
+                      accessibilityLabel={person.name}
+                      style={({ pressed }) => [s.pickRow, pressed && { opacity: 0.6 }]}
+                    >
+                      <Text style={s.pickName} numberOfLines={1}>
+                        {person.name}
+                      </Text>
+                      <View style={[s.check, on && s.checkOn]}>
+                        {on ? <Text style={s.checkGlyph}>✓</Text> : null}
+                      </View>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </Card>
+          </ScrollView>
+        )}
+
+        <Button
+          label={
+            picked.length === 0
+              ? 'Done'
+              : picked.length === 1
+                ? 'Done, 1 signer added'
+                : `Done, ${picked.length} signers added`
+          }
+          onPress={() => setPicking(false)}
+        />
+      </Sheet>
     </Screen>
   );
 }
@@ -287,6 +328,27 @@ const s = StyleSheet.create({
   signerName: { ...type.body, flex: 1 },
   owner: { ...type.micro, color: color.ink4 },
   remove: { ...type.micro, color: color.broken },
+
+  pickList: { maxHeight: 360 },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.md,
+    paddingVertical: space.md,
+  },
+  pickName: { ...type.body, flex: 1 },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: color.rule,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { backgroundColor: color.sealed, borderColor: color.sealed },
+  checkGlyph: { color: '#FFFFFF', fontSize: 12, lineHeight: 15, fontWeight: '700' },
 
   preset: {
     borderWidth: 1,

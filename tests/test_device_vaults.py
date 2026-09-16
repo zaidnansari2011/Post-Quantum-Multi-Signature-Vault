@@ -146,6 +146,90 @@ def test_a_vault_that_does_not_exist_answers_the_same_way(app, client):
     assert r.get_json()["code"] == "unknown_vault"
 
 
+# --- the people picker ---------------------------------------------------------------------------
+
+
+def test_the_people_list_never_returns_an_email_address(app, client):
+    """The load-bearing property of this endpoint.
+
+    An address is a login identifier here, so a directory of them handed to every enrolled device
+    would publish the username half of every account on the instance. The picker needs a name to
+    show and something to send back, and an opaque id is enough for both.
+    """
+    owner = auth_service.register_user("pp-a@e.com", "Ada Okafor", PASSWORD)
+    auth_service.register_user("pp-b@e.com", "Brij Mehta", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.get("/api/v1/people", headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+
+    assert [p["name"] for p in body["people"]] == ["Brij Mehta"]
+    for person in body["people"]:
+        assert set(person) == {"user_id", "name"}
+    # Belt and braces: no address anywhere in the serialised response, under any key.
+    assert "@" not in r.get_data(as_text=True)
+
+
+def test_the_people_list_excludes_the_caller(app, client):
+    """They own the vault they are building and are already its first signer."""
+    owner = auth_service.register_user("me-a@e.com", "Ada", PASSWORD)
+    auth_service.register_user("me-b@e.com", "Brij", PASSWORD)
+    headers = _enrol(client, owner)
+
+    people = client.get("/api/v1/people", headers=headers).get_json()["people"]
+    assert owner.id not in [p["user_id"] for p in people]
+
+
+def test_a_vault_can_be_built_from_picked_ids(app, client):
+    """The handset path end to end: pick names, send ids, get a working vault."""
+    owner = auth_service.register_user("id-a@e.com", "Ada", PASSWORD)
+    brij = auth_service.register_user("id-b@e.com", "Brij", PASSWORD)
+    chen = auth_service.register_user("id-c@e.com", "Chen", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        "/api/v1/vaults",
+        json={"name": "Picked", "threshold_m": 2, "member_ids": [brij.id, chen.id]},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    assert r.get_json()["vault"]["signer_count"] == 3
+
+
+def test_picking_someone_who_has_since_been_deleted_is_reported(app, client):
+    owner = auth_service.register_user("gone-a@e.com", "Ada", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        "/api/v1/vaults",
+        json={"name": "Ghost", "threshold_m": 1, "member_ids": [999999]},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "unknown_member"
+    assert Vault.query.filter_by(name="Ghost").first() is None
+
+
+def test_picking_yourself_does_not_double_add_you(app, client):
+    """The owner is already a signer, so their own id has to be a no-op rather than a duplicate."""
+    owner = auth_service.register_user("self-a@e.com", "Ada", PASSWORD)
+    brij = auth_service.register_user("self-b@e.com", "Brij", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        "/api/v1/vaults",
+        json={"name": "Self", "threshold_m": 2, "member_ids": [owner.id, brij.id]},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    assert r.get_json()["vault"]["signer_count"] == 2
+
+
+def test_the_people_list_needs_a_bearer_token(app, client):
+    assert client.get("/api/v1/people").status_code == 401
+
+
 # --- creating a vault ----------------------------------------------------------------------------
 
 

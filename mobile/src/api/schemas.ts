@@ -64,6 +64,24 @@ export const revokeResponse = z.object({
   device: deviceSchema,
 });
 
+/**
+ * Someone who could be made a signer.
+ *
+ * A name and an opaque id, and deliberately nothing else. The server does not send addresses to
+ * the picker -- an address is a login identifier, and the device only needs something to show and
+ * something to send back. See GET /people.
+ */
+export const person = z.object({
+  user_id: z.number().int(),
+  name: z.string(),
+});
+export type Person = z.infer<typeof person>;
+
+export const peopleResponse = z.object({
+  ok: z.literal(true),
+  people: z.array(person),
+});
+
 export const vaultMember = z.object({
   user_id: z.number().int(),
   name: z.string().nullable(),
