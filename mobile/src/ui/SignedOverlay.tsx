@@ -44,6 +44,10 @@ import { color, motion, radius, space, type } from '../theme.ts';
 
 const DISC = 72;
 const STROKE = 4;
+// A tick is an ASYMMETRIC V: a short arm down into the corner, a long one sweeping up out of it.
+// Equal arms give a chevron, which is what the first version drew.
+const TICK_SHORT = 13;
+const TICK_LONG = 27;
 
 export function SignedOverlay({
   visible,
@@ -114,12 +118,12 @@ export function SignedOverlay({
     transform: [{ translateY: (1 - words.value) * 8 }],
   }));
 
-  // The two arms of the glyph. For a tick they meet at a bottom-left corner inside a 45deg
-  // rotation, and their extents animate so the mark is drawn rather than revealed. The cross uses
-  // the same two timings on scaleX, so a rejection is paced identically to an approval -- the
-  // ceremony is the same, only the hue and the glyph differ.
-  const armAStyle = useAnimatedStyle(() => ({ width: armA.value * 15 }));
-  const armBStyle = useAnimatedStyle(() => ({ height: armB.value * 30 }));
+  // SCALE, NEVER WIDTH OR HEIGHT. The first version animated the arms' extents, which makes React
+  // Native re-run layout on every frame of a 300ms draw -- that was the jank. A scale is composited
+  // on the UI thread and touches no layout at all. `transformOrigin` pins each arm to the corner
+  // the two share, so scaling grows it along its own length instead of out from its middle.
+  const armAStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: armA.value }] }));
+  const armBStyle = useAnimatedStyle(() => ({ transform: [{ scaleY: armB.value }] }));
 
   const crossAStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: '45deg' }, { scaleX: armA.value }],
@@ -131,7 +135,16 @@ export function SignedOverlay({
   const insets = useSafeAreaInsets();
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onDone} statusBarTranslucent>
+    // hardwareAccelerated: an Android modal window is composited in software unless asked
+    // otherwise, so every frame of the draw goes through the CPU. It costs nothing to ask.
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onDone}
+      statusBarTranslucent
+      hardwareAccelerated
+    >
       <View style={s.root}>
         <Animated.View style={[s.dim, dimStyle]} />
         <Pressable style={s.dismissArea} accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDone} />
@@ -149,8 +162,8 @@ export function SignedOverlay({
             <Animated.View style={[s.disc, { backgroundColor: hue }, discStyle]}>
               {approved ? (
                 <View style={s.tickBox}>
-                  <Animated.View style={[s.armH, armAStyle]} />
-                  <Animated.View style={[s.armV, armBStyle]} />
+                  <Animated.View style={[s.armShort, armAStyle]} />
+                  <Animated.View style={[s.armLong, armBStyle]} />
                 </View>
               ) : (
                 <View style={s.crossBox}>
@@ -231,29 +244,35 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // An L anchored at its bottom-left corner. Rotated 45 degrees it reads as a tick, and animating
-  // the two bars' extents draws it rather than revealing it.
+  // An L sharing a BOTTOM-RIGHT corner, turned 45 degrees clockwise. That lands the short arm
+  // pointing up-left and the long arm sweeping up-right, which is a tick. The first version put
+  // the corner bottom-left and turned it the other way, which mirrors the glyph: short arm to the
+  // right, long arm to the left, and the whole thing reads as a chevron.
   tickBox: {
-    width: 30,
-    height: 30,
-    transform: [{ rotate: '-45deg' }],
-    marginTop: -4,
+    width: TICK_SHORT,
+    height: TICK_LONG,
+    transform: [{ rotate: '45deg' }],
+    marginLeft: -3,
   },
-  armH: {
+  armShort: {
     position: 'absolute',
-    left: 0,
+    right: 0,
     bottom: 0,
+    width: TICK_SHORT,
     height: STROKE,
     borderRadius: STROKE / 2,
     backgroundColor: '#FFFFFF',
+    transformOrigin: 'right center',
   },
-  armV: {
+  armLong: {
     position: 'absolute',
-    left: 0,
+    right: 0,
     bottom: 0,
     width: STROKE,
+    height: TICK_LONG,
     borderRadius: STROKE / 2,
     backgroundColor: '#FFFFFF',
+    transformOrigin: 'center bottom',
   },
 
   crossBox: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },

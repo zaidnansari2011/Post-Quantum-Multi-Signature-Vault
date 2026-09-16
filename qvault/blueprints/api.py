@@ -29,6 +29,7 @@ from flask import Blueprint, g, jsonify, request
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
+from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
@@ -238,6 +239,39 @@ def _vault_summary(vault: Vault, user) -> dict:
     }
 
 
+@bp.get("/people")
+@device_token_required
+def list_people():
+    """The names a vault can be built from. Names only -- never addresses.
+
+    A vault needs people, and a handset cannot type an email address reliably. Without a picker the
+    only way to add a signer is to recall their address exactly and have the server reject it if
+    you are one character out.
+
+    **The obvious version of this endpoint returns everyone's email, and it must not.** An address
+    is a login identifier here, so publishing the directory to every enrolled device would hand any
+    one of them the username half of every account on the instance, to solve a problem that is
+    really about typing. So the client receives a display name and an opaque id, picks a name, and
+    sends the id back; the server resolves it to a user. Nothing the device holds afterwards is
+    usable as a credential or reachable off the platform.
+
+    Names are still personal data, so the set is kept to what building a vault needs: the caller is
+    excluded, since they are already its owner and first signer.
+
+    If this ever becomes multi-tenant, SCOPE THIS BEFORE THAT HAPPENS -- an unscoped directory
+    would show one customer's staff to another. There is no tenant concept to scope by today, so
+    the check cannot be written yet and is recorded here rather than left to be rediscovered.
+    """
+    user = g.api_user
+    people = (
+        User.query.filter(User.id != user.id).order_by(User.display_name.asc()).limit(500).all()
+    )
+    return jsonify(
+        ok=True,
+        people=[{"user_id": p.id, "name": p.display_name} for p in people],
+    )
+
+
 @bp.post("/vaults")
 @device_token_required
 def create_vault():
@@ -267,7 +301,21 @@ def create_vault():
     except (TypeError, ValueError):
         return _error("bad_threshold", "threshold_m must be a whole number.", 422)
 
+    # Two ways in. `member_ids` is what the handset sends, because its picker only ever received
+    # names and opaque ids from /people -- the address is resolved here, server-side, so the device
+    # never has to hold one. `member_emails` stays for anything driving the API directly.
     emails = [e.strip().lower() for e in (body.get("member_emails") or []) if str(e).strip()]
+    for raw_id in body.get("member_ids") or []:
+        try:
+            person = db.session.get(User, int(raw_id))
+        except (TypeError, ValueError):
+            return _error("bad_member", "member_ids must be whole numbers.", 422)
+        if person is None:
+            return _error("unknown_member", "One of the people chosen no longer exists.", 422)
+        # Skipping the caller is not a silent drop: they are the owner and already a signer, so
+        # adding them again would fail as a duplicate membership.
+        if person.id != user.id and person.email not in emails:
+            emails.append(person.email)
     # The owner is a signer, so N is the invited signers plus one. Checked before anything is
     # written, so a policy that can never be met does not leave a vault behind.
     if threshold_m > len(emails) + 1:

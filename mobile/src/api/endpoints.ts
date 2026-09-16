@@ -9,6 +9,7 @@ import {
   devicesResponse,
   enrolResponse,
   meResponse,
+  peopleResponse,
   proposalDetailResponse,
   proposalsResponse,
   revokeResponse,
@@ -95,7 +96,8 @@ export function createVault(args: {
   name: string;
   description?: string;
   thresholdM: number;
-  memberEmails: string[];
+  /** Ids from the picker. The handset never holds an address; the server resolves these. */
+  memberIds: number[];
 }) {
   return request(createVaultResponse, {
     method: 'POST',
@@ -105,7 +107,7 @@ export function createVault(args: {
       name: args.name,
       description: args.description ?? '',
       threshold_m: args.thresholdM,
-      member_emails: args.memberEmails,
+      member_ids: args.memberIds,
     },
   });
 }
@@ -122,6 +124,11 @@ export function addVaultMember(args: {
     token: args.token,
     body: { email: args.email, role: args.role ?? 'signer' },
   });
+}
+
+/** Names to build a vault from. Never returns addresses -- see the server docstring for why. */
+export function fetchPeople(token: string, signal?: AbortSignal) {
+  return request(peopleResponse, { path: '/api/v1/people', token, signal });
 }
 
 export function fetchVaults(token: string, signal?: AbortSignal) {
