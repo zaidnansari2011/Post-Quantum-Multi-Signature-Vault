@@ -1,0 +1,268 @@
+"""The vault and decision-raising surface a handset needs (ADR-0022).
+
+Until this existed the device API could read decisions and vote on them and nothing else, so the
+app could approve work but never originate it, and could not show a person which vaults they were
+even a member of. Three endpoints close that: list vaults, one vault in detail, raise a decision.
+
+Two properties are worth more than the rest and are tested hardest.
+
+**A vault id in a URL is an assertion by the client, not a fact.** Every one of these routes takes
+an integer straight off the path, so each is reachable with any integer at all. Membership is
+therefore checked server-side on every call, and a non-member gets **404 rather than 403** -- a 403
+would confirm that a vault exists to someone with no business knowing it does.
+
+**Raising a decision must go through the service, not the ORM.** ``create_proposal`` derives the
+canonical payload, mints the nonce, freezes the authorised-signer set and writes the ledger entry.
+A route that built a ``Proposal`` itself would produce something that looks right in a list and
+cannot be signed, so the test asserts the derived artefacts exist rather than asserting a 201.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+
+from flask import current_app
+
+from qvault.models.ledger import LedgerEntry
+from qvault.models.proposal import Proposal
+from qvault.services import auth_service, proposal_service, vault_service
+from qvault.services.signing import device_enrolment_bytes
+
+PASSWORD = "password-123"
+
+
+def _provider(alg_id="ML-DSA-65"):
+    return current_app.extensions["crypto"].signature(alg_id)
+
+
+def _enrol(client, user, name="Test Phone"):
+    r = client.post("/api/v1/devices/challenge", json={"email": user.email, "password": PASSWORD})
+    challenge = r.get_json()["challenge"]
+    kp = _provider().keygen()
+    public_key_b64 = base64.b64encode(kp.public_key).decode()
+    pop = _provider().sign(
+        kp.secret_key,
+        device_enrolment_bytes(
+            user_id=user.id, alg_id="ML-DSA-65", public_key_b64=public_key_b64, challenge=challenge
+        ),
+    )
+    r = client.post(
+        "/api/v1/devices",
+        json={
+            "email": user.email,
+            "password": PASSWORD,
+            "device_name": name,
+            "alg_id": "ML-DSA-65",
+            "public_key_b64": public_key_b64,
+            "challenge": challenge,
+            "pop_signature_b64": base64.b64encode(pop).decode(),
+        },
+    )
+    return {"Authorization": f"Bearer {r.get_json()['token']}"}
+
+
+def _world(prefix, threshold_m=2):
+    owner = auth_service.register_user(f"{prefix}-a@e.com", "Ada", PASSWORD)
+    other = auth_service.register_user(f"{prefix}-b@e.com", "Brij", PASSWORD)
+    vault = vault_service.create_vault(owner, f"{prefix} vault", "Spending", threshold_m)
+    vault_service.add_member(vault, other.email, "signer", actor_id=owner.id)
+    return owner, other, vault
+
+
+# --- listing -------------------------------------------------------------------------------------
+
+
+def test_a_device_sees_only_the_vaults_it_belongs_to(app, client):
+    owner, other, vault = _world("vis")
+    stranger = auth_service.register_user("vis-c@e.com", "Chen", PASSWORD)
+    vault_service.create_vault(stranger, "Not yours", "", 1)
+
+    headers = _enrol(client, owner)
+    body = client.get("/api/v1/vaults", headers=headers).get_json()
+
+    names = [v["name"] for v in body["vaults"]]
+    assert names == ["vis vault"]
+
+
+def test_the_list_reports_this_signers_outstanding_work_not_the_vaults(app, client):
+    """``awaiting_me`` counts decisions needing *this* signer, not decisions that are open.
+
+    A count that includes work already signed, or work belonging to other signers, is a number
+    that is wrong in a way the reader cannot see -- and a badge people learn to disbelieve is
+    worse than no badge.
+    """
+    owner, other, vault = _world("count")
+    proposal_service.create_proposal(vault, owner, "One", "Release one.")
+    signed = proposal_service.create_proposal(vault, owner, "Two", "Release two.")
+
+    headers = _enrol(client, owner)
+    before = client.get("/api/v1/vaults", headers=headers).get_json()["vaults"][0]
+    assert before["awaiting_me"] == 2
+
+    # Sign one of them; it must drop out of the count.
+    from qvault.services import approval_service
+
+    approval_service.cast_vote(signed, owner, PASSWORD, "approve")
+    after = client.get("/api/v1/vaults", headers=headers).get_json()["vaults"][0]
+    assert after["awaiting_me"] == 1
+
+
+# --- detail --------------------------------------------------------------------------------------
+
+
+def test_vault_detail_names_the_members_and_the_policy(app, client):
+    owner, other, vault = _world("detail", threshold_m=2)
+    headers = _enrol(client, owner)
+
+    body = client.get(f"/api/v1/vaults/{vault.id}", headers=headers).get_json()
+    detail = body["vault"]
+
+    assert detail["threshold_m"] == 2
+    assert detail["signer_count"] == 2
+    assert sorted(m["name"] for m in detail["members"]) == ["Ada", "Brij"]
+    assert [m["is_me"] for m in detail["members"] if m["user_id"] == owner.id] == [True]
+
+
+def test_a_non_member_gets_404_not_403(app, client):
+    """404, so the endpoint does not confirm the vault exists to someone who cannot see it."""
+    owner, other, vault = _world("hidden")
+    stranger = auth_service.register_user("hidden-c@e.com", "Chen", PASSWORD)
+    headers = _enrol(client, stranger)
+
+    r = client.get(f"/api/v1/vaults/{vault.id}", headers=headers)
+    assert r.status_code == 404
+    assert r.get_json()["code"] == "unknown_vault"
+
+
+def test_a_vault_that_does_not_exist_answers_the_same_way(app, client):
+    """Identical shape to the non-member case, so the two cannot be told apart from outside."""
+    owner, _, _ = _world("absent")
+    headers = _enrol(client, owner)
+
+    r = client.get("/api/v1/vaults/999999", headers=headers)
+    assert r.status_code == 404
+    assert r.get_json()["code"] == "unknown_vault"
+
+
+# --- raising a decision --------------------------------------------------------------------------
+
+
+def test_raising_a_decision_produces_a_signable_proposal(app, client):
+    """The route must go through the service, so the derived artefacts are all present.
+
+    Asserting 201 would pass for a route that inserted a bare row. What makes a proposal signable
+    is the canonical payload hash, the nonce, the frozen signer snapshot and the ledger entry --
+    so those are what is checked.
+    """
+    owner, other, vault = _world("raise")
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={
+            "title": "Pay the Q4 invoice",
+            "action_text": "Release INR 18,40,000 to AWS India.",
+            "expires_in_hours": 12,
+        },
+        headers=headers,
+    )
+    assert r.status_code == 201
+    uuid = r.get_json()["proposal"]["proposal_uuid"]
+
+    created = Proposal.query.filter_by(proposal_uuid=uuid).one()
+    assert len(created.payload_hash) == 64
+    assert len(created.nonce) == 16
+    assert sorted(json.loads(created.authorized_signers_snapshot)) == sorted(vault.signer_ids())
+    assert created.expires_at is not None
+
+    entry = LedgerEntry.query.filter_by(
+        event_type="proposal_created", ref_type="proposal", ref_id=uuid
+    ).one()
+    assert entry is not None
+
+
+def test_a_raised_decision_is_immediately_visible_to_the_other_signer(app, client):
+    """End to end through the API a second device would use, not through the ORM."""
+    owner, other, vault = _world("visible")
+    owner_headers = _enrol(client, owner, name="Ada Phone")
+    client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "Buy", "action_text": "Buy the thing."},
+        headers=owner_headers,
+    )
+
+    other_headers = _enrol(client, other, name="Brij Phone")
+    body = client.get("/api/v1/proposals?state=awaiting", headers=other_headers).get_json()
+    assert [p["title"] for p in body["proposals"]] == ["Buy"]
+
+
+def test_a_non_member_cannot_raise_a_decision(app, client):
+    owner, other, vault = _world("guard")
+    stranger = auth_service.register_user("guard-c@e.com", "Chen", PASSWORD)
+    headers = _enrol(client, stranger)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "Sneak", "action_text": "Pay me."},
+        headers=headers,
+    )
+    assert r.status_code == 404
+    assert Proposal.query.filter_by(title="Sneak").first() is None
+
+
+def test_an_empty_action_is_refused(app, client):
+    """A decision with no text is a signature over nothing anyone can read afterwards."""
+    owner, _, vault = _world("empty")
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "Title only", "action_text": "   "},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "action_required"
+
+
+def test_a_deadline_in_the_past_is_refused(app, client):
+    owner, _, vault = _world("past")
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "Late", "action_text": "Too late.", "expires_in_hours": -4},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "bad_deadline"
+
+
+def test_a_policy_that_cannot_be_met_is_reported_as_a_governance_answer(app, client):
+    """M greater than the number of signers is not a malformed request, it is an unmeetable policy.
+
+    It reaches the client as 422 with the service's own sentence, because the fix is to add a
+    signer -- something only a person can decide -- not to resend the request differently.
+    """
+    owner = auth_service.register_user("policy-a@e.com", "Ada", PASSWORD)
+    vault = vault_service.create_vault(owner, "Impossible", "", 3)  # 3 needed, 1 signer
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "Doomed", "action_text": "Cannot ever be approved."},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "policy_error"
+
+
+def test_raising_a_decision_needs_a_bearer_token(app, client):
+    """The blueprint's before_request must cover the new routes without being told about them."""
+    owner, _, vault = _world("nocookie")
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "No auth", "action_text": "Nope."},
+    )
+    assert r.status_code == 401
+    assert r.get_json()["code"] == "token_missing"
