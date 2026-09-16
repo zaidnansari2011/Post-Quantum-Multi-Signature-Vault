@@ -130,6 +130,11 @@ export const createProposalResponse = z.object({
   proposal: proposalSummary,
 });
 
+export const createVaultResponse = z.object({
+  ok: z.literal(true),
+  vault: vaultSummary,
+});
+
 // Must match SigningInputs in src/crypto/signing.ts exactly. Strict, so a server that renamed or
 // dropped a field fails here rather than producing a hash that silently disagrees.
 export const signingInputsSchema = z

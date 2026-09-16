@@ -37,11 +37,13 @@ from qvault.services import (
     device_service,
     key_service,
     proposal_service,
+    vault_service,
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
 from qvault.services.proposal_service import ProposalError
 from qvault.services.signing import signing_bytes_for
+from qvault.services.vault_service import MembershipError, PolicyError
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
@@ -234,6 +236,89 @@ def _vault_summary(vault: Vault, user) -> dict:
         "awaiting_me": awaiting,
         "kem_alg_id": vault.kem_alg_id,
     }
+
+
+@bp.post("/vaults")
+@device_token_required
+def create_vault():
+    """Create a vault, optionally with its signers, in one call.
+
+    Members are accepted here rather than only through a follow-up call because a vault with one
+    member is a vault that cannot do anything: ``create_proposal`` refuses when M exceeds the
+    number of signers, so a 3-of-N vault created alone would reject every decision raised in it
+    until somebody remembered the second step. One round trip also means the handset cannot leave
+    a half-built vault behind when the network drops between two requests.
+
+    An email that does not belong to a registered user is reported rather than skipped. Silently
+    dropping it would produce a vault whose policy the owner believes is 3-of-4 and which is
+    actually 3-of-3 -- a governance difference they did not agree to.
+    """
+    user = g.api_user
+    body = _body()
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        return _error("name_required", "Give the vault a name.", 422)
+    if len(name) > 120:
+        return _error("name_too_long", "Vault names are limited to 120 characters.", 422)
+
+    try:
+        threshold_m = int(body.get("threshold_m", 1))
+    except (TypeError, ValueError):
+        return _error("bad_threshold", "threshold_m must be a whole number.", 422)
+
+    emails = [e.strip().lower() for e in (body.get("member_emails") or []) if str(e).strip()]
+    # The owner is a signer, so N is the invited signers plus one. Checked before anything is
+    # written, so a policy that can never be met does not leave a vault behind.
+    if threshold_m > len(emails) + 1:
+        return _error(
+            "threshold_too_high",
+            f"{threshold_m} signatures cannot be required from {len(emails) + 1} signer(s).",
+            422,
+        )
+
+    try:
+        vault = vault_service.create_vault(
+            user, name, (body.get("description") or "").strip(), threshold_m, commit=False
+        )
+        db.session.flush()
+        for email in emails:
+            vault_service.add_member(vault, email, "signer", actor_id=user.id, commit=False)
+        db.session.commit()
+    except (PolicyError, MembershipError) as exc:
+        db.session.rollback()
+        return _error("vault_error", str(exc), 422)
+
+    return jsonify(ok=True, vault=_vault_summary(vault, user)), 201
+
+
+@bp.post("/vaults/<int:vid>/members")
+@device_token_required
+def add_vault_member(vid: int):
+    """Add a signer or viewer to an existing vault.
+
+    Only the owner may do this. Membership decides who can approve, so letting any member widen the
+    signer set would let a signer recruit their own quorum.
+    """
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        return _error("unknown_vault", "No such vault.", 404)
+    if vault.owner_id != user.id:
+        return _error("not_the_owner", "Only the vault owner can change its members.", 403)
+
+    body = _body()
+    email = (body.get("email") or "").strip().lower()
+    role = (body.get("role") or "signer").strip().lower()
+    if not email:
+        return _error("email_required", "An email address is required.", 422)
+
+    try:
+        vault_service.add_member(vault, email, role, actor_id=user.id)
+    except MembershipError as exc:
+        return _error("membership_error", str(exc), 422)
+
+    return jsonify(ok=True, vault=_vault_summary(vault, user)), 201
 
 
 @bp.get("/vaults")

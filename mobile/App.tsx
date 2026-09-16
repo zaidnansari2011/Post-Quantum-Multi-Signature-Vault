@@ -37,6 +37,7 @@ import DecisionScreen from './src/screens/DecisionScreen.tsx';
 import VaultsScreen from './src/screens/VaultsScreen.tsx';
 import VaultScreen from './src/screens/VaultScreen.tsx';
 import NewDecisionScreen from './src/screens/NewDecisionScreen.tsx';
+import NewVaultScreen from './src/screens/NewVaultScreen.tsx';
 
 // Set before any request can be made. `extra.apiBaseUrl` lets a teammate point a build at a
 // different server without touching source.
@@ -47,7 +48,9 @@ export type RootStackParamList = {
   Tabs: undefined;
   Decision: { uuid: string };
   Vault: { vaultId: number };
-  NewDecision: { vaultId: number; vaultName: string };
+  // Undefined params: reached from the queue, where no vault is chosen yet.
+  NewDecision: { vaultId?: number; vaultName?: string } | undefined;
+  NewVault: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -84,9 +87,13 @@ function useAwaitingCount(): number | undefined {
 function MainTabs({
   onOpen,
   onOpenVault,
+  onRaise,
+  onCreateVault,
 }: {
   onOpen: (uuid: string) => void;
   onOpenVault: (vaultId: number) => void;
+  onRaise: () => void;
+  onCreateVault: () => void;
 }) {
   const awaiting = useAwaitingCount();
 
@@ -99,10 +106,10 @@ function MainTabs({
       }}
     >
       <Tabs.Screen name="Home" options={{ title: 'Approvals', tabBarBadge: awaiting }}>
-        {() => <HomeScreen onOpen={onOpen} />}
+        {() => <HomeScreen onOpen={onOpen} onRaise={onRaise} />}
       </Tabs.Screen>
       <Tabs.Screen name="Vaults" options={{ title: 'Vaults' }}>
-        {() => <VaultsScreen onOpen={onOpenVault} />}
+        {() => <VaultsScreen onOpen={onOpenVault} onCreate={onCreateVault} />}
       </Tabs.Screen>
       <Tabs.Screen name="Activity" options={{ title: 'Activity' }}>
         {() => <ActivityScreen onOpen={onOpen} />}
@@ -141,6 +148,8 @@ function Routes() {
           <MainTabs
             onOpen={(uuid) => navigation.navigate('Decision', { uuid })}
             onOpenVault={(vaultId) => navigation.navigate('Vault', { vaultId })}
+            onRaise={() => navigation.navigate('NewDecision')}
+            onCreateVault={() => navigation.navigate('NewVault')}
           />
         )}
       </Stack.Screen>
@@ -161,11 +170,21 @@ function Routes() {
           />
         )}
       </Stack.Screen>
+      <Stack.Screen name="NewVault">
+        {({ navigation }) => (
+          <NewVaultScreen
+            onBack={() => navigation.goBack()}
+            // Replace, so back from the new vault lands on the vault list rather than on a filled
+            // form that would create a duplicate if submitted again.
+            onCreated={(vaultId) => navigation.replace('Vault', { vaultId })}
+          />
+        )}
+      </Stack.Screen>
       <Stack.Screen name="NewDecision">
         {({ navigation, route }) => (
           <NewDecisionScreen
-            vaultId={route.params.vaultId}
-            vaultName={route.params.vaultName}
+            vaultId={route.params?.vaultId}
+            vaultName={route.params?.vaultName}
             onBack={() => navigation.goBack()}
             // Replace rather than push: going "back" from a decision you just raised should return
             // to the vault, not to a filled-in form that would raise a second copy if resubmitted.

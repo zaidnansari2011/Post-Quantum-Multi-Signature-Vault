@@ -26,9 +26,22 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { ActionBar, Banner, Button, Field, NavBar, Row, Screen, feedback } from '../ui/index.tsx';
+import {
+  ActionBar,
+  Banner,
+  Button,
+  Card,
+  Divider,
+  Empty,
+  Field,
+  Loading,
+  NavBar,
+  Row,
+  Screen,
+  feedback,
+} from '../ui/index.tsx';
 import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
@@ -43,18 +56,25 @@ const DEADLINES: Array<{ label: string; hours: number | null }> = [
 ];
 
 export default function NewDecisionScreen({
-  vaultId,
-  vaultName,
+  vaultId: initialVaultId,
+  vaultName: initialVaultName,
   onBack,
   onRaised,
 }: {
-  vaultId: number;
-  vaultName: string;
+  // Both optional: this screen is reached from inside a vault, where the vault is known, and from
+  // the approvals queue, where it is not. Requiring a vault up front would mean the only route to
+  // raising a decision runs through two taps of navigation that exist for a different purpose.
+  vaultId?: number | null;
+  vaultName?: string | null;
   onBack: () => void;
   onRaised: (uuid: string) => void;
 }) {
   const { token } = useEnrolledSession();
   const queryClient = useQueryClient();
+
+  const [chosen, setChosen] = useState<{ id: number; name: string } | null>(
+    initialVaultId != null ? { id: initialVaultId, name: initialVaultName ?? '' } : null,
+  );
 
   const [title, setTitle] = useState('');
   const [actionText, setActionText] = useState('');
@@ -67,7 +87,7 @@ export default function NewDecisionScreen({
     mutationFn: () =>
       api.createProposal({
         token,
-        vaultId,
+        vaultId: chosen!.id,
         title: title.trim(),
         actionText: actionText.trim(),
         expiresInHours: hours,
@@ -76,7 +96,7 @@ export default function NewDecisionScreen({
       feedback.signed();
       void queryClient.invalidateQueries({ queryKey: ['proposals'] });
       void queryClient.invalidateQueries({ queryKey: ['vaults'] });
-      void queryClient.invalidateQueries({ queryKey: ['vault', vaultId] });
+      if (chosen) void queryClient.invalidateQueries({ queryKey: ['vault', chosen.id] });
       onRaised(result.proposal.proposal_uuid);
     },
     onError: (err) => {
@@ -84,6 +104,57 @@ export default function NewDecisionScreen({
       feedback.refused();
     },
   });
+
+  // Only fetched when there is a choice to make.
+  const vaultsQuery = useQuery({
+    queryKey: ['vaults'],
+    queryFn: ({ signal }) => api.fetchVaults(token, signal),
+    enabled: chosen === null,
+  });
+
+  if (chosen === null) {
+    const vaults = vaultsQuery.data?.vaults ?? [];
+    return (
+      <Screen>
+        <NavBar onBack={onBack} title="New decision" />
+        <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+          <Text style={s.label}>Which vault is this decision for?</Text>
+          {vaultsQuery.isLoading ? (
+            <Loading />
+          ) : vaults.length === 0 ? (
+            <Empty
+              title="You are not on any vaults yet."
+              detail="A decision has to belong to one. Create a vault first."
+            />
+          ) : (
+            <Card>
+              {vaults.map((v, i) => (
+                <View key={v.vault_id}>
+                  {i > 0 ? <Divider /> : null}
+                  <Pressable
+                    onPress={() => setChosen({ id: v.vault_id, name: v.name })}
+                    accessibilityRole="button"
+                    accessibilityLabel={v.name}
+                    style={({ pressed }) => [s.pick, pressed && { opacity: 0.6 }]}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={s.pickName} numberOfLines={1}>
+                        {v.name}
+                      </Text>
+                      <Text style={s.pickPolicy}>
+                        {v.threshold_m ?? '?'} of {v.signer_count} signers must approve
+                      </Text>
+                    </View>
+                    <Text style={s.chevron}>›</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </Card>
+          )}
+        </ScrollView>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -99,7 +170,19 @@ export default function NewDecisionScreen({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={s.context}>in {vaultName}</Text>
+          <Row style={{ justifyContent: 'space-between' }} gap={space.md}>
+            <Text style={s.context}>in {chosen?.name}</Text>
+            {initialVaultId == null ? (
+              <Pressable
+                onPress={() => setChosen(null)}
+                accessibilityRole="button"
+                hitSlop={8}
+                disabled={raise.isPending}
+              >
+                <Text style={s.change}>Change</Text>
+              </Pressable>
+            ) : null}
+          </Row>
 
           {error ? <Banner tone="broken" title={error.title} detail={error.detail} /> : null}
 
@@ -216,6 +299,18 @@ const s = StyleSheet.create({
     minHeight: 160,
   },
   hint: { ...type.micro },
+
+  change: { ...type.meta, color: color.ink2 },
+
+  pick: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: space.md,
+  },
+  pickName: { ...type.body },
+  pickPolicy: { ...type.micro },
+  chevron: { fontSize: 22, lineHeight: 24, color: color.ink4 },
 
   preset: {
     borderWidth: 1,

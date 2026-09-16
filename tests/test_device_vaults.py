@@ -26,6 +26,7 @@ from flask import current_app
 
 from qvault.models.ledger import LedgerEntry
 from qvault.models.proposal import Proposal
+from qvault.models.vault import Vault
 from qvault.services import auth_service, proposal_service, vault_service
 from qvault.services.signing import device_enrolment_bytes
 
@@ -143,6 +144,119 @@ def test_a_vault_that_does_not_exist_answers_the_same_way(app, client):
     r = client.get("/api/v1/vaults/999999", headers=headers)
     assert r.status_code == 404
     assert r.get_json()["code"] == "unknown_vault"
+
+
+# --- creating a vault ----------------------------------------------------------------------------
+
+
+def test_creating_a_vault_with_its_signers_takes_one_call(app, client):
+    """Members come with the create call, because a vault of one cannot approve anything.
+
+    ``create_proposal`` refuses when M exceeds the signer count, so a 3-of-N vault created alone
+    would reject every decision raised in it until somebody remembered a second request.
+    """
+    owner = auth_service.register_user("mk-a@e.com", "Ada", PASSWORD)
+    auth_service.register_user("mk-b@e.com", "Brij", PASSWORD)
+    auth_service.register_user("mk-c@e.com", "Chen", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        "/api/v1/vaults",
+        json={
+            "name": "Treasury",
+            "description": "Payments above the delegated limit.",
+            "threshold_m": 2,
+            "member_emails": ["mk-b@e.com", "mk-c@e.com"],
+        },
+        headers=headers,
+    )
+    assert r.status_code == 201
+    summary = r.get_json()["vault"]
+    assert summary["threshold_m"] == 2
+    assert summary["signer_count"] == 3  # the two invited, plus the owner
+
+    # And it can immediately carry a decision, which is the point of doing it in one call.
+    made = client.post(
+        f"/api/v1/vaults/{summary['vault_id']}/proposals",
+        json={"title": "Pay", "action_text": "Release the payment."},
+        headers=headers,
+    )
+    assert made.status_code == 201
+
+
+def test_a_threshold_larger_than_the_signer_set_is_refused_before_anything_is_written(app, client):
+    """A policy that can never be met must not leave a vault behind for someone to discover."""
+    owner = auth_service.register_user("hi-a@e.com", "Ada", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        "/api/v1/vaults",
+        json={"name": "Impossible", "threshold_m": 4, "member_emails": []},
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "threshold_too_high"
+    assert Vault.query.filter_by(name="Impossible").first() is None
+
+
+def test_an_unregistered_member_email_fails_the_whole_creation(app, client):
+    """Reported, never skipped.
+
+    Dropping the address quietly would hand back a vault whose policy the owner believes is 2-of-3
+    and which is really 2-of-2 -- a different governance arrangement from the one they asked for.
+    """
+    owner = auth_service.register_user("un-a@e.com", "Ada", PASSWORD)
+    auth_service.register_user("un-b@e.com", "Brij", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        "/api/v1/vaults",
+        json={
+            "name": "Partial",
+            "threshold_m": 2,
+            "member_emails": ["un-b@e.com", "nobody@e.com"],
+        },
+        headers=headers,
+    )
+    assert r.status_code == 422
+    assert Vault.query.filter_by(name="Partial").first() is None
+
+
+def test_only_the_owner_may_add_a_member(app, client):
+    """Membership decides who can approve, so a signer must not be able to recruit their quorum."""
+    owner, other, vault = _world("owns")
+    headers = _enrol(client, other)  # a signer, not the owner
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/members",
+        json={"email": "owns-a@e.com", "role": "signer"},
+        headers=headers,
+    )
+    assert r.status_code == 403
+    assert r.get_json()["code"] == "not_the_owner"
+
+
+def test_the_owner_can_add_a_member(app, client):
+    owner, other, vault = _world("adds")
+    auth_service.register_user("adds-c@e.com", "Chen", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/members",
+        json={"email": "adds-c@e.com", "role": "signer"},
+        headers=headers,
+    )
+    assert r.status_code == 201
+    assert r.get_json()["vault"]["signer_count"] == 3
+
+
+def test_a_vault_needs_a_name(app, client):
+    owner = auth_service.register_user("nm-a@e.com", "Ada", PASSWORD)
+    headers = _enrol(client, owner)
+
+    r = client.post("/api/v1/vaults", json={"name": "  ", "threshold_m": 1}, headers=headers)
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "name_required"
 
 
 # --- raising a decision --------------------------------------------------------------------------

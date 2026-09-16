@@ -19,7 +19,18 @@ import { useMemo } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
-import { Banner, Empty, Loading, PageTitle, Screen, Skeleton } from '../ui/index.tsx';
+import Feather from '@expo/vector-icons/Feather';
+
+import {
+  Banner,
+  Button,
+  Empty,
+  HeaderAction,
+  Loading,
+  PageTitle,
+  Screen,
+  Skeleton,
+} from '../ui/index.tsx';
 import { DecisionCard } from '../ui/DecisionCard.tsx';
 import { color, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
@@ -27,7 +38,13 @@ import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
 
-export default function HomeScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
+export default function HomeScreen({
+  onOpen,
+  onRaise,
+}: {
+  onOpen: (uuid: string) => void;
+  onRaise: () => void;
+}) {
   const { token, identity, handleUnauthorized } = useEnrolledSession();
 
   const query = useQuery({
@@ -66,7 +83,17 @@ export default function HomeScreen({ onOpen }: { onOpen: (uuid: string) => void 
         )}
         ListHeaderComponent={
           <View>
-            <PageTitle lead={greeting(identity.displayName)} title={headline(query.isLoading, proposals.length)} />
+            <PageTitle
+              lead={greeting(identity.displayName)}
+              title={headline(query.isLoading, proposals.length)}
+              trailing={
+                <HeaderAction
+                  label="Raise a decision"
+                  onPress={onRaise}
+                  icon={<Feather name="plus" size={22} color={color.chromeInk} />}
+                />
+              }
+            />
             {transportFailure ? (
               <View style={{ marginBottom: space.md }}>
                 <Banner
@@ -84,7 +111,8 @@ export default function HomeScreen({ onOpen }: { onOpen: (uuid: string) => void 
           ) : transportFailure ? null : (
             <Empty
               title="Nothing is waiting on you."
-              detail="Decisions you are authorised to sign will appear here as they are raised."
+              detail="Decisions you are authorised to sign appear here. You can raise one yourself."
+              action={<Button label="Raise a decision" onPress={onRaise} full={false} />}
             />
           )
         }

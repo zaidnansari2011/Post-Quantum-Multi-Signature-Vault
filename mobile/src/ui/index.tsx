@@ -211,6 +211,36 @@ export function Card({
   );
 }
 
+/**
+ * The one creative action on a root screen, in its title block.
+ *
+ * A round target rather than a labelled button because it sits beside a 26pt title and a full
+ * button there would compete with it for the eye. It is the only control in the app that is
+ * circular, which is what makes it findable without a label: nothing else looks like it.
+ */
+export function HeaderAction({
+  label,
+  icon,
+  onPress,
+}: {
+  /** Spoken, not drawn -- the glyph carries it visually, the label carries it for a screen reader. */
+  label: string;
+  icon: ReactNode;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={10}
+      style={({ pressed }) => [s.headerAction, pressed && { opacity: 0.7 }]}
+    >
+      {icon}
+    </Pressable>
+  );
+}
+
 export function Row({
   children,
   gap = space.sm,
@@ -497,6 +527,15 @@ const s = StyleSheet.create({
   },
 
   divider: { height: 1, backgroundColor: color.rule2 },
+
+  headerAction: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: color.chrome,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   kv: { gap: 3, paddingVertical: space.xs },
   kvLabel: { ...type_.micro, color: color.ink3 },
