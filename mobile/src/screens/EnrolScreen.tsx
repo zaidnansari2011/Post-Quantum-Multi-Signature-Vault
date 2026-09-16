@@ -2,13 +2,19 @@
 //
 // The password authenticates the enrolment request; it does NOT protect the signing key and is
 // never stored. From here on the device authenticates with a bearer token and authorises each
-// signature with the handset's own lock. That is the whole point of ADR-0016, and the screen shows
-// it as metadata (rule 1: no teaching copy) rather than explaining it.
+// signature with the handset's own lock. That is the whole point of ADR-0016.
+//
+// The screen states the custody arrangement as three facts rather than explaining it, because the
+// interface does not teach -- but it does state them, and prominently, because this is the one
+// moment where what the person is agreeing to is not a decision but an arrangement: a key is about
+// to be generated on their phone and will never leave it. Someone should be able to see that they
+// are doing something different from signing into a website.
 
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Banner, Body, Button, Field, Header, Meta, Panel, Screen } from '../ui/index.tsx';
+import { Banner, Button, Card, Divider, Field, KeyValue, Screen } from '../ui/index.tsx';
+import { color, space, type } from '../theme.ts';
 import { useSession } from '../session.tsx';
 import { detectProtection } from '../keystore.ts';
 import type { ProtectionLevel } from '../custody.ts';
@@ -51,16 +57,26 @@ export default function EnrolScreen() {
   }
 
   return (
-    <Screen>
-      <Header title="Q-Vault" subtitle="Enrol this device" />
+    <Screen edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Body>
+        <ScrollView
+          contentContainerStyle={s.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={s.masthead}>
+            <Text style={s.wordmark}>Q-Vault</Text>
+            <Text style={s.lede}>
+              Approve decisions with a key that is generated on this phone and never leaves it.
+            </Text>
+          </View>
+
           {error ? <Banner tone="broken" title={error.title} detail={error.detail} /> : null}
 
-          <Panel>
+          <View style={{ gap: space.md }}>
             <Field
               label="Email"
               value={email}
@@ -80,31 +96,33 @@ export default function EnrolScreen() {
               editable={!busy}
             />
             <Field
-              label="Device name"
+              label="Name this device"
               value={deviceName}
               onChangeText={setDeviceName}
               autoCapitalize="sentences"
               hint="Shown in your device list and in the audit log."
               editable={!busy}
             />
-          </Panel>
+          </View>
 
-          <Panel title="This device">
-            <Meta label="Signing key" value={ELIGIBLE_ALGORITHM_IDS[0]} mono />
-            <Meta label="Key custody" value="Generated and held on this device" />
-            <Meta
-              label="Unlocked by"
+          <Card>
+            <KeyValue label="Signing key" value={ELIGIBLE_ALGORITHM_IDS[0]} />
+            <Divider />
+            <KeyValue label="Key custody" value="Generated and held on this device" />
+            <Divider />
+            <KeyValue
+              label="Each signature unlocked by"
               value={protection ? PROTECTION_LABEL[protection] : 'Checking…'}
             />
-          </Panel>
+          </Card>
 
           <Button
-            label={busy ? 'Enrolling…' : 'Enrol this device'}
+            label="Enrol this device"
             onPress={submit}
             disabled={!ready}
             busy={busy}
           />
-        </Body>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -135,3 +153,21 @@ function describe(err: unknown): { title: string; detail?: string } {
   if (err instanceof TransportError) return { title: err.message };
   return { title: err instanceof Error ? err.message : 'Something went wrong.' };
 }
+
+const s = StyleSheet.create({
+  // Deliberately NOT vertically centred. `justifyContent: 'center'` with `flexGrow: 1` looks right
+  // on an idle screen and fails the moment the keyboard opens: the viewport halves, the content is
+  // taller than it, and centring overflows in both directions at once -- so the masthead is clipped
+  // against the status bar exactly when someone is typing. Top-aligned with real padding is
+  // predictable at every viewport height.
+  content: {
+    paddingHorizontal: space.lg,
+    paddingTop: space.xxl,
+    paddingBottom: space.xxl,
+    gap: space.lg,
+    flexGrow: 1,
+  },
+  masthead: { gap: space.sm, marginBottom: space.sm },
+  wordmark: { ...type.decision, fontSize: 34, lineHeight: 40, color: color.ink },
+  lede: { ...type.body, color: color.ink2, maxWidth: 320 },
+});

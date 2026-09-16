@@ -64,6 +64,34 @@ export const revokeResponse = z.object({
   device: deviceSchema,
 });
 
+export const vaultMember = z.object({
+  user_id: z.number().int(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  role: z.string(),
+  is_me: z.boolean(),
+});
+export type VaultMember = z.infer<typeof vaultMember>;
+
+export const vaultSummary = z.object({
+  vault_id: z.number().int(),
+  name: z.string(),
+  description: z.string().nullable(),
+  role: z.string().nullable(),
+  threshold_m: z.number().int().nullable(),
+  signer_count: z.number().int(),
+  member_count: z.number().int(),
+  // Decisions in this vault still awaiting THIS signer -- not the number open overall.
+  awaiting_me: z.number().int(),
+  kem_alg_id: z.string().nullable(),
+});
+export type VaultSummary = z.infer<typeof vaultSummary>;
+
+export const vaultsResponse = z.object({
+  ok: z.literal(true),
+  vaults: z.array(vaultSummary),
+});
+
 export const proposalSummary = z.object({
   proposal_uuid: z.string(),
   title: z.string(),
@@ -84,6 +112,22 @@ export const proposalsResponse = z.object({
   ok: z.literal(true),
   proposals: z.array(proposalSummary),
   state: z.string(),
+});
+
+export const vaultDetail = vaultSummary.extend({
+  members: z.array(vaultMember),
+  proposals: z.array(proposalSummary),
+});
+export type VaultDetail = z.infer<typeof vaultDetail>;
+
+export const vaultDetailResponse = z.object({
+  ok: z.literal(true),
+  vault: vaultDetail,
+});
+
+export const createProposalResponse = z.object({
+  ok: z.literal(true),
+  proposal: proposalSummary,
 });
 
 // Must match SigningInputs in src/crypto/signing.ts exactly. Strict, so a server that renamed or
