@@ -737,6 +737,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reset", action="store_true", help="drop every table and rebuild before seeding"
     )
+    parser.add_argument(
+        "--unlink-treasury",
+        action="store_true",
+        help="with --reset: go ahead even though a linked treasury loses its approvers (plan D16)",
+    )
     parser.add_argument("--env", default="development", help="config name to load")
     args = parser.parse_args(argv)
 
@@ -746,6 +751,16 @@ def main(argv: list[str] | None = None) -> int:
 
         if User.query.count() and not args.reset:
             _line("Refusing to seed: this database already has users. Re-run with --reset.")
+            return 1
+        # seed() drops every table, which strands any treasury linked to these keys (plan D16).
+        from qvault.services import reseed_guard
+
+        if not reseed_guard.guard(
+            db.engine,
+            unlink_treasury=args.unlink_treasury,
+            now=lambda: datetime.now(UTC),
+            say=_line,
+        ):
             return 1
 
         # seed() owns the drop-and-bootstrap, so that genesis is created under the same frozen

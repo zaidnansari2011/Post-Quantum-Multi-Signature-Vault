@@ -418,6 +418,9 @@ and the API keys belong to your accounts.
 | Fund the relayer wallet | `PARTLY DONE`, 0.05 ETH arrived 2026-09-17, enough for setup; another 0.05 from the faucet on a later day pays for demo payouts |
 | Using ZKNox's unaudited verifier on testnet | Assumed accepted with the go-ahead on 2026-09-17 |
 | Fork ETHDILITHIUM to your GitHub account | `DONE`, 2026-09-17: [zaidnansari2011/ETHDILITHIUM](https://github.com/zaidnansari2011/ETHDILITHIUM), with tag `qvault-pin-4c370bb` on the pinned commit; the submodule now points at the fork |
+| Phase 5: say which approver uses the phone ([plan Q2](plans/onchain-execution.md#open-questions)) | `TODO`, see *Link the demo Treasury vault* below |
+| Phase 5: give the link access to the Azure database (plan Q3) | `TODO`, see below |
+| Phase 5: approve the broadcast that links the Treasury vault (~0.028 ETH) | `TODO`, after reading the dry run |
 | Approve the first broadcast to Sepolia (Phase 3: helper + verifier) | `DONE`, approved 2026-09-17; verifier deployed and source-verified at [`0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C`](https://sepolia.etherscan.io/address/0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C#code), cost 0.0109 ETH (relayer now holds ~0.039) |
 
 **Approve the Phase 3 deployment.** On 2026-09-17 the session's permission system blocked the
@@ -474,6 +477,40 @@ the key becomes a Container App secret, which will be a separate step here.
 
 *Also:* the Etherscan and Alchemy keys were pasted into a chat session. They're testnet-only, but
 regenerate both before sharing the repository or any logs widely.
+
+**Link the demo Treasury vault (Phase 5).** Built and tested; nothing has been spent. Linking
+registers each approver's post-quantum key on chain and deploys the vault's own treasury contract.
+Three things are yours:
+
+1. **Which approver signs on the phone in the demo** (plan Q2). The contract counts keys, not
+   people, so each approver gets exactly one key on the treasury: their password key, or their
+   phone key. The phone approver's phone must already be enrolled on
+   <https://project4.zaidansari.tech>: a phone key enrolled after linking (including after
+   reinstalling the app) cannot approve payments until the treasury is linked again, which costs
+   ~0.03 ETH.
+2. **Access to the Azure database** (plan Q3). The link must read and write the database the demo
+   runs on, not the local copy. It needs that database's `DATABASE_URL`, and the Postgres
+   firewall must admit this laptop. Either run the commands below yourself, or say how you want to
+   hand the session the URL. It is never written into the repository.
+3. **Approve the broadcast.** A dry run against the local copy on 2026-09-17 said: three keys at
+   ~8.78M gas each and a treasury at ~2.68M, about 0.028 ETH at 0.97 gwei, leaving ~0.011 ETH in
+   the relayer. The 0.05 ETH top-up gives room if fees rise first.
+
+From `q-vault` in PowerShell (the relayer settings come from `.env`; `DATABASE_URL` set here wins
+over the local one, for this window only):
+
+```powershell
+$env:DATABASE_URL = "postgresql+psycopg://..."   # the Azure database
+.venv\Scripts\python scripts\link_treasury.py --vault <id> --by <admin email> --device <phone approver's email>
+# read the plan it prints: the Database line, the vault, each approver's key, the cost. If right:
+.venv\Scripts\python scripts\link_treasury.py --vault <id> --by <admin email> --device <phone approver's email> --broadcast
+Remove-Item Env:DATABASE_URL
+```
+
+The broadcast waits about 13 minutes for finality before it writes anything. If it is interrupted,
+run the same command again: nothing already on chain is paid for twice. At the end it records the
+treasury in `chain/deployments/sepolia.json` and prints the command that verifies its source on
+Etherscan.
 
 ---
 

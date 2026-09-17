@@ -29,7 +29,9 @@ class BaseConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Dev/demo convenience: create tables + seed on startup (production would use migrations).
-    AUTO_CREATE_DB = True
+    # An admin script opening a live database it must not write to at startup turns it off
+    # (plan D28, scripts/link_treasury.py).
+    AUTO_CREATE_DB = os.environ.get("AUTO_CREATE_DB", "true").lower() == "true"
 
     # Maximum upload size — files are encrypted at rest; larger uploads are rejected (413).
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MiB
