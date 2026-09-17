@@ -140,10 +140,10 @@ Runtime sizes: `QVaultTreasury` 9,451 bytes; `ZKNOX_dilithium65` 24,272 bytes (E
 
 ### Phase 3: Shared contracts on Sepolia · ~0.01 ETH
 
-- [ ] Deploy the F1600 helper and `ZKNOX_dilithium65`; verify the verifier's source on Etherscan (the helper is raw bytecode with no Solidity source; it is identified by the code hash the verifier enforces). *Dry run with the relayer as sender succeeded on 2026-09-17: helper `0x8fB7DC8733139924C7b8D12A296F2ff3c0f87ac4`, verifier `0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C`, 12.95M gas. The broadcast was blocked by the session's permission system and awaits the owner (OWNER-ACTIONS §2.8).*
+- [x] Deploy the F1600 helper and `ZKNOX_dilithium65`; verify the verifier's source on Etherscan (the helper is raw bytecode with no Solidity source; it is identified by the code hash the verifier enforces). *Deployed 2026-09-17 with the owner's approval, at the dry run's predicted addresses: helper [`0x8fB7DC8733139924C7b8D12A296F2ff3c0f87ac4`](https://sepolia.etherscan.io/address/0x8fB7DC8733139924C7b8D12A296F2ff3c0f87ac4) (block 11,724,419, 4,716,322 gas), verifier [`0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C`](https://sepolia.etherscan.io/address/0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C#code) (block 11,724,420, 5,242,448 gas). Etherscan: "Pass - Verified". Total cost 0.0109 ETH at ~1 gwei.*
 - [x] `scripts/record_deployment.py` + `qvault/chain/deployments.py`: read forge's `broadcast/.../run-latest.json`, then confirm against the chain (finalized, canonical block; sender, nonce and CREATE address; code present) and against the commit (nothing under `chain/` uncommitted, the submodule at the pinned commit, every compiled source hashing to what the compiler recorded, `foundry.toml`'s compiler settings, and the on-chain verifier byte-identical to the build with only its immutable masked). **Merge** into `chain/deployments/sepolia.json` under a lock file, never overwrite. Written, reviewed and tested; runs once the deployment exists.
 - [x] Live-check tool: `scripts/check_verifier_live.py` asks the deployed verifier, by `eth_call` with state overrides on the two key pointers only, to accept a fresh quantcrypt signature and refuse a tampered one, a wrong digest and another key's signature. No `setKey` (~8.8M gas) and no ETH. The whole 32-byte result is compared, using the 104-byte key form a treasury passes. Proven against Sepolia on 2026-09-17 with the helper and this commit's verifier also supplied by override.
-- [ ] Live check run against the deployed verifier
+- [x] Live check run against the deployed verifier (2026-09-17, block 11,724,512): genuine quantcrypt signature `0x024ad318`; one byte changed, a different digest, and another key's signature all `0xffffffff`. The recorder confirmed first that both blocks were finalized and canonical, that nothing under `chain/` was uncommitted at `4a089c2`, and that the verifier on chain is byte-identical to that build.
 - **Done when:** the verifier is verified on Etherscan, the deployment is recorded, and the live check passes against it.
 
 ### Phase 4: The signed action · no ETH · ⚑ D4
@@ -231,10 +231,12 @@ The feature is not finished, and the flag stays off, until every row is ticked o
 
 ### Open questions
 
-- **Q1: which database does the demo run on?** The treasury binds the approvers' public keys from
-  one specific database. If the demo is on the Azure instance, link against Azure's database, and
-  the relayer key and RPC settings must be set there too (depends on §2.7 CI deploy, or a manual
-  `az` update). **Answer before Phase 5.**
+- ~~**Q1: which database does the demo run on?**~~ **Answered 2026-09-17: the Azure instance's
+  database.** Consequences for later phases: Phase 5 links against Azure's database (the linking
+  script runs where that database is, not against a local copy); the relayer key and RPC settings
+  become Container App secrets (a new owner step when Phase 5 starts, depending on §2.7 CI deploy
+  or a manual `az` update); the executor runs in the Azure app's scheduler; and the D16 reseed
+  guard must protect a reseed of the Azure database, not only a local one.
 
 ---
 
@@ -275,7 +277,7 @@ automatic signer sync after rotation · gas sponsorship or ERC-4337 bundlers.
 ## 9. What the owner does
 
 Tracked in [OWNER-ACTIONS §2.8](../OWNER-ACTIONS.md): ~~review this plan~~ (done 2026-09-17), fund
-the second 0.05 ETH, answer Q1 before Phase 5, test the phone on a real handset in Phase 6b, and
+the second 0.05 ETH, ~~answer Q1~~ (Azure, 2026-09-17), test the phone on a real handset in Phase 6b, and
 look at the Phase 8 screenshots.
 
 ---
@@ -293,4 +295,6 @@ look at the Phase 8 screenshots.
 | 2026-09-17 | 2 | Phase 2 landed: RPC client, relayer, fake node; 146 tests. CI green | `e0c0a99` |
 | 2026-09-17 | 3 | The broadcast was blocked by the session's permission system (it spends ETH and publishes to a public chain); recorded as an owner action rather than worked around | — |
 | 2026-09-17 | 3 | Adversarial review of the recording tooling (run against a local anvil replay of the real dry run): no critical. High: the record claimed "this commit's build" without checking the artefact came from the commit, reproduced by changing a metadata byte in both; fixed with clean-tree, pinned-submodule, source-hash and settings checks. Medium: the script's own checks were untested (now 20 tests); the record file was a weak store for the reseed guard (strict loader, full schema check, lock file). Lows fixed: finality and reorg check, block time instead of the drifting local clock, partial broadcasts named as such, a BOM tolerated, Windows replace retried, ignored temp files | — |
-| 2026-09-17 | 3 | Recording and live-check tooling landed (deployment itself pending the owner). 216 chain tests; mutation run on the new checks 25/25 killed; full suite 1,273 passed | *(this commit)* |
+| 2026-09-17 | 3 | Recording and live-check tooling landed (deployment itself pending the owner). 216 chain tests; mutation run on the new checks 25/25 killed; full suite 1,273 passed | `932f1ad` |
+| 2026-09-17 | 4 (prep) | Mapping the signed payload found a live bug (a decision whose text ended in a newline failed its own binding check, and its votes went uncounted) and that no test froze the payload hashes. Fixed, and today's hashes frozen before Phase 4 changes the payload | `4a089c2` |
+| 2026-09-17 | 3 | **Phase 3 done.** Owner approved the broadcast; helper and verifier deployed at the predicted addresses for 0.0109 ETH, verifier source verified on Etherscan, deployment recorded after finality with every provenance check passing, live check passed against the deployed verifier. Q1 answered: the demo runs on the Azure database. ETHDILITHIUM forked to the owner's account with tag `qvault-pin-4c370bb` | *(this commit)* |

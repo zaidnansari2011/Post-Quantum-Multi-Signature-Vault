@@ -1,0 +1,54 @@
+{
+  "chain_id": 11155111,
+  "contracts": {
+    "F1600Helper": {
+      "address": "0x8fB7DC8733139924C7b8D12A296F2ff3c0f87ac4",
+      "block": 11724419,
+      "deployed_at": "2026-09-17T14:52:24+00:00",
+      "deployer": "0x3cbC1F33F6ad04B3305dbdf26F6a3b0eC98854c2",
+      "deployer_nonce": 0,
+      "deployment_tx": "0x9ee6eaf8d827b60c3b62da88d40ab893edc34db84828e9efb3065fe291ac0f08",
+      "fee_wei": "5022759749102004",
+      "gas_used": 4716322,
+      "runtime_bytes": 21622,
+      "runtime_keccak256": "0x4afb4435879cdf8e50474c7aab2bc3a679caed432550ad6dba64f509309a817b",
+      "source": {
+        "commit": "4c370bb5ff90d98e1ce8fb96f867126f0fbb9046",
+        "note": "raw bytecode (fireblocks-labs/evm-ml-dsa-verifier); no Solidity source",
+        "path": "test/f1600_170.hex",
+        "repository": "https://github.com/ZKNoxHQ/ETHDILITHIUM.git"
+      }
+    },
+    "ZKNOX_dilithium65": {
+      "address": "0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
+      "block": 11724420,
+      "constructor": {
+        "helper": "0x8fB7DC8733139924C7b8D12A296F2ff3c0f87ac4"
+      },
+      "deployed_at": "2026-09-17T14:52:36+00:00",
+      "deployer": "0x3cbC1F33F6ad04B3305dbdf26F6a3b0eC98854c2",
+      "deployer_nonce": 1,
+      "deployment_tx": "0xeb065e42e5ec9da7382a2a26aafd9ce6e33cd81b39f252ea625b79c8ba758be8",
+      "fee_wei": "5899660914247760",
+      "gas_used": 5242448,
+      "matches_build_of_qvault_commit": "4a089c2d5af20afea7dd6aee36a5da158e733c77",
+      "runtime_bytes": 24272,
+      "runtime_keccak256": "0xd60e952f765b0e42fc628a38bf32a1faf7bf370cdf8232a82a3dc4822ee41b56",
+      "source": {
+        "commit": "4c370bb5ff90d98e1ce8fb96f867126f0fbb9046",
+        "compiler": {
+          "evm_version": "osaka",
+          "optimizer": true,
+          "optimizer_runs": 1000000,
+          "solc": "0.8.30",
+          "via_ir": true
+        },
+        "path": "src/ZKNOX_dilithium65.sol",
+        "repository": "https://github.com/ZKNoxHQ/ETHDILITHIUM.git"
+      }
+    }
+  },
+  "network": "sepolia",
+  "schema": 1,
+  "treasuries": {}
+}
