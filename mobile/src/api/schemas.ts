@@ -153,6 +153,22 @@ export const createVaultResponse = z.object({
   vault: vaultSummary,
 });
 
+// The payment inside a payment decision's signed payload, in exactly the shape the server signs
+// (docs/plans/onchain-execution.md, D22). Strict for the same reason as the inputs below; every
+// number must be a safe integer, which zod's int() already requires.
+export const paymentActionSchema = z
+  .object({
+    kind: z.literal('eth_transfer'),
+    chain_id: z.number().int(),
+    treasury: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    to: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    value_wei: z.string().regex(/^(0|[1-9][0-9]*)$/),
+    data: z.literal('0x'),
+    call_gas: z.number().int(),
+    valid_until: z.number().int(),
+  })
+  .strict();
+
 // Must match SigningInputs in src/crypto/signing.ts exactly. Strict, so a server that renamed or
 // dropped a field fails here rather than producing a hash that silently disagrees.
 export const signingInputsSchema = z
@@ -170,6 +186,9 @@ export const signingInputsSchema = z
       .strict(),
     nonce: z.string(),
     created_at: z.string(),
+    // Present only on payment decisions. The server sends it only to an app that declares the
+    // payment capability, which this app does from Phase 6b (plan D25).
+    action: paymentActionSchema.optional(),
   })
   .strict();
 

@@ -70,6 +70,54 @@ def test_a_proposal_payload_hashes_as_it_always_has(name):
     assert sha256_hex(proposal_signing_bytes(**inputs)) == expected
 
 
+#: A payment decision (on-chain execution, plan D22), frozen when payments were added. The phone's
+#: TypeScript hashes these same inputs and must reach this exact value
+#: (tests/test_mobile_canonical.py); the browser verifier is held to Python's hash on real exported
+#: payment decisions instead (tests/test_offline_verifier.py).
+PAYMENT_ACTION = {
+    "kind": "eth_transfer",
+    "chain_id": 11155111,
+    "treasury": "0x0000000000000000000000000000000000007EA5",
+    "to": "0xF590cEe84F86510555150F13Ca83AEc613f1676b",
+    "value_wei": "100000000000000",
+    "data": "0x",
+    "call_gas": 100000,
+    "valid_until": 1790467200,
+}
+PAYMENT = (
+    {
+        "vault_id": 3,
+        "proposal_uuid": "9c1d2e3f-4a5b-4c6d-8e7f-a0b1c2d3e4f5",
+        "action_text": (
+            "Pay 0.0001 ETH from this vault's treasury 0x0000000000000000000000000000000000007EA5"
+            " to 0xF590cEe84F86510555150F13Ca83AEc613f1676b on Sepolia."
+        ),
+        "file_sha256": None,
+        "required_m": 2,
+        "required_n": 3,
+        "authorized_signers": [5, 2, 9],
+        "nonce_hex": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "created_at_iso": "2026-09-17T15:00:00+00:00",
+        "action": PAYMENT_ACTION,
+    },
+    "8feadffac41d52a24d432b7cfcc42224347c5f08f0608534026383307281e375",
+)
+
+
+def test_a_payment_decision_payload_hashes_as_frozen():
+    inputs, expected = PAYMENT
+    assert sha256_hex(proposal_signing_bytes(**inputs)) == expected
+
+
+def test_the_payment_is_what_changes_the_hash():
+    inputs, expected = PAYMENT
+    without = {key: value for key, value in inputs.items() if key != "action"}
+    assert sha256_hex(proposal_signing_bytes(**without)) != expected
+    for field, value in (("to", "0x000000000000000000000000000000000000bEEF"), ("value_wei", "1")):
+        changed = {**inputs, "action": {**PAYMENT_ACTION, field: value}}
+        assert sha256_hex(proposal_signing_bytes(**changed)) != expected
+
+
 def test_a_vote_payload_hashes_as_it_always_has():
     payload = vote_signing_bytes(proposal_payload_hash="ab" * 32, decision="approve", signer_id=3)
     assert sha256_hex(payload) == "2a2c1395ce1ea4b23368468e14372ac700208115a275f6695b5a2af917d9aff6"

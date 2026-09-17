@@ -35,6 +35,15 @@ def _render(report, *, colour: bool) -> str:
         if facts.get("action_text"):
             action = facts["action_text"]
             lines.append(f"  {action if len(action) <= 72 else action[:69] + '...'}")
+        payment = facts.get("payment")
+        if isinstance(payment, dict):
+            # Printed as signed, field by field: the text above is generated from these values,
+            # and these are what the hash (and so every signature) covers.
+            lines.append(f"  payment:  {payment.get('value_wei')} wei to {payment.get('to')}")
+            lines.append(
+                f"            from treasury {payment.get('treasury')} on chain "
+                f"{payment.get('chain_id')}, valid until {payment.get('valid_until')}"
+            )
         lines.append("")
 
     for check in report.checks:

@@ -516,10 +516,24 @@ def test_truncated_base64_is_reported_not_raised(app, bundle):
 
 def test_a_future_major_format_is_refused_rather_than_guessed(app, bundle):
     forged = copy.deepcopy(bundle)
-    forged["format"] = "qvault.decision/2"
+    forged["format"] = "qvault.decision/3"
     report = check(app, forged)
     assert not report.ok
     assert "understands" in report.summary
+
+
+def test_a_payment_format_and_its_payment_must_come_together(app, bundle):
+    """``/2`` is the payment format (on-chain execution, plan D26). Claiming it without a payment,
+    or smuggling a payment into ``/1``, is refused before any hash is computed."""
+    no_payment = copy.deepcopy(bundle)
+    no_payment["format"] = "qvault.decision/2"
+    report = check(app, no_payment)
+    assert not report.ok and "must carry the payment" in report.summary
+
+    smuggled = copy.deepcopy(bundle)
+    smuggled["decision"]["action"] = {"kind": "eth_transfer"}
+    report = check(app, smuggled)
+    assert not report.ok and "cannot carry a payment" in report.summary
 
 
 # -- the downloadable package ----------------------------------------------------------------------

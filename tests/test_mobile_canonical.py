@@ -29,6 +29,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from test_payload_vectors import PAYMENT
 
 from qvault.crypto import canonical_json, sha256_hex
 from qvault.services.signing import (
@@ -36,6 +37,8 @@ from qvault.services.signing import (
     proposal_signing_bytes,
     vote_signing_bytes,
 )
+
+PAYMENT_INPUTS, PAYMENT_HASH = PAYMENT
 
 MOBILE_DIR = Path(__file__).resolve().parent.parent / "mobile"
 PROBE = MOBILE_DIR / "tools" / "canonical_probe.ts"
@@ -102,6 +105,23 @@ PROPOSAL_CASES = {
         "policy": {"M": 2, "N": 2, "signers": [8, 9]},
         "nonce": "ffffffffffffffffffffffffffffffff",
         "created_at": "2026-01-01T00:00:00+00:00",
+    },
+    # A payment decision (on-chain execution, plan D22): the frozen vector from
+    # tests/test_payload_vectors.py, so the app must reach that exact hash, not merely agree with
+    # whatever Python produces today.
+    "payment": {
+        "vault_id": PAYMENT_INPUTS["vault_id"],
+        "proposal_id": PAYMENT_INPUTS["proposal_uuid"],
+        "action_text": PAYMENT_INPUTS["action_text"],
+        "file_sha256": PAYMENT_INPUTS["file_sha256"],
+        "policy": {
+            "M": PAYMENT_INPUTS["required_m"],
+            "N": PAYMENT_INPUTS["required_n"],
+            "signers": PAYMENT_INPUTS["authorized_signers"],
+        },
+        "nonce": PAYMENT_INPUTS["nonce_hex"],
+        "created_at": PAYMENT_INPUTS["created_at_iso"],
+        "action": PAYMENT_INPUTS["action"],
     },
 }
 
@@ -178,11 +198,14 @@ def test_proposal_signing_bytes_match_javascript(name, js_output):
         authorized_signers=case["policy"]["signers"],
         nonce_hex=case["nonce"],
         created_at_iso=case["created_at"],
+        action=case.get("action"),
     )
     assert js_output[name]["hex"] == expected.hex()
     # The client derives payload_hash itself rather than trusting the server's copy; that
     # derivation is only meaningful if it lands on the same value the server stored.
     assert js_output[name]["payload_hash"] == sha256_hex(expected)
+    if name == "payment":
+        assert js_output[name]["payload_hash"] == PAYMENT_HASH
 
 
 @pytest.mark.parametrize("name", sorted(VOTE_CASES))

@@ -42,7 +42,7 @@ from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.proposal import Proposal
 from qvault.services import checkpoint_service
-from qvault.verify import BUNDLE_FORMAT
+from qvault.verify import BUNDLE_FORMAT, PAYMENT_BUNDLE_FORMAT
 
 
 def _entries_for(proposal: Proposal, signer_ids: list[int]) -> list[LedgerEntry]:
@@ -100,26 +100,32 @@ def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> d
 
     vault = proposal.vault
     file_sha = proposal.file.content_sha256 if proposal.file is not None else None
+    decision = {
+        "proposal_uuid": proposal.proposal_uuid,
+        "title": proposal.title,
+        "vault_id": proposal.vault_id,
+        "vault_name": vault.name if vault else None,
+        "action_text": proposal.action_text,
+        "file_sha256": file_sha,
+        "required_m": proposal.required_m,
+        "required_n": proposal.required_n,
+        "authorized_signers": json.loads(proposal.authorized_signers_snapshot),
+        "nonce_hex": proposal.nonce.hex(),
+        "created_at_iso": proposal.created_at_iso,
+        "payload_hash": proposal.payload_hash,
+        "status": proposal.status,
+    }
+    if proposal.action is not None:
+        # The payment is inside the signed payload, so a verifier needs it to recompute the hash.
+        # Such a bundle has its own format version (plan D26), so a verifier from before payments
+        # refuses it instead of reporting a genuine decision as tampered.
+        decision["action"] = proposal.action.canonical()
 
     return {
-        "format": BUNDLE_FORMAT,
+        "format": PAYMENT_BUNDLE_FORMAT if proposal.action is not None else BUNDLE_FORMAT,
         "exported_at": datetime.now(UTC).isoformat(),
         "origin": checkpoint.origin,
-        "decision": {
-            "proposal_uuid": proposal.proposal_uuid,
-            "title": proposal.title,
-            "vault_id": proposal.vault_id,
-            "vault_name": vault.name if vault else None,
-            "action_text": proposal.action_text,
-            "file_sha256": file_sha,
-            "required_m": proposal.required_m,
-            "required_n": proposal.required_n,
-            "authorized_signers": json.loads(proposal.authorized_signers_snapshot),
-            "nonce_hex": proposal.nonce.hex(),
-            "created_at_iso": proposal.created_at_iso,
-            "payload_hash": proposal.payload_hash,
-            "status": proposal.status,
-        },
+        "decision": decision,
         "signatures": [
             {
                 "signer_id": s.signer_id,

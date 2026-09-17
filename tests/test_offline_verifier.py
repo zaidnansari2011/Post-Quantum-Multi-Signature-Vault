@@ -558,3 +558,250 @@ def test_dropping_the_blank_verifier_on_itself_explains_rather_than_confuses(app
         assert "not valid JSON" not in summary
     finally:
         context.close()
+
+
+# --------------------------------------------------------------------------------------------
+# Payment decisions (on-chain execution, plan D26): qvault.decision/2
+# --------------------------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def payment_bundle(app, witnessed):
+    from qvault.extensions import db
+    from qvault.models.treasury import Treasury
+    from qvault.services.proposal_service import PaymentRequest
+
+    app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    owner = auth_service.register_user("pay-a@e.com", "Ada Lovelace", PASSWORD)
+    other = auth_service.register_user("pay-b@e.com", "Brij", PASSWORD)
+    vault = vault_service.create_vault(owner, "Treasury", "Payments", 2)
+    vault_service.add_member(vault, other.email, "signer", actor_id=owner.id)
+    db.session.add(
+        Treasury(
+            vault_id=vault.id,
+            chain_id=11_155_111,
+            address="0x0000000000000000000000000000000000007EA5",
+            verifier_address="0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
+            threshold_m=2,
+            signer_count=2,
+        )
+    )
+    db.session.commit()
+    proposal = proposal_service.create_proposal(
+        vault,
+        owner,
+        "Pay the auditor",
+        "",
+        payment=PaymentRequest("0xF590cEe84F86510555150F13Ca83AEc613f1676b", 10**14),
+    )
+    for signer in (owner, other):
+        approval_service.cast_vote(proposal, signer, PASSWORD, "approve")
+    checkpoint_service.maybe_checkpoint()
+    checkpoint_service.sync_witness()
+    return export_service.build_decision_bundle(proposal)
+
+
+def test_a_payment_decision_verifies_in_the_browser_with_the_same_hash(app, page, payment_bundle):
+    assert payment_bundle["format"] == "qvault.decision/2"
+    report = agree(app, page, payment_bundle)
+    assert report["ok"] is True, report["summary"]
+    assert report["facts"]["hash"] == payment_bundle["decision"]["payload_hash"]
+    assert report["facts"]["payment"] == payment_bundle["decision"]["action"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("to", "0x000000000000000000000000000000000000bEEF"),
+        ("value_wei", "100000000000000000000"),
+        ("treasury", "0x000000000000000000000000000000000000dEaD"),
+        ("valid_until", 4_102_444_800),
+        ("chain_id", 1),
+        ("call_gas", 21_000),
+        ("data", "0xa9059cbb"),
+        ("kind", "erc20_transfer"),
+    ],
+)
+def test_a_changed_payment_is_rejected_in_the_browser_too(app, page, payment_bundle, field, value):
+    forged = copy.deepcopy(payment_bundle)
+    forged["decision"]["action"][field] = value
+    report = agree(app, page, forged)
+    assert report["ok"] is False
+    assert {"content", "signatures"} <= {c["key"] for c in report["checks"] if not c["ok"]}
+
+
+def test_a_payment_format_without_its_payment_is_refused_in_both(app, page, payment_bundle):
+    stripped = copy.deepcopy(payment_bundle)
+    del stripped["decision"]["action"]
+    assert in_browser(page, stripped)["ok"] is False
+    assert in_python(app, stripped).ok is False
+
+    downgraded = copy.deepcopy(payment_bundle)
+    downgraded["format"] = "qvault.decision/1"
+    js, py = in_browser(page, downgraded), in_python(app, downgraded)
+    assert js["ok"] is False and py.ok is False
+    assert "cannot carry a payment" in js["summary"] and "cannot carry a payment" in py.summary
+
+
+def test_a_payment_record_shows_the_payment_exactly_and_says_the_hash_covers_it(
+    app, browser, payment_bundle, tmp_path
+):
+    """The self-verifying record replaces a certificate, so it has to state the payment: the
+    exact amount (from the wei string, never a float), the recipient, the treasury and the
+    network, and that the hash covers them."""
+    path = tmp_path / "payment.qvault.html"
+    path.write_bytes(export_service.build_decision_document(payment_bundle))
+    p, context, errors = _open(browser, path)
+    try:
+        assert not errors, errors
+        assert p.locator(".banner__title").first.inner_text().startswith("Verified")
+        action = payment_bundle["decision"]["action"]
+        panel = p.locator(".panel").first.inner_text()
+        assert "0.0001 ETH (100000000000000 wei)" in panel
+        assert action["to"] in panel and action["treasury"] in panel
+        assert "Sepolia" in panel
+        assert "the payment (recipient, amount" in panel
+    finally:
+        context.close()
+
+
+# --- Phase 4 review findings ----------------------------------------------------------------
+
+
+@pytest.fixture()
+def lying_payment_bundle(app, witnessed, monkeypatch):
+    """A payment decision whose text describes a different payment (review M1): the server wrote
+    "0.0001 ETH to a friend" over a signed payment of 5 ETH. Its hash is correct."""
+    from qvault.chain import action as chain_action
+    from qvault.extensions import db
+    from qvault.models.treasury import Treasury
+    from qvault.services.proposal_service import PaymentRequest
+
+    app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    owner = auth_service.register_user("liar-a@e.com", "Ada", PASSWORD)
+    other = auth_service.register_user("liar-b@e.com", "Brij", PASSWORD)
+    vault = vault_service.create_vault(owner, "Treasury", "Payments", 2)
+    vault_service.add_member(vault, other.email, "signer", actor_id=owner.id)
+    db.session.add(
+        Treasury(
+            vault_id=vault.id,
+            chain_id=11_155_111,
+            address="0x0000000000000000000000000000000000007EA5",
+            verifier_address="0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
+            threshold_m=2,
+            signer_count=2,
+        )
+    )
+    db.session.commit()
+    monkeypatch.setattr(
+        chain_action.EthTransfer, "describe", lambda self: "Pay 0.0001 ETH to a friend."
+    )
+    proposal = proposal_service.create_proposal(
+        vault,
+        owner,
+        "Pay",
+        "",
+        payment=PaymentRequest("0xF590cEe84F86510555150F13Ca83AEc613f1676b", 5 * 10**18),
+    )
+    monkeypatch.undo()
+    for signer in (owner, other):
+        approval_service.cast_vote(proposal, signer, PASSWORD, "approve")
+    checkpoint_service.maybe_checkpoint()
+    checkpoint_service.sync_witness()
+    return export_service.build_decision_bundle(proposal)
+
+
+def test_a_text_describing_another_payment_fails_in_both_verifiers(app, page, lying_payment_bundle):
+    report = agree(app, page, lying_payment_bundle)
+    assert report["ok"] is False
+    content = next(c for c in report["checks"] if c["key"] == "content")
+    assert content["ok"] is False and "does not describe the payment" in content["detail"]
+
+
+def _content_check(page, action, action_text):
+    """The browser's content verdict for a decision whose HASH is correct, so that only the
+    text-against-payment comparison can fail it."""
+    from qvault.services.signing import proposal_signing_bytes
+
+    decision = {
+        "vault_id": 1,
+        "proposal_uuid": "x",
+        "action_text": action_text,
+        "file_sha256": None,
+        "required_m": 1,
+        "required_n": 1,
+        "authorized_signers": [1],
+        "nonce_hex": "00",
+        "created_at_iso": "t",
+        "action": action,
+    }
+    decision["payload_hash"] = sha256_hex(
+        proposal_signing_bytes(
+            vault_id=1,
+            proposal_uuid="x",
+            action_text=action_text,
+            file_sha256=None,
+            required_m=1,
+            required_n=1,
+            authorized_signers=[1],
+            nonce_hex="00",
+            created_at_iso="t",
+            action=action,
+        )
+    )
+    bundle = {"format": "qvault.decision/2", "decision": decision, "signatures": [], "log": {}}
+    return next(c for c in in_browser(page, bundle)["checks"] if c["key"] == "content")
+
+
+@pytest.mark.parametrize(
+    "value", ["1", "100000000000000", "1000000000000000000", "123456789000000000000000001"]
+)
+def test_the_browser_writes_the_same_payment_text_as_python(app, page, value):
+    from qvault.services.signing import payment_text
+
+    action = {
+        "kind": "eth_transfer",
+        "chain_id": 11155111,
+        "treasury": "0x0000000000000000000000000000000000007EA5",
+        "to": "0xF590cEe84F86510555150F13Ca83AEc613f1676b",
+        "value_wei": value,
+        "data": "0x",
+        "call_gas": 100000,
+        "valid_until": 1790467200,
+    }
+    # Python's text passes the browser's check...
+    assert _content_check(page, action, payment_text(action))["ok"] is True
+    # ...and the same text with one digit changed does not, so the check is really comparing.
+    wrong = payment_text({**action, "value_wei": value + "0"})
+    failing = _content_check(page, action, wrong)
+    assert failing["ok"] is False and "does not describe the payment" in failing["detail"]
+
+
+def test_an_undrawable_date_is_a_verdict_not_a_blank_page(app, browser, payment_bundle, tmp_path):
+    """A safe integer beyond what a JavaScript Date holds used to throw while drawing, leaving no
+    verdict at all (review M2). The file must still say NOT verified."""
+    forged = copy.deepcopy(payment_bundle)
+    forged["decision"]["action"]["valid_until"] = 9_000_000_000_000
+    forged["decision"]["action"]["to"] = "0x000000000000000000000000000000000000bEEF"
+    path = tmp_path / "far.qvault.html"
+    path.write_bytes(export_service.build_decision_document(forged))
+    p, context, errors = _open(browser, path)
+    try:
+        assert not errors, errors
+        assert p.locator(".banner__title").first.inner_text().startswith("NOT verified")
+    finally:
+        context.close()
+
+
+def test_the_verifiers_agree_on_malformed_and_float_payment_numbers(app, page, payment_bundle):
+    as_array = copy.deepcopy(payment_bundle)
+    as_array["decision"]["action"] = [payment_bundle["decision"]["action"]]
+    js, py = in_browser(page, as_array), in_python(app, as_array)
+    assert js["ok"] is False and py.ok is False
+    assert "must carry the payment" in js["summary"] and "must carry the payment" in py.summary
+
+    # A browser cannot tell 100000.0 from 100000 once parsed, so Python must not either.
+    as_float = copy.deepcopy(payment_bundle)
+    as_float["decision"]["action"]["call_gas"] = 100000.0
+    report = agree(app, page, as_float)
+    assert report["ok"] is True, report["summary"]

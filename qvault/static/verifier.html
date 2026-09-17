@@ -5866,12 +5866,40 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
     payload_hash: e.payload_hash, prev_hash: e.prev_hash,
   }))));
 
-  const proposalBytes = d => cat(DS_PROPOSAL, cbytes({
-    vault_id: d.vault_id, proposal_id: d.proposal_uuid, action_text: d.action_text,
-    file_sha256: d.file_sha256 ?? null,
-    policy: { M: d.required_m, N: d.required_n, signers: [...d.authorized_signers].sort((a, b) => a - b) },
-    nonce: d.nonce_hex, created_at: d.created_at_iso,
-  }));
+  const proposalBytes = d => {
+    const body = {
+      vault_id: d.vault_id, proposal_id: d.proposal_uuid, action_text: d.action_text,
+      file_sha256: d.file_sha256 ?? null,
+      policy: { M: d.required_m, N: d.required_n, signers: [...d.authorized_signers].sort((a, b) => a - b) },
+      nonce: d.nonce_hex, created_at: d.created_at_iso,
+    };
+    // A payment decision's signed payload carries the payment (qvault.decision/2). Added only
+    // when present, so every other decision hashes exactly as before.
+    if (d.action !== undefined) body.action = d.action;
+    return cat(DS_PROPOSAL, cbytes(body));
+  };
+
+  // A payment decision's text must be exactly the text generated from its payment (plan D24);
+  // this is qvault.services.signing.payment_text, and must stay byte-identical to it. Amounts are
+  // computed from the wei string with BigInt, never a float.
+  const NETWORKS = { 11155111: 'Sepolia' };
+  const isPayment = a => a !== null && typeof a === 'object' && !Array.isArray(a);
+  const formatWei = w => {
+    if (typeof w !== 'string' || w.length > 78 || !/^(0|[1-9][0-9]*)$/.test(w)) return null;
+    const v = BigInt(w), unit = 10n ** 18n;
+    const frac = (v % unit).toString().padStart(18, '0').replace(/0+$/, '');
+    return (v / unit).toString() + (frac ? '.' + frac : '') + ' ETH';
+  };
+  const paymentText = a => {
+    if (!isPayment(a)) return null;
+    const eth = formatWei(a.value_wei);
+    const network = Number.isInteger(a.chain_id)
+      && Object.prototype.hasOwnProperty.call(NETWORKS, a.chain_id) ? NETWORKS[a.chain_id] : null;
+    if (eth === null || network === null || typeof a.treasury !== 'string'
+        || typeof a.to !== 'string') return null;
+    return 'Pay ' + eth + " from this vault's treasury " + a.treasury + ' to ' + a.to
+      + ' on ' + network + '.';
+  };
 
   const voteBytes = (payloadHash, decision, signerId) => cat(DS_VOTE, cbytes({
     proposal_payload_hash: payloadHash, decision, signer_id: signerId,
@@ -5919,24 +5947,39 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
     try {
       if (!bundle || typeof bundle !== 'object') throw new Error('bundle must be a JSON object');
       const fmt = bundle.format;
-      if (fmt !== 'qvault.decision/1') {
-        throw new Error('this verifier understands qvault.decision/1, the bundle claims ' + fmt);
+      if (fmt !== 'qvault.decision/1' && fmt !== 'qvault.decision/2') {
+        throw new Error('this verifier understands qvault.decision/1 and qvault.decision/2, '
+          + 'the bundle claims ' + fmt);
       }
       add('format', 'The file is a Q-Vault decision bundle', true, fmt);
 
       const d = bundle.decision, log = bundle.log;
       const sigs = bundle.signatures || [];
+      const payment = d && isPayment(d.action) ? d.action : null;
+      if (fmt === 'qvault.decision/2' && !payment) {
+        throw new Error('a qvault.decision/2 bundle must carry the payment it authorised');
+      }
+      if (fmt === 'qvault.decision/1' && d && 'action' in d) {
+        throw new Error('a qvault.decision/1 bundle cannot carry a payment');
+      }
 
       // 1. content
       const recomputed = hex(sha256(proposalBytes(d)));
-      const contentOk = recomputed === d.payload_hash;
-      add('content', 'The decision text is the text that was signed', contentOk,
-          contentOk ? 'recomputed ' + recomputed.slice(0, 16) + '…'
-                    : 'recomputed ' + recomputed.slice(0, 16) + '…, bundle claims '
-                      + String(d.payload_hash).slice(0, 16) + '…');
+      const hashOk = recomputed === d.payload_hash;
+      // Without this a server could sign "5 ETH to an attacker" under text reading "0.0001 ETH to
+      // you": the hash covers both, so it would match.
+      const textOk = !payment || d.action_text === paymentText(payment);
+      const contentOk = hashOk && textOk;
+      add('content', payment ? 'The decision text and payment are what was signed'
+                             : 'The decision text is the text that was signed', contentOk,
+          !hashOk ? 'recomputed ' + recomputed.slice(0, 16) + '…, bundle claims '
+                    + String(d.payload_hash).slice(0, 16) + '…'
+                  : !textOk ? "the decision's text does not describe the payment that was signed"
+                            : 'recomputed ' + recomputed.slice(0, 16) + '…');
 
       facts = { title: d.title, vault: d.vault_name, action: d.action_text, status: d.status,
-                m: d.required_m, n: d.required_n, hash: recomputed, created: d.created_at_iso };
+                m: d.required_m, n: d.required_n, hash: recomputed, created: d.created_at_iso,
+                payment };
 
       // 2. signatures
       const verified = [];
@@ -6155,6 +6198,21 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
   const esc = s => String(s).replace(/[&<>"]/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  // The payment exactly as signed, shown beside the ETH figure rather than instead of it.
+  const paymentRows = p => {
+    if (!p) return '';
+    const eth = formatWei(p.value_wei);
+    // Date holds +-8.64e15 ms; past that toISOString throws, and a throw while drawing would
+    // leave the previous file's verdict on screen.
+    const until = Number.isSafeInteger(p.valid_until) && Math.abs(p.valid_until) <= 8640000000000
+      ? new Date(p.valid_until * 1000).toISOString() : String(p.valid_until);
+    return '<dt>Pays</dt><dd>' + esc(eth || '?') + ' (' + esc(p.value_wei) + ' wei)</dd>'
+      + '<dt>To</dt><dd>' + esc(p.to) + '</dd>'
+      + '<dt>From treasury</dt><dd>' + esc(p.treasury) + '</dd>'
+      + '<dt>Network</dt><dd>' + esc(NETWORKS[p.chain_id] || ('chain ' + p.chain_id)) + '</dd>'
+      + '<dt>Executable until</dt><dd>' + esc(until) + '</dd>';
+  };
+
   function render(report) {
     const f = report.facts;
     let html = '<div class="banner ' + (report.ok ? 'ok' : 'bad') + '"><div>'
@@ -6170,6 +6228,7 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
         + '<dt>Approvals required</dt><dd>' + esc(f.m) + ' of ' + esc(f.n) + '</dd>'
         + '<dt>Opened</dt><dd>' + esc(f.created) + '</dd>'
         + '<dt>Payload hash</dt><dd>' + esc(f.hash) + '</dd>'
+        + paymentRows(f.payment)
         + '</dl></div></div>';
     }
 
@@ -6277,8 +6336,11 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
       + '<dt>Nonce</dt><dd>' + esc(d.nonce_hex || '') + '</dd>'
       + '<dt>Opened</dt><dd>' + esc(d.created_at_iso || '') + '</dd>'
       + '<dt>Exported</dt><dd>' + esc(bundle.exported_at || '') + '</dd>'
+      + paymentRows(d.action && typeof d.action === 'object' ? d.action : null)
       + '</dl>'
-      + '<p class="note">The payload hash covers the vault, the wording above, the attached file, '
+      + '<p class="note">The payload hash covers the vault, the wording above, '
+      + (d.action ? 'the payment (recipient, amount, treasury, network and deadline), ' : '')
+      + 'the attached file, '
       + 'the ' + esc(d.required_m) + '-of-' + esc(d.required_n) + ' rule, who was permitted to '
       + 'sign, the nonce and the timestamp &mdash; <strong>all at once</strong>. Alter any one of '
       + 'them and every signature below stops matching.</p></div></div>';
@@ -6343,7 +6405,18 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
     return payload;
   }
 
+  // If drawing a report fails for any reason, say so as a failure. Leaving the page as it was
+  // would show the previous file's verdict beside a file that was never displayed.
+  const showUnreadable = err => {
+    document.getElementById('result').innerHTML = '<div class="banner bad"><div>'
+      + '<div class="banner__title">NOT verified: this file could not be displayed</div>'
+      + '<div class="banner__body">' + esc(err && err.message ? err.message : err) + '</div>'
+      + '</div></div>';
+  };
+  const safely = draw => { try { draw(); } catch (err) { showUnreadable(err); } };
+
   function handle(text) {
+    document.getElementById('result').innerHTML = '';
     let bundle;
     try {
       bundle = JSON.parse(unwrap(text));
@@ -6352,14 +6425,14 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
       const why = err instanceof SyntaxError
         ? 'That is not valid JSON: ' + err.message
         : err.message;
-      render({ ok: false, summary: why,
-               checks: [], facts: {}, fingerprints: { log: null, witnesses: [] } });
+      safely(() => render({ ok: false, summary: why,
+               checks: [], facts: {}, fingerprints: { log: null, witnesses: [] } }));
       return;
     }
-    render(verifyBundle(bundle, {
+    safely(() => render(verifyBundle(bundle, {
       log: document.getElementById('pinlog').value.trim(),
       witness: document.getElementById('pinwit').value.trim(),
-    }));
+    })));
   }
 
   drop.addEventListener('click', () => file.click());
@@ -6433,10 +6506,10 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
         det.appendChild(loader);
       }
 
-      const runEmbedded = () => renderDocument(bundle, verifyBundle(bundle, {
+      const runEmbedded = () => safely(() => renderDocument(bundle, verifyBundle(bundle, {
         log: document.getElementById('pinlog').value.trim(),
         witness: document.getElementById('pinwit').value.trim(),
-      }));
+      })));
 
       // Pinning a fingerprint should take effect immediately; in document mode there is no
       // "load the file" step to re-trigger the check.
