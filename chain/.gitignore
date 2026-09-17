@@ -1,0 +1,4 @@
+out/
+cache/
+# forge script transaction logs. Deployment facts that matter are recorded in deployments/.
+broadcast/

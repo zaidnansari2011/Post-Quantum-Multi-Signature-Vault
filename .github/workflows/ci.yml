@@ -71,6 +71,38 @@ jobs:
         # pure unit-test pass could in principle miss.
         run: python scripts/run_benchmark.py --quick --out - --format markdown
 
+  contracts:
+    name: Treasury contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch pinned contract dependencies
+        # Not `submodules: recursive`: that would also pull OpenZeppelin's own test submodules,
+        # which the build never uses. ETHDILITHIUM's three (forge-std, InterfaceVerifier, sstore2)
+        # are the only nested ones needed.
+        run: |
+          git submodule update --init --depth 1 \
+            chain/lib/openzeppelin-contracts chain/lib/forge-std chain/lib/ETHDILITHIUM
+          git -C chain/lib/ETHDILITHIUM submodule update --init --depth 1
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned for the same reason black is: the compiler pipeline decides the verifier's gas
+          # and whether it still fits under EIP-170, so a toolchain bump is a deliberate commit.
+          version: v1.7.1
+
+      - name: Build (with contract sizes)
+        working-directory: chain
+        run: forge build --sizes
+
+      - name: Tests
+        # The Foundry half of chain/test/fixtures/treasury.json: the contract and ZKNox's verifier
+        # must accept exactly what Q-Vault's quantcrypt signatures and Python digests say they
+        # should. The Python half runs in the test job (tests/test_chain_fixtures.py).
+        working-directory: chain
+        run: forge test -vv
+
   types:
     name: Type check (advisory)
     runs-on: ubuntu-24.04
