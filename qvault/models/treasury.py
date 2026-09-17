@@ -1,8 +1,9 @@
 """On-chain execution models: a vault's treasury contract, and the payment a decision authorises.
 
-See ``docs/plans/onchain-execution.md``. Both tables carry every column Phases 5–7 need from the
+See ``docs/plans/onchain-execution.md``. The tables carry every column Phases 5–7 need from the
 start (plan D27): ``db.create_all()`` creates missing tables but never adds a column to an
 existing one, so a column left for later could only arrive by a manual migration.
+``treasury_signers`` arrived in Phase 5 as a new table (D29).
 """
 
 from __future__ import annotations
@@ -59,6 +60,12 @@ class Treasury(db.Model):
     unlinked_at = db.Column(AwareDateTime, nullable=True)
 
     vault = db.relationship("Vault")
+    signers = db.relationship(
+        "TreasurySigner",
+        back_populates="treasury",
+        cascade="all, delete-orphan",
+        order_by="TreasurySigner.user_id",
+    )
 
     @property
     def is_linked(self) -> bool:
@@ -66,6 +73,42 @@ class Treasury(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<Treasury {self.address} vault={self.vault_id} {self.status}>"
+
+
+class TreasurySigner(db.Model):
+    """The one key a vault signer has registered on a treasury (plan D29).
+
+    The contract counts keys, not people, so each signer has exactly one: the password key by
+    default, or one phone key chosen when linking. A payment approval must then be made with this
+    key (Phases 6a/6b). The identity is what the contract stores; it names the verifier, the two
+    storage contracts and the code hashes computed from ``key.public_key``, so it can always be
+    recomputed and compared.
+
+    *(Not among the Phase 4 tables: D27 missed per-signer rows. A new table is created by
+    ``create_all`` like any other, so nothing existing is altered.)*
+    """
+
+    __tablename__ = "treasury_signers"
+    __table_args__ = (
+        UniqueConstraint("treasury_id", "user_id", name="uq_treasury_signer_user"),
+        UniqueConstraint("treasury_id", "onchain_key_id", name="uq_treasury_signer_key"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    treasury_id = db.Column(db.Integer, db.ForeignKey("treasuries.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    key_id = db.Column(db.Integer, db.ForeignKey("keys.id"), nullable=False)
+    onchain_key_id = db.Column(db.String(66), nullable=False)  # 0x keccak256(tr)
+    pointer0 = db.Column(db.String(42), nullable=False)  # EIP-55
+    pointer1 = db.Column(db.String(42), nullable=False)  # EIP-55
+    identity_hex = db.Column(db.Text, nullable=False)  # 0x + 124 bytes
+
+    treasury = db.relationship("Treasury", back_populates="signers")
+    user = db.relationship("User")
+    key = db.relationship("Key")
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"<TreasurySigner user={self.user_id} key={self.key_id} treasury={self.treasury_id}>"
 
 
 class ProposalAction(db.Model):

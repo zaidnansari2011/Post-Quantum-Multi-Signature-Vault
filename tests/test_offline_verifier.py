@@ -565,10 +565,43 @@ def test_dropping_the_blank_verifier_on_itself_explains_rather_than_confuses(app
 # --------------------------------------------------------------------------------------------
 
 
+def _linked_treasury(vault, *users):
+    """A linked treasury with the vault's signers registered, as Phase 5 writes it (plan D29).
+    Nothing here touches a chain, so the on-chain fields are placeholders."""
+    from qvault.chain.digest import key_id
+    from qvault.extensions import db
+    from qvault.models.treasury import Treasury, TreasurySigner
+    from qvault.services import key_service
+
+    treasury = Treasury(
+        vault_id=vault.id,
+        chain_id=11_155_111,
+        address="0x0000000000000000000000000000000000007EA5",
+        verifier_address="0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
+        threshold_m=2,
+        signer_count=len(users),
+    )
+    db.session.add(treasury)
+    db.session.flush()
+    for user in users:
+        key = key_service.active_signing_key(user)
+        db.session.add(
+            TreasurySigner(
+                treasury_id=treasury.id,
+                user_id=user.id,
+                key_id=key.id,
+                onchain_key_id="0x" + key_id(bytes(key.public_key)).hex(),
+                pointer0=treasury.verifier_address,
+                pointer1=treasury.verifier_address,
+                identity_hex="0x" + "00" * 124,
+            )
+        )
+    db.session.commit()
+    return treasury
+
+
 @pytest.fixture()
 def payment_bundle(app, witnessed):
-    from qvault.extensions import db
-    from qvault.models.treasury import Treasury
     from qvault.services.proposal_service import PaymentRequest
 
     app.config["ONCHAIN_EXECUTION_ENABLED"] = True
@@ -576,17 +609,7 @@ def payment_bundle(app, witnessed):
     other = auth_service.register_user("pay-b@e.com", "Brij", PASSWORD)
     vault = vault_service.create_vault(owner, "Treasury", "Payments", 2)
     vault_service.add_member(vault, other.email, "signer", actor_id=owner.id)
-    db.session.add(
-        Treasury(
-            vault_id=vault.id,
-            chain_id=11_155_111,
-            address="0x0000000000000000000000000000000000007EA5",
-            verifier_address="0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
-            threshold_m=2,
-            signer_count=2,
-        )
-    )
-    db.session.commit()
+    _linked_treasury(vault, owner, other)
     proposal = proposal_service.create_proposal(
         vault,
         owner,
@@ -673,8 +696,6 @@ def lying_payment_bundle(app, witnessed, monkeypatch):
     """A payment decision whose text describes a different payment (review M1): the server wrote
     "0.0001 ETH to a friend" over a signed payment of 5 ETH. Its hash is correct."""
     from qvault.chain import action as chain_action
-    from qvault.extensions import db
-    from qvault.models.treasury import Treasury
     from qvault.services.proposal_service import PaymentRequest
 
     app.config["ONCHAIN_EXECUTION_ENABLED"] = True
@@ -682,17 +703,7 @@ def lying_payment_bundle(app, witnessed, monkeypatch):
     other = auth_service.register_user("liar-b@e.com", "Brij", PASSWORD)
     vault = vault_service.create_vault(owner, "Treasury", "Payments", 2)
     vault_service.add_member(vault, other.email, "signer", actor_id=owner.id)
-    db.session.add(
-        Treasury(
-            vault_id=vault.id,
-            chain_id=11_155_111,
-            address="0x0000000000000000000000000000000000007EA5",
-            verifier_address="0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
-            threshold_m=2,
-            signer_count=2,
-        )
-    )
-    db.session.commit()
+    _linked_treasury(vault, owner, other)
     monkeypatch.setattr(
         chain_action.EthTransfer, "describe", lambda self: "Pay 0.0001 ETH to a friend."
     )

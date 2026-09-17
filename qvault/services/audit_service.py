@@ -64,6 +64,8 @@ SENTENCES = {
     # be — see publication_service.
     "decision_published": "{who} published a decision in {vault} to a public link.",
     "decision_unpublished": "{who} revoked the public link for a decision in {vault}.",
+    "treasury_linked": "{who} linked {vault} to a treasury contract on Sepolia.",
+    "treasury_unlinked": "{who} unlinked {vault} from its treasury contract.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.

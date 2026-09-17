@@ -259,11 +259,20 @@ def _payment_action(vault, payment, required_m, required_n, action_text, now, de
             f"This vault now requires {required_m} approvals but its treasury requires "
             f"{treasury.threshold_m}. Reconfigure the treasury before raising a payment."
         )
-    if treasury.signer_count != required_n:
-        # A membership change since linking: the contract's signer set is not the vault's.
+    registered = sorted(row.user_id for row in treasury.signers)
+    if treasury.signer_count != required_n or registered != vault.signer_ids():
+        # A membership change since linking: the contract's signer set is not the vault's. The
+        # people are compared, not only their number (plan D34): swapping one member keeps N.
         raise ProposalError(
-            f"This vault now has {required_n} signers but its treasury has "
-            f"{treasury.signer_count}. Reconfigure the treasury before raising a payment."
+            "This vault's signers are not the ones registered on its treasury, so the contract "
+            "would not accept their approvals. Link the treasury again before raising a payment."
+        )
+    usable = sum(1 for row in treasury.signers if row.key.status == "active" and row.key.can_sign)
+    if usable < required_m:
+        # Keys replaced since linking are still the ones the contract counts (review L4).
+        raise ProposalError(
+            f"Only {usable} of the keys registered on this vault's treasury can still sign, and "
+            f"a payment needs {required_m}. Link the treasury again before raising a payment."
         )
     try:
         deadline = chain_action.payment_deadline(now, deadline)

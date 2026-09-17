@@ -51,6 +51,9 @@ def init_database(app: Flask) -> None:
     from qvault import models  # noqa: F401
 
     with app.app_context():
+        # Off, startup leaves the database exactly as it found it: no tables, and no seeding either,
+        # which on an unseeded database would write a genesis entry, a SYSTEM key, an anchor and a
+        # checkpoint. An admin script opening a live database relies on that (plan D28).
         if app.config.get("AUTO_CREATE_DB", True):
             db.create_all()
-        seed()
+            seed()

@@ -103,6 +103,11 @@ jobs:
         working-directory: chain
         run: forge test -vv
 
+      - name: The committed treasury artefact is this build
+        # Plan D32: the app deploys and recognises the treasury from qvault/chain/artifacts/,
+        # because the image has no Foundry build. Standard library only, so nothing to install.
+        run: python3 scripts/export_treasury_artifact.py --check
+
   types:
     name: Type check (advisory)
     runs-on: ubuntu-24.04

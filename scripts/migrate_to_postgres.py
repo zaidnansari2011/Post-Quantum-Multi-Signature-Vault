@@ -170,6 +170,11 @@ def main() -> int:
     ap.add_argument("--target", required=True, help="SQLAlchemy PostgreSQL URL")
     ap.add_argument("--dry-run", action="store_true", help="report only; write nothing")
     ap.add_argument("--force", action="store_true", help="proceed even if the target has rows")
+    ap.add_argument(
+        "--unlink-treasury",
+        action="store_true",
+        help="with --force: go ahead even though a linked treasury loses its approvers (plan D16)",
+    )
     args = ap.parse_args()
 
     src_path = pathlib.Path(args.source).resolve()
@@ -209,6 +214,18 @@ def main() -> int:
         )
         return 1
     if populated and args.force:
+        # Clearing the target destroys its keys, stranding any treasury linked to them (plan D16).
+        from datetime import UTC, datetime
+
+        from qvault.services import reseed_guard
+
+        if not reseed_guard.guard(
+            dst,
+            unlink_treasury=args.unlink_treasury,
+            now=lambda: datetime.now(UTC),
+            say=lambda line: _log(f"  {line}"),
+        ):
+            return 1
         _log("  --force: clearing target ...")
         with dst.begin() as conn:
             for t in reversed(tables):

@@ -344,6 +344,41 @@ def merge_contracts(record: dict, entries: Mapping[str, dict]) -> tuple[dict, li
     return merged, added
 
 
+TREASURY_FIXED_KEYS = ("vault_id", "verifier", "threshold", "signers", "deployment_tx")
+
+
+def merge_treasury(record: dict, address: str, entry: dict) -> tuple[dict, bool]:
+    """Add a linked treasury under ``record["treasuries"]``. Returns the record and whether it
+    was added. The same treasury recorded again is left as it was; a different vault, verifier,
+    threshold, signer set or deployment under that address is refused."""
+    address = checksum_address(address)
+    merged = json.loads(json.dumps(record))
+    existing = merged["treasuries"].get(address)
+    if existing is None:
+        merged["treasuries"][address] = json.loads(json.dumps(entry))
+        return merged, True
+    for key in TREASURY_FIXED_KEYS:
+        if existing.get(key) != entry.get(key):
+            raise DeploymentError(
+                f"treasury {address} is already recorded with a different {key}; a record is "
+                "never overwritten"
+            )
+    return merged, False
+
+
+def mark_treasury_unlinked(record: dict, address: str, when: str) -> dict:
+    """The one change ever made to a recorded treasury: it stops being linked."""
+    address = checksum_address(address)
+    merged = json.loads(json.dumps(record))
+    entry = merged["treasuries"].get(address)
+    if entry is None:
+        raise DeploymentError(f"treasury {address} is not recorded")
+    if entry.get("status") == "linked":
+        entry["status"] = "unlinked"
+        entry["unlinked_at"] = when
+    return merged
+
+
 def update_record(path: Path, chain_id: int, change: Callable[[dict], dict]) -> dict:
     """Read, change and write the record while holding its lock file. Returns what was written."""
     path.parent.mkdir(parents=True, exist_ok=True)

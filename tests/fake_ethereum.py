@@ -63,6 +63,10 @@ class Outcome:
     output: bytes = b""
     gas_used: int = 21_000
     logs: tuple[tuple[tuple[bytes, ...], bytes], ...] = ()  # (topics, data) per log
+    # Runtime code of contracts the called contract creates, in order, at its own CREATE addresses
+    # (as SSTORE2 does in the verifier's setKey). Applied only when a transaction is included,
+    # never by eth_call or eth_estimateGas, exactly as a simulation leaves no state behind.
+    creates: tuple[bytes, ...] = ()
 
 
 Handler = Callable[[Call], Outcome]
@@ -107,6 +111,10 @@ class FakeNode:
     balances: dict[str, int] = field(default_factory=dict)
     code: dict[str, bytes] = field(default_factory=dict)
     handlers: dict[str, Handler] = field(default_factory=dict)
+    # Handlers for any contract whose code has this keccak256, e.g. every deployed treasury.
+    code_handlers: dict[bytes, Handler] = field(default_factory=dict)
+    # The init code each created contract was deployed with, so a handler can read its arguments.
+    creation_data: dict[str, bytes] = field(default_factory=dict)
     # What a deployment's constructor does. By default it succeeds and leaves one byte of code.
     deploy_handler: Handler | None = None
     requests: list[tuple[str, list]] = field(default_factory=list)
@@ -117,6 +125,7 @@ class FakeNode:
     _nonce_history: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
     _logs: list[dict] = field(default_factory=list)
     _faults: list[_Fault] = field(default_factory=list)
+    _code_block: dict[str, int] = field(default_factory=dict)  # the block code first appeared in
 
     # --- test controls ----------------------------------------------------------------------
 
@@ -152,6 +161,18 @@ class FakeNode:
 
     def nonce_of(self, address: str) -> int:
         return self._nonces.get(checksum_address(address), 0)
+
+    def set_nonce(self, address: str, nonce: int) -> None:
+        """A contract's nonce (EIP-161: a contract starts at 1), as of the current block."""
+        address = checksum_address(address)
+        self._nonces[address] = nonce
+        self._nonce_history.setdefault(address, []).append((self.block_number, nonce))
+
+    def put_code(self, address: str, code: bytes) -> None:
+        """Code at ``address`` from the current block on."""
+        address = checksum_address(address)
+        self.code[address] = code
+        self._code_block[address] = self.block_number
 
     def pending(self) -> list[bytes]:
         return list(self._mempool)
@@ -224,8 +245,10 @@ class FakeNode:
                 lambda c: Outcome(True, b"\x00", intrinsic_gas(c.data, creation=True) + 30_000)
             )
         else:
-            handler = self.handlers.get(call.to) or (
-                lambda c: Outcome(True, b"", intrinsic_gas(c.data))
+            handler = (
+                self.handlers.get(call.to)
+                or self.code_handlers.get(keccak256(self.code.get(call.to, b"")))
+                or (lambda c: Outcome(True, b"", intrinsic_gas(c.data)))
             )
         outcome = handler(call)
         if outcome.gas_used > call.gas:
@@ -259,7 +282,15 @@ class FakeNode:
             recipient = created or tx.to
             self.balances[recipient] = self.balances.get(recipient, 0) + tx.value
             if created:
-                self.code[created] = outcome.output
+                self.put_code(created, outcome.output)
+                self.creation_data[created] = tx.data
+            if outcome.creates:
+                creator = created or tx.to
+                nonce = self.nonce_of(creator)
+                for code in outcome.creates:
+                    self.put_code(create_address(creator, nonce), code)
+                    nonce += 1
+                self.set_nonce(creator, nonce)
         tx.block = self.block_number
         self._mined[tx.hash] = tx
         logs = []
@@ -311,6 +342,9 @@ class FakeNode:
             "hash": "0x" + block_hash(number).hex(),
             "timestamp": hex(GENESIS_TIME + 12 * number),
             "baseFeePerGas": hex(self.base_fee),
+            "transactions": [
+                "0x" + tx.hash.hex() for tx in self._mined.values() if tx.block == number
+            ],
         }
 
     def _rpc_eth_maxPriorityFeePerGas(self) -> str:
@@ -322,7 +356,16 @@ class FakeNode:
         return hex(self.balances.get(checksum_address(address), 0))
 
     def _rpc_eth_getCode(self, address: str, tag: str) -> str:
-        return "0x" + self.code.get(checksum_address(address), b"").hex()
+        address = checksum_address(address)
+        if tag == "finalized":
+            as_of = self.block_number - FINALITY_DEPTH
+        elif tag.startswith("0x"):
+            as_of = int(tag, 16)
+        else:
+            as_of = self.block_number
+        if self._code_block.get(address, -1) > as_of:
+            return "0x"  # created after the block asked about
+        return "0x" + self.code.get(address, b"").hex()
 
     def _rpc_eth_getTransactionCount(self, address: str, tag: str) -> str:
         address = checksum_address(address)

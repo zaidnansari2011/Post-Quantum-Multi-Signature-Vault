@@ -23,11 +23,18 @@ from sqlalchemy import text
 from test_device_api import PASSWORD, _enrol_over_http, _provider
 
 from qvault.chain.action import ETH_TRANSFER_CALL_GAS, EXECUTION_WINDOW, parse
+from qvault.chain.digest import key_id
 from qvault.crypto import canonical_json, sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
-from qvault.models.treasury import ProposalAction, Treasury
-from qvault.services import approval_service, auth_service, proposal_service, vault_service
+from qvault.models.treasury import ProposalAction, Treasury, TreasurySigner
+from qvault.services import (
+    approval_service,
+    auth_service,
+    key_service,
+    proposal_service,
+    vault_service,
+)
 from qvault.services.proposal_service import PaymentRequest, ProposalError
 from qvault.services.signing import DS_PROPOSAL, signing_bytes_for, vote_signing_bytes
 
@@ -58,8 +65,28 @@ def _vault(prefix, *, threshold_m=2, treasury_m=None, status="linked"):
         status=status,
     )
     db.session.add(treasury)
+    db.session.flush()
+    _register(treasury, owner, other)
     db.session.commit()
     return owner, other, vault, treasury
+
+
+def _register(treasury, *users):
+    """Signer rows as a link writes them (plan D29). Only who they are matters here; nothing in
+    this file touches a chain, so the on-chain fields are placeholders."""
+    for user in users:
+        key = key_service.active_signing_key(user)
+        db.session.add(
+            TreasurySigner(
+                treasury_id=treasury.id,
+                user_id=user.id,
+                key_id=key.id,
+                onchain_key_id="0x" + key_id(bytes(key.public_key)).hex(),
+                pointer0=VERIFIER,
+                pointer1=VERIFIER,
+                identity_hex="0x" + "00" * 124,
+            )
+        )
 
 
 def _payment(vault, owner, *, value_wei=10**14, to=RECIPIENT, **kwargs):
@@ -480,17 +507,18 @@ def test_a_vault_cannot_have_two_linked_treasuries(payments_on):
 
 
 def test_an_unlinked_treasury_does_not_block_linking_another(payments_on):
-    owner, _other, vault, _treasury = _vault("relink", status="unlinked")
-    db.session.add(
-        Treasury(
-            vault_id=vault.id,
-            chain_id=11_155_111,
-            address="0x000000000000000000000000000000000000dEaD",
-            verifier_address=VERIFIER,
-            threshold_m=2,
-            signer_count=2,
-        )
+    owner, other, vault, _treasury = _vault("relink", status="unlinked")
+    relinked = Treasury(
+        vault_id=vault.id,
+        chain_id=11_155_111,
+        address="0x000000000000000000000000000000000000dEaD",
+        verifier_address=VERIFIER,
+        threshold_m=2,
+        signer_count=2,
     )
+    db.session.add(relinked)
+    db.session.flush()
+    _register(relinked, owner, other)
     db.session.commit()
     assert (
         _payment(vault, owner).action.treasury_address
@@ -554,5 +582,26 @@ def test_a_treasury_whose_signer_set_has_drifted_is_refused(payments_on):
     owner, _other, vault, treasury = _vault("drift")
     treasury.signer_count = 3
     db.session.commit()
-    with pytest.raises(ProposalError, match="treasury has 3"):
+    with pytest.raises(ProposalError, match="not the ones registered on its treasury"):
+        _payment(vault, owner)
+
+
+def test_a_payment_needs_enough_registered_keys_that_can_still_sign(payments_on):
+    # Review L4: a key replaced after linking is still the one the contract counts.
+    owner, _other, vault, _treasury = _vault("replaced")
+    key = key_service.active_signing_key(owner)
+    key.status, key.can_sign = "retired", False
+    db.session.commit()
+    with pytest.raises(ProposalError, match="Only 1 of the keys registered"):
+        _payment(vault, owner)
+
+
+def test_a_swapped_member_is_refused_though_the_count_is_unchanged(payments_on):
+    # Plan D34: N stays 2, but the newcomer has no key on the treasury and the leaver still does.
+    owner, other, vault, _treasury = _vault("swap")
+    newcomer = auth_service.register_user("swap-c@e.com", "Chen", PASSWORD)
+    vault_service.add_member(vault, newcomer.email, "signer", actor_id=owner.id)
+    vault_service.remove_member(vault, other.id, actor_id=owner.id)
+    assert len(vault.signer_ids()) == 2
+    with pytest.raises(ProposalError, match="not the ones registered on its treasury"):
         _payment(vault, owner)

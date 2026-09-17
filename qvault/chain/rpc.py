@@ -431,6 +431,15 @@ class EthRpc:
             raise RpcUnavailable(f"node has no block {block!r}")
         return BlockHeader.parse(header)
 
+    def block_transactions(self, block: int | str) -> list[bytes]:
+        """The hashes of a block's transactions, in order."""
+        result = self.request("eth_getBlockByNumber", [block_param(block), False])
+        if not isinstance(result, dict) or not isinstance(result.get("transactions"), list):
+            raise RpcUnavailable(f"node returned no transactions for block {block}")
+        return [
+            parse_data(tx_hash, "transaction hash", length=32) for tx_hash in result["transactions"]
+        ]
+
     def base_fee(self, block: int | str = "latest") -> int:
         header = self.request("eth_getBlockByNumber", [block_param(block), False])
         if not isinstance(header, dict) or "baseFeePerGas" not in header:

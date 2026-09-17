@@ -4,7 +4,8 @@ so ``db.create_all()`` and Alembic can see them.
 Present: user, key, algorithm_config, ledger_entry (Phase 2); vault, vault_member, vault_policy,
 proposal, file (Phase 3); signature (Phase 4); ledger_anchor (Phase 5); log_checkpoint and
 witness_cosignature (transparency log, ADR-0015); device (device-held signing keys, ADR-0016);
-treasury and proposal_action (on-chain execution, docs/plans/onchain-execution.md).
+treasury, treasury_signer and proposal_action (on-chain execution,
+docs/plans/onchain-execution.md).
 Added in later phases: rotation_event.
 """
 
@@ -19,7 +20,7 @@ from .key import Key
 from .ledger import LedgerEntry
 from .proposal import Proposal
 from .signature import Signature
-from .treasury import ProposalAction, Treasury
+from .treasury import ProposalAction, Treasury, TreasurySigner
 from .user import User
 from .vault import Vault, VaultMember, VaultPolicy
 
@@ -40,4 +41,5 @@ __all__ = [
     "Device",
     "Treasury",
     "ProposalAction",
+    "TreasurySigner",
 ]

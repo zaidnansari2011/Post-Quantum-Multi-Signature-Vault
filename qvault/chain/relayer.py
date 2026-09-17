@@ -506,6 +506,12 @@ class Relayer:
         if to is None and not result:
             raise SimulationFailed("the deployment would succeed but leave no code behind")
 
+    def current_fees(self) -> tuple[int, int, int]:
+        """``(base fee, maxFeePerGas, maxPriorityFeePerGas)`` a new transaction would be signed
+        with now. Raises :class:`FeeTooHigh` exactly when preparing one would."""
+        max_fee, priority = self._fees(None)
+        return self._rpc.base_fee("latest"), max_fee, priority
+
     def _fees(self, replacing: PreparedTransaction | None) -> tuple[int, int]:
         policy = self.fees
         base_fee = self._rpc.base_fee("latest")
