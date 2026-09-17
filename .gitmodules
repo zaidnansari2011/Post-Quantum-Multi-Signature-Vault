@@ -8,6 +8,6 @@
 	shallow = true
 [submodule "chain/lib/ETHDILITHIUM"]
 	path = chain/lib/ETHDILITHIUM
-	url = https://github.com/ZKNoxHQ/ETHDILITHIUM.git
+	url = https://github.com/zaidnansari2011/ETHDILITHIUM.git
 	branch = mldsa-65
 	shallow = true
