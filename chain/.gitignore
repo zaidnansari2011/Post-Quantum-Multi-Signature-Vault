@@ -2,3 +2,6 @@ out/
 cache/
 # forge script transaction logs. Deployment facts that matter are recorded in deployments/.
 broadcast/
+# The deployment recorder's lock and temporary files (qvault/chain/deployments.py). The record
+# itself, deployments/<network>.json, is committed.
+deployments/.*

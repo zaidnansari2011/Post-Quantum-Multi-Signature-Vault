@@ -418,6 +418,30 @@ and the API keys belong to your accounts.
 | Fund the relayer wallet | `PARTLY DONE`, 0.05 ETH arrived 2026-09-17, enough for setup; another 0.05 from the faucet on a later day pays for demo payouts |
 | Using ZKNox's unaudited verifier on testnet | Assumed accepted with the go-ahead on 2026-09-17 |
 | Fork ETHDILITHIUM to your GitHub account | `TODO`, see below |
+| Approve the first broadcast to Sepolia (Phase 3: helper + verifier) | `TODO`, see below. Everything before it is done and committed |
+
+**Approve the Phase 3 deployment.** On 2026-09-17 the session's permission system blocked the
+first real broadcast. That is the right default for something that spends ETH and publishes to a
+public chain, so it was not worked around. Everything around it is ready:
+
+- the dry run with the relayer as sender succeeded: helper at `0x8fB7DC8733139924C7b8D12A296F2ff3c0f87ac4`, verifier at `0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C`, 12.95M gas, ~0.014 ETH at the 1.07 gwei base fee then;
+- `scripts/record_deployment.py` and `scripts/check_verifier_live.py` are written and tested. Both are read-only.
+
+Either say *"go ahead with the Sepolia deployment"* in a session, or run it yourself from
+`q-vault/chain` in PowerShell (this loads `.env` into the current shell only, and prints nothing
+from it):
+
+```powershell
+Get-Content ..\.env | ForEach-Object { if ($_ -match '^\s*([A-Z_]+)\s*=\s*(.+?)\s*$') { Set-Item "env:$($Matches[1])" $Matches[2].Trim('"') } }
+forge script script/DeployVerifier.s.sol --rpc-url $env:SEPOLIA_RPC_URL --private-key $env:EXECUTOR_PRIVATE_KEY --broadcast --slow --verify --etherscan-api-key $env:ETHERSCAN_API_KEY
+```
+
+If forge fails, its error text can include the RPC URL, which contains the Alchemy key, so don't
+paste forge errors anywhere public.
+
+After that, recording it and the live check need no approval. Recording waits for the blocks to
+be finalized, about 13 minutes after the broadcast; before then it says so and writes nothing:
+`..\.venv\Scripts\python ..\scripts\record_deployment.py`, then `..\.venv\Scripts\python ..\scripts\check_verifier_live.py`.
 
 **Fund the relayer.** Send Sepolia ETH to **`0x3cbC1F33F6ad04B3305dbdf26F6a3b0eC98854c2`**. This
 wallet was generated for Q-Vault, and its key is in `.env` as `EXECUTOR_PRIVATE_KEY`. It pays gas
@@ -702,3 +726,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-08-21 | §2.5 partly closed: both fingerprints published off-platform; the slide is still yours. |
 | 2026-09-09 | Added §1.4 (turn the live trace on for the demo?) and §4.4 (paper venue + submission). |
 | 2026-09-17 | Added §2.8: on-chain execution on Sepolia. Keys received, relayer wallet generated, funding outstanding. |
+| 2026-09-17 | §2.8: Phases 1–2 committed; the Phase 3 broadcast was blocked by the session's permission system and needs your approval (command recorded). |
