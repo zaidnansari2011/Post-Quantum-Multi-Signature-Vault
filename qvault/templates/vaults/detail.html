@@ -26,8 +26,9 @@
       ('decisions','Decisions', rows|length),
       ('members','Members', vault.members|length),
       ('files','Files', files|length),
+      ('treasury','Treasury', None),
       ('settings','Settings', None)] %}
-    {% if key != 'settings' or is_owner %}
+    {% if (key != 'settings' or is_owner) and (key != 'treasury' or treasury is not none) %}
     <a class="tab" href="{{ url_for('vaults.vault_detail', vid=vault.id, tab=key) }}"
        {% if tab == key %}aria-current="page"{% endif %}>
       {{ label }}{% if n is not none %}<span class="tab__n">{{ n }}</span>{% endif %}
@@ -169,6 +170,77 @@
   </div>
   {% endif %}
 
+{% elif tab == 'treasury' %}
+  <div class="split">
+    <div class="stack">
+      <div class="panel">
+        <div class="panel__head"><span class="label">Treasury</span>
+          {% if treasury.treasury %}<span class="push"><span class="chip chip--ok">Linked</span></span>
+          {% elif treasury.job and treasury.job.state not in ('done', 'failed') %}<span class="push"><span class="chip chip--waiting">Creating</span></span>
+          {% endif %}
+        </div>
+        <div class="panel__body">
+          {% if treasury.treasury %}
+          <dl class="meta">
+            <dt>Address</dt>
+            <dd><a class="mono" rel="noreferrer noopener" target="_blank"
+                   href="https://sepolia.etherscan.io/address/{{ treasury.treasury.address }}">{{ treasury.treasury.address }}</a></dd>
+            <dt>Network</dt><dd><span class="tag">Sepolia</span></dd>
+            <dt>Approvals</dt><dd class="mono">{{ treasury.treasury.threshold_m }} of {{ treasury.treasury.signer_count }}</dd>
+            <dt>Linked</dt><dd class="mono">{{ treasury.treasury.linked_at[:10] }}</dd>
+          </dl>
+          {% elif treasury.job and treasury.job.state not in ('done', 'failed') %}
+          <p class="small">{{ treasury.job.reason or treasury.job.state }}</p>
+          {% if is_owner %}
+          <form method="post" action="{{ url_for('vaults.stop_treasury_job', vid=vault.id) }}">
+            {{ treasury_form.hidden_tag() }}
+            <button class="btn btn--ghost btn--sm" type="submit">Stop</button>
+          </form>
+          {% endif %}
+          {% else %}
+          {% if treasury.job and treasury.job.state == 'failed' %}
+          <p class="small">The last attempt stopped: {{ treasury.job.reason }}</p>
+          {% endif %}
+          {% if is_owner %}
+          <form method="post" action="{{ url_for('vaults.create_treasury', vid=vault.id) }}">
+            {{ treasury_form.hidden_tag() }}
+            <button class="btn btn--primary btn--sm" type="submit"
+                    {% if treasury.limits.can_link_from %}disabled{% endif %}>Create treasury</button>
+          </form>
+          {% if treasury.limits.can_link_from %}
+          <p class="field__help">Another can be created from {{ treasury.limits.can_link_from[:10] }}.</p>
+          {% endif %}
+          {% else %}
+          <p class="small muted">This vault has no treasury.</p>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel__head"><span class="label">Approvers on chain</span></div>
+      <div class="panel__body">
+        {% if treasury.treasury %}
+        <dl class="meta">
+          {% for signer in treasury.treasury.signers %}
+          {% set member = vault.member_for(signer.user_id) %}
+          <dt>{{ member.user.display_name if member else 'User ' ~ signer.user_id }}</dt>
+          <dd>
+            <span class="tag">{{ 'Phone' if signer.custody == 'device' else 'Password' }}</span>
+            {% if not member %}<span class="chip chip--warn">No longer a member</span>{% endif %}
+            {% if not signer.key_active %}<span class="chip chip--warn">Key replaced</span>{% endif %}
+          </dd>
+          {% endfor %}
+        </dl>
+        {% else %}
+        <p class="small muted">Each approver's key is registered when the treasury is created.</p>
+        {% endif %}
+        <div class="divider"></div>
+        <p class="field__help">Your key: {{ 'this phone' if my_key.custody == 'device' else 'password key' }} —
+          <a href="{{ url_for('account.index') }}">change</a></p>
+      </div>
+    </div>
+  </div>
 {% elif tab == 'settings' %}
   <div class="split">
     <div class="stack">

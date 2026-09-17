@@ -28,6 +28,8 @@ from datetime import UTC, datetime, timedelta
 from flask import Blueprint, current_app, g, jsonify, request
 
 from qvault.chain.action import NETWORKS, format_wei
+from qvault.chain.relayer import RelayerError
+from qvault.chain.rpc import RpcError
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
@@ -40,12 +42,15 @@ from qvault.services import (
     device_service,
     key_service,
     proposal_service,
+    treasury_jobs,
+    treasury_service,
     vault_service,
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
 from qvault.services.proposal_service import PaymentRequest, ProposalError
 from qvault.services.signing import signing_bytes_for
+from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
@@ -392,6 +397,78 @@ def add_vault_member(vid: int):
         return _error("membership_error", str(exc), 422)
 
     return jsonify(ok=True, vault=_vault_summary(vault, user)), 201
+
+
+@bp.get("/vaults/<int:vid>/treasury")
+@device_token_required
+def vault_treasury(vid: int):
+    """The vault's treasury, the work in progress on it, and what this device may do (D36, D40)."""
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        return _error("unknown_vault", "No such vault.", 404)
+    view = treasury_jobs.view(vault)
+    view["may_create"] = treasury_jobs.may_request(vault, user)
+    view["my_key"] = treasury_service.key_choice(user)
+    return jsonify(ok=True, **view)
+
+
+@bp.post("/vaults/<int:vid>/treasury")
+@device_token_required
+def create_vault_treasury(vid: int):
+    """Ask for a treasury for this vault. Sends nothing now: the server does the work (D36)."""
+    if not _handles_payments():
+        return _upgrade_required()
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        return _error("unknown_vault", "No such vault.", 404)
+    relayer = current_app.extensions.get("relayer")
+    if relayer is None:
+        return _error("no_relayer", "This instance cannot do chain work.", 503)
+    try:
+        job = treasury_jobs.request_link(vault, by=user, relayer=relayer)
+    except LinkRefused as exc:
+        return _error("treasury_refused", " ".join(f"{p}." for p in exc.problems), 422)
+    except (RpcError, RelayerError):
+        # The chain, not the request: an endpoint that will not answer is not a bad request.
+        return _error("chain_unavailable", "The Ethereum endpoint is not answering.", 503)
+    return jsonify(ok=True, job={"id": job.id, "state": job.state, "reason": job.reason}), 202
+
+
+@bp.post("/vaults/<int:vid>/treasury/stop")
+@device_token_required
+def stop_vault_treasury_job(vid: int):
+    """Stop the job creating this vault's treasury (D36). Whatever is on chain is reused next
+    time; a job that cannot finish would otherwise hold the vault for ever (review M-3)."""
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        return _error("unknown_vault", "No such vault.", 404)
+    job = treasury_jobs.open_job(vault)
+    if job is None:
+        return _error("no_job", "Nothing is being created for this vault.", 404)
+    try:
+        treasury_jobs.cancel(job, by=user)
+    except LinkRefused as exc:
+        return _error("stop_refused", " ".join(f"{p}." for p in exc.problems), 422)
+    return jsonify(ok=True, job={"id": job.id, "state": job.state, "reason": job.reason})
+
+
+@bp.put("/me/signing-choice")
+@device_token_required
+def set_signing_choice():
+    """Choose whether treasuries register this phone's key or the password key (D37)."""
+    if not current_app.config.get("ONCHAIN_EXECUTION_ENABLED"):
+        return _error("treasuries_off", "This instance has no treasuries.", 404)
+    user = g.api_user
+    custody = (_body().get("custody") or "").strip().lower()
+    device_key = g.api_device.key if custody == "device" else None
+    try:
+        treasury_service.set_key_choice(user, custody=custody, device_key=device_key)
+    except LinkRefused as exc:
+        return _error("choice_refused", " ".join(f"{p}." for p in exc.problems), 422)
+    return jsonify(ok=True, my_key=treasury_service.key_choice(user))
 
 
 @bp.get("/vaults")

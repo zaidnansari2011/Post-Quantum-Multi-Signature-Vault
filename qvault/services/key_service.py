@@ -431,6 +431,11 @@ def enrol_device_key(user: User, *, alg_id: str, public_key: bytes, commit: bool
     return key
 
 
+def device_key_of(user: User, key_id: int) -> Key | None:
+    """One of ``user``'s active device keys by id, or None: the caller decides what that means."""
+    return next((key for key in device_signing_keys(user) if key.id == key_id), None)
+
+
 def device_signing_keys(user: User) -> list[Key]:
     """``user``'s active device-custodied signing keys, newest first.
 
@@ -443,6 +448,16 @@ def device_signing_keys(user: User) -> list[Key]:
         .order_by(Key.created_at.desc(), Key.id.desc())
         .all()
     )
+
+
+def _forget_treasury_choice(key: Key) -> None:
+    """A revoked phone cannot be the key a treasury registers (plan D37, review M-6)."""
+    from qvault.models.signer_preference import SignerPreference
+
+    preference = SignerPreference.query.filter_by(device_key_id=key.id).one_or_none()
+    if preference is not None:
+        preference.custody = "password"
+        preference.device_key_id = None
 
 
 def revoke_device_key(key: Key, *, commit: bool = True) -> Key:
@@ -461,6 +476,7 @@ def revoke_device_key(key: Key, *, commit: bool = True) -> Key:
     key.can_sign = False
     key.can_verify = True
     key.retired_at = datetime.now(UTC)
+    _forget_treasury_choice(key)
     if commit:
         db.session.commit()
     return key

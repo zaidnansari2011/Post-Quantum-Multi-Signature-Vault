@@ -114,6 +114,15 @@ class BaseConfig:
         os.environ.get("ONCHAIN_EXECUTION_ENABLED", "false").lower() == "true"
     )
 
+    # Treasury limits (plan D38). One relayer wallet pays for every vault, so a loop or a mistake
+    # must not be able to empty it: no chain work starts that would take the relayer below the
+    # reserve, and a vault pays for a treasury at most once per cooldown.
+    TREASURY_RELAYER_RESERVE_WEI = int(
+        os.environ.get("TREASURY_RELAYER_RESERVE_WEI", 15_000_000_000_000_000)
+    )
+    TREASURY_LINK_COOLDOWN_DAYS = int(os.environ.get("TREASURY_LINK_COOLDOWN_DAYS", 30))
+    TREASURY_TICK_SECONDS = int(os.environ.get("TREASURY_TICK_SECONDS", 60))
+
 
 class DevConfig(BaseConfig):
     DEBUG = True

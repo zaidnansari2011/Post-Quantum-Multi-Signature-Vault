@@ -50,6 +50,35 @@
       </div>
     </div>
 
+    {% if treasuries_on %}
+    <div class="panel">
+      <div class="panel__head"><span class="label">Treasury approvals</span>
+        <span class="push"><span class="tag">{{ 'This phone' if key_choice.custody == 'device' else 'Password key' }}</span></span>
+      </div>
+      <div class="panel__body">
+        <form method="post" action="{{ url_for('account.set_signing_choice') }}" class="stack">
+          {{ choice_form.hidden_tag() }}
+          <label class="hstack">
+            <input type="radio" name="choice" value="password"
+                   {% if key_choice.custody != 'device' %}checked{% endif %}>
+            <span>Password key{% if key %} <span class="mono small">{{ key.public_fingerprint()[:16] }}</span>{% endif %}</span>
+          </label>
+          {% for phone, phone_key in phones %}
+          <label class="hstack">
+            <input type="radio" name="choice" value="device:{{ phone_key.id }}"
+                   {% if key_choice.key_id == phone_key.id %}checked{% endif %}>
+            <span>{{ phone.name }} <span class="mono small">{{ phone_key.public_fingerprint()[:16] }}</span></span>
+          </label>
+          {% endfor %}
+          <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+        </form>
+        <p class="field__help">A treasury registers one key for you. Changing this applies the next
+          time a treasury is created or changed; what is on chain now stays until its signers
+          approve a change.</p>
+      </div>
+    </div>
+    {% endif %}
+
     {% if retired_keys %}
     <div class="panel">
       <div class="panel__head"><span class="label">Retired keys</span>

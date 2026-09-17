@@ -64,7 +64,9 @@ SENTENCES = {
     # be — see publication_service.
     "decision_published": "{who} published a decision in {vault} to a public link.",
     "decision_unpublished": "{who} revoked the public link for a decision in {vault}.",
+    "treasury_link_requested": "{who} asked for a treasury contract for {vault}.",
     "treasury_linked": "{who} linked {vault} to a treasury contract on Sepolia.",
+    "signing_key_choice_changed": "{who} chose which of their keys a treasury registers.",
     "treasury_unlinked": "{who} unlinked {vault} from its treasury contract.",
 }
 

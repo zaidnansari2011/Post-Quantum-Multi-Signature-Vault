@@ -204,6 +204,43 @@ def test_a_vault_is_linked_and_checked_against_the_real_contracts(app, node):
     assert treasury_service.deploy_gas(3) * 0.9 < gas[3] < treasury_service.deploy_gas(3)
 
 
+def test_a_job_links_a_vault_end_to_end_with_a_restart_at_every_step(app, node):
+    """Plan 5b: the app's own path, on the real contracts, with nothing kept in memory between
+    steps — a new relayer and an expired session each tick, as a redeploy would leave it."""
+    from qvault.services import treasury_jobs
+
+    users, vault = _vault()
+    app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    app.config["TREASURY_RELAYER_RESERVE_WEI"] = 0
+    job = treasury_jobs.request_link(vault, by=users[0], relayer=node["relayer"])
+
+    seen = []
+    for _ in range(30):
+        if not job.is_open:
+            break
+        db.session.expire_all()
+        treasury_jobs.advance(
+            job,
+            relayer=Relayer(node["rpc"], ANVIL_KEY, chain_id=SEPOLIA),
+            artifact=treasury_artifact.committed(),
+            record=node["record"],
+        )
+        seen.append(job.state)
+        _mine(node["rpc"])(0)
+
+    assert job.state == "done", job.reason
+    assert seen.count("registering_keys") >= 3 and "deploying" in seen and "finalizing" in seen
+    treasury = Treasury.query.one()
+    assert job.treasury_id == treasury.id
+    assert (
+        treasury_service.check(
+            treasury, rpc=node["rpc"], record=node["record"], artifact=treasury_artifact.committed()
+        )
+        == []
+    )
+    assert [tx.state for tx in job.transactions] == ["mined"] * 4
+
+
 def test_keys_already_on_chain_are_reused_not_paid_for_again(app, node):
     users, vault = _vault()
     relayer = node["relayer"]
