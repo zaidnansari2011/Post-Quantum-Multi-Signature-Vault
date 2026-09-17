@@ -283,3 +283,44 @@ def test_tamper_demo_requires_vault_membership(app, client):
     assert client.post(f"/vaults/1/proposals/{pid}/demo/restore").status_code == 404
     # And the outsider cannot read it either, so the 404 above leaks nothing new.
     assert client.get(f"/vaults/1/proposals/{pid}").status_code == 404
+
+
+# --- the text that is stored is the text that was hashed --------------------------------------
+
+
+@pytest.mark.parametrize("text", ["  Wire funds", "Wire funds\n", "\tWire funds\r\n", "Wire funds"])
+def test_the_stored_text_is_exactly_the_text_that_was_hashed(app, text):
+    """Found while mapping the payload for on-chain execution (plan Phase 4): the proposal was
+    hashed with the text as submitted but stored stripped, so any leading or trailing whitespace
+    left a brand-new, untampered proposal failing its own binding check, and its votes uncounted."""
+    owner = auth_service.register_user("ws-own@e.com", "O", PASSWORD)
+    vault = vault_service.create_vault(owner, "V", "", 1)
+    proposal = proposal_service.create_proposal(vault, owner, "  Title ", text)
+    assert proposal.action_text == text.strip()
+    assert proposal.title == "Title"
+    assert sha256_hex(signing_bytes_for(proposal)) == proposal.payload_hash
+    assert approval_service.verify_proposal_binding(proposal).ok
+
+
+def test_a_decision_raised_on_the_web_with_trailing_whitespace_verifies(app, client):
+    _register(client, "ws-web@e.com")
+    client.post(
+        "/vaults/new",
+        data={"name": "Ops", "threshold_m": 1, "description": ""},
+        follow_redirects=True,
+    )
+    resp = client.post(
+        "/vaults/1/proposals/new",
+        data={
+            "title": "Wire funds",
+            "action_text": "Wire 10,000 to escrow.\r\n",  # what a browser textarea submits
+            "submit": "Create proposal",
+        },
+        follow_redirects=True,
+    )
+    import re
+
+    pid = re.search(r"/vaults/1/proposals/([0-9a-f-]{36})", resp.get_data(as_text=True)).group(1)
+    page = client.get(f"/vaults/1/proposals/{pid}").get_data(as_text=True)
+    assert "Content verified" in page
+    assert "Content altered" not in page

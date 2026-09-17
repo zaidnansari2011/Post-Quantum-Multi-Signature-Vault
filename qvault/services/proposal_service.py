@@ -78,6 +78,11 @@ def create_proposal(
     """Create a proposal in ``vault``. If ``file_bytes`` is given, it is encrypted at rest and
     its plaintext hash is bound into the canonical signing payload.
     """
+    # Normalised once, before hashing: the signed text must be exactly the stored text. Hashing
+    # the submitted text and storing it stripped made any proposal with surrounding whitespace
+    # (a browser textarea's trailing newline) fail its own binding check the moment it existed.
+    title = title.strip()
+    action_text = action_text.strip()
     signers = vault.signer_ids()
     required_n = len(signers)
     required_m = vault.policy.threshold_m
@@ -117,8 +122,8 @@ def create_proposal(
         proposal_uuid=proposal_uuid,
         vault_id=vault.id,
         creator_id=creator.id,
-        title=title.strip(),
-        action_text=action_text.strip(),
+        title=title,
+        action_text=action_text,
         nonce=nonce,
         authorized_signers_snapshot=json.dumps(signers),
         created_at_iso=created_iso,
