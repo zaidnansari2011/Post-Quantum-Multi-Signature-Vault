@@ -417,8 +417,8 @@ and the API keys belong to your accounts.
 | Address to receive demo payouts | `DONE`, `0xF590cEe84F86510555150F13Ca83AEc613f1676b`: valid, but no Sepolia history as of 2026-09-17, so confirm it matches the account MetaMask shows |
 | Fund the relayer wallet | `PARTLY DONE`, 0.05 ETH arrived 2026-09-17, enough for setup; another 0.05 from the faucet on a later day pays for demo payouts |
 | Using ZKNox's unaudited verifier on testnet | Assumed accepted with the go-ahead on 2026-09-17 |
-| Fork ETHDILITHIUM to your GitHub account | `TODO`, see below |
-| Approve the first broadcast to Sepolia (Phase 3: helper + verifier) | `TODO`, see below. Everything before it is done and committed |
+| Fork ETHDILITHIUM to your GitHub account | `DONE`, 2026-09-17: [zaidnansari2011/ETHDILITHIUM](https://github.com/zaidnansari2011/ETHDILITHIUM), with tag `qvault-pin-4c370bb` on the pinned commit; the submodule now points at the fork |
+| Approve the first broadcast to Sepolia (Phase 3: helper + verifier) | `DONE`, approved 2026-09-17; verifier deployed and source-verified at [`0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C`](https://sepolia.etherscan.io/address/0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C#code), cost 0.0109 ETH (relayer now holds ~0.039) |
 
 **Approve the Phase 3 deployment.** On 2026-09-17 the session's permission system blocked the
 first real broadcast. That is the right default for something that spends ETH and publishes to a
