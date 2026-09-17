@@ -15,7 +15,12 @@ contract on Sepolia pays the recipient. The contract checks the approvers' **ML-
 itself**, so neither Q-Vault's server nor the account that sends the transaction can move funds
 without them.
 
-**The demo this enables:**
+**Production, not a demonstration** (owner, 2026-09-17, D35). Any vault's owner can give the vault a
+treasury from the web app or the phone; its approved payments pay out; its signers can change and
+the treasury follows them; the operator's relayer pays the gas within limits. Built to production
+standard on Sepolia. Mainnet waits for an independent audit of the verifier.
+
+**What the first real use looks like:**
 1. Raise "Pay 0.0001 ETH to <address>".
 2. Two approvers sign, one of them on the phone.
 3. The payment lands. Etherscan shows the transaction, and it carries the decision's
@@ -71,13 +76,20 @@ should confirm before Phase 4.**
 | D25 | **Old phone apps refuse payment decisions with a clear message.** The API sends `signing_inputs.action` only for payment decisions, and only to clients that declare the capability (`X-QVault-Capabilities: payment-action-1`); any other device client gets HTTP 426 `upgrade_required` for that decision and cannot vote on it. The phone app declares the capability only in Phase 6b, when it can also produce the execution signature. | An app that cannot compute the new hash already refuses (its schema is strict), but with "unexpected format". An explicit code turns that into "update the app", and the gate means a half-capable app can never approve a payment. | Relying on the strict schema alone |
 | D26 | **A decision bundle that carries an action is `qvault.decision/2`.** `/1` bundles must not contain `action`; `/2` bundles must. Both verifiers accept both formats. | A verifier from before this change, including one embedded in an already exported HTML record, then says "unsupported format" instead of reporting a genuine payment decision as tampered. | Keeping `/1` and adding a field that old verifiers would silently ignore |
 | D27 | **Tables are complete from the start.** `treasuries` and `proposal_actions` are created in Phase 4 with every column Phases 5–7 need (deployment transaction and block, link status, the signed action copied field by field). | `db.create_all()` never adds a column to an existing table (§4), so a column forgotten now could only be added by a manual migration later. | Adding columns phase by phase |
-| D28 | **Linking runs on the owner's machine against the demo database** (Azure Postgres, reached by `DATABASE_URL`), from `scripts/link_treasury.py`. The script opens the app without its startup writes (`AUTO_CREATE_DB=false`, `SCHEDULER_ENABLED=false`). A dry run writes nothing anywhere (with `AUTO_CREATE_DB=false` startup neither creates tables nor seeds; review M3); a real link creates only `treasuries` and `treasury_signers` if they are missing, and leaves anchoring and checkpointing the log to the live app, which signs with its own key and origin (review M2). The relayer key stays in the local `.env` until the executor needs it on Azure (Phase 7). | Every earlier write to the Azure database was made this way (`migrate_to_postgres.py`, `seed_team.py`), and there is no way into the container. Production runs an image from before this plan, so the app's normal startup against its database (every table, seeding, a second scheduler) would make writes nobody asked for. | An admin HTTP endpoint that spends ETH (new attack surface); moving the relayer key to Azure now |
+| D28 | *(Superseded as the way vaults are linked by D36: owners link in the app. The script stays an operator tool, for recovery and checks.)* **Linking runs on the owner's machine against the demo database** (Azure Postgres, reached by `DATABASE_URL`), from `scripts/link_treasury.py`. The script opens the app without its startup writes (`AUTO_CREATE_DB=false`, `SCHEDULER_ENABLED=false`). A dry run writes nothing anywhere (with `AUTO_CREATE_DB=false` startup neither creates tables nor seeds; review M3); a real link creates only `treasuries` and `treasury_signers` if they are missing, and leaves anchoring and checkpointing the log to the live app, which signs with its own key and origin (review M2). The relayer key stays in the local `.env` until the executor needs it on Azure (Phase 7). | Every earlier write to the Azure database was made this way (`migrate_to_postgres.py`, `seed_team.py`), and there is no way into the container. Production runs an image from before this plan, so the app's normal startup against its database (every table, seeding, a second scheduler) would make writes nobody asked for. | An admin HTTP endpoint that spends ETH (new attack surface); moving the relayer key to Azure now |
 | D29 | **One registered key per signer, chosen when linking.** By default a signer's active password key; `--device <username>` registers that signer's one active phone key instead. The choice is stored per signer in a new `treasury_signers` table (treasury, user, key row, on-chain key id, both pointers, the 124-byte identity), so Phases 6a/6b can require a payment approval to come from the registered key and say where to approve. | The contract de-duplicates signers by key (`keccak256(tr)`), not by person. Registering someone's password key and phone key would let that one person provide two of the M signatures, and anyone may submit to the contract directly. *(D27 missed per-signer rows. A new table is still created by `create_all`, so nothing existing is altered.)* | Registering every key a signer holds |
 | D30 | **Look before paying; chain first, database last.** Before a `setKey`, the linker looks among the verifier's contracts for canonical storage of exactly that key (code equal to `0x00 ‖ half`) and reuses it. Before deploying, it looks among the relayer's own deployments for a treasury that already passes the D31 check and is not in the `treasuries` table. After a `setKey` confirms, its pointers are found in the verifier's nonce range at the confirming block and accepted only when their code reads back equal: never predicted. The database is written once, in one transaction (treasury, signer rows, `treasury_linked` ledger entry), after the D31 check passes on finalized blocks and after the vault is read again: if its signers, its threshold or a chosen key changed while the link ran, nothing is written and the next run links the vault as it is then (review M1). A treasury adopted this way has its deployment transaction found again from the chain (review L1). | With D21, a re-run after a crash at any point cannot pay twice for the same key or treasury, and needs no stored transactions. The database never holds a half-linked treasury. `setKey` emits no event, so otherwise its pointers are only a return value. | Recording each step in the database (half-linked states to clean up); predicted pointer addresses (review finding 1) |
 | D31 | **What linking verifies from the chain before anything is stored:** the chain id; the verifier is the recorded one with the recorded runtime hash; the treasury's runtime equals the committed artefact with only the `_VERIFIER` immutable masked, and that immutable is the verifier; `verifier()`; `threshold()` = the vault's M; `getSignerCount()` = N; `getSigners` equals, as a set, the identities computed from the database's public keys; `configNonce()` = 0; every pointer's code equals `0x00 ‖ half` of its key; every block involved is finalized and canonical. `link_treasury.py --check` re-runs it read-only. | The D17 residual: the contract cannot tell a genuine key from a well-formed one, so the linker computes every identity from the real public key and trusts nothing it has not read back, its own transactions included. | Trusting the constructor arguments it sent |
 | D32 | **The treasury's bytecode is a committed artefact**, `qvault/chain/artifacts/QVaultTreasury.json` (ABI, creation and runtime code, immutable references, compiler settings), exported from `forge build` by `scripts/export_treasury_artifact.py`. The CI `contracts` job rebuilds and fails if the committed file differs. | The image excludes `chain/out` and `chain/lib` (`.dockerignore` already anticipates this); Phase 7 runs on Azure without Foundry but must still recognise the treasury's code; and byte equality ties what is deployed to reviewed source. Etherscan verification uses the same build. | Reading `chain/out` at run time; deploying with `forge script` |
 | D33 | **Refuse before spending.** A dry run is the default; `--broadcast` is required to spend. The dry run prints the vault, each signer with the key and custody to be registered, keys already on chain, the estimated gas and cost of each step at the current fee, and the balance each step needs up front. It refuses clearly when a signer has no eligible key (SLH-DSA, ML-DSA-87, no active key, or not exactly one phone key under `--device` whose phone can still sign in, review M5), when two signers share a key, when N > 10, M > 8 or M > N (review M4), when the vault is already linked, when the database lacks a column the link uses, when the base fee is above the D21 policy, or when the balance cannot cover the whole sequence. | The relayer holds ~0.039 ETH for a ~0.03 ETH link. A link that stops halfway loses nothing (D30), but the owner should see the cost and the keys before approving a broadcast. | Broadcasting by default |
 | D34 | **A payment requires the vault's signers to be exactly the treasury's.** Creating a payment compares the vault's signer user ids with the treasury's `treasury_signers`, not only their number. Changing a linked vault's members or threshold stays allowed; payments are refused until the treasury is unlinked (`link_treasury.py --unlink`, which changes nothing on chain) and the vault linked again (a reconfiguration flow is out of scope). Payments are also refused while fewer than M of the registered keys can still sign (review L4). | Swapping one member keeps N the same, while the newcomer has no key on the treasury and the person who left still has one. | Blocking membership changes on linked vaults |
+| D35 ✔ | **Production scope, on Sepolia** (owner, 2026-09-17). Every vault can have a treasury, set up and changed through the app by the people who use it, and run by the app on Azure. Production standard: self-service, resumable jobs, limits, monitoring, a runbook. Sepolia only; mainnet after an independent audit of ZKNox's verifier. | The owner wants the system to work for real over time, not for one scripted run. The verifier is unaudited (ZKNox say so), so real money behind it would be unsafe; nothing built here is thrown away by a later move. | A one-vault demonstration; mainnet now |
+| D36 ✔ | **A vault owner creates the treasury in the app; the server links it as a job** (owner, 2026-09-17). Web or phone (D15) starts it; a `treasury_jobs` row records the request, each signer's chosen key (D37) as of that moment, the state, every transaction it signed and the last error. The scheduler advances one step per tick with the Phase 5 engine: register the next missing key, deploy, wait for finality, check (D31), store. Each signed transaction is stored before it is sent (D21 `on_prepared`) and reconciled with `Relayer.status`, so a restart, a redeploy or a crashed tick repeats nothing. States: `queued → registering_keys → deploying → finalizing → done`, or `waiting` (fees, relayer reserve, D38) or `failed` with a reason. One open job per vault; jobs run one at a time per relayer. | Linking takes a quarter of an hour, so it cannot run inside a request, and a script on one laptop is not self-service. The engine is already idempotent by content (D30), so a job is the same steps with durable progress. | Linking inside a request; linking only by an operator's script |
+| D37 | **Each signer chooses the key the treasury registers for them.** An account setting: approve treasury payments with the password key (web) or with this phone (set from that phone, for its own key). Default: the password key. A link uses each signer's choice when it starts; changing it afterwards is a reconfiguration (D39). | The key is the signer's own custody decision, and the contract counts one key per person (D29). The owner deciding for others (Phase 5's `--device`) stays an operator-only tool. | The owner choosing each signer's key |
+| D38 ✔ | **The operator's relayer pays all gas, within limits** (owner, 2026-09-17). Limits, all in config: the site-wide switch (`ONCHAIN_EXECUTION_ENABLED`); a relayer reserve below which no new chain work starts (work already started finishes); per vault, one treasury link per 30 days, a number of reconfigurations per 30 days and of payouts per day; and the D21 fee ceiling, which makes a job wait rather than fail. The admin page shows the relayer's balance, open jobs and recent failures, and warns below twice the reserve; the app log records the same. | One funded wallet is simplest to operate and needs no contract change; the limits stop one vault, or a bug, from draining it for everyone. | Each treasury reimbursing the relayer (contract change, and the reimbursement would need signing and caps too) |
+| D39 | **A treasury follows its vault by `reconfigure`, not by relinking.** When a linked vault's signers or threshold change, or a signer's registered key changes (password key reissued, phone re-enrolled or revoked, D37 choice changed), the app opens a **reconfiguration** on the vault: it registers any new keys, then the treasury's *current* signers approve the `reconfigure` digest (D18 deadline) the way they approve a payment's execution digest (Phases 6a/6b), and the executor submits it. The signer rows change only after it is finalized and passes the D31 check against the new set. Payments are refused while one is open (D34). A retired password key may still sign the reconfiguration that replaces it, and nothing else. The app warns, and asks for confirmation, before a change that would leave fewer than M registered keys able to sign. Unlink and relink remain for when a reconfiguration cannot gather M signatures. | Relinking deploys a new treasury (~0.03 ETH) and leaves the old one's funds behind the old keys. The contract already supports reconfiguration, authorised by the current M-of-N (D9). | Unlink and relink after every change; syncing signers automatically without approval (would let the server change who controls the funds) |
+| D40 | **Every linked vault has a treasury page, on the web and the phone.** Address to fund (with a QR code), balance, network, verifier, threshold, each registered signer with custody and key state, the open job or reconfiguration and its progress, payouts with their transactions, and the vault's remaining limits. Owners create the treasury there; admins can unlink. | A treasury people use needs to be seen and funded from the app. | Etherscan as the only view |
+| D41 | **Operable by someone other than its author.** A runbook (`docs/runbooks/treasury.md`): fund the relayer; move the relayer to a new key (it has no authority, so nothing on chain changes; rotate only with no job open); a stuck transaction; a reorg; a fee spike; a verifier problem; recovering a job by hand with `link_treasury.py`. The relayer key is a Container App secret. | Production means an operator can run it from the documentation. | Knowledge in one person's head |
 | D16 ✔ | **Reseeding cannot silently break a linked treasury.** `seed_demo.py --reset` refuses while a treasury is linked, unless given `--unlink-treasury`, which states what is lost and what relinking costs. | Reseeding creates new keys, so the old approvers can never sign again, and `reconfigure` can't fix it because it needs those old keys | Relying on remembering not to do it |
 
 ## 4. How it fits together
@@ -98,7 +110,7 @@ Sepolia: QVaultTreasury.execute(payload_hash, to, value, data, callGas, validUnt
 ```
 
 **New tables.** Existing tables are never altered; the project relies on `db.create_all()`:
-`treasuries`, `proposal_actions`, `treasury_signers` (D29), `execution_signatures`, `executions`.
+`treasuries`, `proposal_actions`, `treasury_signers` (D29), `treasury_jobs` (D36), `execution_signatures`, `executions`, `reconfigurations` (D39).
 
 **Where the signed-payload rules live.** All four must change together in Phase 4:
 `qvault/services/signing.py` · `qvault/verify/core.py` · `qvault/static/verifier.src.html` (then
@@ -175,7 +187,7 @@ Runtime sizes: `QVaultTreasury` 9,451 bytes; `ZKNOX_dilithium65` 24,272 bytes (E
 - [x] `ONCHAIN_EXECUTION_ENABLED` (off by default, also in tests unless a test turns it on); verification and display of an existing payment decision never depend on it
 - **Done when:** the full suite is green, the frozen vectors are unchanged, and Python, the offline verifier, the browser verifier and the phone agree on the new payment vectors.
 
-### Phase 5: Link a vault to a treasury · ~0.03 ETH per vault
+### Phase 5a: The linking engine and operator tool · ~0.03 ETH per vault
 
 *Design written 2026-09-17 (D28–D34) from a map of the verifier's `setKey`, the treasury constructor, the key and vault models, and how the Azure database has been written before. Findings: the Azure database is Postgres reached from this machine, production runs an image from before this plan, a signer can hold a password key and several phone keys, `setKey` emits no event, and no treasury bytecode is committed.*
 
@@ -189,15 +201,26 @@ Runtime sizes: `QVaultTreasury` 9,451 bytes; `ZKNOX_dilithium65` 24,272 bytes (E
 - [x] **Reseed guard (D16):** `seed_demo.py --reset` (before `drop_all`) and `migrate_to_postgres.py --force` refuse when this database has a linked treasury, or holds a key registered on a treasury the record lists as linked (a restored backup or a copy), or when the record cannot be read. `--unlink-treasury` prints the treasury, a link to its balance (locked for good), the approvers who lose access and the cost of relinking, then marks the treasury unlinked in the record and then in this database; a database whose own row is unlinked while the record still says linked is recognised as that database, not a copy, and finishes the unlink (review L3). Tests cover both refusals, the override, a locked record and a half-finished unlink
 - [x] Tests: the fake node gains contracts that create contracts only when a transaction is included (`setKey`), code-hash handlers and blocks' transactions, and a fake treasury answering the views; every D31 mismatch; a crash and re-run at each step pays for nothing twice; a vault changed mid-link writes nothing; the least balance a plan accepts carries the link out; the real script, in its own process, leaves an unseeded database logically unchanged. **Local anvil end to end:** real `setKey` and deployment from the committed artefact, then the D31 check. Measured: `setKey` 8,709,889–8,710,393 gas; treasury deployment 2,497,096 (2 signers) and 2,664,311 (3 signers). Alchemy estimated 8.78M per `setKey`, so the dry run's deployment figure is set about 5% above measured
 - [x] **Adversarial review (2026-09-17) fixes:** no critical/high. M1 a vault changed during the finality wait was stored as linked with no way back but a wipe (re-read before writing; `--unlink`); M2 the link signed anchors and checkpoints with this machine's key and log origin (removed); M3 a dry run seeded an unseeded database (seeding gated; subprocess test); M4 a vault needing more approvals than signers paid for keys, then crashed (refused); M5 `--device` accepted a phone that can no longer sign in (refused; expiry shown). L1 a resumed link lost its deployment transaction (found from the chain); L2 a ledger race on brand-new tables failed its retry on Postgres (tables committed first); L3 `--unlink-treasury` wrote the database before the record (reordered); L4 payments allowed with fewer than M usable registered keys (refused; `check` reports it); L5 nine mutants survived (tests added for each)
-- [ ] Owner: answer [Q2 and Q3](#open-questions); approve the broadcast after reading the dry run against the Azure database
-- [ ] Link the demo Treasury vault against the Azure database (D28); verify the treasury on Etherscan; `--check` passes
-- **Done when:** the demo Treasury vault is linked on Sepolia and verified on Etherscan, `--check` passes against the Azure database, and the reseed guard is proven by a test.
+- ~~Owner: answer Q2 and Q3; approve the broadcast~~ *(superseded 2026-09-17 by D35–D37: Q2 is each signer's own choice, and linking runs on Azure, so no laptop needs the Azure database)*
+- ~~Link the demo Treasury vault from this machine~~ *(moved to Phase 9: the first real link is an owner's, through the app)*
+- **Done when:** the engine, the operator tool and the reseed guard are committed with their tests, the anvil end-to-end passes, and a dry run against Sepolia is proven to write nothing.
+
+### Phase 5b: Linking in the app · no ETH
+
+- [ ] `TreasuryJob` model (D36): vault, kind (`link`; `reconfigure` in Phase 7b), requested by, the signers' chosen keys as of the request, state, each prepared transaction (raw, hash, purpose), attempts, last error, timestamps; one open job per vault by a partial unique index
+- [ ] The engine as steps: `advance(job)` does at most one chain action per call and stores every prepared transaction before sending it (`on_prepared`), reconciling with `Relayer.status` (D21); the CLI and the job share it
+- [ ] Scheduler job and one `Relayer` per process in `app.extensions` (moved here from Phase 7), started only when the relayer settings are present
+- [ ] D37 key choice: `users` get a setting through a new table (`signer_preferences`, since `create_all` never alters `users`); API and web form; phone sets it for its own key
+- [ ] D38 limits and reserve, checked when a job is requested and before each chain action; `waiting` with the reason
+- [ ] API: `POST /api/vaults/<id>/treasury` (owner; capability header as D25), `GET /api/vaults/<id>/treasury` (members: treasury, job, limits); web routes for the same
+- [ ] Tests: every state transition against the fake node, a restart between every pair of steps, a lost send, a fee spike and a reserve breach, two owners racing, a vault changing mid-job (M1 behaviour kept)
+- **Done when:** a link runs end to end on anvil through the job, with the process restarted at every step, and pays for nothing twice.
 
 ### Phase 6a: Execution signatures (web) · no ETH
 
 - [ ] `key_service`: sign several messages with one unlock (one Argon2id run), keeping verify-after-sign (ADR-0010) for each
 - [ ] `cast_vote`: approving a payment proposal also signs the execution digest → `ExecutionSignature`; ledger payload gains `execution_signature_sha256`
-- [ ] Refuse the approval if the signer's active key is not registered on the treasury (key rotated) and say why
+- [ ] Refuse the approval if the signer's active key is not registered on the treasury (key rotated) and say why, naming the reconfiguration that fixes it (D39)
 - **Done when:** tests cover a valid signature, a tampered one, a rotated key, and a reject vote (no execution signature).
 
 ### Phase 6b: Phone parity · no ETH · OTA release · gates D15
@@ -219,17 +242,29 @@ Runtime sizes: `QVaultTreasury` 9,451 bytes; `ZKNOX_dilithium65` 24,272 bytes (E
 - [ ] `Execution` state machine: `queued → submitted → confirmed | failed`, unique per proposal
 - [ ] Scheduler job: re-check binding, tally and execution signatures off-chain → check the on-chain `executed` flag → simulate → send → receipt
 - [ ] Idempotent across crashes: the signed transaction is stored via `on_prepared` before it is sent, then reconciled with `Relayer.status()` (rebuilt with `PreparedTransaction.from_raw` after a restart) or from the `Executed` event, never re-signed unless `superseded` (D21); `AlreadyExecuted` (someone else submitted first) counts as success (D20); `RelayerBusy`, `SimulationUnavailable` and `FeeTooHigh` mean "try again later", not failure
-- [ ] One `Relayer` per process, held in `app.extensions`
+- [ ] Payout limits per vault and the relayer reserve (D38)
 - [ ] Never broadcast if simulation fails (D20); a proposal past its `validUntil` is recorded as expired, not failed
 - [ ] Ledger `proposal_executed` {tx_hash, block, gas_used}; `proposal_execution_failed` {reason}
 - [ ] Tests with a fake RPC for every transition, including a relayer out of gas, a reverted simulation, a dropped transaction, and a restart mid-flight
 - **Done when:** a real Sepolia payout completes end to end from a web approval.
 
+### Phase 7b: Reconfiguration · ~0.013 ETH per changed key
+
+- [ ] Detect what changed on a linked vault (members, threshold, a registered key retired, a D37 choice changed) and open one reconfiguration job (D39) holding the target signer set
+- [ ] Register new keys (the Phase 5 engine), build `reconfigure(add, remove, threshold, validUntil)` and its digest (`digest.reconfigure_digest`)
+- [ ] Approval by the treasury's current signers: web (6a signing, a retired password key may sign only this) and phone (6b), verified and stored like execution signatures
+- [ ] Executor submits it; after finality and the D31 check against the new set, the signer rows change in one transaction with a `treasury_reconfigured` ledger entry
+- [ ] Payments refused while one is open; the warning before a change that would leave fewer than M usable registered keys
+- [ ] Tests: add, remove, rotate, threshold change, a change made while one is open, not enough current signers, and on anvil a real `reconfigure` then a payout by the new set
+- **Done when:** on anvil, a vault's member is replaced and a key rotated through the app, and the new signer set pays out without redeploying.
+
 ### Phase 8: Interface · no ETH
 
 - [ ] New decision: a "Payment" action (recipient, amount), shown only when the vault has a treasury; the text is generated
 - [ ] Decision page: an execution panel (state, transaction link, block, gas, execution signatures n/M)
-- [ ] Vault: Treasury tab (address, balance, verifier, registered signers, threshold, configuration nonce)
+- [ ] Vault: treasury page (D40), with the create-treasury action, job and reconfiguration progress, and remaining limits
+- [ ] Account: the D37 key choice (web, and on the phone for its own key)
+- [ ] Admin: relayer balance, reserve warning, open jobs, recent failures (D38)
 - [ ] Follow the UI rules in ADR-0014 (no teaching copy; colour only for state); screenshot every changed screen
 - [ ] Turn `ONCHAIN_EXECUTION_ENABLED` on only after the parity checklist is fully ticked
 - **Done when:** the owner has looked at the screenshots (§3.1-style check) and the parity checklist is complete.
@@ -240,6 +275,8 @@ Runtime sizes: `QVaultTreasury` 9,451 bytes; `ZKNOX_dilithium65` 24,272 bytes (E
 - [ ] `/docs` page for on-chain execution; README section
 - [ ] Decision record / export includes the transaction hash and execution signatures; the offline verifier checks the execution signatures
 - [ ] Scripted end-to-end tamper demo (tamper after approval → payment refused → Etherscan confirms)
+- [ ] Runbook (D41) and the relayer key as a Container App secret (owner)
+- [ ] Deploy to Azure; an owner creates the first real treasury through the app; `link_treasury.py --check` passes against it
 - [ ] Defence pack: new claims and the limits to volunteer
 - **Done when:** the demo runs from the script without improvising.
 
@@ -247,7 +284,7 @@ Runtime sizes: `QVaultTreasury` 9,451 bytes; `ZKNOX_dilithium65` 24,272 bytes (E
 
 The feature is not finished, and the flag stays off, until every row is ticked on both sides.
 
-| Action on a payment decision | Web | Phone |
+| Action | Web | Phone |
 |---|---|---|
 | Raise a payment decision (recipient, amount) | [ ] | [ ] |
 | See the payment details before signing | [ ] | [ ] |
@@ -256,6 +293,9 @@ The feature is not finished, and the flag stays off, until every row is ticked o
 | Refuse to sign when the payment was tampered with | [ ] | [ ] |
 | See the execution state and the transaction link | [ ] | [ ] |
 | See the vault's treasury (address, balance, threshold) | [ ] | [ ] |
+| Create a treasury for a vault (owner) and follow its progress | [ ] | [ ] |
+| Choose the key you approve treasury payments with | [ ] | [ ] |
+| Approve or reject a reconfiguration, and follow it | [ ] | [ ] |
 
 ### Open questions
 
@@ -265,12 +305,12 @@ The feature is not finished, and the flag stays off, until every row is ticked o
   become Container App secrets (a new owner step when Phase 5 starts, depending on §2.7 CI deploy
   or a manual `az` update); the executor runs in the Azure app's scheduler; and the D16 reseed
   guard must protect a reseed of the Azure database, not only a local one.
-- **Q2: which approvers register a phone key?** The demo has one approval made on the phone
+- ~~**Q2: which approvers register a phone key?**~~ *Answered by D37: each signer chooses.* The demo has one approval made on the phone
   (§1). That approver's phone key is registered instead of their password key (D29), so their
   payment approvals must then come from that phone. The phone must be enrolled on the Azure
   instance **before** linking: a key enrolled afterwards, including after reinstalling the app,
   cannot approve payments until the treasury is relinked.
-- **Q3: how does the link reach the Azure database?** It needs the Azure Postgres `DATABASE_URL`,
+- ~~**Q3: how does the link reach the Azure database?**~~ *Superseded by D36: linking runs in the app on Azure.* It needs the Azure Postgres `DATABASE_URL`,
   and the server's firewall must admit this machine (D28). Either the owner runs the dry run and
   the broadcast, or makes the URL available to the session in a way the owner chooses. The URL is
   never written to the repository.
@@ -284,10 +324,12 @@ The feature is not finished, and the flag stays off, until every row is ticked o
 | 3: helper + verifier | ~0.011 |
 | 5: one treasury with 3 signers | ~0.028 (measured: 3 × 8.71M + 2.66M gas; dry run 2026-09-17 at 0.97 gwei) |
 | 7: each payout (plus the amount sent) | ~0.004 |
+| 7b: each reconfiguration (per new key, plus `reconfigure` ~3.3M gas) | ~0.013 |
 | **Total for one linked vault and 5 test payouts** | **~0.062** |
 
-The relayer holds 0.05; a further 0.05 arrives 2026-09-18. Check the fee before every deploy and
-wait if it is above 2 gwei.
+The relayer holds ~0.039 after Phase 3. Production use needs a steady supply: faucets give small
+daily amounts, so the D38 limits and reserve are what keep one vault from exhausting it. Jobs
+wait, rather than fail, while the base fee is above the D21 ceiling.
 
 ## 7. Risks and limits to state openly
 
@@ -297,8 +339,13 @@ wait if it is above 2 gwei.
   treasury's signers no longer match and the old keys are gone, which means `reconfigure` cannot
   fix it. Mitigated by the reseed guard (D16). Link only after the final seed; relinking costs
   ~0.03 ETH.
-- **Key rotation**: a rotated approver cannot co-sign until `reconfigure` registers the new key
-  (Phase 6a refuses clearly; syncing automatically is out of scope).
+- **Key rotation**: a rotated approver cannot co-sign payments until a reconfiguration registers
+  the new key (D39); the app opens one and refuses payments meanwhile.
+- **Locked funds**: if fewer than M of a treasury's registered keys can ever sign again (phones
+  lost, accounts gone), it cannot be reconfigured and its funds stay locked. The app warns before
+  a change that would cause this; nothing can undo it afterwards.
+- **The operator pays**: a relayer out of ETH stops linking, reconfiguring and payouts for every
+  vault until it is funded (D38 reserve and warnings).
 - **Custody**: a password-key approver's execution signature is produced by the server, the same
   trust as their vote today. "What you see is what executes" holds end to end only for phone keys.
 - **Still classical:** Ethereum consensus, and the relayer, which affects availability only and
@@ -308,14 +355,16 @@ wait if it is above 2 gwei.
 
 ## 8. Out of scope
 
-ERC-20 payouts (the contract allows them later; no UI) · mainnet · chains other than Sepolia ·
-automatic signer sync after rotation · gas sponsorship or ERC-4337 bundlers.
+ERC-20 payouts (the contract allows them later; no UI) · mainnet, until the verifier is audited
+(D35) · chains other than Sepolia · signer changes applied without the current signers' approval
+(D39) · treasuries reimbursing gas, sponsorship or ERC-4337 bundlers (D38).
 
 ## 9. What the owner does
 
 Tracked in [OWNER-ACTIONS §2.8](../OWNER-ACTIONS.md): ~~review this plan~~ (done 2026-09-17), fund
-the second 0.05 ETH, ~~answer Q1~~ (Azure, 2026-09-17), test the phone on a real handset in Phase 6b, and
-look at the Phase 8 screenshots.
+the second 0.05 ETH, ~~answer Q1~~ (Azure, 2026-09-17), test the phone on a real handset in Phase 6b,
+look at the Phase 8 screenshots, put the relayer key on the Container App and deploy (Phase 9),
+and keep the relayer funded in production (D38).
 
 ---
 
@@ -339,4 +388,5 @@ look at the Phase 8 screenshots.
 | 2026-09-17 | 4 | **Phase 4 done.** A payment (`eth_transfer`: chain, treasury, recipient, wei, call gas, expiry) is part of the signed decision payload, so every approval signs it; created only behind `ONCHAIN_EXECUTION_ENABLED` against a linked treasury whose threshold and signer count match the vault; text generated from the payment and checked against it by the binding check, both offline verifiers and the phone; `qvault.decision/2` bundles; old phones get 426 `upgrade_required`, and this phone refuses to vote on a payment until Phase 6b shows it. Frozen vectors unchanged, payment vector frozen and matched by the phone. No ETH spent | `d841f04` |
 | 2026-09-17 | 5 | Design written (D28–D34) from a map of `setKey`, the treasury constructor, the key and vault models and how the Azure database has been written | `2d8ebab` |
 | 2026-09-17 | 5 | Adversarial review of Phase 5: no critical/high. M1 a vault changed during the finality wait was stored as linked, with no way back but a wipe; M2 the link signed log anchors and checkpoints with this machine's key and origin; M3 a dry run seeded an unseeded database; M4 a vault needing more approvals than signers paid for keys, then crashed; M5 `--device` accepted a phone that can no longer sign in. Lows: a resumed link lost its deployment transaction; a ledger race on brand-new tables failed its retry on Postgres; `--unlink-treasury` wrote the database before the record; payments allowed with fewer than M usable registered keys; nine surviving mutants. All fixed, with a test each. Mutation run after the fixes: 36 of 38 killed (M01 is equivalent to the signer-set comparison; N09 needs Postgres's transactional DDL, which SQLite does not have) | — |
-| 2026-09-17 | 5 | **Linking engine, operator tool and reseed guard landed.** Anvil end to end with the real verifier and the committed artefact; a dry run against Sepolia and the local copy of the demo database proven to leave it logically unchanged (~0.028 ETH for three keys and a treasury). Nothing linked yet. Owner re-scoped the work for production the same day (D35–D41, next commit) | *(this commit)* |
+| 2026-09-17 | 5 | **Linking engine, operator tool and reseed guard landed.** Anvil end to end with the real verifier and the committed artefact; a dry run against Sepolia and the local copy of the demo database proven to leave it logically unchanged (~0.028 ETH for three keys and a treasury). Nothing linked yet. Owner re-scoped the work for production the same day (D35–D41, next commit) | `59e5516` |
+| 2026-09-17 | 5 | **Re-scoped for production** (owner: "i want it to be like its production not a one time demo"). D35 production on Sepolia, mainnet only after an audit; D36 owners create a treasury in the app and the server links it as a resumable job; D37 each signer chooses the key the treasury registers for them; D38 the operator's relayer pays, with a reserve, per-vault limits and warnings; D39 a treasury follows its vault by `reconfigure` instead of relinking; D40 a treasury page on web and phone; D41 a runbook. Phase 5 split into 5a (the engine, landed) and 5b (linking in the app); Phase 7b added; Q2 and Q3 answered by D37 and D36 | *(this commit)* |
