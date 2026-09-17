@@ -28,6 +28,14 @@ node_modules/
 tests/interop/node_modules/
 
 documents/
+# Contract dependencies and build output (~65 MB); the app never compiles Solidity at runtime.
+# The rest of chain/ stays in the image, because the running app needs the deployment records
+# (plan D16). The treasury ABI and bytecode the app deploys with (Phase 5) will be committed as an
+# artefact under qvault/chain/, not read from chain/out/.
+chain/lib/
+chain/out/
+chain/cache/
+chain/broadcast/
 *.docx
 *.pptx
 *.pdf

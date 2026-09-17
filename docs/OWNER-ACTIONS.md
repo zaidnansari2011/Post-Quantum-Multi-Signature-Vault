@@ -399,6 +399,58 @@ value adds a passing check; a wrong one turns the verdict red.
 
 *Your effort:* one line on a slide.
 
+### 2.8 On-chain execution on Sepolia — `IN PROGRESS` (added 2026-09-17)
+
+Approved Treasury decisions will pay out on Sepolia through a contract that checks the M-of-N
+ML-DSA-65 signatures itself. Before building anything, a local Foundry test confirmed that
+quantcrypt's signatures verify on ZKNox's Solidity verifier (10 of 10 checks passed). **The build
+follows [docs/plans/onchain-execution.md](plans/onchain-execution.md); review it first,
+especially the two decisions marked ⚑.**
+
+*Why it's yours:* the faucet request is made under your login, the payout address is your wallet,
+and the API keys belong to your accounts.
+
+| Item | Status |
+| --- | --- |
+| Etherscan API key | `DONE`, stored in `.env` as `ETHERSCAN_API_KEY` |
+| Alchemy RPC endpoint | `DONE`, stored in `.env` as `SEPOLIA_RPC_URL`; confirmed it answers as chain 11155111 |
+| Address to receive demo payouts | `DONE`, `0xF590cEe84F86510555150F13Ca83AEc613f1676b`: valid, but no Sepolia history as of 2026-09-17, so confirm it matches the account MetaMask shows |
+| Fund the relayer wallet | `PARTLY DONE`, 0.05 ETH arrived 2026-09-17, enough for setup; another 0.05 from the faucet on a later day pays for demo payouts |
+| Using ZKNox's unaudited verifier on testnet | Assumed accepted with the go-ahead on 2026-09-17 |
+| Fork ETHDILITHIUM to your GitHub account | `TODO`, see below |
+
+**Fund the relayer.** Send Sepolia ETH to **`0x3cbC1F33F6ad04B3305dbdf26F6a3b0eC98854c2`**. This
+wallet was generated for Q-Vault, and its key is in `.env` as `EXECUTOR_PRIVATE_KEY`. It pays gas
+and submits payouts that have already been approved. It cannot approve anything or change a
+payment, because the recipient and amount are covered by the approvers' post-quantum signatures.
+
+Costs below use measured gas, priced at the 1.12 gwei Sepolia fee on 2026-09-17:
+
+| | Gas | ETH |
+| --- | --- | --- |
+| One-off setup (verifier, signer keys, treasury) | ~37M | ~0.042 |
+| Each payout | ~3.3M | ~0.004, plus the amount paid |
+
+**Send at least 0.1 ETH; 0.2 leaves room for fee spikes.** Faucets give a small amount per day, so
+this may take more than one request.
+
+**Fork ETHDILITHIUM.** The contracts pin ZKNox's verifier at commit `4c370bb`. That commit is
+the tip of an unmerged branch (`mldsa-65`), so if ZKNox rebase or delete that branch, the commit
+can disappear from GitHub, and CI plus every fresh clone would then fail to fetch it. A fork under
+your account keeps the pinned commit reachable permanently. It's a public repository under your
+name, which is why it's your call. If you say yes, I'll run the fork and point the submodule at it:
+
+```bash
+gh repo fork ZKNoxHQ/ETHDILITHIUM --clone=false
+```
+
+*One thing to know:* the relayer key exists only in the gitignored `.env` on this laptop. Losing
+that file loses the testnet ETH in the wallet and nothing else. When the relayer moves to Azure,
+the key becomes a Container App secret, which will be a separate step here.
+
+*Also:* the Etherscan and Alchemy keys were pasted into a chat session. They're testnet-only, but
+regenerate both before sharing the repository or any logs widely.
+
 ---
 
 ## 3. Checks only you can make
@@ -649,3 +701,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-08-20 | Pre-demo verification. Added §2.4 (demo-day Azure spend to revert) and §2.5 (publish the witness fingerprint). |
 | 2026-08-21 | §2.5 partly closed: both fingerprints published off-platform; the slide is still yours. |
 | 2026-09-09 | Added §1.4 (turn the live trace on for the demo?) and §4.4 (paper venue + submission). |
+| 2026-09-17 | Added §2.8: on-chain execution on Sepolia. Keys received, relayer wallet generated, funding outstanding. |

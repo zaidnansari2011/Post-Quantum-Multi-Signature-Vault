@@ -1,0 +1,13 @@
+[submodule "chain/lib/openzeppelin-contracts"]
+	path = chain/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts.git
+	shallow = true
+[submodule "chain/lib/forge-std"]
+	path = chain/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std.git
+	shallow = true
+[submodule "chain/lib/ETHDILITHIUM"]
+	path = chain/lib/ETHDILITHIUM
+	url = https://github.com/ZKNoxHQ/ETHDILITHIUM.git
+	branch = mldsa-65
+	shallow = true
