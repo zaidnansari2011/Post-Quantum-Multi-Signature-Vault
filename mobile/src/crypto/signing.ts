@@ -17,6 +17,21 @@ function domainSeparated(tag: string, body: Record<string, unknown>): Uint8Array
 }
 
 /**
+ * The payment a payment decision authorises, exactly as signed (docs/plans/onchain-execution.md,
+ * D22). `value_wei` is a decimal string because a JavaScript number cannot hold 10^18 exactly.
+ */
+export interface PaymentAction {
+  kind: 'eth_transfer';
+  chain_id: number;
+  treasury: string;
+  to: string;
+  value_wei: string;
+  data: string;
+  call_gas: number;
+  valid_until: number;
+}
+
+/**
  * The canonical inputs to a proposal's payload hash, exactly as `GET /proposals/<uuid>` returns
  * them. The server sends all of this -- not just the hash -- so the device can derive the hash
  * itself; see `signingInputsToPayloadHash`.
@@ -29,10 +44,35 @@ export interface SigningInputs {
   policy: { M: number; N: number; signers: number[] };
   nonce: string;
   created_at: string;
+  action?: PaymentAction;
+}
+
+const NETWORKS: Record<number, string> = { 11155111: 'Sepolia' };
+const WEI_PER_ETH = 10n ** 18n;
+
+/**
+ * The only text a payment decision may carry (plan D24), or null for a malformed payment. The
+ * twin of `payment_text` in qvault/services/signing.py and of the browser verifier's copy; all
+ * three must produce the same string. The hash covers the text and the payment separately, so a
+ * server could otherwise put a description of one payment over the signed bytes of another.
+ */
+export function paymentText(action: PaymentAction): string | null {
+  const value = action.value_wei;
+  if (typeof value !== 'string' || value.length > 78 || !/^(0|[1-9][0-9]*)$/.test(value)) {
+    return null;
+  }
+  const network = Number.isInteger(action.chain_id) ? NETWORKS[action.chain_id] : undefined;
+  if (network === undefined || typeof action.treasury !== 'string' || typeof action.to !== 'string') {
+    return null;
+  }
+  const wei = BigInt(value);
+  const fraction = (wei % WEI_PER_ETH).toString().padStart(18, '0').replace(/0+$/, '');
+  const eth = (wei / WEI_PER_ETH).toString() + (fraction ? '.' + fraction : '') + ' ETH';
+  return `Pay ${eth} from this vault's treasury ${action.treasury} to ${action.to} on ${network}.`;
 }
 
 export function proposalSigningBytes(inputs: SigningInputs): Uint8Array {
-  return domainSeparated(DS_PROPOSAL, {
+  const body: Record<string, unknown> = {
     vault_id: inputs.vault_id,
     proposal_id: inputs.proposal_id,
     action_text: inputs.action_text,
@@ -46,7 +86,23 @@ export function proposalSigningBytes(inputs: SigningInputs): Uint8Array {
     },
     nonce: inputs.nonce,
     created_at: inputs.created_at,
-  });
+  };
+  if (inputs.action !== undefined) {
+    // Added only for a payment decision, so every other decision hashes exactly as before. Copied
+    // field by field, like the rest: an extra key smuggled into the object is never signed.
+    const a = inputs.action;
+    body.action = {
+      kind: a.kind,
+      chain_id: a.chain_id,
+      treasury: a.treasury,
+      to: a.to,
+      value_wei: a.value_wei,
+      data: a.data,
+      call_gas: a.call_gas,
+      valid_until: a.valid_until,
+    };
+  }
+  return domainSeparated(DS_PROPOSAL, body);
 }
 
 /**

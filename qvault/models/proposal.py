@@ -53,6 +53,10 @@ class Proposal(db.Model):
     file = db.relationship(
         "VaultFile", back_populates="proposal", uselist=False, cascade="all, delete-orphan"
     )
+    # The payment a payment decision authorises (on-chain execution, plan D4). None otherwise.
+    action = db.relationship(
+        "ProposalAction", back_populates="proposal", uselist=False, cascade="all, delete-orphan"
+    )
     signatures = db.relationship(
         "Signature",
         back_populates="proposal",

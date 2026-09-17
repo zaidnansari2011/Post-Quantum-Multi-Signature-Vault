@@ -29,7 +29,7 @@ from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
 from qvault.services import key_service, ledger_service
-from qvault.services.signing import signing_bytes_for, vote_signing_bytes
+from qvault.services.signing import payment_text, signing_bytes_for, vote_signing_bytes
 
 
 class ApprovalError(ValueError):
@@ -124,9 +124,13 @@ def verify_proposal_binding(proposal) -> BindingReport:
 
     content_matches = recomputed == recorded
     ledger_matches = ledger_hash is not None and ledger_hash == recorded
+    payment_problem = _payment_problem(proposal)
 
     if not content_matches:
         detail = "The proposal's contents no longer hash to the value its signers signed."
+    elif payment_problem is not None:
+        content_matches = False
+        detail = payment_problem
     elif ledger_hash is None:
         detail = "No proposal_created record survives in the ledger for this proposal."
     elif not ledger_matches:
@@ -143,6 +147,30 @@ def verify_proposal_binding(proposal) -> BindingReport:
         content_matches=content_matches,
         ledger_matches=ledger_matches,
     )
+
+
+def _payment_problem(proposal) -> str | None:
+    """For a payment decision, what makes it inconsistent even though its hash matches.
+
+    * Its text must be exactly the text generated from its signed payment (plan D24). The hash
+      covers both, so a server that wrote one payment under a description of another would pass
+      the hash check; this is the check that refuses it, and both verifiers make it too.
+    * The treasury row it points at must be the treasury it signed. ``treasury_id`` is not signed,
+      so a database edit could otherwise steer anything later read through it (review L1).
+    """
+    stored = getattr(proposal, "action", None)
+    if stored is None:
+        return None
+    if proposal.action_text != payment_text(stored.canonical()):
+        return "The decision's text does not describe the payment its signers signed."
+    treasury = stored.treasury
+    if (
+        treasury is None
+        or treasury.address != stored.treasury_address
+        or treasury.chain_id != stored.chain_id
+    ):
+        return "The payment points at a treasury other than the one its signers signed."
+    return None
 
 
 def tally(proposal) -> tuple[int, int]:

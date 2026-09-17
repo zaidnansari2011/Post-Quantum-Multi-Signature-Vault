@@ -22,10 +22,12 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import math
 from datetime import UTC, datetime, timedelta
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
+from qvault.chain.action import NETWORKS, format_wei
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
@@ -42,11 +44,14 @@ from qvault.services import (
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
-from qvault.services.proposal_service import ProposalError
+from qvault.services.proposal_service import PaymentRequest, ProposalError
 from qvault.services.signing import signing_bytes_for
 from qvault.services.vault_service import MembershipError, PolicyError
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
+
+# A decision deadline beyond this is refused rather than passed to timedelta, which overflows.
+MAX_DEADLINE_HOURS = 24 * 366 * 10
 
 # The only two endpoints reachable without a bearer token. Both authenticate with email+password
 # and read no session, so neither depends on ambient browser authority.
@@ -70,6 +75,26 @@ def _require_bearer():
 
 def _error(code: str, message: str, status: int):
     return jsonify(ok=False, code=code, error=message), status
+
+
+# A payment decision's signing inputs carry an ``action`` that an app built before on-chain
+# execution cannot hash (plan D25). Apps declare what they can do in this header; a payment
+# decision is shown to, and can be voted on by, only an app that declares the payment capability.
+CAPABILITIES_HEADER = "X-QVault-Capabilities"
+PAYMENT_CAPABILITY = "payment-action-1"
+
+
+def _handles_payments() -> bool:
+    declared = request.headers.get(CAPABILITIES_HEADER, "")
+    return PAYMENT_CAPABILITY in {part.strip() for part in declared.split(",")}
+
+
+def _upgrade_required():
+    return _error(
+        "upgrade_required",
+        "This decision is a payment. Update the Q-Vault app to review and sign it.",
+        426,
+    )
 
 
 def _b64(raw: str, field: str) -> bytes:
@@ -426,12 +451,55 @@ def create_proposal(vid: int):
     body = _body()
     title = (body.get("title") or "").strip()
     action_text = (body.get("action_text") or "").strip()
+    payment = body.get("payment")
+    if "action" in body:
+        # The signed action is built by the server from `payment` (plan D23); a client never
+        # supplies it. Accepting and ignoring it would create a text-only decision that reads like
+        # a payment (review L4).
+        return _error(
+            "action_not_accepted",
+            "Send the recipient and amount as 'payment'; the signed action is built by the server.",
+            422,
+        )
     if not title:
         return _error("title_required", "A title is required.", 422)
-    if not action_text:
+    if payment is None and not action_text:
         return _error("action_required", "Describe what is being decided.", 422)
     if len(title) > 255:
         return _error("title_too_long", "Titles are limited to 255 characters.", 422)
+
+    payment_request = None
+    if payment is not None:
+        # A payment decision: the text is generated from the payment (plan D24), so none may be
+        # supplied, and only an app that can then show and sign it may raise one (D25).
+        if not current_app.config.get("ONCHAIN_EXECUTION_ENABLED"):
+            return _error("payments_disabled", "Payment decisions are not enabled.", 403)
+        if not _handles_payments():
+            return _upgrade_required()
+        if action_text:
+            return _error(
+                "payment_text_generated",
+                "A payment decision's text is written from the payment; omit action_text.",
+                422,
+            )
+        value = payment.get("value_wei") if isinstance(payment, dict) else None
+        to = payment.get("to") if isinstance(payment, dict) else None
+        # Wei travels as a decimal string: a JSON number cannot carry 10^18 exactly (plan D13).
+        if (
+            not isinstance(to, str)
+            or not isinstance(value, str)
+            or not value.isascii()
+            or not value.isdigit()
+            # 2^256 wei is 78 digits; longer is never an amount, and past 4,300 digits int() itself
+            # raises (review L2).
+            or len(value) > 78
+        ):
+            return _error(
+                "payment_invalid",
+                "payment needs 'to' (an address) and 'value_wei' (a decimal string).",
+                422,
+            )
+        payment_request = PaymentRequest(to=to, value_wei=int(value))
 
     deadline = None
     hours = body.get("expires_in_hours")
@@ -440,18 +508,22 @@ def create_proposal(vid: int):
             hours = float(hours)
         except (TypeError, ValueError):
             return _error("bad_deadline", "expires_in_hours must be a number.", 422)
+        if not math.isfinite(hours) or hours > MAX_DEADLINE_HOURS:
+            # NaN, infinity or an absurd horizon made timedelta raise and the request 500.
+            return _error("bad_deadline", "That deadline is too far away.", 422)
         if hours <= 0:
             return _error("bad_deadline", "A deadline must be in the future.", 422)
         deadline = datetime.now(UTC) + timedelta(hours=hours)
 
     try:
         proposal = proposal_service.create_proposal(
-            vault, user, title, action_text, deadline=deadline
+            vault, user, title, action_text, deadline=deadline, payment=payment_request
         )
     except ProposalError as exc:
         # The commonest case is a policy that needs more signatures than the vault has signers,
         # which is a governance answer rather than a malformed request.
-        return _error("policy_error", str(exc), 422)
+        code = "payment_invalid" if payment_request is not None else "policy_error"
+        return _error(code, str(exc), 422)
 
     return jsonify(ok=True, proposal=_proposal_summary(proposal, user)), 201
 
@@ -486,6 +558,38 @@ def _proposal_summary(proposal, user) -> dict:
         "expires_at": proposal.expires_at.isoformat() if proposal.expires_at else None,
         "signed_by_me": approval_service.vote_of(proposal, user.id) is not None,
         "can_sign": user.id in _authorized_ids(proposal),
+        # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
+        # say "payment" before the detail refuses with upgrade_required.
+        "is_payment": proposal.action is not None,
+    }
+
+
+def _payment_view(stored) -> dict:
+    """How a payment decision's payment is shown. The signed values are in ``signing_inputs``.
+
+    Built from the same canonical form that is hashed, and defensive about a row edited at the
+    database level: a tampered value shows as unreadable rather than turning the request into a
+    500 (review L6). The binding check is what reports the tampering.
+    """
+    signed = stored.canonical()
+    value = signed["value_wei"]
+    readable = isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 78
+    try:
+        until = datetime.fromtimestamp(signed["valid_until"], UTC).isoformat()
+    except (TypeError, ValueError, OverflowError, OSError):
+        until = None
+    return {
+        "kind": signed["kind"],
+        "to": signed["to"],
+        "value_wei": value,
+        "amount": format_wei(int(value)) if readable else None,
+        "treasury": signed["treasury"],
+        "chain_id": signed["chain_id"],
+        "network": (
+            NETWORKS.get(signed["chain_id"]) if isinstance(signed["chain_id"], int) else None
+        ),
+        "call_gas": signed["call_gas"],
+        "valid_until": until,
     }
 
 
@@ -519,28 +623,35 @@ def proposal_detail(uuid: str):
     proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
     if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
         return _error("unknown_proposal", "No such proposal.", 404)
+    if proposal.action is not None and not _handles_payments():
+        return _upgrade_required()
 
     approval_service.refresh_expiry(proposal)
     detail = _proposal_summary(proposal, user)
     file_sha = proposal.file.content_sha256 if proposal.file is not None else None
+    signing_inputs = {
+        "vault_id": proposal.vault_id,
+        "proposal_id": proposal.proposal_uuid,
+        "action_text": proposal.action_text,
+        "file_sha256": file_sha,
+        "policy": {
+            "M": proposal.required_m,
+            "N": proposal.required_n,
+            "signers": sorted(_authorized_ids(proposal)),
+        },
+        "nonce": proposal.nonce.hex(),
+        "created_at": proposal.created_at_iso,
+    }
+    if proposal.action is not None:
+        # Present only for payments, so every other decision's inputs keep their exact key set.
+        signing_inputs["action"] = proposal.action.canonical()
+        detail["payment"] = _payment_view(proposal.action)
     detail.update(
         {
             "action_text": proposal.action_text,
             # The complete canonical inputs, so the device can recompute payload_hash itself and
             # refuse to sign if this server's answer disagrees. Do not trim this to the hash.
-            "signing_inputs": {
-                "vault_id": proposal.vault_id,
-                "proposal_id": proposal.proposal_uuid,
-                "action_text": proposal.action_text,
-                "file_sha256": file_sha,
-                "policy": {
-                    "M": proposal.required_m,
-                    "N": proposal.required_n,
-                    "signers": sorted(_authorized_ids(proposal)),
-                },
-                "nonce": proposal.nonce.hex(),
-                "created_at": proposal.created_at_iso,
-            },
+            "signing_inputs": signing_inputs,
             "payload_hash": proposal.payload_hash,
             "signing_bytes_sha256": sha256_hex(signing_bytes_for(proposal)),
             "votes": [
@@ -567,6 +678,9 @@ def cast_vote(uuid: str):
     proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
     if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
         return _error("unknown_proposal", "No such proposal.", 404)
+    if proposal.action is not None and not _handles_payments():
+        # An app that cannot show the payment must not be able to approve it (plan D25).
+        return _upgrade_required()
 
     body = _body()
     try:

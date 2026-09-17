@@ -104,6 +104,14 @@ class BaseConfig:
     # merely happened to be safe.
     GLASSBOX_STRICT = os.environ.get("GLASSBOX_STRICT", "").lower() == "true" or None
 
+    # On-chain execution (docs/plans/onchain-execution.md). OFF everywhere by default, tests
+    # included, and it stays off until every row of the plan's phone-parity checklist passes
+    # (plan D15): while it is off no payment decision can be created from the web or the API.
+    # Verifying or displaying a payment decision that already exists never depends on it.
+    ONCHAIN_EXECUTION_ENABLED = (
+        os.environ.get("ONCHAIN_EXECUTION_ENABLED", "false").lower() == "true"
+    )
+
 
 class DevConfig(BaseConfig):
     DEBUG = True
@@ -134,6 +142,8 @@ class TestConfig(BaseConfig):
     GLASSBOX_ENABLED = True
     GLASSBOX_STRICT = True
     ATTACK_LAB_ENABLED = True
+    # Off, as in production: a test that creates a payment decision turns it on explicitly.
+    ONCHAIN_EXECUTION_ENABLED = False
 
 
 class ProdConfig(BaseConfig):

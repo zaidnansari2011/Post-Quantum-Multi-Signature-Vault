@@ -160,7 +160,7 @@ jobs:
       - name: Contract tests
         # These are the only tests that run BOTH implementations against each other: the canonical
         # bytes against CPython's, and the shipped signing flows against a real HTTP server.
-        run: pytest tests/test_mobile_canonical.py tests/test_mobile_e2e.py tests/test_device_interop.py -q
+        run: pytest tests/test_mobile_canonical.py tests/test_mobile_payment_guard.py tests/test_mobile_e2e.py tests/test_device_interop.py -q
         env:
           SECRET_KEY: ci-secret-not-used-outside-ci
           SERVER_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"

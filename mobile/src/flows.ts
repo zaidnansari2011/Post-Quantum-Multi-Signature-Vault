@@ -7,6 +7,7 @@ import * as api from './api/endpoints.ts';
 import { getAlgorithm, negotiateAlgorithm } from './crypto/algorithms.ts';
 import {
   deviceEnrolmentBytes,
+  paymentText,
   signingInputsToPayloadHash,
   voteSigningBytes,
   type Decision,
@@ -129,7 +130,26 @@ export function verifyProposalIntegrity(detail: ProposalDetail): string {
   if (recomputed !== detail.payload_hash) {
     throw new PayloadMismatchError(detail.payload_hash, recomputed);
   }
+  const action = detail.signing_inputs.action;
+  if (action !== undefined && detail.signing_inputs.action_text !== paymentText(action)) {
+    // The hash matches, but the words on screen describe a different payment from the one signed.
+    throw new PayloadMismatchError(detail.payload_hash, recomputed);
+  }
   return recomputed;
+}
+
+/**
+ * A payment decision reached an app that cannot yet show the payment it would be approving.
+ *
+ * The server only sends payments to an app that declares it can handle them, but device custody
+ * exists precisely so that the phone does not have to trust the server. Until this app renders
+ * the signed payment itself (plan Phase 6b), it refuses to sign one, before asking for biometrics.
+ */
+export class PaymentNotSupportedError extends Error {
+  constructor() {
+    super('This decision is a payment. Update the app to review and sign it.');
+    this.name = 'PaymentNotSupportedError';
+  }
 }
 
 export interface VoteOutcome {
@@ -153,6 +173,9 @@ export async function voteOnProposal(args: {
   // first and validating second would train people to approve a prompt and then be told the
   // thing they approved was not what they thought.
   const payloadHash = verifyProposalIntegrity(args.detail);
+  if (args.detail.signing_inputs.action !== undefined) {
+    throw new PaymentNotSupportedError();
+  }
 
   const verb = args.decision === 'approve' ? 'Approve' : 'Reject';
   const protection = await args.custody.confirmPresence(`${verb}: ${args.detail.title}`);

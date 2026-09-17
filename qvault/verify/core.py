@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from qvault.crypto import CryptoRegistry, sha256_hex
-from qvault.services.signing import proposal_signing_bytes, vote_signing_bytes
+from qvault.services.signing import payment_text, proposal_signing_bytes, vote_signing_bytes
 from qvault.transparency import (
     checkpoint_bytes,
     entry_leaf_hash,
@@ -59,9 +59,14 @@ from qvault.transparency import (
 )
 from qvault.transparency.statement import entry_hash as compute_entry_hash
 
-#: Bump the minor part for additive fields; the major part is a compatibility break, and a
-#: verifier that does not recognise the major version must refuse rather than guess.
+#: The version after the slash is a compatibility break: a verifier that does not recognise it
+#: must refuse rather than guess. Additive, ignorable fields need no new version.
 BUNDLE_FORMAT = "qvault.decision/1"
+#: A decision whose signed payload carries a payment (docs/plans/onchain-execution.md, D26). Its
+#: own version, because a verifier from before payments would recompute the hash without the
+#: payment and report a genuine decision as tampered; with ``/2`` it says "unsupported format".
+PAYMENT_BUNDLE_FORMAT = "qvault.decision/2"
+_ACCEPTED_VERSIONS = {"1": BUNDLE_FORMAT, "2": PAYMENT_BUNDLE_FORMAT}
 
 
 @dataclass
@@ -131,6 +136,19 @@ def _hex32(value: Any, what: str) -> bytes:
         raise _Malformed(f"{what} is not hex") from None
 
 
+def _integral_numbers(value: Any) -> Any:
+    """Integral floats as ints, recursively; any other float is not a Q-Vault value."""
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise _Malformed("numbers in a decision must be integers")
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _integral_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_integral_numbers(item) for item in value]
+    return value
+
+
 def _need(obj: Any, key: str, what: str) -> Any:
     if not isinstance(obj, dict) or key not in obj:
         raise _Malformed(f"{what} is missing {key!r}")
@@ -191,12 +209,23 @@ def _verify_into(
     if not isinstance(fmt, str) or "/" not in fmt:
         raise _Malformed(f"unrecognised format {fmt!r}")
     family, _, major = fmt.rpartition("/")
-    expected_family, _, expected_major = BUNDLE_FORMAT.rpartition("/")
-    if family != expected_family or major != expected_major:
-        raise _Malformed(f"this verifier understands {BUNDLE_FORMAT}, the bundle claims {fmt}")
+    expected_family = BUNDLE_FORMAT.rpartition("/")[0]
+    if family != expected_family or major not in _ACCEPTED_VERSIONS:
+        understood = " and ".join(sorted(_ACCEPTED_VERSIONS.values()))
+        raise _Malformed(f"this verifier understands {understood}, the bundle claims {fmt}")
     add(Check("format", "The file is a Q-Vault decision bundle", True, fmt))
 
     decision = _need(bundle, "decision", "bundle")
+    if not isinstance(decision, dict):
+        raise _Malformed("decision must be an object")
+    # A browser reads 100000.0 and 100000 as the same number, so the Python verifier does too:
+    # otherwise the two would reach different verdicts on the same file (review L5).
+    decision = _integral_numbers(decision)
+    action = decision.get("action")
+    if fmt == PAYMENT_BUNDLE_FORMAT and not isinstance(action, dict):
+        raise _Malformed(f"a {PAYMENT_BUNDLE_FORMAT} bundle must carry the payment it authorised")
+    if fmt == BUNDLE_FORMAT and "action" in decision:
+        raise _Malformed(f"a {BUNDLE_FORMAT} bundle cannot carry a payment")
     signatures = _need(bundle, "signatures", "bundle")
     log = _need(bundle, "log", "bundle")
     if not isinstance(signatures, list):
@@ -221,20 +250,32 @@ def _verify_into(
         authorized_signers=signers_claimed,
         nonce_hex=_need(decision, "nonce_hex", "decision"),
         created_at_iso=_need(decision, "created_at_iso", "decision"),
+        action=action,
     )
     recomputed_hash = sha256_hex(recomputed_bytes)
     claimed_hash = _need(decision, "payload_hash", "decision")
-    content_ok = recomputed_hash == claimed_hash
+    hash_ok = recomputed_hash == claimed_hash
+    # A payment decision's text must be the text generated from its payment (plan D24). The hash
+    # covers both, so without this a server could sign "5 ETH to an attacker" under a description
+    # reading "0.0001 ETH to you", and the file would verify (review M1).
+    text_ok = action is None or decision.get("action_text") == payment_text(action)
+    content_ok = hash_ok and text_ok
+    if not hash_ok:
+        detail = f"recomputed {recomputed_hash[:16]}…, bundle claims {str(claimed_hash)[:16]}…"
+    elif not text_ok:
+        detail = "the decision's text does not describe the payment that was signed"
+    else:
+        detail = f"recomputed {recomputed_hash[:16]}…"
     add(
         Check(
             "content",
-            "The decision text is the text that was signed",
-            content_ok,
             (
-                f"recomputed {recomputed_hash[:16]}…"
-                if content_ok
-                else f"recomputed {recomputed_hash[:16]}…, bundle claims {str(claimed_hash)[:16]}…"
+                "The decision text and payment are what was signed"
+                if action is not None
+                else "The decision text is the text that was signed"
             ),
+            content_ok,
+            detail,
         )
     )
 
@@ -248,6 +289,8 @@ def _verify_into(
         "required_n": decision.get("required_n"),
         "payload_hash": recomputed_hash,
         "created_at": decision.get("created_at_iso"),
+        # Exactly as signed; the verifier does not interpret it beyond hashing it.
+        "payment": action,
     }
 
     # ---------------------------------------------------------------------------------------

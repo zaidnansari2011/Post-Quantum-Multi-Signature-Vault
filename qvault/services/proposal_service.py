@@ -7,12 +7,17 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from flask import current_app
+
+from qvault.chain import action as chain_action
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.file import VaultFile
 from qvault.models.proposal import Proposal
+from qvault.models.treasury import ProposalAction, Treasury
 from qvault.models.vault import Vault
 from qvault.services import file_crypto_service, ledger_service
 from qvault.services.signing import proposal_signing_bytes
@@ -20,6 +25,19 @@ from qvault.services.signing import proposal_signing_bytes
 
 class ProposalError(ValueError):
     """Raised when a proposal cannot be created (e.g. policy not satisfiable)."""
+
+
+@dataclass(frozen=True)
+class PaymentRequest:
+    """A payment a proposer asks the vault's treasury to make (docs/plans/onchain-execution.md).
+
+    Only the recipient and the amount come from the proposer. Everything else in the signed
+    action (chain, treasury, call gas, validity) comes from the vault's linked treasury and the
+    signed policy (plan D23), and the decision's text is generated from the result (D24).
+    """
+
+    to: str
+    value_wei: int
 
 
 # --- Deliberate tamper demonstration (dev/demo only) -------------------------------------------
@@ -73,10 +91,17 @@ def create_proposal(
     deadline: datetime | None = None,
     file_bytes: bytes | None = None,
     filename: str | None = None,
+    payment: PaymentRequest | None = None,
     commit: bool = True,
 ) -> Proposal:
     """Create a proposal in ``vault``. If ``file_bytes`` is given, it is encrypted at rest and
     its plaintext hash is bound into the canonical signing payload.
+
+    With ``payment``, the proposal is a payment decision: its signed payload carries the payment
+    as an ``action`` (plan D4, D22), and ``action_text`` must be empty because the text is
+    generated from the payment (D24). A payment decision needs ``ONCHAIN_EXECUTION_ENABLED``, a
+    linked treasury whose threshold is the vault's, and a deadline within the D23 policy (7 days
+    when none is given, at most 30).
     """
     # Normalised once, before hashing: the signed text must be exactly the stored text. Hashing
     # the submitted text and storing it stripped made any proposal with surrounding whitespace
@@ -92,9 +117,18 @@ def create_proposal(
             "eligible signer(s) exist. Add more signer members first."
         )
 
+    now = datetime.now(UTC)
+    action = None
+    treasury = None
+    if payment is not None:
+        action, treasury, deadline = _payment_action(
+            vault, payment, required_m, required_n, action_text, now, deadline
+        )
+        action_text = action.describe()
+
     proposal_uuid = str(uuid.uuid4())
     nonce = os.urandom(16)
-    created_iso = datetime.now(UTC).isoformat()
+    created_iso = now.isoformat()
 
     # Encrypt the file first: its plaintext hash must be inside the signed payload.
     file_meta = None
@@ -115,6 +149,7 @@ def create_proposal(
         authorized_signers=signers,
         nonce_hex=nonce.hex(),
         created_at_iso=created_iso,
+        action=action.canonical() if action is not None else None,
     )
     payload_hash = sha256_hex(payload)
 
@@ -136,6 +171,23 @@ def create_proposal(
     db.session.add(proposal)
     db.session.flush()  # assign proposal.id
 
+    if action is not None:
+        signed = action.canonical()
+        db.session.add(
+            ProposalAction(
+                proposal_id=proposal.id,
+                treasury_id=treasury.id,
+                kind=signed["kind"],
+                chain_id=signed["chain_id"],
+                treasury_address=signed["treasury"],
+                to_address=signed["to"],
+                value_wei=signed["value_wei"],
+                data_hex=signed["data"],
+                call_gas=signed["call_gas"],
+                valid_until=signed["valid_until"],
+            )
+        )
+
     if file_meta is not None:
         db.session.add(VaultFile(proposal_id=proposal.id, **file_meta))
         ledger_service.append(
@@ -154,17 +206,21 @@ def create_proposal(
             commit=False,
         )
 
+    created_entry = {
+        "proposal_uuid": proposal_uuid,
+        "vault_id": vault.id,
+        "title": proposal.title,
+        "M": required_m,
+        "N": required_n,
+        "payload_hash": payload_hash,
+        "has_file": file_meta is not None,
+    }
+    if action is not None:
+        # Added only for payments, so every other proposal_created entry keeps its exact shape.
+        created_entry["has_action"] = True
     ledger_service.append(
         "proposal_created",
-        {
-            "proposal_uuid": proposal_uuid,
-            "vault_id": vault.id,
-            "title": proposal.title,
-            "M": required_m,
-            "N": required_n,
-            "payload_hash": payload_hash,
-            "has_file": file_meta is not None,
-        },
+        created_entry,
         actor=f"user:{creator.id}",
         actor_id=creator.id,
         vault_id=vault.id,
@@ -184,3 +240,40 @@ def create_proposal(
             file_crypto_service.remove_ciphertext(file_meta["ciphertext_path"])
         raise
     return proposal
+
+
+def _payment_action(vault, payment, required_m, required_n, action_text, now, deadline):
+    """The signed action for a payment decision, or a refusal a person can act on."""
+    if not current_app.config.get("ONCHAIN_EXECUTION_ENABLED"):
+        raise ProposalError("Payment decisions are not enabled on this instance.")
+    if action_text:
+        raise ProposalError(
+            "A payment decision's text is written from the payment itself; leave it empty."
+        )
+    treasury = Treasury.query.filter_by(vault_id=vault.id, status="linked").one_or_none()
+    if treasury is None:
+        raise ProposalError("This vault has no linked treasury, so it cannot make payments.")
+    if treasury.threshold_m != required_m:
+        # Otherwise the web would say M-of-N while the contract enforced another threshold.
+        raise ProposalError(
+            f"This vault now requires {required_m} approvals but its treasury requires "
+            f"{treasury.threshold_m}. Reconfigure the treasury before raising a payment."
+        )
+    if treasury.signer_count != required_n:
+        # A membership change since linking: the contract's signer set is not the vault's.
+        raise ProposalError(
+            f"This vault now has {required_n} signers but its treasury has "
+            f"{treasury.signer_count}. Reconfigure the treasury before raising a payment."
+        )
+    try:
+        deadline = chain_action.payment_deadline(now, deadline)
+        action = chain_action.build_eth_transfer(
+            chain_id=treasury.chain_id,
+            treasury=treasury.address,
+            to=payment.to,
+            value_wei=payment.value_wei,
+            deadline=deadline,
+        )
+    except chain_action.ActionError as exc:
+        raise ProposalError(f"{str(exc)[:1].upper()}{str(exc)[1:]}.") from None
+    return action, treasury, deadline
