@@ -35,7 +35,7 @@ def init_scheduler(app):
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return None
 
-    from qvault.services import checkpoint_service, rotation_service
+    from qvault.services import checkpoint_service, rotation_service, treasury_jobs
 
     def _in_context(job):
         def _run():
@@ -61,6 +61,14 @@ def init_scheduler(app):
         id="proposal_expiry",
         replace_existing=True,
     )
+    if app.extensions.get("relayer") is not None:
+        # Treasury jobs (plan D36): one chain action per tick, and only while the feature is on.
+        scheduler.add_job(
+            _in_context(lambda: treasury_jobs.tick_with_app_relayer()),
+            IntervalTrigger(seconds=int(app.config.get("TREASURY_TICK_SECONDS", 60))),
+            id="treasury_jobs",
+            replace_existing=True,
+        )
     if app.config.get("WITNESS_URL"):
         scheduler.add_job(
             _in_context(checkpoint_service.sync_witness),

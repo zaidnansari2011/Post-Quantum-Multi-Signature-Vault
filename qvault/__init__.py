@@ -38,6 +38,28 @@ def _glassbox_actor() -> str | None:
     return None
 
 
+def _build_relayer(app):
+    """The relayer from the environment, or ``None`` when it is not configured or not usable."""
+    import os
+
+    from .chain.relayer import RelayerError, RelayerSettings
+
+    if app.config.get("TESTING"):
+        # The suite never talks to a chain: a test that wants one puts its own here.
+        return None
+
+    try:
+        relayer = RelayerSettings.from_environ(os.environ).build()
+    except RelayerError as exc:
+        app.logger.info("no relayer: %s", exc)
+        return None
+    except Exception:  # noqa: BLE001 - never stop the app starting over this
+        app.logger.exception("the relayer could not be built")
+        return None
+    app.logger.info("relayer %s ready", relayer.address)
+    return relayer
+
+
 def create_app(config_name: str | None = None) -> Flask:
     from flask import Flask, jsonify, request
     from werkzeug.exceptions import HTTPException
@@ -55,6 +77,11 @@ def create_app(config_name: str | None = None) -> Flask:
     # resolves providers from here by alg_id — never by importing a backend directly.
     registry = build_registry(prefer=app.config["CRYPTO_BACKEND"])
     app.extensions["crypto"] = registry
+
+    # One relayer per process (plan D36): the account that pays gas for treasury work. It holds no
+    # authority over anyone's funds, and the app runs perfectly well without it — there is simply
+    # no chain work until its settings are present.
+    app.extensions["relayer"] = _build_relayer(app)
 
     # --- Extensions -------------------------------------------------------
     db.init_app(app)

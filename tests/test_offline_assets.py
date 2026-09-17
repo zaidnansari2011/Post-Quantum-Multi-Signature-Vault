@@ -17,8 +17,23 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATES = PROJECT_ROOT / "qvault" / "templates"
 STATIC = PROJECT_ROOT / "qvault" / "static"
 
-# Any href=/src= pointing off-box. Deliberately catches protocol-relative "//cdn..." too.
-EXTERNAL_ASSET = re.compile(r"""(?:href|src)\s*=\s*["'](https?:)?//""", re.IGNORECASE)
+# Anything the page would have to FETCH from off-box to render: a script, image, iframe or
+# stylesheet. Deliberately catches protocol-relative "//cdn..." too.
+#
+# A plain link a person may click (``<a href="https://sepolia.etherscan.io/...">``) is not an
+# asset: the page renders whole without the network, and following it is the reader's choice. Only
+# fetched assets collapse a page when the network is missing, and only those are barred here.
+EXTERNAL_SRC = re.compile(r"""src\s*=\s*["'](https?:)?//""", re.IGNORECASE)
+EXTERNAL_STYLESHEET = re.compile(r"""<link\b[^>]*href\s*=\s*["'](https?:)?//""", re.IGNORECASE)
+
+
+def external_assets(text: str) -> list[tuple[int, str]]:
+    """Line number and text of every off-box asset the page would fetch."""
+    return [
+        (number, line.strip())
+        for number, line in enumerate(text.splitlines(), 1)
+        if EXTERNAL_SRC.search(line) or EXTERNAL_STYLESHEET.search(line)
+    ]
 
 
 def _templates():
@@ -33,11 +48,36 @@ def test_there_are_templates_to_check():
 @pytest.mark.parametrize("template", _templates(), ids=lambda p: p.name)
 def test_no_template_loads_an_external_asset(template):
     offenders = [
-        f"{template.relative_to(PROJECT_ROOT)}:{i}: {line.strip()}"
-        for i, line in enumerate(template.read_text(encoding="utf-8").splitlines(), 1)
-        if EXTERNAL_ASSET.search(line)
+        f"{template.relative_to(PROJECT_ROOT)}:{number}: {line}"
+        for number, line in external_assets(template.read_text(encoding="utf-8"))
     ]
     assert not offenders, "Vendor it into qvault/static/vendor/ instead:\n" + "\n".join(offenders)
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<script src="https://cdn.example/x.js"></script>',
+        "<script src='//cdn.example/x.js'></script>",
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=X">',
+        '<link href="//cdn.example/x.css" rel="stylesheet">',
+        '<img src="http://example.com/logo.png">',
+    ],
+)
+def test_the_check_still_catches_an_asset_loaded_from_off_box(markup):
+    """The guard is narrower than it was (a clickable link is allowed); these must still fail."""
+    assert external_assets(markup)
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<a href="https://sepolia.etherscan.io/address/0x0">0x0</a>',
+        '<a class="mono" href="//example.com/page">page</a>',
+    ],
+)
+def test_a_link_a_person_can_click_is_not_an_asset(markup):
+    assert not external_assets(markup)
 
 
 def test_no_stylesheet_fetches_a_remote_font():

@@ -143,7 +143,7 @@ def test_every_reason_to_refuse_is_reported_at_once(world, monkeypatch):
     assert "brij@link.test is not an administrator" in problems
     assert "--device nobody@link.test: not a signer of Treasury" in problems
     assert "Treasury has 3 signers; at most 2 can link" in problems
-    assert "ada@link.test has 0 usable phone keys; --device needs exactly one" in problems
+    assert "ada@link.test has 0 phones that can sign in; exactly one is needed" in problems
     assert any("brij@link.test's key is ML-DSA-87" in p for p in problems)
     assert any("chen@link.test's key is SLH-DSA-SHAKE-256f" in p for p in problems)
     assert _sends(world) == []
@@ -179,9 +179,9 @@ def test_a_threshold_above_the_contract_cap_is_refused(world, monkeypatch):
         _plan(world)
 
 
-def _phone(user, registry, *, expires_in=timedelta(days=30), revoked=False):
+def _phone(user, registry, *, alg_id="ML-DSA-65", expires_in=timedelta(days=30), revoked=False):
     key = key_service.enrol_device_key(
-        user, alg_id="ML-DSA-65", public_key=registry.signature("ML-DSA-65").keygen().public_key
+        user, alg_id=alg_id, public_key=registry.signature(alg_id).keygen().public_key
     )
     now = datetime.now(UTC)
     device = Device(
@@ -200,7 +200,7 @@ def _phone(user, registry, *, expires_in=timedelta(days=30), revoked=False):
 def test_a_phone_key_is_registered_instead_of_the_password_key(world, registry):
     chen = world.users[2]
     key, device = _phone(chen, registry)
-    plan = _plan(world, devices=["CHEN@link.test "])
+    plan = _plan(world, devices=["CHEN@link.test "])  # the operator's override
     choice = plan.signers[2]
     assert (choice.key.id, choice.custody, choice.device.id) == (key.id, "device", device.id)
 
@@ -213,19 +213,67 @@ def test_two_phones_are_refused_rather_than_guessed_between(world, registry):
     chen = world.users[2]
     _phone(chen, registry)
     _phone(chen, registry)
-    with pytest.raises(LinkRefused, match="has 2 usable phone keys"):
+    with pytest.raises(LinkRefused, match="has 2 phones that can sign in"):
         _plan(world, devices=["chen@link.test"])
 
 
-@pytest.mark.parametrize(
-    "phone", [{"expires_in": timedelta(days=-1)}, {"revoked": True}], ids=["expired", "revoked"]
-)
-def test_a_phone_that_can_no_longer_sign_in_is_refused(world, registry, phone):
+def test_a_phone_that_can_no_longer_sign_in_is_refused(world, registry):
     # Review M5: its key would be registered, and its approver could never approve again.
-    _phone(world.users[2], registry, **phone)
-    with pytest.raises(LinkRefused, match="phone can no longer sign in"):
+    _phone(world.users[2], registry, expires_in=timedelta(days=-1))
+    with pytest.raises(LinkRefused, match="has 0 phones that can sign in"):
         _plan(world, devices=["chen@link.test"])
     assert _sends(world) == []
+
+
+def test_a_chosen_phone_that_expires_stops_a_link_rather_than_registering_it(world, registry):
+    # Review M-6: what the signer chose and what a link registers are the same thing.
+    chen = world.users[2]
+    key, device = _phone(chen, registry)
+    treasury_service.set_key_choice(chen, custody="device", device_key=key)
+    assert _plan(world).signers[2].key.id == key.id
+
+    device.expires_at = datetime.now(UTC) - timedelta(days=1)
+    db.session.commit()
+    assert treasury_service.key_choice(chen)["usable"] is False
+    with pytest.raises(LinkRefused, match="phone can no longer sign in"):
+        _plan(world)
+    assert _sends(world) == []
+
+
+def test_revoking_a_chosen_phone_puts_its_owner_back_on_their_password_key(world, registry):
+    chen = world.users[2]
+    key, _device = _phone(chen, registry)
+    treasury_service.set_key_choice(chen, custody="device", device_key=key)
+    key_service.revoke_device_key(key)
+
+    assert treasury_service.key_choice(chen) == {
+        "custody": "password",
+        "key_id": key_service.active_signing_key(chen).id,
+        "usable": True,
+    }
+    assert _plan(world).signers[2].custody == "password"
+
+
+def test_a_phone_signing_another_algorithm_cannot_be_chosen(world, registry):
+    # A phone may enrol ML-DSA-87 and sign in here with it, but the treasury's verifier is
+    # ML-DSA-65 alone: registering an 87 key would give that signer a seat no chain could ever
+    # verify. The choice is refused where it is made, not discovered at a link.
+    chen = world.users[2]
+    key, _device = _phone(chen, registry, alg_id="ML-DSA-87")
+    with pytest.raises(LinkRefused, match="a treasury verifies ML-DSA-65 only"):
+        treasury_service.set_key_choice(chen, custody="device", device_key=key)
+    assert treasury_service.key_choice(chen)["custody"] == "password"
+
+
+def test_nobody_can_choose_somebody_else_s_phone_key(world, registry):
+    # Choosing is per-signer (D37), and a key id is just a number: without this, one member
+    # could seat another member's phone in their own place on the contract.
+    brij, chen = world.users[1], world.users[2]
+    key, _device = _phone(chen, registry)
+    with pytest.raises(LinkRefused, match="that phone key is not yours"):
+        treasury_service.set_key_choice(brij, custody="device", device_key=key)
+    assert treasury_service.key_choice(brij)["custody"] == "password"
+    assert _plan(world).signers[1].custody == "password"
 
 
 def test_a_vault_already_linked_is_refused(world):

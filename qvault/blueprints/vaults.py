@@ -17,9 +17,12 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from flask_wtf import FlaskForm
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
+from qvault.chain.relayer import RelayerError
+from qvault.chain.rpc import RpcError
 from qvault.extensions import db
 from qvault.forms import (
     AddMemberForm,
@@ -46,6 +49,8 @@ from qvault.services import (
     proposal_service,
     publication_service,
     receipt_service,
+    treasury_jobs,
+    treasury_service,
     vault_service,
 )
 from qvault.services.approval_service import ApprovalError
@@ -53,6 +58,7 @@ from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptEr
 from qvault.services.key_service import KeyUnlockError
 from qvault.services.proposal_service import ProposalError
 from qvault.services.publication_service import PublicationError
+from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
 
 bp = Blueprint("vaults", __name__, url_prefix="/vaults")
@@ -102,7 +108,11 @@ def new_vault():
     return render_template("vaults/new.html", form=form)
 
 
-VAULT_TABS = ("decisions", "members", "files", "settings")
+class TreasuryForm(FlaskForm):
+    """Nothing to fill in: the button is the whole form, and CSRF is the point."""
+
+
+VAULT_TABS = ("decisions", "members", "files", "treasury", "settings")
 
 
 @bp.get("/<int:vid>")
@@ -133,7 +143,58 @@ def vault_detail(vid: int):
         remove_form=RemoveMemberForm(),
         threshold_form=ThresholdForm(threshold_m=vault.policy.threshold_m),
         n_signers=len(vault.signer_ids()),
+        treasury=treasury_jobs.view(vault) if _treasuries_on() else None,
+        treasury_form=TreasuryForm(),
+        my_key=treasury_service.key_choice(current_user) if _treasuries_on() else None,
     )
+
+
+def _treasuries_on() -> bool:
+    return bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED"))
+
+
+@bp.post("/<int:vid>/treasury")
+@login_required
+def create_treasury(vid: int):
+    """Ask for a treasury contract for this vault (plan D36). Nothing is sent from here: the
+    scheduler does the chain work, and the page shows how it is going."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    if not _treasuries_on():
+        abort(404)
+    form = TreasuryForm()
+    if not form.validate_on_submit():
+        abort(400)
+    relayer = current_app.extensions.get("relayer")
+    if relayer is None:
+        flash("This instance cannot do chain work: no relayer is configured.", "error")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
+    try:
+        treasury_jobs.request_link(vault, by=current_user, relayer=relayer)
+        flash("Creating the treasury. This takes about fifteen minutes.", "success")
+    except LinkRefused as exc:
+        for problem in exc.problems:
+            flash(f"{problem[:1].upper()}{problem[1:]}.", "error")
+    except (RpcError, RelayerError):
+        flash("The Ethereum endpoint is not answering. Try again shortly.", "error")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
+
+
+@bp.post("/<int:vid>/treasury/stop")
+@login_required
+def stop_treasury_job(vid: int):
+    """Stop the job creating this vault's treasury (review M-3)."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    if not _treasuries_on():
+        abort(404)
+    if not TreasuryForm().validate_on_submit():
+        abort(400)
+    job = treasury_jobs.open_job(vault)
+    if job is None:
+        flash("Nothing is being created for this vault.", "error")
+    else:
+        treasury_jobs.cancel(job, by=current_user)
+        flash("Stopped. Anything already on chain is reused if you ask again.", "success")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
 
 
 @bp.post("/<int:vid>/members")

@@ -37,7 +37,7 @@ from qvault.chain.rpc import EthRpc, RpcResponseError, call_request
 from qvault.chain.treasury_artifact import TreasuryArtifact
 from qvault.chain.treasury_check import Expectation, ExpectedSigner, check_treasury
 from qvault.extensions import db
-from qvault.models import Device, Key, Treasury, TreasurySigner, User, Vault
+from qvault.models import Device, Key, SignerPreference, Treasury, TreasurySigner, User, Vault
 from qvault.services import key_service, ledger_service
 
 SEPOLIA = 11_155_111
@@ -138,11 +138,89 @@ class Linked:
 
 
 # --------------------------------------------------------------------------------------------
-# Choosing keys (D29)
+# Choosing keys (D29), as each signer chose (D37)
 
 
-def choose_keys(vault: Vault, device_emails: set[str]) -> tuple[list[SignerChoice], list[str]]:
-    """One registered key per signer, in user-id order, and every reason one cannot be chosen."""
+def _phone_preference(user: User) -> SignerPreference | None:
+    """This signer's choice, when it is a phone; ``None`` means their password key."""
+    preference = SignerPreference.query.filter_by(user_id=user.id).one_or_none()
+    return preference if preference is not None and preference.custody == "device" else None
+
+
+def set_key_choice(user: User, *, custody: str, device_key: Key | None = None) -> None:
+    """Choose which of this signer's keys their treasuries register (D37).
+
+    It takes effect the next time a treasury is created or reconfigured: the contract already
+    holds whatever was registered, and only its current signers can change that.
+    """
+    if custody not in ("password", "device"):
+        raise LinkRefused([f"{custody!r} is not a custody a treasury can register"])
+    if custody == "device":
+        if device_key is None or device_key.owner_id != user.id:
+            raise LinkRefused(["that phone key is not yours"])
+        if device_key.wrap_domain != "device" or not device_key.can_sign:
+            raise LinkRefused(["that key is not a phone key this server can verify"])
+        phone = Device.query.filter_by(key_id=device_key.id).one_or_none()
+        if phone is None or not phone.is_usable():
+            raise LinkRefused(["that phone can no longer sign in"])
+        if device_key.alg_id != ALGORITHM:
+            raise LinkRefused([f"a treasury verifies {ALGORITHM} only"])
+
+    preference = SignerPreference.query.filter_by(user_id=user.id).one_or_none()
+    if preference is None:
+        preference = SignerPreference(user_id=user.id)
+        db.session.add(preference)
+    preference.custody = custody
+    preference.device_key_id = device_key.id if custody == "device" else None
+    ledger_service.append(
+        "signing_key_choice_changed",
+        {"user_id": user.id, "custody": custody, "key_id": preference.device_key_id},
+        actor=f"user:{user.id}",
+        actor_id=user.id,
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
+    db.session.commit()
+
+
+def key_choice(user: User) -> dict:
+    """What this signer has chosen, as the app shows it."""
+    key, custody = preferred_key(user)
+    return {
+        "custody": custody,
+        "key_id": key.id if key is not None else None,
+        "usable": key is not None,
+    }
+
+
+def preferred_key(user: User) -> tuple[Key | None, str]:
+    """The key this signer's treasuries register for them, and what to call its custody.
+
+    One answer for the whole app: the account page, the phone and a link all ask this, so what a
+    signer is told they chose is what is registered for them (review M-6). ``None`` with custody
+    ``device`` means they chose a phone that can no longer sign in.
+    """
+    preference = _phone_preference(user)
+    if preference is None:
+        return key_service.active_signing_key(user), "password"
+    key = db.session.get(Key, preference.device_key_id) if preference.device_key_id else None
+    if key is None or key.owner_id != user.id or key.status != "active" or not key.can_sign:
+        return None, "device"
+    phone = Device.query.filter_by(key_id=key.id).one_or_none()
+    if phone is None or not phone.is_usable():
+        return None, "device"
+    return key, "device"
+
+
+def choose_keys(
+    vault: Vault, device_emails: set[str] = frozenset()
+) -> tuple[list[SignerChoice], list[str]]:
+    """One registered key per signer, in user-id order, and every reason one cannot be chosen.
+
+    Each signer's own choice decides which key that is (D37); ``device_emails`` overrides it for
+    named signers, which only the operator's tool does.
+    """
     problems = []
     members = sorted(vault.signer_members(), key=lambda member: member.user_id)
     device_emails = {email.strip().lower() for email in device_emails}
@@ -175,24 +253,27 @@ def choose_keys(vault: Vault, device_emails: set[str]) -> tuple[list[SignerChoic
             # A phone whose sign-in was revoked or has expired can never approve again, and its
             # key cannot be enrolled a second time: registering it would strand this approver.
             usable = [key for key in keys if key.id in devices and devices[key.id].is_usable()]
-            if keys and not usable:
-                problems.append(
-                    f"{user.email}'s phone can no longer sign in (revoked or expired); enrol the "
-                    "phone again before linking"
-                )
-                continue
             if len(usable) != 1:
                 problems.append(
-                    f"{user.email} has {len(usable)} usable phone keys; --device needs exactly one"
+                    f"{user.email} has {len(usable)} phones that can sign in; exactly one is needed"
                 )
                 continue
             key = usable[0]
             device = devices[key.id]
         else:
-            key = key_service.active_signing_key(user)
+            # Whatever this signer chose for themselves (D37).
+            key, custody = preferred_key(user)
+            if key is None and custody == "device":
+                problems.append(
+                    f"{user.email} approves with their phone, and that phone can no longer sign "
+                    "in; they can choose another key on their account page"
+                )
+                continue
             if key is None or not key.can_sign:
                 problems.append(f"{user.email} has no active signing key")
                 continue
+            if key.wrap_domain == "device":
+                device = Device.query.filter_by(key_id=key.id).one_or_none()
         if key.alg_id != ALGORITHM:
             problems.append(
                 f"{user.email}'s key is {key.alg_id}; the treasury verifies {ALGORITHM} only"
@@ -331,7 +412,9 @@ def plan_link(
         )
 
     if len(plan.storage) == len(choices):
-        plan.existing_treasury = find_deployed_treasury(rpc, plan, artifact, _expectation(plan))
+        plan.existing_treasury = find_deployed_treasury(
+            rpc, plan.relayer, artifact, _expectation(plan)
+        )
     if plan.existing_treasury is None:
         gas = deploy_gas(len(choices))
         limit = gas + gas * relayer.fees.gas_margin_percent // 100
@@ -358,16 +441,35 @@ def _eth(wei: int) -> str:
     return f"{wei / 10**18:.6f}"
 
 
-def _expectation(plan: LinkPlan) -> Expectation:
+def expectation_of(
+    *,
+    chain_id: int,
+    verifier: str,
+    verifier_runtime_keccak: bytes,
+    threshold: int,
+    signers: list[SignerChoice],
+    storage: dict[int, KeyStorage],
+) -> Expectation:
+    """What the chain must hold for these signers and their registered storage."""
     return Expectation(
+        chain_id=chain_id,
+        verifier=verifier,
+        verifier_runtime_keccak=verifier_runtime_keccak,
+        threshold=threshold,
+        signers=tuple(
+            ExpectedSigner(choice.public_key, storage[choice.user.id]) for choice in signers
+        ),
+    )
+
+
+def _expectation(plan: LinkPlan) -> Expectation:
+    return expectation_of(
         chain_id=plan.chain_id,
         verifier=plan.verifier,
         verifier_runtime_keccak=plan.verifier_runtime_keccak,
         threshold=plan.threshold,
-        signers=tuple(
-            ExpectedSigner(choice.public_key, plan.storage[choice.user.id])
-            for choice in plan.signers
-        ),
+        signers=plan.signers,
+        storage=plan.storage,
     )
 
 
@@ -379,17 +481,17 @@ def _known_addresses() -> set[str]:
 
 def find_deployed_treasury(
     rpc: EthRpc,
-    plan: LinkPlan,
+    deployer: str,
     artifact: TreasuryArtifact,
     expected: Expectation,
     block: int | str = "latest",
 ) -> str | None:
-    """A treasury the relayer already deployed that is exactly this vault's and belongs to no
+    """A treasury ``deployer`` already deployed that is exactly this vault's and belongs to no
     treasury row: what a run that stopped after deploying leaves behind (D30)."""
     known = _known_addresses()
-    confirmed = rpc.get_transaction_count(plan.relayer, block)
+    confirmed = rpc.get_transaction_count(deployer, block)
     for nonce in range(confirmed - 1, max(-1, confirmed - 1 - MAX_DEPLOYMENTS_SCAN), -1):
-        address = create_address(plan.relayer, nonce)
+        address = create_address(deployer, nonce)
         if address in known or not rpc.get_code(address, block):
             continue
         if not check_treasury(rpc, address, expected, artifact, block=block):
@@ -443,7 +545,9 @@ def link(
     expected = _expectation(plan)
     identities = [signer.identity(plan.verifier) for signer in expected.signers]
     deployment_tx = deployed_block = None
-    address = plan.existing_treasury or find_deployed_treasury(rpc, plan, artifact, expected)
+    address = plan.existing_treasury or find_deployed_treasury(
+        rpc, plan.relayer, artifact, expected
+    )
     if address is not None:
         progress(f"the treasury is already deployed at {address}; reusing it")
         # A run that stopped after deploying knew its transaction; find it again (review L1).
@@ -480,7 +584,20 @@ def link(
             + "; ".join(problems)
         )
     progress(f"checked against the database's keys at finalized block {finalized}")
-    treasury = _store(plan, address, identities, deployment_tx, deployed_block, now())
+    treasury = store_link(
+        vault=plan.vault,
+        by=plan.by,
+        chain_id=plan.chain_id,
+        verifier=plan.verifier,
+        threshold=plan.threshold,
+        signers=plan.signers,
+        storage=plan.storage,
+        address=address,
+        identities=identities,
+        deployment_tx=deployment_tx,
+        deployed_block=deployed_block,
+        when=now(),
+    )
     return Linked(treasury=treasury, fee_wei=fee, transactions=transactions)
 
 
@@ -534,8 +651,15 @@ def wait_for_finality(
         sleep(FINALITY_POLL_S)
 
 
-def _store(
-    plan: LinkPlan,
+def store_link(
+    *,
+    vault: Vault,
+    by: User,
+    chain_id: int,
+    verifier: str,
+    threshold: int,
+    signers: list[SignerChoice],
+    storage: dict[int, KeyStorage],
     address: str,
     identities: list[bytes],
     deployment_tx: str | None,
@@ -559,9 +683,9 @@ def _store(
     db.session.commit()
     payload = {
         "treasury": address,
-        "chain_id": plan.chain_id,
-        "verifier": plan.verifier,
-        "threshold_m": plan.threshold,
+        "chain_id": chain_id,
+        "verifier": verifier,
+        "threshold_m": threshold,
         "signers": [
             {
                 "user_id": choice.user.id,
@@ -569,54 +693,54 @@ def _store(
                 "custody": choice.custody,
                 "onchain_key_id": "0x" + key_id(choice.public_key).hex(),
             }
-            for choice in plan.signers
+            for choice in signers
         ],
         "deployment_tx": deployment_tx,
         "deployed_block": deployed_block,
     }
     for attempt in range(3):
-        drift = changed_since_planned(plan)
-        if drift:
+        changes = drift(vault, signers, threshold)
+        if changes:
             raise LinkIncomplete(
-                f"{plan.vault.name} changed while it was being linked ({'; '.join(drift)}), so "
-                "nothing was written. Run the same command again: what is already on chain is "
-                "reused, and the link follows the vault as it is now"
+                f"{vault.name} changed while it was being linked ({'; '.join(changes)}), so "
+                "nothing was written. Ask again: what is already on chain is reused, and the "
+                "link follows the vault as it is then"
             )
         try:
             treasury = Treasury(
-                vault_id=plan.vault.id,
-                chain_id=plan.chain_id,
+                vault_id=vault.id,
+                chain_id=chain_id,
                 address=address,
-                verifier_address=plan.verifier,
-                threshold_m=plan.threshold,
-                signer_count=len(plan.signers),
+                verifier_address=verifier,
+                threshold_m=threshold,
+                signer_count=len(signers),
                 deployment_tx=deployment_tx,
                 deployed_block=deployed_block,
                 status="linked",
                 linked_at=when,
-                linked_by_id=plan.by.id,
+                linked_by_id=by.id,
             )
             db.session.add(treasury)
             db.session.flush()
-            for choice, identity in zip(plan.signers, identities, strict=True):
-                storage = plan.storage[choice.user.id]
+            for choice, identity in zip(signers, identities, strict=True):
+                where = storage[choice.user.id]
                 db.session.add(
                     TreasurySigner(
                         treasury_id=treasury.id,
                         user_id=choice.user.id,
                         key_id=choice.key.id,
                         onchain_key_id="0x" + key_id(choice.public_key).hex(),
-                        pointer0=storage.pointer0,
-                        pointer1=storage.pointer1,
+                        pointer0=where.pointer0,
+                        pointer1=where.pointer1,
                         identity_hex="0x" + identity.hex(),
                     )
                 )
             ledger_service.append(
                 "treasury_linked",
                 payload,
-                actor=f"user:{plan.by.id}",
-                actor_id=plan.by.id,
-                vault_id=plan.vault.id,
+                actor=f"user:{by.id}",
+                actor_id=by.id,
+                vault_id=vault.id,
                 ref_type="treasury",
                 ref_id=address,
                 commit=False,
@@ -627,21 +751,21 @@ def _store(
             # Most likely the live app appended to the ledger at the same moment (a known race
             # on Postgres); a second link of this vault is refused by the partial unique index.
             db.session.rollback()
-            if linked_treasury(plan.vault) is not None or attempt == 2:
+            if linked_treasury(vault) is not None or attempt == 2:
                 raise
     return treasury
 
 
-def changed_since_planned(plan: LinkPlan) -> list[str]:
-    """How the vault, read fresh from the database, differs from what ``plan`` links."""
+def drift(vault: Vault, signers: list[SignerChoice], threshold: int) -> list[str]:
+    """How the vault, read fresh from the database, differs from what is being linked."""
     db.session.expire_all()
-    vault = db.session.get(Vault, plan.vault.id)
+    vault = db.session.get(Vault, vault.id)
     changes = []
-    if vault.signer_ids() != [choice.user.id for choice in plan.signers]:
+    if vault.signer_ids() != [choice.user.id for choice in signers]:
         changes.append("its signers changed")
-    if vault.policy.threshold_m != plan.threshold:
+    if vault.policy.threshold_m != threshold:
         changes.append(f"its threshold is now {vault.policy.threshold_m}")
-    for choice in plan.signers:
+    for choice in signers:
         key = db.session.get(Key, choice.key.id)
         if key.status != "active" or not key.can_sign:
             changes.append(f"{choice.user.email}'s chosen key was replaced or revoked")
