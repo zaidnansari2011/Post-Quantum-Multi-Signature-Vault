@@ -248,6 +248,23 @@ class Receipt:
 
 
 @dataclass(frozen=True)
+class BlockHeader:
+    number: int
+    hash: bytes
+    timestamp: int
+
+    @classmethod
+    def parse(cls, raw: object) -> BlockHeader:
+        if not isinstance(raw, dict):
+            raise RpcUnavailable("node returned a block that is not an object")
+        return cls(
+            number=parse_quantity(raw.get("number"), "block number"),
+            hash=parse_data(raw.get("hash"), "block hash", length=32),
+            timestamp=parse_quantity(raw.get("timestamp"), "block timestamp"),
+        )
+
+
+@dataclass(frozen=True)
 class TransactionInfo:
     """What the node knows about a transaction it has seen, mined or not."""
 
@@ -406,6 +423,13 @@ class EthRpc:
 
     def block_number(self) -> int:
         return parse_quantity(self.request("eth_blockNumber", []), "block number")
+
+    def block_header(self, block: int | str = "latest") -> BlockHeader:
+        """A block's number, hash and timestamp. ``"finalized"`` gives the latest final block."""
+        header = self.request("eth_getBlockByNumber", [block_param(block), False])
+        if header is None:
+            raise RpcUnavailable(f"node has no block {block!r}")
+        return BlockHeader.parse(header)
 
     def base_fee(self, block: int | str = "latest") -> int:
         header = self.request("eth_getBlockByNumber", [block_param(block), False])

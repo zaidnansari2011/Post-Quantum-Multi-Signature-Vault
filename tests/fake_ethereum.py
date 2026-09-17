@@ -38,6 +38,14 @@ from qvault.chain.rpc import RpcUnavailable
 
 GWEI = 10**9
 TX_GAS_CAP = 16_777_216
+# Sepolia finalises about two epochs (64 slots) behind the head.
+FINALITY_DEPTH = 64
+GENESIS_TIME = 1_789_000_000
+
+
+def block_hash(number: int) -> bytes:
+    """A stable hash per block number, so a receipt's block can be checked as canonical."""
+    return keccak256(b"fake block" + number.to_bytes(8, "big"))
 
 
 @dataclass(frozen=True)
@@ -270,7 +278,7 @@ class FakeNode:
                 self._logs.append(entry)
         self._receipts[tx.hash] = {
             "transactionHash": "0x" + tx.hash.hex(),
-            "blockHash": "0x" + keccak256(self.block_number.to_bytes(8, "big")).hex(),
+            "blockHash": "0x" + block_hash(self.block_number).hex(),
             "blockNumber": hex(self.block_number),
             "from": tx.sender,
             "to": tx.to,
@@ -289,8 +297,21 @@ class FakeNode:
     def _rpc_eth_blockNumber(self) -> str:
         return hex(self.block_number)
 
-    def _rpc_eth_getBlockByNumber(self, tag: str, full: bool) -> dict:
-        return {"number": hex(self.block_number), "baseFeePerGas": hex(self.base_fee)}
+    def _rpc_eth_getBlockByNumber(self, tag: str, full: bool) -> dict | None:
+        if tag == "finalized":
+            number = max(self.block_number - FINALITY_DEPTH, 0)
+        elif tag.startswith("0x"):
+            number = int(tag, 16)
+            if number > self.block_number:
+                return None
+        else:
+            number = self.block_number
+        return {
+            "number": hex(number),
+            "hash": "0x" + block_hash(number).hex(),
+            "timestamp": hex(GENESIS_TIME + 12 * number),
+            "baseFeePerGas": hex(self.base_fee),
+        }
 
     def _rpc_eth_maxPriorityFeePerGas(self) -> str:
         if not self.supports_priority_fee:
