@@ -323,6 +323,12 @@ def proposal_detail(vid: int, pid: str):
     my_vote = approval_service.vote_of(proposal, current_user.id)
     is_signer = current_user.id in {m.user_id for m in vault.signer_members()}
     can_vote = proposal.status == "open" and is_signer and my_vote is None
+    binding = approval_service.verify_proposal_binding(proposal)
+    # Approving a payment signs what the treasury will pay, built from the stored payment; when
+    # that no longer matches what was signed, offering Approve would invite a signature over a
+    # payment nobody proposed. The service refuses it too; this keeps the button from lying.
+    # Reject stays: objecting authorises nothing.
+    can_approve = can_vote and (proposal.action is None or binding.ok)
 
     return render_template(
         "vaults/proposal_detail.html",
@@ -332,11 +338,12 @@ def proposal_detail(vid: int, pid: str):
         device_signed=device_signed,
         approvals=approvals,
         rejections=rejections,
-        binding=approval_service.verify_proposal_binding(proposal),
+        binding=binding,
         transparency=export_service.transparency_status(proposal),
         my_vote=my_vote,
         is_signer=is_signer,
         can_vote=can_vote,
+        can_approve=can_approve,
         vote_form=VoteForm(),
         # Present only immediately after this member signed (or when someone follows a receipt
         # link). Scoped to this proposal inside the service, which is the authorisation check.

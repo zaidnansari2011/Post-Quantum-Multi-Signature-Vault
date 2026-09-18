@@ -715,8 +715,15 @@ def lying_payment_bundle(app, witnessed, monkeypatch):
         payment=PaymentRequest("0xF590cEe84F86510555150F13Ca83AEc613f1676b", 5 * 10**18),
     )
     monkeypatch.undo()
+    # An honest server refuses to sign it at all: the binding check compares the text with the
+    # payment before an approval is signed (Phase 6a review, H-1). The bundle the verifiers must
+    # catch is what a server that also lies about that check would publish.
+    with pytest.raises(approval_service.ApprovalError, match="does not describe the payment"):
+        approval_service.cast_vote(proposal, owner, PASSWORD, "approve")
+    monkeypatch.setattr(approval_service, "_payment_problem", lambda proposal: None)
     for signer in (owner, other):
         approval_service.cast_vote(proposal, signer, PASSWORD, "approve")
+    monkeypatch.undo()
     checkpoint_service.maybe_checkpoint()
     checkpoint_service.sync_witness()
     return export_service.build_decision_bundle(proposal)

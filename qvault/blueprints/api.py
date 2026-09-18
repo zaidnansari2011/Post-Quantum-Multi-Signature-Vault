@@ -809,12 +809,17 @@ _VOTE_STATUS = {
     "device_key_not_active": 422,
     "decision_invalid": 422,
     "bad_signature_size": 422,
+    "execution_signature_required": 422,
 }
 
 
 def _vote_code(message: str) -> str:
     """Map a service message to a stable code a client can branch on without parsing English."""
     lowered = message.lower()
+    # First: an app that declared the payment capability and still sent a bare approval is told so
+    # in a form it can act on (plan D25), whatever else the sentence happens to contain.
+    if "signature the treasury checks" in lowered:
+        return "execution_signature_required"
     if "already voted" in lowered:
         return "already_voted"
     if "not an authorised signer" in lowered:
