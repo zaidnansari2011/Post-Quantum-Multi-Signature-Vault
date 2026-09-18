@@ -153,7 +153,7 @@
             {{ vote_form.reason(class="input", placeholder="Note (optional)") }}
           </div>
           <div class="hstack">
-            {{ vote_form.approve(class="btn btn--primary") }}
+            {% if can_approve %}{{ vote_form.approve(class="btn btn--primary") }}{% endif %}
             {{ vote_form.reject(class="btn btn--ghost") }}
           </div>
         </form>

@@ -12,6 +12,7 @@ The server never stores a plaintext private key or the KEK.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from flask import current_app
@@ -169,44 +170,68 @@ def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
     SLH-DSA-SHAKE-256f (1.77 ms on 38.66 ms). The scheme that is slowest to sign pays the least
     proportionally to be safe.
     """
+    return sign_messages(user, key, password, [message])[0]
+
+
+def sign_messages(user: User, key: Key, password: str, messages: Sequence[bytes]) -> list[bytes]:
+    """Unlock ``key`` once and sign every message, verifying each before any is returned.
+
+    One unlock for several messages, because unlocking is an Argon2id run — deliberately ~80 ms —
+    and one act of approval can commit to more than one thing. Approving a payment signs both the
+    vote a person is held to and the execution digest the treasury checks on chain; they are one
+    decision and must be produced together, from one password, or a vote could be recorded that
+    nothing is able to execute.
+
+    ADR-0010's invariant holds per message: each signature is verified immediately after it is
+    produced, while the private half is still in memory, because a fault in one says nothing
+    about the next. Nothing is returned unless every one of them verified.
+    """
     provider = _registry().signature(key.alg_id)
+    signatures: list[bytes] = []
     secret_key = unlock_secret_key(user, key, password)
     try:
-        with glassbox.step(f"Sign with {key.alg_id}", code=provider.sign) as trace:
-            trace.annotate(
-                "The provider hands the message to a compiled PQClean implementation. The "
-                "lattice arithmetic inside it is not Python and cannot be shown here; what is "
-                "shown is every input it received and the exact bytes it returned."
-            )
-            trace.input("message", glassbox.Text(message))
-            trace.input("private key", glassbox.Opaque(secret_key, why="held only in memory"))
-            signature = provider.sign(secret_key, message)
-            trace.output("signature", glassbox.Hex(signature))
+        for message in messages:
+            with glassbox.step(f"Sign with {key.alg_id}", code=provider.sign) as trace:
+                trace.annotate(
+                    "The provider hands the message to a compiled PQClean implementation. The "
+                    "lattice arithmetic inside it is not Python and cannot be shown here; what is "
+                    "shown is every input it received and the exact bytes it returned."
+                )
+                trace.input("message", glassbox.Text(message))
+                trace.input("private key", glassbox.Opaque(secret_key, why="held only in memory"))
+                signature = provider.sign(secret_key, message)
+                trace.output("signature", glassbox.Hex(signature))
+
+            with glassbox.step(
+                "Verify the signature before releasing it", code=provider.verify
+            ) as trace:
+                # ADR-0010's invariant, made visible. A reader who does not believe the claim in
+                # the docstring can watch this step run on every signature the system produces.
+                trace.annotate(
+                    "ADR-0010: never emit a signature we have not just verified. A faulted "
+                    "ML-DSA signature can leak private key material, so this check runs before "
+                    "the bytes leave this function."
+                )
+                trace.input("public key", glassbox.Hex(key.public_key))
+                trace.input(
+                    "message", glassbox.Digest(sha256_hex(message), note="sha256 of the message")
+                )
+                trace.input("signature", glassbox.Hex(signature))
+                accepted = provider.verify(key.public_key, message, signature)
+                trace.output("accepted", glassbox.Label(accepted))
+
+            if not accepted:
+                # Do not return it, do not persist it, do not log the bytes. The caller's
+                # transaction should abort; a signature that fails its own verification is
+                # evidence of a fault or a corrupted key, not something to retry silently.
+                raise SignFaultError(
+                    f"signature produced under {key.alg_id} (key {key.id}) failed immediate "
+                    "verification"
+                )
+            signatures.append(signature)
     finally:
         del secret_key
-
-    with glassbox.step("Verify the signature before releasing it", code=provider.verify) as trace:
-        # ADR-0010's invariant, made visible. A reader who does not believe the claim in the
-        # docstring can watch this step run on every single signature the system produces.
-        trace.annotate(
-            "ADR-0010: never emit a signature we have not just verified. A faulted ML-DSA "
-            "signature can leak private key material, so this check runs before the bytes leave "
-            "this function."
-        )
-        trace.input("public key", glassbox.Hex(key.public_key))
-        trace.input("message", glassbox.Digest(sha256_hex(message), note="sha256 of the message"))
-        trace.input("signature", glassbox.Hex(signature))
-        accepted = provider.verify(key.public_key, message, signature)
-        trace.output("accepted", glassbox.Label(accepted))
-
-    if not accepted:
-        # Do not return it, do not persist it, do not log the bytes. The caller's transaction
-        # should abort; a signature that fails its own verification is evidence of a fault or a
-        # corrupted key, not something to retry silently.
-        raise SignFaultError(
-            f"signature produced under {key.alg_id} (key {key.id}) failed immediate verification"
-        )
-    return signature
+    return signatures
 
 
 def active_signing_key(user: User) -> Key | None:

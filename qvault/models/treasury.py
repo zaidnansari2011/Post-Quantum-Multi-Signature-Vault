@@ -160,6 +160,67 @@ class ProposalAction(db.Model):
         }
 
 
+class ExecutionSignature(db.Model):
+    """One signer's ML-DSA-65 signature over the digest a treasury checks before it pays.
+
+    Separate from ``Signature``, which is the vote: the two are made in the same instant from the
+    same password, but they answer to different readers. A vote binds a person to a decision and
+    is verified here; this one is verified *by the contract*, over ``QVaultTreasury``'s own
+    execution digest, and is worthless unless it was made with the exact key the treasury has
+    registered for that signer (``TreasurySigner``).
+
+    ``alg_id``, ``backend`` and ``public_key`` are pinned for the same reason as on a vote: the
+    key may be rotated or retired afterwards, and this signature must stay verifiable by the
+    provider that produced it. ``digest`` stores what was signed so a reader never has to trust
+    that the action row still says what it said; recomputing it from the action and comparing is
+    exactly how tampering is caught.
+
+    ``identity_hex`` is the signer as the contract names it (``TreasurySigner.identity_hex`` when
+    the signature was made): the 124 bytes the executor submits beside the signature. Pinned
+    rather than looked up because a reconfiguration (Phase 7b) rewrites the signer rows, and an
+    executor must still be able to say which identity each stored signature was made for.
+
+    *(A new table, created by ``create_all`` like any other; no existing table is altered.)*
+    """
+
+    __tablename__ = "execution_signatures"
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "signer_id", name="uq_execution_signature_signer"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    proposal_id = db.Column(db.Integer, db.ForeignKey("proposals.id"), nullable=False, index=True)
+    signer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    key_id = db.Column(db.Integer, db.ForeignKey("keys.id"), nullable=False)
+
+    alg_id = db.Column(db.String(64), nullable=False)
+    backend = db.Column(db.String(32), nullable=False)
+    public_key = db.Column(db.LargeBinary, nullable=False)
+
+    digest = db.Column(db.LargeBinary, nullable=False)  # 32 bytes: the execution digest signed
+    signature = db.Column(db.LargeBinary, nullable=False)
+    identity_hex = db.Column(db.Text, nullable=False)  # 0x + 124 bytes, as the treasury holds it
+
+    created_at = db.Column(AwareDateTime, nullable=False, default=_utcnow)
+
+    proposal = db.relationship("Proposal")
+    signer = db.relationship("User")
+    key = db.relationship("Key")
+
+    @property
+    def custody(self) -> str:
+        """Who held the private half: ``'device'`` (the signer's own phone) or ``'server'``.
+
+        For a payment this is the sharpest statement the record makes. A ``'device'`` signature
+        means what the treasury will pay out was authorised on hardware this server has never
+        held a key for; ``'server'`` means the same trust as the signer's vote today.
+        """
+        return "device" if self.key is not None and self.key.wrap_domain == "device" else "server"
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"<ExecutionSignature proposal={self.proposal_id} signer={self.signer_id}>"
+
+
 # A row edited at the database level can hold a value of the wrong type (SQLite is untyped). It must
 # still produce bytes, which then fail to match the signed hash, rather than raise and take the
 # binding check (and with it the tally) down with an exception (review L6).

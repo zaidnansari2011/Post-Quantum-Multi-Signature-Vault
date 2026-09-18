@@ -28,7 +28,7 @@ from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
-from qvault.services import key_service, ledger_service
+from qvault.services import execution_service, key_service, ledger_service
 from qvault.services.signing import payment_text, signing_bytes_for, vote_signing_bytes
 
 
@@ -68,7 +68,13 @@ def _is_duplicate_vote(exc: IntegrityError) -> bool:
     an honest voter as a re-vote. Matches both the named Postgres constraint and SQLite's message.
     """
     msg = str(getattr(exc, "orig", exc)).lower()
-    return "uq_signature_signer" in msg or ("signatures" in msg and "signer_id" in msg)
+    # A payment approval writes two rows with the same one-per-signer rule, and a race can
+    # surface as either constraint; both mean the same thing to the person voting.
+    return (
+        "uq_signature_signer" in msg
+        or "uq_execution_signature_signer" in msg
+        or ("signatures" in msg and "signer_id" in msg)
+    )
 
 
 def vote_of(proposal, user_id: int) -> Signature | None:
@@ -357,9 +363,24 @@ def _require_device_signing_key(signer, key) -> None:
 
 
 def _record_vote(
-    proposal, signer, key, decision: str, sig_bytes: bytes, *, reason: str | None, commit: bool
+    proposal,
+    signer,
+    key,
+    decision: str,
+    sig_bytes: bytes,
+    *,
+    reason: str | None,
+    commit: bool,
+    execution: tuple[bytes, bytes] | None = None,
 ) -> Signature:
     """Verify ``sig_bytes`` against ``key`` and persist the vote, the ledger entry and any outcome.
+
+    ``execution`` is ``(digest, signature)``: the payment's execution digest, as built by
+    ``_payment_digest`` after the binding was checked, and the signature over it (plan Phase 6a).
+    It is present **if and only if** this vote approves a payment. It is stored in the *same*
+    transaction as the vote: an approval that counts towards the tally but has no signature the
+    treasury would accept would be a decision the app says is approved and the contract refuses to
+    carry out, and a rejection carrying one would be a "no" stored as an authorisation to pay.
 
     **The message is re-derived here, never accepted as a parameter.** ``vote_signing_bytes``
     enforces three bindings at once — the proposal (via ``payload_hash``, which transitively covers
@@ -368,6 +389,16 @@ def _record_vote(
     caller-supplied ``message`` through would hand all three away on precisely the path where the
     caller is a remote client. The cost is one ``canonical_json`` over ~150 bytes.
     """
+    if (execution is not None) != (
+        decision == "approve" and execution_service.is_payment(proposal)
+    ):
+        # Both callers establish this with a message fitted to their client; this is the rule
+        # itself, kept where every vote passes so a third caller cannot forget it.
+        raise ApprovalError(
+            "An approval of a payment must carry the signature the treasury checks, and no other "
+            "vote may; nothing was recorded."
+        )
+
     from_device = key.wrap_domain == "device"
     message = vote_signing_bytes(
         proposal_payload_hash=proposal.payload_hash, decision=decision, signer_id=signer.id
@@ -414,21 +445,43 @@ def _record_vote(
         signed_payload_hash=proposal.payload_hash,
         reason=(reason.strip() if reason and reason.strip() else None),
     )
-    proposal.signatures.append(sig)
+
+    entry = {
+        "proposal_uuid": proposal.proposal_uuid,
+        "vault_id": proposal.vault_id,
+        "signer_id": signer.id,
+        "decision": decision,
+        "alg_id": key.alg_id,
+        "signature_sha256": sha256_hex(sig_bytes),
+    }
+    if execution is not None:
+        # Additive, like "custody" below: the ledger says this approval also authorised a payment,
+        # and names the exact bytes, so an auditor can match the entry to what the chain executed.
+        entry["execution_signature_sha256"] = sha256_hex(execution[1])
 
     try:
-        # flush() is where the uq_signature_signer race surfaces (a concurrently-committed vote by
-        # the same signer that vote_of() could not see), so it lives inside the mapped try-block.
+        # Everything from the first row added to the session up to flush() is inside this mapped
+        # block, because that is where a race with a concurrently-committed vote by the same signer
+        # (one vote_of() could not see) surfaces — and not only at flush(): any query in between,
+        # such as a lazy load of ``proposal.signatures``, autoflushes the rows already added.
+        #
+        # Before the vote row, and under the same rules: an execution signature that does not
+        # verify, or that was made with a key the treasury does not hold (or no longer holds: a
+        # treasury can be unlinked while a password is being checked), must stop the vote rather
+        # than be discovered later by an executor holding an approval it cannot carry out.
+        # ``record`` checks all of it, and queries only before it adds its row.
+        if execution is not None:
+            execution_digest, execution_sig = execution
+            try:
+                execution_service.record(proposal, signer, key, execution_digest, execution_sig)
+            except execution_service.ExecutionSignatureError as exc:
+                raise ApprovalError(str(exc)) from None
+        proposal.signatures.append(sig)
         db.session.flush()  # also makes the new vote visible to tally() in _finalize below
         ledger_service.append(
             "proposal_signed",
             {
-                "proposal_uuid": proposal.proposal_uuid,
-                "vault_id": proposal.vault_id,
-                "signer_id": signer.id,
-                "decision": decision,
-                "alg_id": key.alg_id,
-                "signature_sha256": sha256_hex(sig_bytes),
+                **entry,
                 # Added in Phase 1 (ADR-0016). Purely additive: ledger_service.append hashes the
                 # canonical payload at append time and verify_chain recomputes from the stored
                 # text, so existing entries keep verifying, and both offline verifiers read this
@@ -454,9 +507,45 @@ def _record_vote(
     except IntegrityError as exc:
         db.session.rollback()
         if _is_duplicate_vote(exc):
+            if vote_of(proposal, signer.id) is None:
+                # A payment approval's two rows are written together, so a clash with no vote
+                # behind it means an execution signature stored alone: a damaged or restored
+                # database, not a second vote. "Already voted" would be false, and would leave
+                # the person no way to learn why they can never vote.
+                raise ApprovalError(
+                    "A payment approval is stored for you without its vote, which this app never "
+                    "writes. Nothing was recorded; an administrator needs to look at this "
+                    "decision's records."
+                ) from exc
             raise ApprovalError("You have already voted on this proposal.") from exc
         raise  # a different constraint (e.g. a ledger-seq race) must not look like a re-vote
     return sig
+
+
+def _payment_digest(proposal, signer, key) -> bytes:
+    """The execution digest ``signer`` may sign with ``key`` for this payment, or a refusal.
+
+    **The binding comes first, and it is the check that matters most.** The digest is built from
+    the ``proposal_actions`` row, and the contract checks nothing but the digest: a row edited
+    before anyone approved (another recipient, a larger amount) would otherwise be signed
+    faithfully by every honest approver while the page still showed the payment they meant. The
+    vote was never at risk — it signs ``payload_hash`` — so only the execution signature needs
+    this. The binding and the digest read the same loaded row with nothing in between, so what
+    was checked is what is signed.
+    """
+    binding = verify_proposal_binding(proposal)
+    if not binding.ok:
+        raise ApprovalError(
+            "This payment no longer matches what was signed, so approving it could authorise a "
+            f"different payment. Nothing was recorded. {binding.detail}"
+        )
+    problem = execution_service.approval_problem(proposal, signer, key)
+    if problem is not None:
+        raise ApprovalError(problem)
+    try:
+        return execution_service.digest_for(proposal)
+    except execution_service.ExecutionSignatureError as exc:
+        raise ApprovalError(str(exc)) from None
 
 
 def cast_vote(
@@ -504,10 +593,30 @@ def cast_vote(
         trace.output("message", glassbox.Text(message, note="exactly these bytes are signed"))
         trace.output("sha256(message)", glassbox.Digest(sha256_hex(message)))
 
-    # May raise KeyUnlockError on a wrong password — surfaced to the caller unchanged.
-    sig_bytes = key_service.sign_with_key(signer, key, password, message)
+    # Approving a payment signs a second thing: the digest the treasury itself checks before it
+    # moves any ETH (plan Phase 6a). Both come from one unlock — one password, one decision — and
+    # whether this is the payment that was signed, and whether this key can execute it at all, are
+    # settled before that password is spent.
+    if decision == "approve" and execution_service.is_payment(proposal):
+        execution_digest = _payment_digest(proposal, signer, key)
+        # May raise KeyUnlockError on a wrong password — surfaced to the caller unchanged.
+        sig_bytes, execution_sig = key_service.sign_messages(
+            signer, key, password, [message, execution_digest]
+        )
+        execution = (execution_digest, execution_sig)
+    else:
+        sig_bytes, execution = key_service.sign_with_key(signer, key, password, message), None
 
-    return _record_vote(proposal, signer, key, decision, sig_bytes, reason=reason, commit=commit)
+    return _record_vote(
+        proposal,
+        signer,
+        key,
+        decision,
+        sig_bytes,
+        reason=reason,
+        commit=commit,
+        execution=execution,
+    )
 
 
 def record_device_vote(
@@ -519,6 +628,7 @@ def record_device_vote(
     *,
     reason: str | None = None,
     commit: bool = True,
+    execution: bytes | None = None,
 ) -> Signature:
     """Record a vote whose signature was produced on the signer's own device (ADR-0016).
 
@@ -529,7 +639,38 @@ def record_device_vote(
     ``key`` must be resolved from the caller's authenticated device, never from a client-supplied
     identifier. Passing an attacker-chosen key here would let a valid token vote under someone
     else's identity; ``_require_device_signing_key`` is the last line of defence, not the first.
+
+    An approval on a payment decision must arrive with its ``execution`` signature. A client that
+    declares the payment capability but sends only a vote would otherwise push a decision to
+    approved that the treasury could never carry out — and the person would be told their payment
+    was approved. The capability header is a claim; this is the check. Any other vote must arrive
+    without one: a rejection carrying a valid execution signature would be a "no" stored as an
+    authorisation to pay.
+
+    The phone computes its own digest, but the one checked here is the server's, built only after
+    the decision's binding holds: a phone that signed a tampered payment is refused like any other.
     """
     _authorize_vote(proposal, signer, decision, commit=commit)
     _require_device_signing_key(signer, key)
-    return _record_vote(proposal, signer, key, decision, sig_bytes, reason=reason, commit=commit)
+    pair = None
+    if decision == "approve" and execution_service.is_payment(proposal):
+        if execution is None:
+            raise ApprovalError(
+                "This app cannot approve payments yet: an approval must carry the signature the "
+                "treasury checks on chain. Update the app."
+            )
+        pair = (_payment_digest(proposal, signer, key), execution)
+    elif execution is not None:
+        raise ApprovalError(
+            "Only an approval of a payment carries an execution signature; nothing was recorded."
+        )
+    return _record_vote(
+        proposal,
+        signer,
+        key,
+        decision,
+        sig_bytes,
+        reason=reason,
+        commit=commit,
+        execution=pair,
+    )
