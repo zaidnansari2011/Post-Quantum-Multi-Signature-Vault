@@ -179,3 +179,4 @@ Stated deliberately; each is discussed in the linked ADR.
 
 Not yet chosen — currently unlicensed, all rights reserved by the author.
 See [docs/OWNER-ACTIONS.md](docs/OWNER-ACTIONS.md) §1.1.
+"# Q-Vault" 
