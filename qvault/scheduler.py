@@ -38,6 +38,7 @@ def init_scheduler(app):
     from qvault.services import (
         checkpoint_service,
         payout_service,
+        reconfiguration_service,
         rotation_service,
         treasury_jobs,
     )
@@ -72,6 +73,7 @@ def init_scheduler(app):
         # two threads at once; its one-pending-transaction rule (D21) makes the second wait.
         def _chain_work():
             treasury_jobs.tick_with_app_relayer()
+            reconfiguration_service.tick_with_app_relayer()
             payout_service.tick_with_app_relayer()
 
         scheduler.add_job(

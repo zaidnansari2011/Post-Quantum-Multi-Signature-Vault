@@ -332,6 +332,9 @@ _TABLES_CREATED = (
     TreasuryJobTransaction.__tablename__,
     "executions",
     "execution_transactions",
+    "reconfigurations",
+    "reconfiguration_signatures",
+    "reconfiguration_transactions",
 )
 
 
@@ -855,7 +858,17 @@ def check(
             f"the treasury row names verifier {treasury.verifier_address}, not {verifier}"
         )
     finalized = rpc.block_header("finalized").number
-    problems.extend(check_treasury(rpc, treasury.address, expectation, artifact, block=finalized))
+    problems.extend(
+        check_treasury(
+            rpc,
+            treasury.address,
+            expectation,
+            artifact,
+            block=finalized,
+            # A reconfigured treasury is checked at the configuration this app recorded (7b).
+            config_nonce=treasury.config_nonce,
+        )
+    )
     return problems
 
 

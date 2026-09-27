@@ -108,6 +108,17 @@ def _seat(proposal, signer, key) -> tuple[TreasurySigner | None, str | None]:
     problem = _nonce_problem(action.config_nonce, treasury.config_nonce)
     if problem is not None:
         return None, problem
+    from qvault.models import Reconfiguration
+    from qvault.models.reconfiguration import OPEN_STATES
+
+    if Reconfiguration.query.filter(
+        Reconfiguration.treasury_id == treasury.id, Reconfiguration.state.in_(OPEN_STATES)
+    ).first():
+        # D39: an approval given now is at the configuration the change is about to replace.
+        return None, (
+            "This vault's treasury is being reconfigured, so an approval now could not be used. "
+            "Approve again once that is done."
+        )
 
     registered = TreasurySigner.query.filter_by(
         treasury_id=treasury.id, user_id=signer.id
