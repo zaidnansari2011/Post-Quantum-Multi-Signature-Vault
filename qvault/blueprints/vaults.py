@@ -21,16 +21,20 @@ from flask_wtf import FlaskForm
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
+from qvault.chain.action import ActionError, parse_eth_value
 from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
 from qvault.extensions import db
 from qvault.forms import (
     AddMemberForm,
     MemberRoleForm,
+    PaymentProposalForm,
     ProposalForm,
     ProposalRestoreForm,
     ProposalTamperForm,
     PublishForm,
+    ReconfigurationApprovalForm,
+    ReconfigureForm,
     RemoveMemberForm,
     ThresholdForm,
     UnpublishForm,
@@ -38,6 +42,7 @@ from qvault.forms import (
     VoteForm,
 )
 from qvault.models.proposal import Proposal
+from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.vault import VaultMember
 from qvault.security.decorators import get_membership_or_403
 from qvault.security.demo_gate import demo_enabled
@@ -46,9 +51,11 @@ from qvault.services import (
     export_service,
     file_crypto_service,
     inbox_service,
+    payout_service,
     proposal_service,
     publication_service,
     receipt_service,
+    reconfiguration_service,
     treasury_jobs,
     treasury_service,
     vault_service,
@@ -56,7 +63,7 @@ from qvault.services import (
 from qvault.services.approval_service import ApprovalError
 from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptError
 from qvault.services.key_service import KeyUnlockError
-from qvault.services.proposal_service import ProposalError
+from qvault.services.proposal_service import PaymentRequest, ProposalError
 from qvault.services.publication_service import PublicationError
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
@@ -131,6 +138,9 @@ def vault_detail(vid: int):
     )
     is_owner = vault.member_for(current_user.id).member_role == "owner"
     signer_vaults = inbox_service.signer_vault_ids(current_user)
+    treasury = treasury_jobs.view(vault) if _treasuries_on() else None
+    linked = treasury_service.linked_treasury(vault) if treasury is not None else None
+    change = reconfiguration_service.view(vault, current_user) if linked is not None else None
     return render_template(
         "vaults/detail.html",
         vault=vault,
@@ -143,8 +153,18 @@ def vault_detail(vid: int):
         remove_form=RemoveMemberForm(),
         threshold_form=ThresholdForm(threshold_m=vault.policy.threshold_m),
         n_signers=len(vault.signer_ids()),
-        treasury=treasury_jobs.view(vault) if _treasuries_on() else None,
+        treasury=treasury,
+        treasury_status=(
+            payout_service.treasury_status(linked, current_app.extensions.get("relayer"))
+            if linked is not None
+            else None
+        ),
+        change=change,
         treasury_form=TreasuryForm(),
+        reconfigure_form=ReconfigureForm(
+            warnings_digest=change["warnings_digest"] if change is not None else None
+        ),
+        reconfiguration_approval_form=ReconfigurationApprovalForm(),
         my_key=treasury_service.key_choice(current_user) if _treasuries_on() else None,
     )
 
@@ -194,6 +214,65 @@ def stop_treasury_job(vid: int):
     else:
         treasury_jobs.cancel(job, by=current_user)
         flash("Stopped. Anything already on chain is reused if you ask again.", "success")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
+
+
+@bp.post("/<int:vid>/treasury/reconfigure")
+@login_required
+def reconfigure_treasury(vid: int):
+    """Ask for the treasury to follow the vault (plan D45). Sends nothing: the scheduler registers
+    any new key, and the treasury's current signers approve the change before it is submitted."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    if not _treasuries_on():
+        abort(404)
+    form = ReconfigureForm()
+    if not form.validate_on_submit():
+        abort(400)
+    relayer = current_app.extensions.get("relayer")
+    if relayer is None:
+        flash("This instance cannot do chain work: no relayer is configured.", "error")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
+    try:
+        reconfiguration_service.request(
+            vault,
+            by=current_user,
+            relayer=relayer,
+            confirm=(form.warnings_digest.data or False) if form.confirm.data else False,
+        )
+        flash("Change requested. The treasury's signers are asked to approve it.", "success")
+    except reconfiguration_service.NeedsConfirmation as exc:
+        for warning in exc.warnings:
+            flash(f"Confirm first: {warning}.", "error")
+    except reconfiguration_service.ReconfigurationRefused as exc:
+        for problem in exc.problems:
+            flash(f"{problem[:1].upper()}{problem[1:]}.", "error")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
+
+
+@bp.post("/<int:vid>/treasury/reconfigurations/<int:rid>/approve")
+@login_required
+def approve_reconfiguration(vid: int, rid: int):
+    """Approve a treasury change with your password key (D46), which may be one just retired."""
+    vault = get_membership_or_403(vid)
+    if not _treasuries_on():
+        abort(404)
+    reconfiguration = db.session.get(Reconfiguration, rid)
+    if reconfiguration is None or reconfiguration.vault_id != vault.id:
+        abort(404)
+    form = ReconfigurationApprovalForm()
+    if not form.validate_on_submit():
+        flash("Enter your password to approve.", "error")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
+    try:
+        reconfiguration_service.approve_with_password(
+            reconfiguration, current_user, form.password.data
+        )
+        flash("Approved.", "success")
+    except KeyUnlockError:
+        flash("Incorrect password: your signing key could not be unlocked.", "error")
+    except reconfiguration_service.ApprovalRefused as exc:
+        message = str(exc)
+        flash(f"{message[:1].upper()}{message[1:]}.", "error")
     return redirect(url_for("vaults.vault_detail", vid=vid, tab="treasury"))
 
 
@@ -264,10 +343,16 @@ def set_threshold(vid: int):
     return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
 
 
+def _payments_possible(vault) -> bool:
+    return _treasuries_on() and treasury_service.linked_treasury(vault) is not None
+
+
 @bp.route("/<int:vid>/proposals/new", methods=["GET", "POST"])
 @login_required
 def new_proposal(vid: int):
     vault = get_membership_or_403(vid)
+    if request.args.get("kind") == "payment":
+        return _new_payment(vault)
     form = ProposalForm()
     if form.validate_on_submit():
         file_bytes = None
@@ -294,7 +379,40 @@ def new_proposal(vid: int):
             return render_template("vaults/proposal_new.html", form=form, vault=vault)
         flash("Proposal created.", "success")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=proposal.proposal_uuid))
-    return render_template("vaults/proposal_new.html", form=form, vault=vault)
+    return render_template(
+        "vaults/proposal_new.html", form=form, vault=vault, payments=_payments_possible(vault)
+    )
+
+
+def _new_payment(vault):
+    """A payment decision (plan Phase 8): recipient and amount; the server writes the rest."""
+    if not _payments_possible(vault):
+        abort(404)
+    form = PaymentProposalForm()
+    if form.validate_on_submit():
+        deadline = form.deadline.data
+        if deadline is not None and deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
+        try:
+            value = parse_eth_value(form.amount.data)
+            proposal = proposal_service.create_proposal(
+                vault,
+                current_user,
+                form.title.data,
+                "",
+                deadline=deadline,
+                payment=PaymentRequest(to=form.to.data.strip(), value_wei=value),
+            )
+        except (ProposalError, ActionError) as exc:
+            flash(f"{str(exc)[:1].upper()}{str(exc)[1:]}.", "danger")
+        else:
+            flash("Payment decision created.", "success")
+            return redirect(
+                url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
+            )
+    return render_template(
+        "vaults/proposal_new.html", form=form, vault=vault, payments=True, kind="payment"
+    )
 
 
 @bp.get("/<int:vid>/proposals/<pid>")
@@ -344,6 +462,7 @@ def proposal_detail(vid: int, pid: str):
         is_signer=is_signer,
         can_vote=can_vote,
         can_approve=can_approve,
+        payout=payout_service.view(proposal) if _treasuries_on() else None,
         vote_form=VoteForm(),
         # Present only immediately after this member signed (or when someone follows a receipt
         # link). Scoped to this proposal inside the service, which is the authorisation check.

@@ -13,10 +13,10 @@ import {
   type Decision,
 } from './crypto/signing.ts';
 import { toBase64, toHex } from './crypto/bytes.ts';
-import { executionDigest } from './crypto/execution.ts';
+import { executionDigest, reconfigureDigest } from './crypto/execution.ts';
 import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import type { Custody, ProtectionLevel, StoredIdentity } from './custody.ts';
-import type { ProposalDetail } from './api/schemas.ts';
+import type { ProposalDetail, ReconfigurationView } from './api/schemas.ts';
 
 /**
  * The server described a proposal whose stated hash is not the hash of its own stated contents.
@@ -145,11 +145,11 @@ export function verifyProposalIntegrity(detail: ProposalDetail): string {
  * person, or none. Refused before biometrics, with where to approve instead (plan Phase 6b).
  */
 export class NotThisPhonesSeatError extends Error {
-  constructor(seatFingerprint: string | null) {
+  constructor(seatFingerprint: string | null, what: 'payment' | 'change' = 'payment') {
     super(
       seatFingerprint === null
         ? "None of your keys is registered on this vault's treasury, so an approval from this phone would not count."
-        : `This vault's treasury holds your key ${seatFingerprint}, not this phone's, so approve this payment where that key is.`,
+        : `This vault's treasury holds your key ${seatFingerprint}, not this phone's, so approve this ${what} where that key is.`,
     );
     this.name = 'NotThisPhonesSeatError';
   }
@@ -255,6 +255,100 @@ export async function voteOnProposal(args: {
     rejections: result.proposal.rejections,
     signatureSha256: localDigest,
     algId: result.vote.alg_id,
+    protection,
+  };
+}
+
+// -- treasury changes (plan Phase 7b, D46) ------------------------------------------------------
+
+export interface TreasuryApprovalOutcome {
+  state: string;
+  approvals: number;
+  needed: number;
+  signatureSha256: string;
+  protection: ProtectionLevel;
+}
+
+/**
+ * What must be signed to approve a change to the treasury's signers, after checking it against
+ * what the server claims: the digest this phone derives from `signing_inputs` must equal the
+ * server's, the change must be to the treasury the vault shows, and the treasury must hold this
+ * phone's key for this person. Runs before any prompt.
+ */
+export function treasuryChangeApproval(
+  change: ReconfigurationView,
+  treasuryAddress: string,
+  identity: StoredIdentity,
+): Uint8Array {
+  const inputs = change.signing_inputs;
+  if (inputs === null) {
+    throw new Error('The new keys are still being registered. Approve once they are.');
+  }
+  // What the server will refuse anyway is refused here, before anyone is asked for biometrics.
+  if (change.approved_by_me) throw new Error('You have already approved this change.');
+  if (change.approval_problem !== null) throw new Error(change.approval_problem);
+  if (inputs.valid_until * 1000 <= Date.now()) throw new Error('This change has passed its deadline.');
+  const people = change.people;
+  if (people && (people.add.length !== inputs.add.length || people.remove.length !== inputs.remove.length)) {
+    // The names shown must describe the identities signed, one for one.
+    throw new PayloadMismatchError(change.digest ?? '(none)', 'people do not match the signed identities');
+  }
+  if (inputs.treasury.toLowerCase() !== treasuryAddress.toLowerCase()) {
+    throw new PayloadMismatchError(treasuryAddress, inputs.treasury);
+  }
+  const ours = reconfigureDigest(inputs);
+  if (change.digest !== toHex(ours)) {
+    // The server would store, and the contract would check, a different change from the one shown.
+    throw new PayloadMismatchError(change.digest ?? '(none)', toHex(ours));
+  }
+  if (change.seat_fingerprint !== identity.fingerprint) {
+    throw new NotThisPhonesSeatError(change.seat_fingerprint, 'change');
+  }
+  return ours;
+}
+
+export async function approveTreasuryChange(args: {
+  custody: Custody;
+  token: string;
+  identity: StoredIdentity;
+  vaultId: number;
+  treasuryAddress: string;
+  change: ReconfigurationView;
+}): Promise<TreasuryApprovalOutcome> {
+  // Every check before the prompt, as for a vote.
+  const digest = treasuryChangeApproval(args.change, args.treasuryAddress, args.identity);
+  const inputs = args.change.signing_inputs!;
+  // The prompt states the signed facts: how many keys join and leave, and the new threshold.
+  const protection = await args.custody.confirmPresence(
+    `Approve treasury change: add ${inputs.add.length}, remove ${inputs.remove.length}, ` +
+      `then ${inputs.threshold} to approve`,
+  );
+
+  const pair = await args.custody.deriveKeyPair(args.identity.algId);
+  if (!pair) throw new Error('This device no longer holds a signing key. Enrol it again.');
+  if (publicKeyFingerprint(pair.publicKey) !== args.identity.fingerprint) {
+    // The seat check compared the stored fingerprint; this is the key that will actually sign.
+    throw new NotThisPhonesSeatError(args.change.seat_fingerprint, 'change');
+  }
+  const alg = getAlgorithm(args.identity.algId);
+  const signature = alg.sign(digest, pair.secretKey);
+  if (!alg.verify(signature, digest, pair.publicKey)) throw new SelfVerificationError();
+
+  const result = await api.approveReconfiguration({
+    token: args.token,
+    vaultId: args.vaultId,
+    reconfigurationId: args.change.id,
+    signatureB64: toBase64(signature),
+  });
+  const localDigest = toHex(sha256(signature));
+  if (result.approval.signature_sha256 !== localDigest) {
+    throw new Error('The server recorded a different approval from the one this device sent.');
+  }
+  return {
+    state: result.reconfiguration.state,
+    approvals: result.reconfiguration.approvals,
+    needed: result.reconfiguration.needed,
+    signatureSha256: localDigest,
     protection,
   };
 }

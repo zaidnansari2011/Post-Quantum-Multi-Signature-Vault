@@ -7,6 +7,7 @@ from flask_wtf.file import FileField
 from wtforms import (
     BooleanField,
     DateTimeLocalField,
+    HiddenField,
     IntegerField,
     PasswordField,
     SelectField,
@@ -105,6 +106,19 @@ class ProposalForm(FlaskForm):
     submit = SubmitField("Create proposal")
 
 
+class PaymentProposalForm(FlaskForm):
+    """Ask the vault's treasury to pay (plan Phase 8). Only the recipient and the amount come from
+    the proposer; the decision's text is generated from the payment (D24)."""
+
+    title = StringField("Title", validators=[DataRequired(), Length(max=255)])
+    to = StringField("Recipient", validators=[DataRequired(), Length(max=42)])
+    amount = StringField("Amount (ETH)", validators=[DataRequired(), Length(max=100)])
+    deadline = DateTimeLocalField(
+        "Deadline (optional)", format="%Y-%m-%dT%H:%M", validators=[Optional()]
+    )
+    submit = SubmitField("Create payment decision")
+
+
 class VoteForm(FlaskForm):
     """Cast a signed approve/reject vote. The password unlocks the signer's PQC private key so
     the vote can be signed; it is used transiently and never stored."""
@@ -115,6 +129,21 @@ class VoteForm(FlaskForm):
     reason = StringField("Reason (optional)", validators=[Optional(), Length(max=255)])
     approve = SubmitField("Approve & sign")
     reject = SubmitField("Reject")
+
+
+class ReconfigureForm(FlaskForm):
+    """Ask for the treasury to follow the vault (plan D45). ``confirm`` must be ticked when the
+    change takes away someone's power to approve; the service refuses without it."""
+
+    confirm = BooleanField("I understand")
+    #: ``warnings_digest`` of the warnings the page showed, so a tick confirms exactly those.
+    warnings_digest = HiddenField()
+
+
+class ReconfigurationApprovalForm(FlaskForm):
+    """Approve a treasury change with the password key the treasury holds for you (D46)."""
+
+    password = PasswordField("Your password", validators=[DataRequired()])
 
 
 class LedgerTamperForm(FlaskForm):

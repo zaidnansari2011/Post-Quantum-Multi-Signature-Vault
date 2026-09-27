@@ -2,6 +2,7 @@
 
 import { request } from './client.ts';
 import {
+  approveReconfigurationResponse,
   castVoteResponse,
   challengeResponse,
   createProposalResponse,
@@ -12,7 +13,11 @@ import {
   peopleResponse,
   proposalDetailResponse,
   proposalsResponse,
+  requestReconfigurationResponse,
   revokeResponse,
+  signingChoiceResponse,
+  createTreasuryResponse,
+  treasuryResponse,
   vaultDetailResponse,
   vaultsResponse,
 } from './schemas.ts';
@@ -153,6 +158,8 @@ export function createProposal(args: {
   title: string;
   actionText: string;
   expiresInHours?: number | null;
+  /** A payment decision (plan Phase 8): the server builds the signed action and writes the text. */
+  payment?: { to: string; valueWei: string } | null;
 }) {
   return request(createProposalResponse, {
     method: 'POST',
@@ -160,7 +167,9 @@ export function createProposal(args: {
     token: args.token,
     body: {
       title: args.title,
-      action_text: args.actionText,
+      ...(args.payment
+        ? { payment: { to: args.payment.to, value_wei: args.payment.valueWei } }
+        : { action_text: args.actionText }),
       expires_in_hours: args.expiresInHours ?? null,
     },
   });
@@ -185,5 +194,63 @@ export function castVote(args: {
       ...(args.executionSignatureB64 ? { execution_signature_b64: args.executionSignatureB64 } : {}),
       reason: args.reason ?? null,
     },
+  });
+}
+
+// -- treasury (plan D40, Phase 7b) ---------------------------------------------------------------
+
+export function fetchTreasury(token: string, vaultId: number, signal?: AbortSignal) {
+  return request(treasuryResponse, { path: `/api/v1/vaults/${vaultId}/treasury`, token, signal });
+}
+
+/**
+ * Ask for the treasury to follow the vault (D45). The server answers `needs_confirmation` with
+ * its warnings until this is sent again with `confirm`.
+ */
+/** Ask for a treasury for this vault (D36). Sends nothing now: the server does the work. */
+export function createTreasury(args: { token: string; vaultId: number }) {
+  return request(createTreasuryResponse, {
+    method: 'POST',
+    path: `/api/v1/vaults/${args.vaultId}/treasury`,
+    token: args.token,
+    body: {},
+  });
+}
+
+export function requestReconfiguration(args: {
+  token: string;
+  vaultId: number;
+  /** `warnings_digest` of the warnings shown to the owner, or null when there were none (D45). */
+  confirm: string | null;
+}) {
+  return request(requestReconfigurationResponse, {
+    method: 'POST',
+    path: `/api/v1/vaults/${args.vaultId}/treasury/reconfigure`,
+    token: args.token,
+    body: { confirm: args.confirm },
+  });
+}
+
+export function approveReconfiguration(args: {
+  token: string;
+  vaultId: number;
+  reconfigurationId: number;
+  signatureB64: string;
+}) {
+  return request(approveReconfigurationResponse, {
+    method: 'POST',
+    path: `/api/v1/vaults/${args.vaultId}/treasury/reconfigurations/${args.reconfigurationId}/approve`,
+    token: args.token,
+    body: { signature_b64: args.signatureB64 },
+  });
+}
+
+/** Which key treasuries register for this person (D37): this phone's, or the password key. */
+export function setSigningChoice(args: { token: string; custody: 'device' | 'password' }) {
+  return request(signingChoiceResponse, {
+    method: 'PUT',
+    path: '/api/v1/me/signing-choice',
+    token: args.token,
+    body: { custody: args.custody },
   });
 }

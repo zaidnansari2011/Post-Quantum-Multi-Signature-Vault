@@ -29,6 +29,7 @@ import {
   Section,
 } from '../ui/index.tsx';
 import { DecisionCard } from '../ui/DecisionCard.tsx';
+import { TreasuryCard } from '../ui/TreasuryCard.tsx';
 import { color, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
@@ -96,6 +97,8 @@ export default function VaultScreen({
         <View style={{ marginTop: space.lg }}>
           <Button label="Raise a decision" onPress={() => onRaise(vault.vault_id, vault.name)} />
         </View>
+
+        <TreasuryCard vaultId={vault.vault_id} />
 
         <Section title={vault.members.length === 1 ? 'One member' : `${vault.members.length} members`}>
           <Card>

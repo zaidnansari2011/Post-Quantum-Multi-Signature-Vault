@@ -46,6 +46,9 @@ import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
+import { formatEth, parseEth } from '../crypto/signing.ts';
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 const DEADLINES: Array<{ label: string; hours: number | null }> = [
   { label: 'Today', hours: 8 },
@@ -78,10 +81,28 @@ export default function NewDecisionScreen({
 
   const [title, setTitle] = useState('');
   const [actionText, setActionText] = useState('');
+  // A payment (plan Phase 8): recipient and amount only; the server writes the signed action and
+  // the text (D24), and the phone shows and checks both before anyone signs.
+  const [kind, setKind] = useState<'decision' | 'payment'>('decision');
+  const [to, setTo] = useState('');
+  const [amount, setAmount] = useState('');
+  const valueWei = parseEth(amount);
+
+  const treasuryQuery = useQuery({
+    queryKey: ['treasury', chosen?.id],
+    queryFn: ({ signal }) => api.fetchTreasury(token, chosen!.id, signal),
+    enabled: chosen !== null,
+  });
+  const payments = Boolean(treasuryQuery.data?.treasury);
+  const paying = payments && kind === 'payment';
   const [hours, setHours] = useState<number | null>(24);
   const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
 
-  const ready = title.trim().length > 0 && actionText.trim().length > 0;
+  const ready =
+    title.trim().length > 0 &&
+    (paying
+      ? ADDRESS.test(to.trim()) && valueWei !== null && valueWei !== '0'
+      : actionText.trim().length > 0);
 
   const raise = useMutation({
     mutationFn: () =>
@@ -89,8 +110,9 @@ export default function NewDecisionScreen({
         token,
         vaultId: chosen!.id,
         title: title.trim(),
-        actionText: actionText.trim(),
+        actionText: paying ? '' : actionText.trim(),
         expiresInHours: hours,
+        payment: paying ? { to: to.trim(), valueWei: valueWei! } : null,
       }),
     onSuccess: (result) => {
       feedback.signed();
@@ -196,6 +218,56 @@ export default function NewDecisionScreen({
             editable={!raise.isPending}
           />
 
+          {payments ? (
+            <Row gap={space.sm}>
+              {(['decision', 'payment'] as const).map((k) => {
+                const active = k === kind;
+                return (
+                  <Pressable
+                    key={k}
+                    onPress={() => setKind(k)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    disabled={raise.isPending}
+                    style={({ pressed }) => [s.preset, active && s.presetActive, pressed && { opacity: 0.7 }]}
+                  >
+                    <Text style={[s.presetText, active && s.presetTextActive]}>
+                      {k === 'decision' ? 'Decision' : 'Payment'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </Row>
+          ) : null}
+
+          {paying ? (
+            <View style={{ gap: space.md }}>
+              <Field
+                label="Recipient"
+                value={to}
+                onChangeText={setTo}
+                placeholder="0x…"
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={42}
+                editable={!raise.isPending}
+              />
+              <Field
+                label="Amount (ETH)"
+                value={amount}
+                onChangeText={setAmount}
+                placeholder="0.0001"
+                keyboardType="decimal-pad"
+                maxLength={40}
+                editable={!raise.isPending}
+              />
+              <Text style={s.hint}>
+                {valueWei && valueWei !== '0'
+                  ? `Pays ${formatEth(valueWei)} from the vault's treasury on Sepolia once approved.`
+                  : "Paid from the vault's treasury on Sepolia once approved. The wording is written from the payment."}
+              </Text>
+            </View>
+          ) : (
           <View style={{ gap: space.xs }}>
             <Text style={s.label}>What is being decided</Text>
             <TextInput
@@ -215,6 +287,7 @@ export default function NewDecisionScreen({
               Signed verbatim. It cannot be edited once anyone has signed.
             </Text>
           </View>
+          )}
 
           <View style={{ gap: space.sm }}>
             <Text style={s.label}>Needs an answer by</Text>
@@ -275,6 +348,10 @@ function describe(err: unknown): { title: string; detail?: string } {
         return { title: 'That deadline has already passed.' };
       case 'unknown_vault':
         return { title: 'You are not a member of this vault.' };
+      case 'payment_invalid':
+        return { title: 'Check the recipient and the amount.', detail: err.message };
+      case 'payments_disabled':
+        return { title: 'Payments are not enabled on this server.' };
       default:
         return { title: err.message };
     }

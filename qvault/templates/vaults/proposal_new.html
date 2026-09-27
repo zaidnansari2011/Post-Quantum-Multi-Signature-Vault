@@ -16,8 +16,48 @@
 
 {% block content %}
 <div style="max-width:40rem">
+  {% if payments %}
+  <nav class="tabs" aria-label="Kind of decision">
+    <a class="tab" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}"
+       {% if kind != 'payment' %}aria-current="page"{% endif %}>Decision</a>
+    <a class="tab" href="{{ url_for('vaults.new_proposal', vid=vault.id, kind='payment') }}"
+       {% if kind == 'payment' %}aria-current="page"{% endif %}>Payment</a>
+  </nav>
+  {% endif %}
   <div class="panel">
     <div class="panel__body">
+      {% if kind == 'payment' %}
+      <form method="post" action="{{ url_for('vaults.new_proposal', vid=vault.id, kind='payment') }}" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="field">
+          {{ form.title.label(class="field__label") }}
+          {{ form.title(class="input") }}
+          {% for e in form.title.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="field">
+          {{ form.to.label(class="field__label") }}
+          {{ form.to(class="input mono", placeholder="0x…", autocomplete="off", spellcheck="false") }}
+          {% for e in form.to.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="split split--even">
+          <div class="field">
+            {{ form.amount.label(class="field__label") }}
+            {{ form.amount(class="input mono", placeholder="0.0001", inputmode="decimal") }}
+            {% for e in form.amount.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+          </div>
+          <div class="field">
+            {{ form.deadline.label(class="field__label") }}
+            {{ form.deadline(class="input") }}
+            <p class="field__help">Optional. UTC. 7 days if empty, at most 30.</p>
+          </div>
+        </div>
+        <p class="field__help">Paid from the vault's treasury on Sepolia once approved. The decision's wording is written from the payment.</p>
+        <div class="hstack">
+          {{ form.submit(class="btn btn--primary btn--sm") }}
+          <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">Cancel</a>
+        </div>
+      </form>
+      {% else %}
       <form method="post" enctype="multipart/form-data" novalidate>
         {{ form.hidden_tag() }}
         <div class="field">
@@ -48,6 +88,7 @@
           <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">Cancel</a>
         </div>
       </form>
+      {% endif %}
     </div>
   </div>
 </div>

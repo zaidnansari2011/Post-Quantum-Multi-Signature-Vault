@@ -66,3 +66,76 @@ export function executionDigest(payloadHash: string, action: PaymentAction): Uin
     ),
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Changing the treasury's signers (plan Phase 7b, D46)
+
+const RECONFIGURE_TAG = keccak_256(utf8Encode(`${TREASURY_VERSION}:RECONFIGURE`));
+/** The contract's `MAX_THRESHOLD`; `reconfigure_digest` in Python refuses anything outside 1..8. */
+export const MAX_THRESHOLD = 8;
+/** A signer identity: verifier address + two key pointers (20 bytes each) + two code hashes. */
+export const IDENTITY_BYTES = 124;
+
+/** What a reconfiguration's approvers sign, exactly as the server's `signing_inputs` gives it. */
+export interface ReconfigureInputs {
+  chain_id: number;
+  treasury: string;
+  config_nonce: number;
+  add: string[];
+  remove: string[];
+  threshold: number;
+  valid_until: number;
+}
+
+function identity(hex: string, what: string): Uint8Array {
+  if (!/^0x[0-9a-fA-F]*$/.test(hex) || hex.length !== 2 + 2 * IDENTITY_BYTES) {
+    throw new Error(`${what} is not a ${IDENTITY_BYTES}-byte signer identity`);
+  }
+  return fromHex(hex.slice(2).toLowerCase());
+}
+
+function padded(data: Uint8Array): Uint8Array {
+  const out = new Uint8Array(Math.ceil(data.length / 32) * 32);
+  out.set(data);
+  return out;
+}
+
+/** `abi.encode(bytes[])`: an offset, the length, one offset per item, then each item. */
+export function encodeBytesArray(items: Uint8Array[]): Uint8Array {
+  const offsets: Uint8Array[] = [];
+  const bodies: Uint8Array[] = [];
+  let at = 32 * items.length; // offsets count from just after the length word
+  for (const item of items) {
+    offsets.push(word(BigInt(at), UINT256_MAX, 'offset'));
+    const body = concatBytes(word(BigInt(item.length), UINT256_MAX, 'length'), padded(item));
+    bodies.push(body);
+    at += body.length;
+  }
+  return concatBytes(
+    word(32n, UINT256_MAX, 'offset'),
+    word(BigInt(items.length), UINT256_MAX, 'length'),
+    ...offsets,
+    ...bodies,
+  );
+}
+
+/** `QVaultTreasury.reconfigureDigest` for `inputs`: the twin of `reconfigure_digest` in Python. */
+export function reconfigureDigest(inputs: ReconfigureInputs): Uint8Array {
+  if (!Number.isSafeInteger(inputs.threshold) || inputs.threshold < 1 || inputs.threshold > MAX_THRESHOLD) {
+    throw new Error(`threshold must be between 1 and ${MAX_THRESHOLD}`);
+  }
+  const add = inputs.add.map((h, i) => identity(h, `added signer ${i + 1}`));
+  const remove = inputs.remove.map((h, i) => identity(h, `removed signer ${i + 1}`));
+  return keccak_256(
+    concatBytes(
+      RECONFIGURE_TAG,
+      integer(inputs.chain_id, UINT256_MAX, 'chain_id'),
+      address(inputs.treasury, 'treasury'),
+      integer(inputs.config_nonce, UINT256_MAX, 'config_nonce'),
+      keccak_256(encodeBytesArray(add)),
+      keccak_256(encodeBytesArray(remove)),
+      integer(inputs.threshold, UINT64_MAX, 'threshold'),
+      integer(inputs.valid_until, UINT64_MAX, 'valid_until'),
+    ),
+  );
+}

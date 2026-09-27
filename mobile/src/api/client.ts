@@ -30,7 +30,7 @@ export class TransportError extends Error {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   path: string;
   body?: unknown;
   token?: string | null;

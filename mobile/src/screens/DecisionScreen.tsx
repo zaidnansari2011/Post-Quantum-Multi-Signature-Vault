@@ -36,6 +36,7 @@ import {
   Divider,
   Hash,
   KeyValue,
+  StatusLine,
   Loading,
   NavBar,
   Row,
@@ -62,7 +63,7 @@ import {
   type VoteOutcome,
 } from '../flows.ts';
 import { NETWORKS, formatEth, type Decision, type PaymentAction } from '../crypto/signing.ts';
-import type { ProposalDetail, VoteRecord } from '../api/schemas.ts';
+import type { PayoutView, ProposalDetail, VoteRecord } from '../api/schemas.ts';
 
 export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack: () => void }) {
   const { token, identity, custody } = useEnrolledSession();
@@ -188,6 +189,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
           {detail.action_text}
         </Text>
         {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
+        {detail.payout ? <Payout payout={detail.payout} /> : null}
 
         {/* The quorum, immediately under it. `celebrate` is true only when this person's own
             signature is what completed it -- animating a decision that was already complete when
@@ -378,6 +380,32 @@ function Payment({ action }: { action: PaymentAction }) {
       <KeyValue label="Network" value={NETWORKS[action.chain_id] ?? `Chain ${action.chain_id}`} />
       <KeyValue label="From treasury" mono value={action.treasury} />
       <KeyValue label="Approvals valid until" value={exactly(new Date(action.valid_until * 1000).toISOString())} />
+    </View>
+  );
+}
+
+const PAYOUT_LABEL: Record<string, [string, 'sealed' | 'waiting' | 'broken' | 'neutral']> = {
+  awaiting_approvals: ['Paid once approved', 'neutral'],
+  queued: ['Payout queued', 'waiting'],
+  submitting: ['Payout being sent', 'waiting'],
+  confirmed: ['Paid', 'sealed'],
+  expired: ['Not paid: its approvals expired', 'broken'],
+  voided: ['Not paid: the treasury changed', 'broken'],
+  failed: ['Payout failed', 'broken'],
+  not_paid: ['Not paid', 'neutral'],
+};
+
+/** How the payout stands (plan Phase 8): the server's account, shown and never signed. */
+function Payout({ payout }: { payout: PayoutView }) {
+  const [label, tone] = PAYOUT_LABEL[payout.state] ?? [payout.state, 'neutral'];
+  return (
+    <View style={{ marginTop: space.md, gap: space.xs }}>
+      <StatusLine label={label} tone={tone} />
+      {payout.state !== 'confirmed' && payout.reason ? <Text style={s.timing}>{payout.reason}</Text> : null}
+      <KeyValue label="Payment authorisations" value={`${payout.execution_signatures} of ${payout.needed}`} />
+      {payout.tx_hash ? <KeyValue label="Transaction" mono value={payout.tx_hash} /> : null}
+      {payout.block_number !== null ? <KeyValue label="Block" value={payout.block_number.toLocaleString('en-GB')} /> : null}
+      {payout.gas_used !== null ? <KeyValue label="Gas" value={payout.gas_used.toLocaleString('en-GB')} /> : null}
     </View>
   );
 }

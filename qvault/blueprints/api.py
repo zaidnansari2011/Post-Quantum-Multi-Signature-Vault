@@ -33,6 +33,7 @@ from qvault.chain.rpc import RpcError
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
+from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.treasury import TreasurySigner
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
@@ -43,7 +44,9 @@ from qvault.services import (
     device_service,
     execution_service,
     key_service,
+    payout_service,
     proposal_service,
+    reconfiguration_service,
     treasury_jobs,
     treasury_service,
     vault_service,
@@ -105,6 +108,8 @@ def _upgrade_required():
 
 
 def _b64(raw: str, field: str) -> bytes:
+    if raw is not None and not isinstance(raw, str):
+        raise DeviceError("bad_request", f"{field} must be valid base64.")
     try:
         return base64.b64decode(raw or "", validate=True)
     except (ValueError, binascii.Error) as exc:
@@ -112,7 +117,9 @@ def _b64(raw: str, field: str) -> bytes:
 
 
 def _body() -> dict:
-    return request.get_json(silent=True) or {}
+    # A JSON body that is not an object (a list, a string) is treated as empty, not a 500.
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else {}
 
 
 def _device_json(device, *, current_id: int | None = None) -> dict:
@@ -202,6 +209,12 @@ def whoami():
         ok=True,
         user={"id": user.id, "email": user.email, "display_name": user.display_name},
         device=_device_json(g.api_device, current_id=g.api_device.id),
+        # Which key treasuries register for this person (D37), when this instance has treasuries.
+        my_key=(
+            treasury_service.key_choice(user)
+            if current_app.config.get("ONCHAIN_EXECUTION_ENABLED")
+            else None
+        ),
     )
 
 
@@ -412,7 +425,110 @@ def vault_treasury(vid: int):
     view = treasury_jobs.view(vault)
     view["may_create"] = treasury_jobs.may_request(vault, user)
     view["my_key"] = treasury_service.key_choice(user)
+    # Changing a linked treasury (Phase 7b): what differs, and any change being approved.
+    view["change"] = (
+        reconfiguration_service.view(vault, user) if view["treasury"] is not None else None
+    )
+    linked = treasury_service.linked_treasury(vault) if view["treasury"] is not None else None
+    view["status"] = (
+        payout_service.treasury_status(linked, current_app.extensions.get("relayer"))
+        if linked is not None
+        else None
+    )
     return jsonify(ok=True, **view)
+
+
+@bp.post("/vaults/<int:vid>/treasury/reconfigure")
+@device_token_required
+def request_reconfiguration(vid: int):
+    """Ask for the treasury to follow the vault (D45). A change that takes away someone's power
+    to approve is refused with ``needs_confirmation`` until it is sent again with ``confirm``."""
+    if not _handles_payments():
+        return _upgrade_required()
+    user = g.api_user
+    vault = _member_of(user, vid)
+    if vault is None:
+        return _error("unknown_vault", "No such vault.", 404)
+    if not treasury_jobs.may_request(vault, user):
+        # Before anything else, so a member who is not the owner learns nothing of the relayer.
+        return _error("not_owner", "Only the vault's owner changes its treasury.", 403)
+    relayer = current_app.extensions.get("relayer")
+    if relayer is None:
+        return _error("no_relayer", "This instance cannot do chain work.", 503)
+    confirm = _body().get("confirm")
+    try:
+        reconfiguration_service.request(
+            vault,
+            by=user,
+            relayer=relayer,
+            # The digest of the warnings the app showed (D45), never a bare yes: a change that
+            # grew a new warning since is asked about again.
+            confirm=confirm if isinstance(confirm, str) else False,
+        )
+    except reconfiguration_service.NeedsConfirmation as exc:
+        return (
+            jsonify(
+                ok=False,
+                code="needs_confirmation",
+                error="Confirm what this change takes away.",
+                warnings=exc.warnings,
+                warnings_digest=reconfiguration_service.warnings_digest(exc.warnings),
+            ),
+            409,
+        )
+    except reconfiguration_service.ReconfigurationRefused as exc:
+        return _error("reconfiguration_refused", " ".join(f"{p}." for p in exc.problems), 422)
+    return (
+        jsonify(
+            ok=True,
+            reconfiguration=reconfiguration_service.view(vault, user)["reconfiguration"],
+        ),
+        202,
+    )
+
+
+@bp.post("/vaults/<int:vid>/treasury/reconfigurations/<int:rid>/approve")
+@device_token_required
+def approve_reconfiguration(vid: int, rid: int):
+    """Admit a current signer's approval of a treasury change, made on this phone (D46)."""
+    if not _handles_payments():
+        return _upgrade_required()
+    user, device = g.api_user, g.api_device
+    vault = _member_of(user, vid)
+    reconfiguration = db.session.get(Reconfiguration, rid)
+    if vault is None or reconfiguration is None or reconfiguration.vault_id != vault.id:
+        return _error("unknown_reconfiguration", "No such change.", 404)
+    try:
+        signature = _b64(_body().get("signature_b64", ""), "signature_b64")
+    except DeviceError as exc:
+        return _error(exc.code, exc.message, 400)
+    try:
+        # The key is the authenticated device's, never one named in the body.
+        row = reconfiguration_service.record_device_approval(
+            reconfiguration, user, device.key, signature
+        )
+    except reconfiguration_service.ApprovalRefused as exc:
+        message = str(exc)
+        if "could not be asked" in message:
+            return _error("chain_unavailable", message, 503)
+        if "already approved" in message:
+            return _error("already_approved", message, 409)
+        return _error("approval_refused", message, 422)
+    return (
+        jsonify(
+            ok=True,
+            approval={
+                "signature_sha256": sha256_hex(row.signature),
+                "signed_at": row.created_at.isoformat() if row.created_at else None,
+            },
+            reconfiguration={
+                "state": reconfiguration.state,
+                "approvals": len(reconfiguration.signatures),
+                "needed": reconfiguration.treasury.threshold_m,
+            },
+        ),
+        201,
+    )
 
 
 @bp.post("/vaults/<int:vid>/treasury")
@@ -752,6 +868,8 @@ def proposal_detail(uuid: str):
         signing_inputs["action"] = proposal.action.canonical()
         detail["payment"] = _payment_view(proposal.action)
         detail["execution"] = _execution_view(proposal, user)
+        # How the payout stands (Phase 8): shown, never signed.
+        detail["payout"] = payout_service.view(proposal)
     detail.update(
         {
             "action_text": proposal.action_text,
