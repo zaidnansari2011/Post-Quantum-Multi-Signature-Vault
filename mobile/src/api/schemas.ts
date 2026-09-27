@@ -211,6 +211,13 @@ export const proposalDetail = proposalSummary.extend({
   payload_hash: z.string(),
   signing_bytes_sha256: z.string(),
   votes: z.array(voteRecord),
+  // Payment decisions only: claims the phone checks before any prompt, never signs (Phase 6b).
+  execution: z
+    .object({
+      digest: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+      seat_fingerprint: z.string().nullable(),
+    })
+    .optional(),
 });
 export type ProposalDetail = z.infer<typeof proposalDetail>;
 
@@ -227,6 +234,7 @@ export const castVoteResponse = z.object({
     custody: z.enum(['device', 'server']),
     alg_id: z.string().nullable(),
     signature_sha256: z.string(),
+    execution_signature_sha256: z.string().nullable().optional(),
     signed_at: z.string().nullable(),
   }),
   proposal: z.object({

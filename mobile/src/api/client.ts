@@ -49,6 +49,9 @@ async function rawRequest({ method = 'GET', path, body, token, signal }: Request
       method,
       headers: {
         Accept: 'application/json',
+        // This app shows a payment from its signed fields and signs the treasury's digest itself
+        // (plan D25, Phase 6b), so the server may send it payment decisions.
+        'X-QVault-Capabilities': 'payment-action-1',
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },

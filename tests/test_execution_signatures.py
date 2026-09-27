@@ -592,7 +592,8 @@ def test_a_reconfiguration_this_app_has_not_recorded_yet_is_caught_on_chain(paym
         "no-contract",  # nothing there: eth_call answers 0x, which must not read as nonce 0
         "lost",  # the request never arrives
         "no-relayer",  # this instance has no endpoint at all
-        "other-chain",  # the endpoint is not the payment's chain
+        "other-chain",  # this instance's relayer is set up for another chain than the payment's
+        "node-elsewhere",  # the RPC endpoint itself is on another chain (a mainnet URL, say)
     ],
 )
 def test_no_answer_from_the_chain_signs_nothing(payments_on, chain, monkeypatch, outage):
@@ -609,8 +610,10 @@ def test_no_answer_from_the_chain_signs_nothing(payments_on, chain, monkeypatch,
         chain.node.lose_request("eth_call")
     elif outage == "no-relayer":
         payments_on.extensions["relayer"] = None
-    else:
+    elif outage == "other-chain":
         chain.relayer.chain_id = 1
+    else:
+        chain.node.chain_id = 1  # its treasury still answers: only check_chain() can tell
     unlocks = _count_unlocks(monkeypatch)
 
     with pytest.raises(ApprovalError, match="could not be asked"):
@@ -856,6 +859,106 @@ def test_an_app_claiming_the_capability_cannot_approve_a_payment_with_a_vote_alo
     assert body["code"] == "execution_signature_required"  # something an app can branch on
     assert "Update the app" in body["error"]
     assert approval_service.tally(proposal) == (0, 0)
+    assert ExecutionSignature.query.count() == 0
+
+
+def _phone_over_http(client, user, treasury):
+    """Enrol a phone for ``user`` over the API and seat its key on the treasury (D37)."""
+    _body, secret, auth = _enrol_over_http(client, user)
+    key = Key.query.filter_by(owner_id=user.id, wrap_domain="device").one()
+    TreasurySigner.query.filter_by(treasury_id=treasury.id, user_id=user.id).one().key_id = key.id
+    db.session.commit()
+    return key, secret, auth
+
+
+def _phone_approval(app, proposal, user, secret, digest: bytes) -> dict:
+    sign = _provider(app).sign
+    vote = vote_signing_bytes(
+        proposal_payload_hash=proposal.payload_hash, decision="approve", signer_id=user.id
+    )
+    return {
+        "decision": "approve",
+        "signature_b64": base64.b64encode(sign(secret, vote)).decode(),
+        "execution_signature_b64": base64.b64encode(sign(secret, digest)).decode(),
+    }
+
+
+def test_a_phone_approves_a_payment_over_the_api(payments_on, client):
+    # Phase 6b end to end on the server side: the detail tells the phone what to check, the phone
+    # sends both signatures, and what is stored is echoed back for it to compare.
+    owner, _other, vault, treasury = _vault("phoneapi")
+    key, secret, auth = _phone_over_http(client, owner, treasury)
+    proposal = _payment(vault, owner)
+    url = f"/api/v1/proposals/{proposal.proposal_uuid}"
+
+    detail = client.get(url, headers={**auth, **PAYMENTS}).get_json()["proposal"]
+    digest = execution_service.digest_for(proposal)
+    assert detail["execution"] == {
+        "digest": digest.hex(),
+        "seat_fingerprint": key.public_fingerprint(),
+    }
+
+    body = _phone_approval(payments_on, proposal, owner, secret, digest)
+    vote = client.post(f"{url}/vote", json=body, headers={**auth, **PAYMENTS})
+
+    assert vote.status_code == 201, vote.get_json()
+    sent = base64.b64decode(body["execution_signature_b64"])
+    assert vote.get_json()["vote"]["execution_signature_sha256"] == sha256_hex(sent)
+    stored = _signature_of(proposal, owner)
+    assert bytes(stored.signature) == sent and bytes(stored.digest) == digest
+
+
+def test_the_detail_names_the_seat_so_another_phone_can_refuse_early(payments_on, client):
+    owner, _other, vault, treasury = _vault("phoneseat")
+    _body, _secret, auth = _enrol_over_http(
+        client, owner
+    )  # enrolled, but the seat is the password key
+    proposal = _payment(vault, owner)
+    detail = client.get(
+        f"/api/v1/proposals/{proposal.proposal_uuid}", headers={**auth, **PAYMENTS}
+    ).get_json()["proposal"]
+    seat = TreasurySigner.query.filter_by(treasury_id=treasury.id, user_id=owner.id).one()
+    assert detail["execution"]["seat_fingerprint"] == seat.key.public_fingerprint()
+    assert (
+        detail["execution"]["seat_fingerprint"]
+        != Key.query.filter_by(owner_id=owner.id, wrap_domain="device").one().public_fingerprint()
+    )
+
+
+def test_a_phone_approval_while_ethereum_is_down_is_a_retry_not_a_failure(
+    payments_on, chain, client
+):
+    owner, _other, vault, treasury = _vault("phonedown")
+    _key, secret, auth = _phone_over_http(client, owner, treasury)
+    proposal = _payment(vault, owner)
+    body = _phone_approval(
+        payments_on, proposal, owner, secret, execution_service.digest_for(proposal)
+    )
+    chain.answering = False
+
+    vote = client.post(
+        f"/api/v1/proposals/{proposal.proposal_uuid}/vote", json=body, headers={**auth, **PAYMENTS}
+    )
+
+    assert vote.status_code == 503 and vote.get_json()["code"] == "chain_unavailable"
+    assert approval_service.tally(proposal) == (0, 0)
+    assert ExecutionSignature.query.count() == 0
+
+
+def test_an_execution_signature_that_is_not_a_string_is_refused_not_a_500(payments_on, client):
+    owner, _other, vault, treasury = _vault("phonejunk")
+    _key, secret, auth = _phone_over_http(client, owner, treasury)
+    proposal = _payment(vault, owner)
+    body = _phone_approval(
+        payments_on, proposal, owner, secret, execution_service.digest_for(proposal)
+    )
+    body["execution_signature_b64"] = 12345
+
+    vote = client.post(
+        f"/api/v1/proposals/{proposal.proposal_uuid}/vote", json=body, headers={**auth, **PAYMENTS}
+    )
+
+    assert vote.status_code == 422 and vote.get_json()["code"] == "bad_signature_size"
     assert ExecutionSignature.query.count() == 0
 
 

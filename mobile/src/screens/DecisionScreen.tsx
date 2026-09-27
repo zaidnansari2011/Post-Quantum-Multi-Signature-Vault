@@ -54,13 +54,14 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
 import {
+  NotThisPhonesSeatError,
   PayloadMismatchError,
   SelfVerificationError,
   verifyProposalIntegrity,
   voteOnProposal,
   type VoteOutcome,
 } from '../flows.ts';
-import type { Decision } from '../crypto/signing.ts';
+import { NETWORKS, formatEth, type Decision, type PaymentAction } from '../crypto/signing.ts';
 import type { ProposalDetail, VoteRecord } from '../api/schemas.ts';
 
 export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack: () => void }) {
@@ -186,6 +187,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
         <Text style={detail.action_text.length > LONG_DECISION ? s.decisionLong : s.decision}>
           {detail.action_text}
         </Text>
+        {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
 
         {/* The quorum, immediately under it. `celebrate` is true only when this person's own
             signature is what completed it -- animating a decision that was already complete when
@@ -339,9 +341,12 @@ function ConfirmSheet({
       title={approving ? 'Approve this decision' : 'Reject this decision'}
     >
       <Text style={s.confirmAction}>{detail.action_text}</Text>
+      {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
 
       <Text style={s.confirmNote}>
-        {approving
+        {approving && detail.signing_inputs.action
+          ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
+          : approving
           ? completes
             ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
             : 'Your signature is recorded against this decision and cannot be withdrawn.'
@@ -358,6 +363,22 @@ function ConfirmSheet({
         <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} />
       </View>
     </Sheet>
+  );
+}
+
+/**
+ * The payment, read from the signed fields (`signing_inputs.action`, the ones hashed and signed),
+ * never from the server's display copy: what this card shows is what an approval authorises.
+ */
+function Payment({ action }: { action: PaymentAction }) {
+  return (
+    <View style={{ marginTop: space.md }}>
+      <KeyValue label="Amount" value={formatEth(action.value_wei)} />
+      <KeyValue label="To" mono value={action.to} />
+      <KeyValue label="Network" value={NETWORKS[action.chain_id] ?? `Chain ${action.chain_id}`} />
+      <KeyValue label="From treasury" mono value={action.treasury} />
+      <KeyValue label="Approvals valid until" value={exactly(new Date(action.valid_until * 1000).toISOString())} />
+    </View>
   );
 }
 
@@ -421,6 +442,9 @@ function describe(err: unknown): { title: string; detail?: string } {
   if (err instanceof SelfVerificationError) {
     return { title: err.message, detail: 'Enrol this device again to replace the key.' };
   }
+  if (err instanceof NotThisPhonesSeatError) {
+    return { title: 'Not signed on this phone.', detail: err.message };
+  }
   if (err instanceof Error && err.name === 'AuthenticationCancelled') {
     return { title: 'Nothing was signed.' };
   }
@@ -441,6 +465,9 @@ function describe(err: unknown): { title: string; detail?: string } {
     switch (err.code) {
       case 'already_voted':
         return { title: 'You have already signed this decision.' };
+      case 'chain_unavailable':
+        // D43: a retry, not a failure. Nothing was stored.
+        return { title: 'Ethereum did not answer. Nothing was signed.', detail: 'Try again in a moment.' };
       case 'proposal_closed':
         return { title: 'This decision is closed.', detail: 'It takes no further votes.' };
       case 'not_a_signer':

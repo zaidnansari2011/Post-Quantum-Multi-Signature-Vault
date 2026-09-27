@@ -13,6 +13,8 @@ import {
   type Decision,
 } from './crypto/signing.ts';
 import { toBase64, toHex } from './crypto/bytes.ts';
+import { executionDigest } from './crypto/execution.ts';
+import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import type { Custody, ProtectionLevel, StoredIdentity } from './custody.ts';
 import type { ProposalDetail } from './api/schemas.ts';
 
@@ -139,17 +141,42 @@ export function verifyProposalIntegrity(detail: ProposalDetail): string {
 }
 
 /**
- * A payment decision reached an app that cannot yet show the payment it would be approving.
- *
- * The server only sends payments to an app that declares it can handle them, but device custody
- * exists precisely so that the phone does not have to trust the server. Until this app renders
- * the signed payment itself (plan Phase 6b), it refuses to sign one, before asking for biometrics.
+ * The treasury would not count an approval made on this phone: it holds another key for this
+ * person, or none. Refused before biometrics, with where to approve instead (plan Phase 6b).
  */
-export class PaymentNotSupportedError extends Error {
-  constructor() {
-    super('This decision is a payment. Update the app to review and sign it.');
-    this.name = 'PaymentNotSupportedError';
+export class NotThisPhonesSeatError extends Error {
+  constructor(seatFingerprint: string | null) {
+    super(
+      seatFingerprint === null
+        ? "None of your keys is registered on this vault's treasury, so an approval from this phone would not count."
+        : `This vault's treasury holds your key ${seatFingerprint}, not this phone's, so approve this payment where that key is.`,
+    );
+    this.name = 'NotThisPhonesSeatError';
   }
+}
+
+/**
+ * What must be signed to approve a payment, after checking it against what the server claims: the
+ * digest this phone derived must equal the server's, and the treasury must hold this phone's key.
+ * Returns null for anything but an approval of a payment. Runs before any prompt.
+ */
+export function paymentApproval(
+  detail: ProposalDetail,
+  payloadHash: string,
+  decision: Decision,
+  identity: StoredIdentity,
+): Uint8Array | null {
+  const action = detail.signing_inputs.action;
+  if (action === undefined || decision !== 'approve') return null;
+  const ours = executionDigest(payloadHash, action);
+  const theirs = detail.execution?.digest ?? null;
+  if (theirs !== toHex(ours)) {
+    // The server would store, and the contract would check, a different payment from the one shown.
+    throw new PayloadMismatchError(theirs ?? '(none)', toHex(ours));
+  }
+  const seat = detail.execution?.seat_fingerprint ?? null;
+  if (seat !== identity.fingerprint) throw new NotThisPhonesSeatError(seat);
+  return ours;
 }
 
 export interface VoteOutcome {
@@ -173,15 +200,17 @@ export async function voteOnProposal(args: {
   // first and validating second would train people to approve a prompt and then be told the
   // thing they approved was not what they thought.
   const payloadHash = verifyProposalIntegrity(args.detail);
-  if (args.detail.signing_inputs.action !== undefined) {
-    throw new PaymentNotSupportedError();
-  }
+  const execution = paymentApproval(args.detail, payloadHash, args.decision, args.identity);
 
   const verb = args.decision === 'approve' ? 'Approve' : 'Reject';
   const protection = await args.custody.confirmPresence(`${verb}: ${args.detail.title}`);
 
   const pair = await args.custody.deriveKeyPair(args.identity.algId);
   if (!pair) throw new Error('This device no longer holds a signing key. Enrol it again.');
+  if (execution !== null && publicKeyFingerprint(pair.publicKey) !== args.identity.fingerprint) {
+    // The seat check compared the stored fingerprint; this is the key that will actually sign.
+    throw new NotThisPhonesSeatError(args.detail.execution?.seat_fingerprint ?? null);
+  }
 
   const alg = getAlgorithm(args.identity.algId);
   const message = voteSigningBytes({
@@ -193,12 +222,19 @@ export async function voteOnProposal(args: {
 
   const signature = alg.sign(message, pair.secretKey);
   if (!alg.verify(signature, message, pair.publicKey)) throw new SelfVerificationError();
+  // One prompt, two signatures, as one password is on the web: the vote, and the authorisation the
+  // treasury checks on chain before it pays. Each is verified before it leaves the phone.
+  const executionSignature = execution === null ? null : alg.sign(execution, pair.secretKey);
+  if (executionSignature !== null && !alg.verify(executionSignature, execution!, pair.publicKey)) {
+    throw new SelfVerificationError();
+  }
 
   const result = await api.castVote({
     token: args.token,
     uuid: args.detail.proposal_uuid,
     decision: args.decision,
     signatureB64: toBase64(signature),
+    executionSignatureB64: executionSignature === null ? null : toBase64(executionSignature),
     reason: args.reason ?? null,
   });
 
@@ -207,6 +243,10 @@ export async function voteOnProposal(args: {
   const localDigest = toHex(sha256(signature));
   if (result.vote.signature_sha256 !== localDigest) {
     throw new Error('The server recorded a different signature from the one this device sent.');
+  }
+  const localExecution = executionSignature === null ? null : toHex(sha256(executionSignature));
+  if ((result.vote.execution_signature_sha256 ?? null) !== localExecution) {
+    throw new Error('The server recorded a different payment approval from the one this device sent.');
   }
 
   return {

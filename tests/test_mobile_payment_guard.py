@@ -1,17 +1,14 @@
-"""The phone refuses to sign a payment it cannot show (on-chain execution, Phase 4 review M1).
+"""What the phone checks before it asks to approve a payment (plan Phase 4 review M1, Phase 6b).
 
-Device custody exists so that a phone does not have to trust the server. The server sends a
-payment decision only to an app that declares it can handle one (plan D25), but that is the
-server's promise, so the app enforces two things itself, tested here by running its own
-``flows.ts`` under Node:
+Device custody exists so that a phone does not have to trust the server. These run the app's own
+``flows.ts`` under Node, with a custody stand-in that throws if touched, so "reached the prompt"
+proves every check before biometrics passed and anything else proves a refusal came first:
 
 * a payment decision whose text is not the text generated from its signed payment is refused as a
   mismatch, even though its hash is correct;
-* until the app can render the signed payment itself (Phase 6b), it refuses any payment decision
-  before biometrics are requested.
-
-It also pins the app's copy of the payment text against the server's, since the check depends on
-all three copies (server, browser verifier, app) producing the same string.
+* the phone derives the treasury's execution digest itself and refuses an approval when the
+  server's differs, or when the treasury holds another key for this person;
+* the phone's digest is byte for byte the Python one, which the contract mirrors.
 """
 
 from __future__ import annotations
@@ -24,6 +21,7 @@ import pytest
 from test_mobile_canonical import MOBILE_DIR, _node_available
 from test_payload_vectors import PAYMENT
 
+from qvault.chain.action import parse
 from qvault.services.signing import payment_text
 
 PROBE = MOBILE_DIR / "tools" / "payment_guard_probe.ts"
@@ -33,7 +31,9 @@ pytestmark = pytest.mark.skipif(
     reason="Node and mobile/ are required; run pnpm install in mobile/.",
 )
 
-INPUTS, _HASH = PAYMENT
+INPUTS, HASH = PAYMENT
+DIGEST = parse(INPUTS["action"]).execution_digest(HASH).hex()
+FINGERPRINT = "0123456789abcdef"
 
 
 def _signing_inputs(action, action_text):
@@ -54,22 +54,48 @@ def _signing_inputs(action, action_text):
 
 
 def _big_payment():
-    return {**INPUTS["action"], "value_wei": "123456789000000000000000001"}
+    return {**INPUTS["action"], "value_wei": "123456789000000000000000001", "config_nonce": 7}
 
+
+CONSISTENT = _signing_inputs(INPUTS["action"], INPUTS["action_text"])
+HONEST = {"digest": DIGEST, "seat_fingerprint": FINGERPRINT}
 
 CASES = {
-    "consistent_payment": _signing_inputs(INPUTS["action"], INPUTS["action_text"]),
-    "big_amount": _signing_inputs(_big_payment(), payment_text(_big_payment())),
+    "consistent_payment": {"inputs": CONSISTENT, "execution": HONEST, "fingerprint": FINGERPRINT},
+    "big_amount": {"inputs": _signing_inputs(_big_payment(), payment_text(_big_payment()))},
     # The server's text says 0.0001 ETH; the signed payment sends 5 ETH to someone else.
-    "text_describes_another_payment": _signing_inputs(
-        {
-            **INPUTS["action"],
-            "value_wei": "5000000000000000000",
-            "to": "0x000000000000000000000000000000000000bEEF",
-        },
-        INPUTS["action_text"],
-    ),
-    "plain_decision": _signing_inputs(None, "Hire a second auditor."),
+    "text_describes_another_payment": {
+        "inputs": _signing_inputs(
+            {
+                **INPUTS["action"],
+                "value_wei": "5000000000000000000",
+                "to": "0x000000000000000000000000000000000000bEEF",
+            },
+            INPUTS["action_text"],
+        ),
+        "execution": HONEST,
+        "fingerprint": FINGERPRINT,
+    },
+    # The server would store and the contract check a digest over some other payment.
+    "server_digest_differs": {
+        "inputs": CONSISTENT,
+        "execution": {**HONEST, "digest": "ab" * 32},
+        "fingerprint": FINGERPRINT,
+    },
+    "server_sends_no_digest": {"inputs": CONSISTENT, "fingerprint": FINGERPRINT},
+    "treasury_holds_another_key": {
+        "inputs": CONSISTENT,
+        "execution": {**HONEST, "seat_fingerprint": "fedcba9876543210"},
+        "fingerprint": FINGERPRINT,
+    },
+    "treasury_holds_no_key": {
+        "inputs": CONSISTENT,
+        "execution": {**HONEST, "seat_fingerprint": None},
+        "fingerprint": FINGERPRINT,
+    },
+    # Objecting authorises no payment, so none of the payment checks apply.
+    "reject_without_a_seat": {"inputs": CONSISTENT, "decision": "reject"},
+    "plain_decision": {"inputs": _signing_inputs(None, "Hire a second auditor.")},
 }
 
 
@@ -78,8 +104,7 @@ def results(tmp_path_factory) -> dict:
     tmp = tmp_path_factory.mktemp("payment-guard")
     in_path, out_path = tmp / "in.json", tmp / "out.json"
     in_path.write_text(
-        json.dumps({"cases": [{"name": n, "inputs": v} for n, v in CASES.items()]}),
-        encoding="utf-8",
+        json.dumps({"cases": [{"name": n, **v} for n, v in CASES.items()]}), encoding="utf-8"
     )
     run = subprocess.run(
         ["node", str(PROBE), str(in_path), str(out_path)],
@@ -95,22 +120,44 @@ def results(tmp_path_factory) -> dict:
 
 @pytest.mark.parametrize("name", ["consistent_payment", "big_amount"])
 def test_the_app_writes_the_same_payment_text_as_the_server(results, name):
-    action = CASES[name]["action"]
+    action = CASES[name]["inputs"]["action"]
     assert results[name]["payment_text"] == payment_text(action)
     assert results[name]["integrity"] == "ok"
 
 
-def test_a_text_that_describes_another_payment_is_refused_despite_a_correct_hash(results):
-    assert results["text_describes_another_payment"]["integrity"] == "mismatch"
-    assert results["text_describes_another_payment"]["vote"] == "mismatch"
+@pytest.mark.parametrize("name", ["consistent_payment", "big_amount"])
+def test_the_app_derives_the_same_execution_digest_as_the_server(results, name):
+    # Interop (Phase 6b): Python's digest is the contract's (the Foundry fixtures pin that), so
+    # agreement here means the phone signs what the treasury checks. The payload hash's own
+    # agreement is test_mobile_canonical's; the frozen case pins it here as well.
+    payload_hash = results[name]["payload_hash"]
+    if name == "consistent_payment":
+        assert payload_hash == HASH
+    expected = parse(CASES[name]["inputs"]["action"]).execution_digest(payload_hash).hex()
+    assert results[name]["execution_digest"] == expected
 
 
-def test_a_payment_is_refused_before_biometrics_until_the_app_can_show_it(results):
-    # The probe's custody throws if touched, so reaching this refusal proves no prompt was shown.
-    assert results["consistent_payment"]["vote"] == "payment_not_supported"
+def test_an_honest_payment_reaches_the_prompt(results):
+    assert results["consistent_payment"]["vote"] == "reached_prompt"
 
 
-def test_a_decision_without_a_payment_is_untouched_by_the_guard(results):
+@pytest.mark.parametrize(
+    "name, refusal",
+    [
+        ("text_describes_another_payment", "mismatch"),
+        ("server_digest_differs", "mismatch"),
+        ("server_sends_no_digest", "mismatch"),
+        ("treasury_holds_another_key", "not_this_phones_seat"),
+        ("treasury_holds_no_key", "not_this_phones_seat"),
+    ],
+)
+def test_an_approval_the_phone_cannot_stand_behind_is_refused_before_the_prompt(
+    results, name, refusal
+):
+    assert results[name]["vote"] == refusal
+
+
+def test_a_rejection_and_a_plain_decision_skip_the_payment_checks(results):
+    assert results["reject_without_a_seat"]["vote"] == "reached_prompt"
     assert results["plain_decision"]["integrity"] == "ok"
-    # It proceeds past both guards and reaches the custody stand-in, which refuses to be used.
-    assert "custody was used" in results["plain_decision"]["vote"]
+    assert results["plain_decision"]["vote"] == "reached_prompt"
