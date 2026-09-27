@@ -17,6 +17,7 @@ on:
       - "requirements*.txt"
       - "qvault/**"
       - "witness/**"
+      - "scripts/**"
       - "wsgi.py"
       - "config.py"
       - ".github/workflows/build-image.yml"
