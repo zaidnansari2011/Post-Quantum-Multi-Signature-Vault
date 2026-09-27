@@ -41,6 +41,7 @@ from sqlalchemy import or_, select
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.proposal import Proposal
+from qvault.models.treasury import ExecutionSignature
 from qvault.services import checkpoint_service
 from qvault.verify import BUNDLE_FORMAT, PAYMENT_BUNDLE_FORMAT
 
@@ -121,7 +122,7 @@ def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> d
         # refuses it instead of reporting a genuine decision as tampered.
         decision["action"] = proposal.action.canonical()
 
-    return {
+    bundle = {
         "format": PAYMENT_BUNDLE_FORMAT if proposal.action is not None else BUNDLE_FORMAT,
         "exported_at": datetime.now(UTC).isoformat(),
         "origin": checkpoint.origin,
@@ -185,6 +186,29 @@ def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> d
             ],
         },
     }
+    if proposal.action is not None:
+        # The authorisations the treasury checks (plan Phase 9). Additive: a verifier that does
+        # not know this section ignores it. A verifier that does recomputes the digest from the
+        # signed payment, checks each signature, and matches its bytes to the SHA-256 the log
+        # recorded beside that approval, so this section cannot carry anything the log did not.
+        bundle["execution"] = {
+            "signatures": [
+                {
+                    "signer_id": e.signer_id,
+                    "custody": e.custody,
+                    "alg_id": e.alg_id,
+                    "backend": e.backend,
+                    "public_key_b64": b64encode(e.public_key).decode(),
+                    "signature_b64": b64encode(e.signature).decode(),
+                    # The signer as the contract names it; lets anyone match the on-chain call.
+                    "identity_hex": e.identity_hex,
+                }
+                for e in ExecutionSignature.query.filter_by(proposal_id=proposal.id)
+                .order_by(ExecutionSignature.created_at, ExecutionSignature.id)
+                .all()
+            ],
+        }
+    return bundle
 
 
 def transparency_status(proposal: Proposal) -> dict:

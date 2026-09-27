@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import binascii
 import json
+import re
 from base64 import b64decode
 from dataclasses import dataclass, field
 from typing import Any
@@ -58,6 +59,7 @@ from qvault.transparency import (
     witness_bytes,
 )
 from qvault.transparency.statement import entry_hash as compute_entry_hash
+from qvault.verify.execution import execution_digest
 
 #: The version after the slash is a compatibility break: a verifier that does not recognise it
 #: must refuse rather than guess. Additive, ignorable fields need no new version.
@@ -67,6 +69,11 @@ BUNDLE_FORMAT = "qvault.decision/1"
 #: payment and report a genuine decision as tampered; with ``/2`` it says "unsupported format".
 PAYMENT_BUNDLE_FORMAT = "qvault.decision/2"
 _ACCEPTED_VERSIONS = {"1": BUNDLE_FORMAT, "2": PAYMENT_BUNDLE_FORMAT}
+#: The only algorithm a treasury verifies on chain (plan D1).
+TREASURY_ALG = "ML-DSA-65"
+_BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}")
+#: A signer as the contract names it: 0x + 124 bytes (plan D17).
+_IDENTITY = re.compile(r"0x[0-9a-fA-F]{248}")
 
 
 @dataclass
@@ -500,6 +507,25 @@ def _verify_into(
     )
 
     # ---------------------------------------------------------------------------------------
+    # 6c. Payment authorisations (plan Phase 9). The treasury pays only on signatures over its
+    #     execution digest; each one here must be over the digest THIS verifier derives from the
+    #     signed payment, verify, and be the exact bytes the log recorded beside an approval. A
+    #     payout the log records must be backed by enough of them.
+    # ---------------------------------------------------------------------------------------
+    if action is not None:
+        _check_execution(
+            report,
+            bundle,
+            action,
+            recomputed_hash,
+            payloads,
+            uuid,
+            required_m,
+            registry,
+            verified,
+        )
+
+    # ---------------------------------------------------------------------------------------
     # 7. Inclusion in the published tree
     # ---------------------------------------------------------------------------------------
     checkpoint = _need(log, "checkpoint", "log")
@@ -650,3 +676,137 @@ def _verify_into(
                 f"expected {expect_witness}, found {', '.join(found) or 'none'}",
             )
         )
+
+
+def _strict_b64(value: Any) -> bytes | None:
+    """Standard base64 with its padding, or None; the browser's twin is exactly as strict."""
+    if not isinstance(value, str) or len(value) % 4 or not _BASE64.fullmatch(value):
+        return None
+    try:
+        return b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _check_execution(
+    report, bundle, action, payload_hash, payloads, uuid, required_m, registry, verified
+) -> None:
+    """Step 6c. Kept to plain checks on plain values, in the same order as the browser's twin, so
+    the two reach the same verdict on every file (tests/test_offline_verifier.py)."""
+    add = report.checks.append
+    title = "The payment authorisations are genuine and recorded"
+
+    # This decision's payout, and only this decision's: another decision's genuine entry, with a
+    # genuine inclusion proof, must not make this one read as paid (review M2).
+    executed = [
+        p
+        for raw, p in payloads
+        if raw["event_type"] == "proposal_executed"
+        and raw.get("ref_id") == uuid
+        and p.get("proposal_uuid") == uuid
+    ]
+    report.facts["payout"] = (
+        {"tx_hash": executed[0].get("tx_hash"), "block": executed[0].get("block")}
+        if len(executed) == 1
+        else None
+    )
+    # What the log says each approver authorised: the SHA-256 of their execution signature, in
+    # the same entry as their approving vote.
+    recorded = {
+        p.get("signer_id"): p.get("execution_signature_sha256")
+        for raw, p in payloads
+        if raw["event_type"] == "proposal_signed"
+        and raw.get("ref_id") == uuid
+        and p.get("decision") == "approve"
+        and isinstance(p.get("execution_signature_sha256"), str)
+    }
+
+    section = bundle.get("execution")
+    if section is None:
+        if recorded or executed:
+            # The log names authorisations (or a payout) the file leaves out: removing the section
+            # must not switch the check off (review M1).
+            add(
+                Check(
+                    "execution",
+                    title,
+                    False,
+                    "the export leaves out the payment " "authorisations the log records",
+                )
+            )
+        else:
+            add(
+                Check(
+                    "execution",
+                    title,
+                    False,
+                    "this export predates payment authorisations in the record",
+                    skipped=True,
+                )
+            )
+        return
+    entries = section.get("signatures") if isinstance(section, dict) else None
+    if not isinstance(entries, list):
+        raise _Malformed("execution.signatures must be a list")
+
+    try:
+        digest = execution_digest(action, payload_hash)
+    except ValueError as exc:
+        add(Check("execution", title, False, f"the signed payment is malformed: {exc}"))
+        return
+
+    vote_keys = {s["signer_id"]: s["_public_key"] for s in verified if s["decision"] == "approve"}
+    problems: list[str] = []
+    good: set[int] = set()
+    carried: set = set()
+    for entry in entries:
+        signer_id = entry.get("signer_id") if isinstance(entry, dict) else None
+        if isinstance(signer_id, bool) or not isinstance(signer_id, int):
+            problems.append("an authorisation does not name its signer")
+            continue
+        carried.add(signer_id)
+        public_key = _strict_b64(entry.get("public_key_b64"))
+        signature = _strict_b64(entry.get("signature_b64"))
+        if entry.get("alg_id") != TREASURY_ALG:
+            # The treasury checks ML-DSA-65 and nothing else (plan D1), so no other claim can count.
+            problems.append(f"signer {signer_id}: the treasury checks {TREASURY_ALG} only")
+        elif public_key is None or signature is None:
+            problems.append(f"signer {signer_id}: the key or signature is not valid base64")
+        elif not isinstance(entry.get("identity_hex"), str) or not _IDENTITY.fullmatch(
+            entry["identity_hex"]
+        ):
+            problems.append(f"signer {signer_id}: the on-chain identity is malformed")
+        elif not registry.signature(TREASURY_ALG).verify(public_key, digest, signature):
+            problems.append(
+                f"signer {signer_id}: the authorisation is not over this payment, or is forged"
+            )
+        elif recorded.get(signer_id) != sha256_hex(signature):
+            problems.append(f"the log has no record of signer {signer_id} authorising these bytes")
+        elif vote_keys.get(signer_id) != public_key:
+            # One prompt or one password makes both, with the one key the treasury holds.
+            problems.append(f"signer {signer_id}: not made with the key of their approving vote")
+        elif signer_id in good:
+            problems.append(f"signer {signer_id} authorised more than once")
+        else:
+            good.add(signer_id)
+    if any(signer not in carried for signer in recorded):
+        problems.append(
+            f"the log records {len(recorded)} authorisation(s) but the bundle carries "
+            f"{len(entries)}: the export is incomplete"
+        )
+    if len(executed) > 1:
+        problems.append("the log records this payment as made more than once")
+    elif executed and len(good) < required_m:
+        problems.append(
+            f"the log records the payment as made, but only {len(good)} of {required_m} "
+            "authorisations are genuine"
+        )
+    detail = "; ".join(problems) or (
+        f"{len(good)} authorisation(s) over this payment, each recorded"
+        + (
+            f"; paid in {executed[0].get('tx_hash') or 'a transaction by another submitter'}"
+            if executed
+            else ""
+        )
+    )
+    add(Check("execution", title, not problems, detail))

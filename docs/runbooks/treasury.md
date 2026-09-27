@@ -139,6 +139,24 @@ anything that touched the database by hand.
 `scripts/check_verifier_live.py` asks the deployed verifier to judge Q-Vault's own signatures. It
 costs nothing and is the quickest way to tell a verifier problem from an app problem.
 
+`scripts/export_treasury_record.py` keeps the committed public record
+(`chain/deployments/sepolia.json`) up to date with the treasuries an instance has linked and
+reconfigured. On Azure the app's own copy of that file does not persist, so run this after a link
+or a reconfiguration there, and commit the result:
+
+```sh
+python scripts/export_treasury_record.py --from-url https://project4.zaidansari.tech --check  # what is missing
+python scripts/export_treasury_record.py --from-url https://project4.zaidansari.tech          # write it
+```
+
+`scripts/demo_payment_tamper.py` is the demonstration that an approved payment edited in the
+database is refused and nothing moves. It sends nothing and costs nothing, and advances only its
+own payout. Run it against a vault with a linked, funded treasury and enough approvers:
+
+```sh
+python scripts/demo_payment_tamper.py --vault <id> --by <owner email> --approver <email> --restore
+```
+
 ## Never
 
 - **Reseed a database that has a linked treasury.** New keys mean the old approvers can never sign

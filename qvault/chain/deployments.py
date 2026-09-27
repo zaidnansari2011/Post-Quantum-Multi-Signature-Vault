@@ -387,7 +387,9 @@ def merge_treasury(record: dict, address: str, entry: dict) -> tuple[dict, bool]
                 f"treasury {address} is already recorded with a different {key}; a record is "
                 "never overwritten"
             )
-    nonce = int(entry.get("config_nonce", 0))
+    nonce = entry.get("config_nonce", 0)
+    if isinstance(nonce, bool) or not isinstance(nonce, int) or nonce < 0:
+        raise DeploymentError(f"treasury {address}: config_nonce must be a non-negative integer")
     known = configurations(existing)
     offered = {"threshold": entry.get("threshold"), "signers": entry.get("signers") or []}
     if nonce in known:

@@ -98,25 +98,40 @@ def enqueue_approved(*, now: Callable[[], datetime] = _utcnow) -> list[Execution
         .filter(Proposal.status == "approved", Execution.id.is_(None))
         .all()
     )
-    queued = []
-    for proposal, action in rows:
-        execution = Execution(
-            proposal_id=proposal.id,
-            treasury_id=action.treasury_id,
-            vault_id=proposal.vault_id,
-            state="queued",
-            reason="waiting to be submitted",
-            created_at=now(),
-            updated_at=now(),
-        )
-        try:
-            with db.session.begin_nested():
-                db.session.add(execution)
-        except IntegrityError:
-            continue  # another tick queued it first (uq_execution_proposal)
-        queued.append(execution)
+    queued = [e for proposal, action in rows if (e := _queue_one(proposal, action, now))]
     db.session.commit()
     return queued
+
+
+def queue(proposal: Proposal, *, now: Callable[[], datetime] = _utcnow) -> Execution | None:
+    """Queue a payout for this one approved payment (the tamper demo's path), or return the one
+    it already has. Nothing is sent until the payout is advanced."""
+    existing = payout_of(proposal)
+    if existing is not None:
+        return existing
+    if proposal.status != "approved" or proposal.action is None:
+        return None
+    execution = _queue_one(proposal, proposal.action, now)
+    db.session.commit()
+    return execution or payout_of(proposal)
+
+
+def _queue_one(proposal: Proposal, action: ProposalAction, now) -> Execution | None:
+    execution = Execution(
+        proposal_id=proposal.id,
+        treasury_id=action.treasury_id,
+        vault_id=proposal.vault_id,
+        state="queued",
+        reason="waiting to be submitted",
+        created_at=now(),
+        updated_at=now(),
+    )
+    try:
+        with db.session.begin_nested():
+            db.session.add(execution)
+    except IntegrityError:
+        return None  # another tick queued it first (uq_execution_proposal)
+    return execution
 
 
 # --------------------------------------------------------------------------------------------
@@ -259,6 +274,17 @@ def _confirm(execution: Execution, tx: ExecutionTransaction | None, now) -> None
 
 def _view(relayer: Relayer, treasury: str, data: bytes) -> bytes:
     return relayer.rpc.call(call_request(sender=_READER, to=treasury, data=data))
+
+
+def executed_on_chain(relayer: Relayer, treasury: str, payload_hash: str) -> bool:
+    """Whether the treasury has paid this decision (``executed(proposalId)``), read from the
+    chain. Raises ``RpcUnavailable`` when the answer cannot be read."""
+    try:
+        return execute_call.decode_bool(
+            _view(relayer, treasury, execute_call.executed_calldata(proposal_id(payload_hash)))
+        )
+    except ValueError:
+        raise RpcUnavailable("the treasury's executed() answer could not be read") from None
 
 
 def _step(execution: Execution, *, relayer: Relayer, now) -> None:
@@ -582,7 +608,9 @@ __all__ = [
     "advance",
     "due_execution",
     "enqueue_approved",
+    "executed_on_chain",
     "payout_of",
+    "queue",
     "sent_in_last_day",
     "tick",
     "tick_with_app_relayer",
