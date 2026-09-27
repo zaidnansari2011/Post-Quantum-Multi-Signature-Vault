@@ -25,7 +25,12 @@ from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.security.decorators import admin_required
 from qvault.security.demo_gate import demo_enabled
-from qvault.services import benchmark_service, config_service, rotation_service
+from qvault.services import (
+    benchmark_service,
+    chain_admin_service,
+    config_service,
+    rotation_service,
+)
 from qvault.services.config_service import ConfigError, DowngradeRefused
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -193,6 +198,18 @@ def run_benchmark():
         live=live,
         form=form,
         max_iterations=cap,
+    )
+
+
+@bp.get("/chain")
+@admin_required
+def chain():
+    """The relayer against its reserve, chain work in flight, and what recently failed (D38)."""
+    if not current_app.config.get("ONCHAIN_EXECUTION_ENABLED"):
+        abort(404)
+    return render_template(
+        "admin/chain.html",
+        chain=chain_admin_service.overview(current_app.extensions.get("relayer")),
     )
 
 

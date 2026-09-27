@@ -53,6 +53,18 @@ export const NETWORKS: Record<number, string> = { 11155111: 'Sepolia' };
 const WEI_PER_ETH = 10n ** 18n;
 
 /** Exact ETH for a wei amount, as the server's `format_wei` writes it: no rounding, ever. */
+/**
+ * An ETH amount a person typed ("0.0001") as exact wei, or null. The twin of `parse_eth_value` in
+ * qvault/chain/action.py: digits with at most 18 decimal places, never through a float.
+ */
+export function parseEth(text: string): string | null {
+  const t = text.trim();
+  if (t.length > 100 || !/^[0-9]+(\.[0-9]+)?$/.test(t)) return null;
+  const [whole, fraction = ''] = t.split('.');
+  if (fraction.length > 18) return null;
+  return (BigInt(whole) * WEI_PER_ETH + BigInt(fraction.padEnd(18, '0') || '0')).toString();
+}
+
 export function formatEth(valueWei: string): string {
   const wei = BigInt(valueWei);
   const fraction = (wei % WEI_PER_ETH).toString().padStart(18, '0').replace(/0+$/, '');

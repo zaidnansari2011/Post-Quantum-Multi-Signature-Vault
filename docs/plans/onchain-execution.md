@@ -280,24 +280,27 @@ Runtime sizes: `QVaultTreasury` 9,471 bytes (9,451 before D42's nonce in the exe
 
 ### Phase 7b: Reconfiguration · ~0.013 ETH per changed key
 
-- [ ] Detect what changed on a linked vault (members, threshold, a registered key retired, a D37 choice changed) and open one reconfiguration job (D39) holding the target signer set
-- [ ] Register new keys (the Phase 5 engine), build `reconfigure(add, remove, threshold, validUntil)` and its digest (`digest.reconfigure_digest`)
-- [ ] Approval by the treasury's current signers: web (6a signing, a retired password key may sign only this) and phone (6b), verified and stored like execution signatures
-- [ ] Executor submits it; after finality and the D31 check against the new set, the signer rows change in one transaction with a `treasury_reconfigured` ledger entry
-- [ ] Payments refused while one is open; the warning before a change that would leave fewer than M usable registered keys
-- [ ] D42 on this side: `Treasury.config_nonce` moves with the signer rows, in the same transaction, after finality and the D31 check; a reconfiguration to nonce n+1 is refused while any decision names a nonce ≥ n+1 (only an edited treasury row could have produced one); open payment decisions are shown as voided by the change, not as failed. *(The question flagged here was answered by the owner on 2026-09-18: D42.)*
-- [ ] Tests: add, remove, rotate, threshold change, a change made while one is open, not enough current signers, and on anvil a real `reconfigure` then a payout by the new set
+*Engine committed `0ec4b9c` (2026-09-27); the approval paths on web, API and phone follow in the next commit.*
+
+- [x] Detect what changed on a linked vault (members, threshold, a registered key retired, a D37 choice changed) and open one reconfiguration job (D39) holding the target signer set — `reconfiguration_service.pending_change` / `request` (D44 its own tables, one open per vault; D45 the owner asks and confirms what the change takes away)
+- [x] Register new keys (the Phase 5 engine), build `reconfigure(add, remove, threshold, validUntil)` and its digest (`digest.reconfigure_digest`)
+- [x] Approval by the treasury's current signers (D46): web (password; a retired password key may sign only this) and phone (`POST /vaults/<id>/treasury/reconfigurations/<id>/approve`, the key from the token). The phone recomputes `reconfigureDigest` itself — dynamic `bytes[]` ABI encoding in `mobile/src/crypto/execution.ts`, byte for byte Python's on five vectors — and refuses before the prompt when the server's digest differs or is missing, the change names another treasury, its seat is not this phone's key, it already approved, the server says it cannot, the deadline has passed, or the names shown do not match the signed identities one for one (`tests/test_mobile_reconfigure_guard.py`, 29 cases). Both paths read `configNonce` first and fail closed (D43)
+- [x] Executor submits it; after finality and the D31 check against the new set, the signer rows change in one transaction with a `treasury_reconfigured` ledger entry
+- [x] Payments refused while one is open; the warning before a change that would leave fewer than M usable registered keys
+- [x] D42 on this side: `Treasury.config_nonce` moves with the signer rows, in the same transaction, after finality and the D31 check; a reconfiguration to nonce n+1 is refused while any decision names a nonce ≥ n+1 (only an edited treasury row could have produced one); open payment decisions are shown as voided by the change, not as failed. *(The question flagged here was answered by the owner on 2026-09-18: D42.)*
+- [x] Tests: add, remove, rotate, threshold change, a change made while one is open, not enough current signers, and on anvil a real `reconfigure` then a payout by the new set (`tests/test_reconfiguration.py` 25, 21/21 mutants killed; `tests/test_reconfiguration_routes.py` 21 for the doors; anvil: a member added and a key rotated with the retired key approving, `reconfigure` 3,534,024 gas, then the new set pays)
+- [x] **Adversarial review of the interface (2026-09-27):** no critical/high. **M1** the phone checked that its digest was consistent, not what it meant: `add`/`remove` are opaque 124-byte identities, so a compromised server could have the phone approve adding a key of its own. Now each identity is named (member, key fingerprint) and the phone refuses when the names do not match the signed identities one for one; the prompt states the signed counts and threshold; it refuses before the prompt what the server would refuse after. **Known limit, not fixed:** the phone still takes the server's word for *whose* key an identity holds — deriving an identity's code hashes from a public key needs the verifier's expanded key form in JS (the same deferral as 6b's seat check). Password approvers were never protected from the server, so this narrows device custody's claim for reconfigurations to "the phone signs only the change it was shown, by count and threshold". **L1** a JSON body that was not an object, or a non-string `signature_b64`, was a 500 (fixed in the shared helpers, so the vote route too); **L2** any `<int:>` id past 2^63 was a 500 on every route (a bounded converter, app-wide: now 404); **L3** a change for a treasury since unlinked was shown and could be approved on the web in the window before the next tick; **L4** a signer whose key cannot be registered showed as "Leaves" with an Update button the service then refused — the reason is shown instead; **L5** a non-owner's API request made chain reads and learnt the relayer's balance from the refusal — ownership is checked first (403); **L6** `confirm` was a bare yes — it is now the digest of the warnings shown, so a change that grew a warning since is asked about again. Each reproduced and now a regression test
 - **Done when:** on anvil, a vault's member is replaced and a key rotated through the app, and the new signer set pays out without redeploying.
 
 ### Phase 8: Interface · no ETH
 
-- [ ] New decision: a "Payment" action (recipient, amount), shown only when the vault has a treasury; the text is generated
-- [ ] Decision page: an execution panel (state, transaction link, block, gas, execution signatures n/M)
-- [ ] Vault: treasury page (D40), with the create-treasury action, job and reconfiguration progress, and remaining limits
-- [ ] Account: the D37 key choice (web, and on the phone for its own key)
-- [ ] Admin: relayer balance, reserve warning, open jobs, recent failures (D38)
-- [ ] Follow the UI rules in ADR-0014 (no teaching copy; colour only for state); screenshot every changed screen
-- [ ] Turn `ONCHAIN_EXECUTION_ENABLED` on only after the parity checklist is fully ticked
+- [x] New decision: a "Payment" action (recipient, amount), shown only when the vault has a treasury; the text is generated. Web: a Decision / Payment switch on the new-decision page (`PaymentProposalForm`, amounts through `parse_eth_value`). Phone: the same switch; `parseEth` agrees with the server on 15 inputs including non-ASCII digits and 19 decimals (`tests/test_mobile_reconfigure_guard.py`)
+- [x] Decision page: an execution panel (state, transaction link, block, gas, execution signatures n/M) — `payout_service.view`, on the web page and in the API's proposal detail (`payout`), shown on the phone's decision screen
+- [x] Vault: treasury page (D40), with the create-treasury action, job and reconfiguration progress, and remaining limits. Balance is read from the chain per view and shown as unavailable when Ethereum does not answer; payouts left today count every payment transaction (review H1's rule). Phone: `TreasuryCard` on the vault screen (address, balance, threshold, payouts left, create, request and approve a change)
+- [x] Account: the D37 key choice (web, and on the phone for its own key; `/me` now carries `my_key`)
+- [x] Admin: relayer balance, reserve warning, open jobs, recent failures (D38) — `/admin/chain` (`chain_admin_service`); "Relayer low" below reserve + one worst-case payout
+- [x] Follow the UI rules in ADR-0014 (no teaching copy; colour only for state); screenshot every changed screen — web screens in [`screenshots-phase8/`](screenshots-phase8/) (the local demo database's real Sepolia treasury: balance 0.0009 ETH read live, the paid decision with its transaction, block and gas). Found on the way: `chip--ok` and `chip--warn` were never defined in the stylesheet, so every such chip since 5b rendered grey; now `chip--sealed` / `chip--waiting`. **Owner:** look at the screenshots; the phone screens are seen in the handset test
+- [ ] Turn `ONCHAIN_EXECUTION_ENABLED` on only after the parity checklist is fully ticked *(stays off: the phone column needs the owner's handset test)*
 - **Done when:** the owner has looked at the screenshots (§3.1-style check) and the parity checklist is complete.
 
 ### Phase 9: Evidence and documents
@@ -315,19 +318,21 @@ Runtime sizes: `QVaultTreasury` 9,471 bytes (9,451 before D42's nonce in the exe
 ### Parity checklist
 
 The feature is not finished, and the flag stays off, until every row is ticked on both sides.
+*Built* = in the code and covered by tests (the phone's by its own `flows.ts` under Node and the
+API it calls); a phone row is ticked only after the owner's handset test.
 
 | Action | Web | Phone |
 |---|---|---|
-| Raise a payment decision (recipient, amount) | [ ] | [ ] |
-| See the payment details before signing | [ ] | [ ] |
-| Approve (vote signature + execution signature) | [ ] | [ ] |
-| Reject | [ ] | [ ] |
-| Refuse to sign when the payment was tampered with | [x] | [ ] |
-| See the execution state and the transaction link | [ ] | [ ] |
-| See the vault's treasury (address, balance, threshold) | [ ] | [ ] |
-| Create a treasury for a vault (owner) and follow its progress | [ ] | [ ] |
-| Choose the key you approve treasury payments with | [ ] | [ ] |
-| Approve or reject a reconfiguration, and follow it | [ ] | [ ] |
+| Raise a payment decision (recipient, amount) | [x] | built |
+| See the payment details before signing | [x] | built (6b) |
+| Approve (vote signature + execution signature) | [x] | built (6b) |
+| Reject | [x] | built (6b) |
+| Refuse to sign when the payment was tampered with | [x] | built (6b) |
+| See the execution state and the transaction link | [x] | built |
+| See the vault's treasury (address, balance, threshold) | [x] | built |
+| Create a treasury for a vault (owner) and follow its progress | [x] | built |
+| Choose the key you approve treasury payments with | [x] | built |
+| Approve a reconfiguration, and follow it (there is no "reject": a change nobody approves expires) | [x] | built |
 
 ### Open questions
 
@@ -429,3 +434,6 @@ and keep the relayer funded in production (D38).
 | 2026-09-18 | 6a′ | **D42 built, not committed.** Owner chose to bind the configuration nonce into the execution digest (found in the 6a review). The nonce is a signed field of the payment, copied from the treasury when it is raised; the contract checks approvals at its current nonce only. `test_RaiseThenLowerTheThreshold` had been asserting the hole (old approvals executing after a threshold drop) and now asserts they are refused. The local demo database's empty on-chain tables were recreated after a backup | — |
 | 2026-09-27 | 6a′ | **Phase 6a′ done, with D43.** The review arrived after the last session: no critical/high. M1: D42 left one hole — a database edit raising the recorded nonce before a payment is raised has honest approvers sign for a configuration the chain has not reached. Owner chose to fail closed (D43): approving a payment asks the treasury's `configNonce()` over RPC first, on web and phone, and signs nothing on a mismatch or when the chain cannot be asked. M2, L1–L5 and the weak tests fixed (a Foundry test now kills the reviewer's `configNonce + 1` mutant); a 1-in-256 flake in the key-storage tests found and fixed. Foundry 69/69; full suite 1,652 passed, coverage 93% | `c359542` |
 | 2026-09-27 | 6b | **Phase 6b built (phone parity for payments).** The phone derives the treasury's execution digest itself and matches Python byte for byte; before any biometric prompt it refuses a payment whose server digest differs from its own, or whose treasury seat is another key; one prompt signs both the vote and the payment approval; the decision screen shows the payment from its signed fields; the app now declares `payment-action-1`. The API had never passed a phone's execution signature through: it now verifies, stores and echoes it, and maps D43's outage to a retryable 503. Mutation pass on 6a′: 18/18 killed after adding a node-on-another-chain case (E5 had survived). Seat check built on the key fingerprint, not the on-chain code hashes (see the box). Handset test is the owner's | — |
+| 2026-09-27 | 7 | **Phase 7 done: a real Sepolia payout.** The executor pays approved payments one chain action per tick, idempotent across crashes; review H1 (a payment reverting on inclusion was re-sent every tick) and M1, L1–L3 fixed. Live: treasury `0xD491…f3D0`, 0.0001 ETH paid in block 11,793,551, 3,272,465 gas | `aac2833`, `78e07df` |
+| 2026-09-27 | 7b | **Reconfiguration engine.** A linked treasury follows its vault by `reconfigure`, approved by its current signers; anvil proves add + rotate then a payout by the new set (3,534,024 gas). Suite 1,738 passed, 90% | `0ec4b9c` |
+| 2026-09-27 | 7b, 8 | **Approving changes on web and phone; the treasury in the interface.** Phone recomputes `reconfigureDigest` (dynamic `bytes[]`) and refuses before the prompt; review M1 (identities unnamed) narrowed and its limit written down, L1–L6 fixed with tests. Phase 8: payment decisions from web and phone, the payout on the decision, treasury balance and limits, the D37 key choice on the phone, `/admin/chain`. Flag stays off pending the handset test and screenshots | — |

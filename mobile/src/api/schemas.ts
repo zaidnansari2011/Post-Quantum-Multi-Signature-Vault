@@ -51,8 +51,14 @@ export const meResponse = z.object({
     display_name: z.string(),
   }),
   device: deviceSchema,
+  my_key: z.lazy(() => myKeySchema).nullable().optional(),
 });
 export type Me = z.infer<typeof meResponse>;
+export const myKeySchema = z.object({
+  custody: z.string(),
+  key_id: z.number().int().nullable(),
+  usable: z.boolean(),
+});
 
 export const devicesResponse = z.object({
   ok: z.literal(true),
@@ -205,6 +211,18 @@ export const voteRecord = z.object({
 });
 export type VoteRecord = z.infer<typeof voteRecord>;
 
+export const payoutView = z.object({
+  state: z.string(),
+  reason: z.string().nullable(),
+  tx_hash: z.string().nullable(),
+  block_number: z.number().int().nullable(),
+  gas_used: z.number().int().nullable(),
+  execution_signatures: z.number().int(),
+  needed: z.number().int(),
+  finished_at: z.string().nullable(),
+});
+export type PayoutView = z.infer<typeof payoutView>;
+
 export const proposalDetail = proposalSummary.extend({
   action_text: z.string(),
   signing_inputs: signingInputsSchema,
@@ -218,6 +236,8 @@ export const proposalDetail = proposalSummary.extend({
       seat_fingerprint: z.string().nullable(),
     })
     .optional(),
+  // Payment decisions only: how the payout stands (Phase 8). Shown, never signed.
+  payout: payoutView.nullable().optional(),
 });
 export type ProposalDetail = z.infer<typeof proposalDetail>;
 
@@ -244,3 +264,145 @@ export const castVoteResponse = z.object({
   }),
 });
 export type CastVoteResult = z.infer<typeof castVoteResponse>;
+
+// -- treasury (plan D40, Phase 7b) ---------------------------------------------------------------
+
+// Exactly what a treasury change's approvers sign; the phone recomputes the digest from these and
+// never signs the server's. Strict, so a renamed field fails here rather than hashing differently.
+export const reconfigureInputsSchema = z
+  .object({
+    chain_id: z.number().int().nonnegative(),
+    treasury: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    config_nonce: z.number().int().nonnegative(),
+    add: z.array(z.string()),
+    remove: z.array(z.string()),
+    threshold: z.number().int(),
+    valid_until: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const identityOwner = z.object({
+  user_id: z.number().int().nullable(),
+  name: z.string().nullable(),
+  key_fingerprint: z.string().nullable(),
+});
+
+export const reconfigurationView = z.object({
+  id: z.number().int(),
+  state: z.string(),
+  reason: z.string().nullable(),
+  requested_at: z.string(),
+  valid_until: z.string(),
+  threshold: z.number().int(),
+  approvals: z.number().int(),
+  needed: z.number().int(),
+  approved_by_me: z.boolean(),
+  approval_problem: z.string().nullable(),
+  my_custody: z.enum(['password', 'device']).nullable(),
+  // Claims the phone checks before any prompt, never inputs it signs.
+  seat_fingerprint: z.string().nullable(),
+  signing_inputs: reconfigureInputsSchema.nullable(),
+  digest: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+  confirmed_warnings: z.array(z.string()),
+  tx_hash: z.string().nullable(),
+  // Whose key each signed identity holds, in order, as the server describes it.
+  people: z
+    .object({ add: z.array(identityOwner), remove: z.array(identityOwner) })
+    .nullable()
+    .optional(),
+});
+export type ReconfigurationView = z.infer<typeof reconfigurationView>;
+
+const changedPerson = z.object({ user_id: z.number().int(), name: z.string().nullable() });
+
+export const treasuryChange = z.object({
+  pending_change: z
+    .object({
+      added: z.array(changedPerson),
+      removed: z.array(changedPerson),
+      rotated: z.array(changedPerson),
+      threshold_from: z.number().int(),
+      threshold_to: z.number().int(),
+    })
+    .nullable(),
+  may_request: z.boolean(),
+  problems: z.array(z.string()).optional(),
+  warnings: z.array(z.string()),
+  warnings_digest: z.string().nullable().optional(),
+  reconfiguration: reconfigurationView.nullable(),
+});
+export type TreasuryChange = z.infer<typeof treasuryChange>;
+
+export const treasuryResponse = z.object({
+  ok: z.literal(true),
+  treasury: z
+    .object({
+      address: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+      chain_id: z.number().int(),
+      threshold_m: z.number().int(),
+      signer_count: z.number().int(),
+      linked_at: z.string(),
+      signers: z.array(
+        z.object({
+          user_id: z.number().int(),
+          custody: z.enum(['device', 'password']),
+          key_active: z.boolean(),
+        }),
+      ),
+    })
+    .nullable(),
+  job: z
+    .object({
+      id: z.number().int(),
+      state: z.string(),
+      reason: z.string().nullable(),
+      requested_at: z.string(),
+      updated_at: z.string(),
+    })
+    .nullable(),
+  may_create: z.boolean(),
+  change: treasuryChange.nullable().optional(),
+  status: z
+    .object({
+      balance_wei: z.string().regex(/^(0|[1-9][0-9]*)$/).nullable(),
+      balance: z.string().nullable(),
+      payouts_left_today: z.number().int(),
+      payouts_per_day: z.number().int(),
+    })
+    .nullable()
+    .optional(),
+  my_key: z
+    .object({ custody: z.string(), key_id: z.number().int().nullable(), usable: z.boolean() })
+    .nullable()
+    .optional(),
+});
+export type TreasuryResponse = z.infer<typeof treasuryResponse>;
+
+export const requestReconfigurationResponse = z.object({
+  ok: z.literal(true),
+  reconfiguration: reconfigurationView,
+});
+
+export const approveReconfigurationResponse = z.object({
+  ok: z.literal(true),
+  approval: z.object({ signature_sha256: z.string(), signed_at: z.string().nullable() }),
+  reconfiguration: z.object({
+    state: z.string(),
+    approvals: z.number().int(),
+    needed: z.number().int(),
+  }),
+});
+
+export const signingChoiceResponse = z.object({
+  ok: z.literal(true),
+  my_key: z.object({
+    custody: z.string(),
+    key_id: z.number().int().nullable(),
+    usable: z.boolean(),
+  }),
+});
+
+export const createTreasuryResponse = z.object({
+  ok: z.literal(true),
+  job: z.object({ id: z.number().int(), state: z.string(), reason: z.string().nullable() }),
+});

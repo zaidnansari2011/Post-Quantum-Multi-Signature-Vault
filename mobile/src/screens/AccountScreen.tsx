@@ -17,7 +17,7 @@
 
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   Banner,
@@ -105,6 +105,8 @@ export default function AccountScreen() {
             <KeyValue label="Enrolled" value={exactly(identity.enrolledAt)} />
           </Card>
         </Section>
+
+        <TreasuryKey />
 
         <Section title={others.length === 1 ? 'One other device' : `${others.length} other devices`}>
           {query.isLoading ? (
@@ -203,3 +205,39 @@ const s = StyleSheet.create({
 
   sheetBody: { ...type.body, color: color.ink2, lineHeight: 22 },
 });
+
+/**
+ * Which key a treasury registers for this person (D37): this phone's, or the password key the web
+ * uses. Shown only on a server with treasuries. A change applies to the next treasury created or
+ * changed, not to one already on chain.
+ */
+function TreasuryKey() {
+  const { token } = useEnrolledSession();
+  const queryClient = useQueryClient();
+  const me = useQuery({ queryKey: ['me'], queryFn: ({ signal }) => api.fetchMe(token, signal) });
+  const choose = useMutation({
+    mutationFn: (custody: 'device' | 'password') => api.setSigningChoice({ token, custody }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['me'] }),
+  });
+  const myKey = me.data?.my_key;
+  if (!myKey) return null;
+  const onPhone = myKey.custody === 'device';
+  return (
+    <Section title="Treasury key">
+      <Card>
+        <KeyValue label="Treasuries register" value={onPhone ? "This phone's key" : 'Your password key'} />
+        {!myKey.usable ? <Chip label="Not usable: choose again" tone="broken" /> : null}
+        {choose.error ? (
+          <Banner tone="broken" title={choose.error instanceof Error ? choose.error.message : 'Could not change it.'} />
+        ) : null}
+        <Divider />
+        <Button
+          label={onPhone ? 'Use my password key instead' : "Use this phone's key instead"}
+          variant="secondary"
+          busy={choose.isPending}
+          onPress={() => choose.mutate(onPhone ? 'password' : 'device')}
+        />
+      </Card>
+    </Section>
+  );
+}

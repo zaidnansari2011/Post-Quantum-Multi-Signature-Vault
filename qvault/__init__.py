@@ -70,6 +70,15 @@ def create_app(config_name: str | None = None) -> Flask:
     from .extensions import csrf, db, login_manager
 
     app = Flask(__name__)
+    # An <int:> id past a 64-bit integer cannot name a row; unbounded, it reached the database
+    # and raised OverflowError (a 500) on every route with an id (review 7b L2). Now it is a 404.
+    from werkzeug.routing import IntegerConverter
+
+    class BoundedIntegerConverter(IntegerConverter):
+        def __init__(self, url_map, fixed_digits=0, min=None, max=2**63 - 1, signed=False):
+            super().__init__(url_map, fixed_digits=fixed_digits, min=min, max=max, signed=signed)
+
+    app.url_map.converters["int"] = BoundedIntegerConverter
     app.config.from_object(get_config(config_name))
     app.config.setdefault("VERSION", __version__)
 

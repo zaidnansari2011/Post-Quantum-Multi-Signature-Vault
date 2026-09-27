@@ -184,10 +184,15 @@ def request(
     *,
     by: User,
     relayer: Relayer,
-    confirm: bool = False,
+    confirm: bool | str = False,
     now: Callable[[], datetime] = _utcnow,
 ) -> Reconfiguration:
-    """Record the owner's request to reconfigure the vault's treasury (D45). Sends nothing."""
+    """Record the owner's request to reconfigure the vault's treasury (D45). Sends nothing.
+
+    ``confirm`` is ``warnings_digest`` of the warnings the owner was shown, so a change that has
+    grown a warning since is asked about again (review 7b L6); ``True`` is for code that has
+    already shown them.
+    """
     schema = schema_problems()
     if schema:
         raise ReconfigurationRefused(["this database is not the schema this code expects", *schema])
@@ -252,7 +257,7 @@ def request(
         raise ReconfigurationRefused(problems)
 
     warnings = _warnings(vault, treasury, change)
-    if warnings and not confirm:
+    if warnings and not (confirm is True or confirm == warnings_digest(warnings)):
         raise NeedsConfirmation(warnings)
 
     reconfiguration = Reconfiguration(
@@ -296,6 +301,11 @@ def request(
             [f"{vault.name}'s treasury is already being reconfigured"]
         ) from None
     return reconfiguration
+
+
+def warnings_digest(warnings: list[str]) -> str:
+    """What an owner's confirmation names: exactly these warnings, in this order."""
+    return _sha256("\n".join(warnings).encode())
 
 
 def _warnings(vault: Vault, treasury, change: Change | None) -> list[str]:
@@ -346,6 +356,8 @@ def seat_of(reconfiguration: Reconfiguration, user: User) -> TreasurySigner | No
 
 def approval_problem(reconfiguration: Reconfiguration, user: User) -> str | None:
     """Why ``user`` cannot approve this reconfiguration now, if they cannot."""
+    if reconfiguration.treasury.status != "linked":
+        return "this treasury is no longer linked to the vault"
     if reconfiguration.state != "collecting_approvals":
         return (
             "this reconfiguration is not collecting approvals"
@@ -873,25 +885,33 @@ def view(vault: Vault, user: User) -> dict:
     treasury holds for ``user``. Both are claims the phone checks, never inputs it signs.
     """
     change = pending_change(vault)
-    reconfiguration = open_reconfiguration(vault) or (
-        Reconfiguration.query.filter_by(vault_id=vault.id)
+    treasury = linked_treasury(vault)
+    # Only the linked treasury's changes: one for a treasury since unlinked is not this vault's
+    # to show or approve (review 7b L3).
+    reconfiguration = (
+        None
+        if treasury is None
+        else Reconfiguration.query.filter_by(vault_id=vault.id, treasury_id=treasury.id)
         .order_by(Reconfiguration.id.desc())
         .first()
     )
+    _targets, key_problems = choose_keys(vault)
+    warnings = _warnings(vault, treasury, change) if change is not None and not change.empty else []
     return {
         "pending_change": None if change is None or change.empty else _change_view(change),
+        # A signer whose key cannot be registered looks "removed" to the comparison; say why
+        # instead of offering a request that would be refused (review 7b L4).
+        "problems": key_problems if change is not None and not change.empty else [],
         "may_request": (
             change is not None
             and not change.empty
+            and not key_problems
             and open_reconfiguration(vault) is None
             and may_request(vault, user)
         ),
         # What the owner must confirm to ask for it (D45); request() refuses without it.
-        "warnings": (
-            _warnings(vault, linked_treasury(vault), change)
-            if change is not None and not change.empty
-            else []
-        ),
+        "warnings": warnings,
+        "warnings_digest": warnings_digest(warnings) if warnings else None,
         "reconfiguration": (
             None if reconfiguration is None else _reconfiguration_view(reconfiguration, user)
         ),
@@ -933,6 +953,7 @@ def _reconfiguration_view(reconfiguration: Reconfiguration, user: User) -> dict:
         except (ApprovalRefused, ValueError):
             digest = None  # an unreadable row; approving it is refused with the reason
     sent = _latest(reconfiguration, "reconfigure")
+    people = _people(reconfiguration) if signing_inputs is not None else None
     return {
         "id": reconfiguration.id,
         "state": reconfiguration.state,
@@ -954,9 +975,40 @@ def _reconfiguration_view(reconfiguration: Reconfiguration, user: User) -> dict:
         ),
         "signing_inputs": signing_inputs,
         "digest": digest,
+        # Who each signed identity is, as this server describes it (the phone cannot yet derive
+        # an identity from a public key; plan Phase 7b, known limit).
+        "people": people,
         "confirmed_warnings": json.loads(reconfiguration.confirmed_warnings or "[]"),
         "tx_hash": sent.tx_hash if sent is not None else None,
     }
+
+
+def _people(reconfiguration: Reconfiguration) -> dict:
+    """For each identity in ``add`` and ``remove``, in order: whose key it holds."""
+    by_pointers = {}
+    pinned = {int(u): k for u, k in json.loads(reconfiguration.chosen_keys).items()}
+    for user_id, storage in _storage(reconfiguration).items():
+        by_pointers[storage.pointers] = (user_id, pinned.get(user_id))
+    seats = {row.identity_hex.lower(): row for row in reconfiguration.treasury.signers}
+
+    def described(user_id, key_id):
+        user = db.session.get(User, user_id) if user_id is not None else None
+        key = db.session.get(Key, key_id) if key_id is not None else None
+        return {
+            "user_id": user_id,
+            "name": getattr(user, "display_name", None),
+            "key_fingerprint": key.public_fingerprint() if key is not None else None,
+        }
+
+    add = []
+    for hex_identity in json.loads(reconfiguration.add_json):
+        user_id, key_id = by_pointers.get(bytes.fromhex(hex_identity[2:])[20:60], (None, None))
+        add.append(described(user_id, key_id))
+    remove = []
+    for hex_identity in json.loads(reconfiguration.remove_json):
+        row = seats.get(hex_identity.lower())
+        remove.append(described(row.user_id, row.key_id) if row else described(None, None))
+    return {"add": add, "remove": remove}
 
 
 # --------------------------------------------------------------------------------------------

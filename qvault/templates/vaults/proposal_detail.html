@@ -254,6 +254,32 @@
       </div>
     </div>
 
+    {% if payout %}
+    {% set chip = {'confirmed': 'chip--sealed', 'failed': 'chip--broken', 'expired': 'chip--waiting',
+                   'voided': 'chip--waiting', 'not_paid': 'chip--waiting'}.get(payout.state, 'chip--waiting') %}
+    {% set label = {'awaiting_approvals': 'Awaiting approvals', 'queued': 'Queued',
+                    'submitting': 'Sending', 'confirmed': 'Paid', 'expired': 'Expired',
+                    'voided': 'Voided', 'failed': 'Failed', 'not_paid': 'Not paid'}.get(payout.state, payout.state) %}
+    <div class="panel" id="payout">
+      <div class="panel__head"><span class="label">Payout</span>
+        <span class="push"><span class="chip {{ chip }}">{{ label }}</span></span>
+      </div>
+      <div class="panel__body">
+        <dl class="meta">
+          <dt>Authorisations</dt><dd class="mono">{{ payout.execution_signatures }} of {{ payout.needed }}</dd>
+          {% if payout.tx_hash %}
+          <dt>Transaction</dt>
+          <dd><a class="mono" rel="noreferrer noopener" target="_blank"
+                 href="https://sepolia.etherscan.io/tx/{{ payout.tx_hash }}">{{ payout.tx_hash[:18] }}…</a></dd>
+          {% endif %}
+          {% if payout.block_number %}<dt>Block</dt><dd class="mono">{{ '{:,}'.format(payout.block_number) }}</dd>{% endif %}
+          {% if payout.gas_used %}<dt>Gas</dt><dd class="mono">{{ '{:,}'.format(payout.gas_used) }}</dd>{% endif %}
+        </dl>
+        {% if payout.reason and payout.state != 'confirmed' %}<p class="small">{{ payout.reason[:1] | upper }}{{ payout.reason[1:] }}.</p>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="panel">
       <div class="panel__head">
         <span class="label">Integrity</span>

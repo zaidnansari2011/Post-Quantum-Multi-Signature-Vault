@@ -175,7 +175,7 @@
     <div class="stack">
       <div class="panel">
         <div class="panel__head"><span class="label">Treasury</span>
-          {% if treasury.treasury %}<span class="push"><span class="chip chip--ok">Linked</span></span>
+          {% if treasury.treasury %}<span class="push"><span class="chip chip--sealed">Linked</span></span>
           {% elif treasury.job and treasury.job.state not in ('done', 'failed') %}<span class="push"><span class="chip chip--waiting">Creating</span></span>
           {% endif %}
         </div>
@@ -188,7 +188,14 @@
             <dt>Network</dt><dd><span class="tag">Sepolia</span></dd>
             <dt>Approvals</dt><dd class="mono">{{ treasury.treasury.threshold_m }} of {{ treasury.treasury.signer_count }}</dd>
             <dt>Linked</dt><dd class="mono">{{ treasury.treasury.linked_at[:10] }}</dd>
+            {% if treasury_status %}
+            <dt>Balance</dt>
+            <dd class="mono">{% if treasury_status.balance is not none %}{{ treasury_status.balance }}{% else %}<span class="chip chip--waiting">Unavailable</span>{% endif %}</dd>
+            <dt>Payouts today</dt>
+            <dd class="mono">{{ treasury_status.payouts_left_today }} of {{ treasury_status.payouts_per_day }} left</dd>
+            {% endif %}
           </dl>
+          <p><a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.new_proposal', vid=vault.id, kind='payment') }}">New payment</a></p>
           {% elif treasury.job and treasury.job.state not in ('done', 'failed') %}
           <p class="small">{{ treasury.job.reason or treasury.job.state }}</p>
           {% if is_owner %}
@@ -216,6 +223,67 @@
           {% endif %}
         </div>
       </div>
+      {% if change and (change.pending_change or change.reconfiguration) %}
+      {% set r = change.reconfiguration %}
+      {% set r_open = r and r.state not in ('done', 'failed', 'expired', 'voided') %}
+      <div class="panel" id="treasury-change">
+        <div class="panel__head"><span class="label">Change</span>
+          {% if r_open %}<span class="push"><span class="chip chip--waiting">{{ 'Approving' if r.state == 'collecting_approvals' else 'In progress' }}</span></span>
+          {% elif change.pending_change %}<span class="push"><span class="chip chip--waiting">Out of date</span></span>
+          {% endif %}
+        </div>
+        <div class="panel__body">
+          {% if r_open %}
+          <dl class="meta">
+            <dt>Approvals</dt><dd class="mono">{{ r.approvals }} of {{ r.needed }}</dd>
+            <dt>New threshold</dt><dd class="mono">{{ r.threshold }}</dd>
+            <dt>Deadline</dt><dd class="mono">{{ r.valid_until[:16] | replace('T', ' ') }} UTC</dd>
+            {% if r.tx_hash %}<dt>Transaction</dt>
+            <dd><a class="mono" rel="noreferrer noopener" target="_blank"
+                   href="https://sepolia.etherscan.io/tx/{{ r.tx_hash }}">{{ r.tx_hash[:18] }}…</a></dd>{% endif %}
+          </dl>
+          <p class="small">{{ r.reason or r.state }}</p>
+          {% if r.approved_by_me %}
+          <p class="small"><span class="chip chip--sealed">You approved</span></p>
+          {% elif r.approval_problem is none and r.my_custody == 'password' %}
+          <form method="post" class="stack"
+                action="{{ url_for('vaults.approve_reconfiguration', vid=vault.id, rid=r.id) }}">
+            {{ reconfiguration_approval_form.hidden_tag() }}
+            <div class="field">{{ reconfiguration_approval_form.password.label(class='field__label') }}
+              {{ reconfiguration_approval_form.password(class='input', autocomplete='current-password') }}</div>
+            <button class="btn btn--primary btn--sm" type="submit">Approve change</button>
+          </form>
+          {% elif r.approval_problem is none and r.my_custody == 'device' %}
+          <p class="small">Approve this on your phone.</p>
+          {% endif %}
+          {% else %}
+          {% if r %}
+          <p class="small muted">Last change: {{ r.state }}{% if r.reason %}, {{ r.reason }}{% endif %}.</p>
+          {% endif %}
+          {% if change.pending_change %}
+          {% set c = change.pending_change %}
+          <dl class="meta">
+            {% for p in c.added %}<dt>{{ p.name or 'User ' ~ p.user_id }}</dt><dd><span class="tag">Joins</span></dd>{% endfor %}
+            {% for p in c.removed %}<dt>{{ p.name or 'User ' ~ p.user_id }}</dt><dd><span class="chip chip--waiting">Leaves</span></dd>{% endfor %}
+            {% for p in c.rotated %}<dt>{{ p.name or 'User ' ~ p.user_id }}</dt><dd><span class="tag">New key</span></dd>{% endfor %}
+            {% if c.threshold_from != c.threshold_to %}<dt>Threshold</dt><dd class="mono">{{ c.threshold_from }} → {{ c.threshold_to }}</dd>{% endif %}
+          </dl>
+          {% for p in change.problems %}<p class="small">{{ p[:1] | upper }}{{ p[1:] }}.</p>{% endfor %}
+          {% if change.may_request %}
+          <form method="post" class="stack" action="{{ url_for('vaults.reconfigure_treasury', vid=vault.id) }}">
+            {{ reconfigure_form.hidden_tag() }}
+            {% if change.warnings %}
+            <ul class="small">{% for w in change.warnings %}<li>{{ w[:1] | upper }}{{ w[1:] }}.</li>{% endfor %}</ul>
+            <label class="small">{{ reconfigure_form.confirm() }} {{ reconfigure_form.confirm.label.text }}</label>
+            {% endif %}
+            <button class="btn btn--primary btn--sm" type="submit">Update treasury</button>
+          </form>
+          {% endif %}
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
     </div>
     <div class="panel">
       <div class="panel__head"><span class="label">Approvers on chain</span></div>
@@ -227,8 +295,8 @@
           <dt>{{ member.user.display_name if member else 'User ' ~ signer.user_id }}</dt>
           <dd>
             <span class="tag">{{ 'Phone' if signer.custody == 'device' else 'Password' }}</span>
-            {% if not member %}<span class="chip chip--warn">No longer a member</span>{% endif %}
-            {% if not signer.key_active %}<span class="chip chip--warn">Key replaced</span>{% endif %}
+            {% if not member %}<span class="chip chip--waiting">No longer a member</span>{% endif %}
+            {% if not signer.key_active %}<span class="chip chip--waiting">Key replaced</span>{% endif %}
           </dd>
           {% endfor %}
         </dl>

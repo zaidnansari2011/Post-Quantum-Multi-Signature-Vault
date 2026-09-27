@@ -425,17 +425,21 @@ def _usable_approvals(execution: Execution, relayer: Relayer) -> list[execute_ca
     return usable
 
 
-def _within_limits(execution: Execution, relayer: Relayer, now) -> None:
-    """D38: the vault's payouts per day, and the relayer's reserve after this transaction."""
+def sent_in_last_day(vault_id: int, now) -> int:
+    """Every payment transaction the vault sent in the last day, retries included: the limit is on
+    spending, so a payout's own retries count like anything else (review H1)."""
     since = now() - timedelta(days=1)
-    # Every payment transaction the vault sent, this payout's own included: the limit is on
-    # spending, so retries count like anything else (review H1).
-    sent_today = (
+    return (
         db.session.query(ExecutionTransaction.id)
         .join(Execution, ExecutionTransaction.execution_id == Execution.id)
-        .filter(Execution.vault_id == execution.vault_id, ExecutionTransaction.created_at >= since)
+        .filter(Execution.vault_id == vault_id, ExecutionTransaction.created_at >= since)
         .count()
     )
+
+
+def _within_limits(execution: Execution, relayer: Relayer, now) -> None:
+    """D38: the vault's payouts per day, and the relayer's reserve after this transaction."""
+    sent_today = sent_in_last_day(execution.vault_id, now)
     if sent_today >= payouts_per_day():
         raise RelayerBusy(
             f"this vault has sent {sent_today} payment transactions in the last day, its limit;"
@@ -515,6 +519,63 @@ def payout_of(proposal: Proposal) -> Execution | None:
     return Execution.query.filter_by(proposal_id=proposal.id).one_or_none()
 
 
+def treasury_status(
+    treasury, relayer: Relayer | None, *, now: Callable[[], datetime] = _utcnow
+) -> dict:
+    """The linked treasury's balance and what it may still pay today, for its page (D40).
+
+    The balance is read from the chain on each view; when Ethereum does not answer it is None and
+    the page says so, rather than failing.
+    """
+    balance = None
+    if relayer is not None and relayer.chain_id == treasury.chain_id:
+        try:
+            balance = relayer.rpc.get_balance(treasury.address)
+        except (RpcError, RelayerError, ValueError):
+            balance = None
+    return {
+        "balance_wei": str(balance) if balance is not None else None,
+        "balance": chain_action.format_wei(balance) if balance is not None else None,
+        "payouts_left_today": max(0, payouts_per_day() - sent_in_last_day(treasury.vault_id, now)),
+        "payouts_per_day": payouts_per_day(),
+    }
+
+
+def view(proposal: Proposal) -> dict | None:
+    """How a payment decision's payout stands, for the web and the phone (plan Phase 8).
+
+    ``state`` is the payout's own state once one exists; before that it says why nothing is being
+    paid yet: ``awaiting_approvals`` while the decision is open, ``not_paid`` when it closed
+    without being approved. None for a decision that is not a payment.
+    """
+    if proposal.action is None:
+        return None
+    execution = payout_of(proposal)
+    signed = ExecutionSignature.query.filter_by(proposal_id=proposal.id).count()
+    if execution is not None:
+        state, reason = execution.state, execution.reason
+    elif proposal.status == "open":
+        state, reason = "awaiting_approvals", None
+    elif proposal.status == "approved":
+        state, reason = "queued", "waiting for the scheduler"
+    else:
+        state, reason = "not_paid", f"the decision was {proposal.status}"
+    return {
+        "state": state,
+        "reason": reason,
+        "tx_hash": execution.tx_hash if execution is not None else None,
+        "block_number": execution.block_number if execution is not None else None,
+        "gas_used": execution.gas_used if execution is not None else None,
+        "execution_signatures": signed,
+        "needed": proposal.required_m,
+        "finished_at": (
+            execution.finished_at.isoformat()
+            if execution is not None and execution.finished_at is not None
+            else None
+        ),
+    }
+
+
 __all__ = [
     "EXECUTE_GAS_BUDGET",
     "PayoutEnded",
@@ -522,6 +583,9 @@ __all__ = [
     "due_execution",
     "enqueue_approved",
     "payout_of",
+    "sent_in_last_day",
     "tick",
     "tick_with_app_relayer",
+    "treasury_status",
+    "view",
 ]
