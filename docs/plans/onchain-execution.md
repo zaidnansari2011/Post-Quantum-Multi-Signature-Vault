@@ -311,7 +311,7 @@ Runtime sizes: `QVaultTreasury` 9,471 bytes (9,451 before D42's nonce in the exe
 - [ ] Decision record / export includes the transaction hash and execution signatures; the offline verifier checks the execution signatures
 - [ ] Scripted end-to-end tamper demo (tamper after approval → payment refused → Etherscan confirms)
 - [ ] Runbook (D41) and the relayer key as a Container App secret (owner)
-- [ ] Deploy to Azure; an owner creates the first real treasury through the app; `link_treasury.py --check` passes against it
+- [ ] Deploy to Azure; an owner creates the first real treasury through the app; `link_treasury.py --check` passes against it *(deploy done 2026-09-27 on a teammate's subscription, `rg-qvault`, `project4.zaidansari.tech` kept — OWNER-ACTIONS §2.9; seeded, ledger verified, witness co-signing 133/133. Treasuries off there until the handset test; the first real treasury and the relayer secret come after)*
 - [ ] Defence pack: new claims and the limits to volunteer
 - **Done when:** the demo runs from the script without improvising.
 
@@ -437,3 +437,4 @@ and keep the relayer funded in production (D38).
 | 2026-09-27 | 7 | **Phase 7 done: a real Sepolia payout.** The executor pays approved payments one chain action per tick, idempotent across crashes; review H1 (a payment reverting on inclusion was re-sent every tick) and M1, L1–L3 fixed. Live: treasury `0xD491…f3D0`, 0.0001 ETH paid in block 11,793,551, 3,272,465 gas | `aac2833`, `78e07df` |
 | 2026-09-27 | 7b | **Reconfiguration engine.** A linked treasury follows its vault by `reconfigure`, approved by its current signers; anvil proves add + rotate then a payout by the new set (3,534,024 gas). Suite 1,738 passed, 90% | `0ec4b9c` |
 | 2026-09-27 | 7b, 8 | **Approving changes on web and phone; the treasury in the interface.** Phone recomputes `reconfigureDigest` (dynamic `bytes[]`) and refuses before the prompt; review M1 (identities unnamed) narrowed and its limit written down, L1–L6 fixed with tests. Phase 8: payment decisions from web and phone, the payout on the decision, treasury balance and limits, the D37 key choice on the phone, `/admin/chain`. Flag stays off pending the handset test and screenshots | — |
+| 2026-09-27 | 9 | **Deployed on a teammate's Azure subscription** (the owner's credits ran low): `rg-qvault`, Central India, Postgres B1ms, the app and witness from the GHCR image, attachments on a persistent share (fixes OWNER-ACTIONS §2.6), `project4.zaidansari.tech` kept so phones need no update. Found on the way: the seed deadlocked on Postgres against its own open transaction (`68a4ab7`), and the image workflow skipped `scripts/`-only commits (`6923a39`) | — |

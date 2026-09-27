@@ -514,6 +514,58 @@ Etherscan.
 
 ---
 
+### 2.9 The deployment on the team Azure subscription — `LIVE` (added 2026-09-27)
+
+Your own Azure credits ran low, so on 2026-09-27 everything was rebuilt from scratch on a
+teammate's **Azure for Students** subscription (`4e995e2f…`, directory "Default Directory"),
+signed in on this laptop with `az login --tenant 4ca17099-4223-438c-9f8a-91b2c0954037`. Your own
+subscription (`88f39ece…`) was not touched. Everything lives in **one resource group, `rg-qvault`,
+Central India** (the student plan allows only five regions), so deleting that group removes all of
+it.
+
+| Resource | Name | Notes |
+| --- | --- | --- |
+| Container Apps environment | `qvault-env` | workload-profiles mode (the CLI's new "express" default cannot mount file shares) |
+| App | `qvault` | 0.5 vCPU / 1 GiB, **one always-on replica** (the scheduler lives in it), image from GHCR |
+| Witness | `qvault-witness` | same image, `python -m witness`, scales to zero |
+| Postgres | `qvault-pg-260927` | Burstable B1ms, 32 GB, v16, database `qvault`; firewall: Azure services only |
+| Storage | `qvault260927st` | shares `witness-data` (mounted `nobrl`) and `vault-files` (attachments at `/app/instance/storage` — the §2.6 fix, so uploads now survive restarts) |
+| Job | `qvault-seed` | re-runs `scripts/seed_demo.py` inside Azure; nothing opens the database to the internet |
+
+**Domain:** `project4.zaidansari.tech` was kept, so every installed phone keeps working with no
+app update. Cloudflare records (DNS only, grey cloud): `CNAME project4 →
+qvault.livelybeach-69506dc5.centralindia.azurecontainerapps.io` and `TXT asuid.project4 →
+97845A9A…910A`. HTTPS is Azure's free managed certificate.
+
+**A fresh start, not a migration:** the demo data was re-seeded (7 users, 6 vaults, 30 decisions,
+ledger 133 entries, verified). Demo sign-in as before (`ada@qvault.demo`). Consequences:
+
+- **New fingerprints — republish them (§2.5):** the log is now **`6e4025ccb44f44c4`** (ML-DSA-65)
+  and the witness **`810fb51e5e2f75a8`** (ML-DSA-87, `witness-1`). The values in §2.5 describe
+  the old deployment.
+- **Phones must enrol again:** the old accounts, devices and tokens were in the old database.
+- **On-chain treasuries are off** (`ONCHAIN_EXECUTION_ENABLED=false`) and the relayer's Sepolia key
+  is **not** on Azure yet; adding it is one secret when the handset test (§3.3) is done. The
+  treasury `0xD491…f3D0` lives in the laptop's demo database, not in this one.
+
+**Yours to do:**
+
+1. **Back up the new `SERVER_MASTER_KEY`** into a password manager. Without it the vault files and
+   the log's SYSTEM key can never be unwrapped. It is a Container App secret on `qvault`, and a
+   copy is in the session scratchpad on this laptop (`scratchpad/azure/master_key`), which is
+   temporary.
+2. **Your teammate:** they own the billing. The standing cost is roughly the Postgres server plus
+   one always-on 0.5 vCPU replica (~$15–20/month). Ask them to glance at their credit monthly.
+3. **Your old deployment** (`qvault-rg` on your own subscription): the container is stopped, but a
+   Postgres server there still bills while it exists. Once you are happy with this one, delete it,
+   or at least stop its Postgres, so it stops using your credits. Export it first if anything in
+   it matters.
+4. Republish the two fingerprints above (§2.5).
+
+**Found while deploying:** `scripts/seed_demo.py` deadlocked on Postgres (its own open transaction
+held a lock `drop_all` waited on — SQLite never shows it), and the image workflow did not rebuild
+when only `scripts/` changed, though the image ships `scripts/`. Both fixed (`68a4ab7`, `6923a39`).
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
@@ -764,3 +816,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-09-09 | Added §1.4 (turn the live trace on for the demo?) and §4.4 (paper venue + submission). |
 | 2026-09-17 | Added §2.8: on-chain execution on Sepolia. Keys received, relayer wallet generated, funding outstanding. |
 | 2026-09-17 | §2.8: Phases 1–2 committed; the Phase 3 broadcast was blocked by the session's permission system and needs your approval (command recorded). |
+| 2026-09-27 | Added §2.9: the system rebuilt on a teammate's Azure subscription (`rg-qvault`, Central India), `project4.zaidansari.tech` kept; new fingerprints to republish; master key to back up; old deployment to delete. |
