@@ -17,7 +17,12 @@ from eth_abi import decode, encode
 from fake_ethereum import GENESIS_TIME, Call, FakeNode, Outcome
 
 from qvault.chain import execute_call as ec
-from qvault.chain.digest import MAX_THRESHOLD, SIGNER_BYTES, execution_digest
+from qvault.chain.digest import (
+    MAX_THRESHOLD,
+    SIGNER_BYTES,
+    execution_digest,
+    reconfigure_digest_unchecked,
+)
 from qvault.chain.evm import checksum_address, keccak256
 from qvault.chain.key_storage import SET_KEY_SELECTOR
 from qvault.chain.mldsa_key import BLOB_BYTES, HALF_BYTES, pointer_code
@@ -57,6 +62,9 @@ class FakeTreasuries:
     verify: Callable[[bytes, bytes, bytes], bool] | None = None
     # Proposals each treasury has executed, as its `executed` mapping holds them.
     executed: set[tuple[str, bytes]] = field(default_factory=set)
+    # A treasury's configuration after `reconfigure` (Phase 7b): address -> (signers, threshold,
+    # nonce). Absent until its first reconfiguration, when the constructor's still hold.
+    configs: dict[str, tuple[list[bytes], int, int]] = field(default_factory=dict)
 
     def install(self, verifier: str) -> None:
         self.node.deploy_handler = self.deploy
@@ -79,7 +87,16 @@ class FakeTreasuries:
         if not call.data.startswith(self.artifact.creation_code):
             return Outcome(True, b"\x00", 100_000)  # some other contract
         verifier, signers, threshold = self._arguments(call.data)
-        seen = set()
+        refused = self._refuse_signers(signers, verifier)
+        if refused is not None:
+            return refused
+        if not 1 <= threshold <= min(MAX_THRESHOLD, len(signers)):
+            return Outcome(False, b"", 200_000)
+        return Outcome(True, self.runtime(verifier), self.deploy_gas)
+
+    def _refuse_signers(self, signers, verifier, held=()) -> Outcome | None:
+        """The constructor's (and `_addSigners`') checks on new identities, or None."""
+        seen = {self._tr(s) for s in held}
         for signer in signers:
             if (
                 len(signer) != SIGNER_BYTES
@@ -93,16 +110,27 @@ class FakeTreasuries:
                 return Outcome(False, keccak256(b"NonCanonicalKeyStorage(bytes)")[:4], 200_000)
             if any(keccak256(c) != h for c, h in zip(codes, hashes, strict=True)):
                 return Outcome(False, keccak256(b"KeyContentMismatch(bytes)")[:4], 200_000)
-            _, tr, _ = decode(["bytes", "bytes", "bytes"], codes[0][1:])
-            if bytes(tr) in seen:
+            tr = self._tr(signer)
+            if tr in seen:
                 return Outcome(False, keccak256(b"DuplicateKey(bytes32)")[:4], 200_000)
-            seen.add(bytes(tr))
-        if not 1 <= threshold <= min(MAX_THRESHOLD, len(signers)):
-            return Outcome(False, b"", 200_000)
-        return Outcome(True, self.runtime(verifier), self.deploy_gas)
+            seen.add(tr)
+        return None
+
+    def _tr(self, signer: bytes) -> bytes:
+        code = self.node.code.get(checksum_address("0x" + signer[20:40].hex()), b"")
+        _, tr, _ = decode(["bytes", "bytes", "bytes"], code[1:])
+        return bytes(tr)
+
+    def _config(self, address: str) -> tuple[str, list[bytes], int, int]:
+        verifier, signers, threshold = self._arguments(self.node.creation_data[address])
+        if address in self.configs:
+            signers, threshold, nonce = self.configs[address]
+        else:
+            nonce = 0
+        return verifier, signers, threshold, nonce
 
     def view(self, call: Call) -> Outcome:
-        verifier, signers, threshold = self._arguments(self.node.creation_data[call.to])
+        verifier, signers, threshold, nonce = self._config(call.to)
         selector = call.data[:4]
         if selector == VIEWS["verifier"]:
             result = encode(["address"], [self.lies.get("verifier", verifier)])
@@ -113,7 +141,7 @@ class FakeTreasuries:
         elif selector == VIEWS["getSigners"]:
             result = encode(["bytes[]"], [self.lies.get("signers", signers)])
         elif selector == VIEWS["configNonce"]:
-            result = encode(["uint256"], [self.lies.get("configNonce", 0)])
+            result = encode(["uint256"], [self.lies.get("configNonce", nonce)])
         elif selector == ec.EXECUTED:
             (pid,) = decode(["bytes32"], call.data[4:])
             done = (call.to, bytes(pid)) in self.executed
@@ -124,6 +152,8 @@ class FakeTreasuries:
             result = encode(["bool"], [bytes(identity) in self.lies.get("signers", signers)])
         elif selector == ec.EXECUTE:
             return self._execute(call, signers, threshold)
+        elif selector == ec.RECONFIGURE:
+            return self._reconfigure(call, verifier, signers, threshold, nonce)
         else:
             return Outcome(False, b"", 30_000)
         return Outcome(True, result, 30_000)
@@ -142,7 +172,7 @@ class FakeTreasuries:
         # The transaction lands in the next block, whose time the fake node derives from its number.
         if GENESIS_TIME + 12 * (self.node.block_number + 1) > valid_until:
             return revert("Expired(uint64)", encode(["uint64"], [valid_until]))
-        nonce = self.lies.get("configNonce", 0)
+        nonce = self.lies.get("configNonce", self._config(call.to)[3])
         digest = execution_digest(
             chain_id=self.node.chain_id,
             treasury=call.to,
@@ -187,3 +217,52 @@ class FakeTreasuries:
             logs=((topics, encode(["uint256", "bytes32"], [value, keccak256(bytes(data))])),),
             on_include=apply,
         )
+
+    def _reconfigure(self, call, verifier, signers, threshold, nonce) -> Outcome:
+        """``QVaultTreasury.reconfigure``, in the contract's order: deadline, approvals at the
+        current nonce by current signers, then the new set's own checks."""
+        add, remove, new_threshold, valid_until, multisig = decode(
+            ["bytes[]", "bytes[]", "uint64", "uint64", "bytes"], call.data[4:]
+        )
+        add, remove = [bytes(a) for a in add], [bytes(r) for r in remove]
+        if GENESIS_TIME + 12 * (self.node.block_number + 1) > valid_until:
+            return Outcome(
+                False, keccak256(b"Expired(uint64)")[:4] + encode(["uint64"], [valid_until]), 60_000
+            )
+        nonce = self.lies.get("configNonce", nonce)
+        digest = reconfigure_digest_unchecked(
+            chain_id=self.node.chain_id,
+            treasury=call.to,
+            config_nonce=nonce,
+            add=add,
+            remove=remove,
+            threshold=new_threshold,
+            valid_until=valid_until,
+        )
+        ids, sigs = decode(["bytes[]", "bytes[]"], multisig)
+        ids, sigs = [bytes(i) for i in ids], [bytes(s) for s in sigs]
+        valid = (
+            len(ids) == len(sigs)
+            and len(ids) >= threshold
+            and len(set(ids)) == len(ids)
+            and all(i in signers for i in ids)
+            and self.verify is not None
+            and all(self.verify(i, digest, s) for i, s in zip(ids, sigs, strict=True))
+        )
+        gas = 200_000 + 1_541_829 * len(ids)
+        if not valid:
+            return Outcome(False, keccak256(b"InvalidMultisig()")[:4], gas)
+        kept = [s for s in signers if s not in remove]
+        refused = self._refuse_signers(add, verifier, held=kept)
+        if refused is not None:
+            return refused
+        new_signers = kept + [a for a in add if a not in kept]
+        if not 1 <= new_threshold <= min(MAX_THRESHOLD, len(new_signers)):
+            return Outcome(False, b"", gas)
+
+        def apply() -> None:
+            self.configs[call.to] = (new_signers, new_threshold, nonce + 1)
+
+        topics = (ec.RECONFIGURED_EVENT, nonce.to_bytes(32, "big"))
+        data = encode(["uint256", "uint256", "uint64"], [len(add), len(remove), new_threshold])
+        return Outcome(True, b"", gas, logs=((topics, data),), on_include=apply)

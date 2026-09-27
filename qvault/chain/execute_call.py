@@ -96,6 +96,29 @@ def execute_calldata(
     )
 
 
+RECONFIGURE = _selector("reconfigure(bytes[],bytes[],uint64,uint64,bytes)")
+RECONFIGURED_EVENT = keccak256(b"Reconfigured(uint256,uint256,uint256,uint64)")
+
+
+def reconfigure_calldata(
+    *,
+    add: list[bytes],
+    remove: list[bytes],
+    threshold: int,
+    valid_until: int,
+    approvals: list[Approval],
+) -> bytes:
+    """``reconfigure(add, remove, newThreshold, validUntil, multisig)`` (plan Phase 7b).
+
+    ``add`` and ``remove`` go in exactly the order they were signed: the digest hashes the
+    encoded lists, so reordering them would be a different reconfiguration.
+    """
+    return RECONFIGURE + encode(
+        ["bytes[]", "bytes[]", "uint64", "uint64", "bytes"],
+        [add, remove, threshold, valid_until, multisig(approvals)],
+    )
+
+
 def executed_calldata(proposal_id: bytes) -> bytes:
     return EXECUTED + encode(["bytes32"], [proposal_id])
 

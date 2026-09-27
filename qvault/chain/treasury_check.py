@@ -82,8 +82,13 @@ def check_treasury(
     artifact: TreasuryArtifact,
     *,
     block: int | str,
+    config_nonce: int = 0,
 ) -> list[str]:
-    """Every way the contract at ``address`` differs from ``expected`` as of ``block``."""
+    """Every way the contract at ``address`` differs from ``expected`` as of ``block``.
+
+    ``config_nonce`` is the nonce it must be at: 0 for a link (a treasury exactly as deployed),
+    the next one after a reconfiguration (Phase 7b).
+    """
     address = checksum_address(address)
     verifier = checksum_address(expected.verifier)
     chain_id = rpc.chain_id()
@@ -108,7 +113,7 @@ def check_treasury(
         (onchain_verifier,) = _view(rpc, address, VIEWS["verifier"], ["address"], block)
         (threshold,) = _view(rpc, address, VIEWS["threshold"], ["uint64"], block)
         (count,) = _view(rpc, address, VIEWS["getSignerCount"], ["uint256"], block)
-        (config_nonce,) = _view(rpc, address, VIEWS["configNonce"], ["uint256"], block)
+        (onchain_nonce,) = _view(rpc, address, VIEWS["configNonce"], ["uint256"], block)
         (signers,) = _view(
             rpc,
             address,
@@ -127,10 +132,12 @@ def check_treasury(
         problems.append(f"the treasury's threshold is {threshold}, not {expected.threshold}")
     if count != len(expected.signers):
         problems.append(f"the treasury has {count} signers, not {len(expected.signers)}")
-    if config_nonce != 0:
+    if onchain_nonce != config_nonce:
         problems.append(
-            f"the treasury has been reconfigured {config_nonce} time(s); a new link needs a "
+            f"the treasury has been reconfigured {onchain_nonce} time(s); a new link needs a "
             "treasury exactly as deployed"
+            if config_nonce == 0
+            else f"the treasury is at configuration {onchain_nonce}, not {config_nonce}"
         )
 
     onchain = {bytes(signer) for signer in signers}

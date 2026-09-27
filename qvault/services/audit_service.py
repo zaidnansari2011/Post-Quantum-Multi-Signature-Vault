@@ -68,6 +68,10 @@ SENTENCES = {
     "treasury_linked": "{who} linked {vault} to a treasury contract on Sepolia.",
     "signing_key_choice_changed": "{who} chose which of their keys a treasury registers.",
     "treasury_unlinked": "{who} unlinked {vault} from its treasury contract.",
+    "treasury_reconfiguration_requested": "{who} asked to change {vault}'s treasury signers.",
+    "treasury_reconfiguration_approved": "{who} approved a change to {vault}'s treasury.",
+    "treasury_reconfigured": "The signers of {vault}'s treasury were changed on chain.",
+    "treasury_reconfiguration_failed": "A change to {vault}'s treasury did not go through.",
     "proposal_executed": "A payment approved in {vault} was paid out by its treasury.",
     "proposal_execution_failed": "A payment approved in {vault} could not be paid out.",
 }

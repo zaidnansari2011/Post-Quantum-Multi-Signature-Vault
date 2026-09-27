@@ -20,6 +20,11 @@ from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
 from .proposal import Proposal
+from .reconfiguration import (
+    Reconfiguration,
+    ReconfigurationSignature,
+    ReconfigurationTransaction,
+)
 from .signature import Signature
 from .signer_preference import SignerPreference
 from .treasury import ExecutionSignature, ProposalAction, Treasury, TreasurySigner
@@ -50,5 +55,8 @@ __all__ = [
     "TreasuryJobTransaction",
     "Execution",
     "ExecutionTransaction",
+    "Reconfiguration",
+    "ReconfigurationSignature",
+    "ReconfigurationTransaction",
     "SignerPreference",
 ]

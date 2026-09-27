@@ -254,6 +254,16 @@ def _payment_action(vault, payment, required_m, required_n, action_text, now, de
     treasury = Treasury.query.filter_by(vault_id=vault.id, status="linked").one_or_none()
     if treasury is None:
         raise ProposalError("This vault has no linked treasury, so it cannot make payments.")
+    from qvault.models import Reconfiguration
+    from qvault.models.reconfiguration import OPEN_STATES
+
+    if Reconfiguration.query.filter(
+        Reconfiguration.treasury_id == treasury.id, Reconfiguration.state.in_(OPEN_STATES)
+    ).first():
+        # Approvals given now would be at the configuration the change is about to replace.
+        raise ProposalError(
+            "This vault's treasury is being reconfigured. Raise the payment once that is done."
+        )
     if treasury.threshold_m != required_m:
         # Otherwise the web would say M-of-N while the contract enforced another threshold.
         raise ProposalError(

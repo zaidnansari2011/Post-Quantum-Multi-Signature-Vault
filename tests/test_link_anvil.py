@@ -82,6 +82,12 @@ def node():
             "--hardfork",
             "osaka",
             "--enable-tx-gas-limit",
+            # Keep states in memory only. Otherwise anvil spills old states to
+            # ~/.foundry/anvil/tmp, and a killed anvil (terminate() on Windows) never removes them:
+            # 17 GB had built up by 2026-09-27 and filled the disk. 500 covers the finalized-block
+            # reads here (the fixture mines 70 blocks at a time).
+            "--prune-history",
+            "500",
             "--silent",
         ],
         stdout=subprocess.DEVNULL,
@@ -389,3 +395,89 @@ def test_an_approved_payment_is_paid_by_the_real_treasury(app, node):
     ) == (1).to_bytes(32, "big")
     print(f"\nmeasured gas: execute with 2 ML-DSA-65 approvals {execution.gas_used}")
     assert 3_000_000 < execution.gas_used < payout_service.EXECUTE_GAS_BUDGET
+
+
+def test_a_member_is_added_on_chain_and_the_new_set_pays_out(app, node):
+    """Plan Phase 7b, done when: on the real contracts, a vault's new member and a rotated key
+    reach the treasury by `reconfigure`, approved by the current signers, and the new signer set
+    pays out without redeploying."""
+    from qvault.services import (
+        approval_service,
+        key_service,
+        payout_service,
+        proposal_service,
+        reconfiguration_service,
+        treasury_jobs,
+    )
+    from qvault.services.proposal_service import PaymentRequest
+
+    rpc, relayer = node["rpc"], node["relayer"]
+    users, vault = _vault()
+    ada, brij, chen = users
+    app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    app.config["TREASURY_RELAYER_RESERVE_WEI"] = 0
+    app.extensions["relayer"] = relayer
+    artifact = treasury_artifact.committed()
+    job = treasury_jobs.request_link(vault, by=ada, relayer=relayer)
+    for _ in range(30):
+        if not job.is_open:
+            break
+        treasury_jobs.advance(job, relayer=relayer, artifact=artifact, record=node["record"])
+        _mine(rpc)(0)
+    assert job.state == "done", job.reason
+    treasury = db.session.get(Treasury, job.treasury_id)
+    rpc.request("anvil_setBalance", [treasury.address, hex(10**18)])
+
+    # A new member joins and brij's key is replaced.
+    dara = auth_service.register_user("dara@link.test", "Dara", PASSWORD)
+    vault_service.add_member(vault, dara.email, "signer", actor_id=ada.id)
+    key_service.reissue_signing_key(brij, PASSWORD)
+    db.session.commit()
+    reconfiguration = reconfiguration_service.request(vault, by=ada, relayer=relayer)
+
+    approved = False
+    for _ in range(40):
+        if not reconfiguration.is_open:
+            break
+        db.session.expire_all()
+        if reconfiguration.state == "collecting_approvals" and not approved:
+            # brij approves with the retired key the treasury still holds (D39).
+            for user in (ada, brij):
+                reconfiguration_service.approve_with_password(reconfiguration, user, PASSWORD)
+            approved = True
+        reconfiguration_service.advance(
+            reconfiguration,
+            relayer=Relayer(rpc, ANVIL_KEY, chain_id=SEPOLIA),
+            artifact=artifact,
+            record=node["record"],
+        )
+        _mine(rpc)(0)
+    assert reconfiguration.state == "done", reconfiguration.reason
+    db.session.refresh(treasury)
+    assert treasury.config_nonce == 1 and treasury.signer_count == 4
+    assert treasury_service.check(treasury, rpc=rpc, record=node["record"], artifact=artifact) == []
+    gas = [
+        rpc.get_transaction_receipt(bytes.fromhex(tx.tx_hash[2:])).gas_used
+        for tx in reconfiguration.transactions
+        if tx.purpose == "reconfigure"
+    ]
+    print(f"\nmeasured gas: reconfigure (add one, rotate one, 2 approvals) {gas}")
+
+    # The new set pays: dara (new) and brij (rotated key) approve.
+    proposal = proposal_service.create_proposal(
+        vault,
+        ada,
+        "Pay",
+        "",
+        payment=PaymentRequest("0x000000000000000000000000000000000000cafe", 10**14),
+    )
+    for user in (dara, brij):
+        approval_service.cast_vote(proposal, user, PASSWORD, "approve")
+    for _ in range(6):
+        db.session.expire_all()
+        execution = payout_service.tick(relayer=Relayer(rpc, ANVIL_KEY, chain_id=SEPOLIA))
+        if execution is not None and not execution.is_open:
+            break
+        rpc.request("anvil_mine", [hex(1)])
+    assert payout_service.payout_of(proposal).state == "confirmed"
+    assert rpc.get_balance("0x000000000000000000000000000000000000cafe") == 10**14
