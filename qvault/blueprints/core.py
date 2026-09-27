@@ -11,7 +11,7 @@ from flask import Blueprint, current_app, jsonify, render_template
 from flask_login import current_user
 
 from qvault.security.demo_gate import demo_enabled
-from qvault.services import audit_service, checkpoint_service, inbox_service
+from qvault.services import audit_service, checkpoint_service, inbox_service, treasury_service
 from qvault.services.audit_service import Filters as AuditFilters
 from qvault.services.inbox_service import Filters as InboxFilters
 
@@ -66,3 +66,14 @@ def healthz():
         default_signature=current_app.config["DEFAULT_SIG_ALGORITHM"],
         default_kem=current_app.config["DEFAULT_KEM_ALGORITHM"],
     )
+
+
+@bp.get("/treasuries.json")
+def treasuries_record():
+    """The public record of this instance's treasuries (plan Phase 9), no account needed.
+
+    Everything in it is already public on chain; it names vaults and users by id only, never by
+    name. ``scripts/export_treasury_record.py --from-url`` merges it into the committed
+    ``chain/deployments/<network>.json``, which a restored copy of a database is checked against.
+    """
+    return jsonify(treasuries=treasury_service.public_record())

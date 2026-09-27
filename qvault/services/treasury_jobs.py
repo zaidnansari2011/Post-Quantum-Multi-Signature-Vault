@@ -59,7 +59,7 @@ from qvault.models import (
     Vault,
 )
 from qvault.models.treasury_job import OPEN_STATES
-from qvault.services import ledger_service
+from qvault.services import ledger_service, treasury_service
 from qvault.services.treasury_service import (
     ALGORITHM,
     SET_KEY_GAS,
@@ -315,7 +315,11 @@ def advance(
         _wait(job, "something went wrong; an administrator can see the details in the log")
     _give_up_if_stuck(job, now)
     job.updated_at = now()
+    finished_linking = job.state == "done" and job.treasury_id is not None
     db.session.commit()
+    if finished_linking:
+        # After the commit: the record describes what the database already holds (Phase 9).
+        treasury_service.publish_record(db.session.get(Treasury, job.treasury_id))
     progress(f"{job.state}: {job.reason}")
     return job
 

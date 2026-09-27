@@ -345,25 +345,61 @@ def merge_contracts(record: dict, entries: Mapping[str, dict]) -> tuple[dict, li
 
 
 TREASURY_FIXED_KEYS = ("vault_id", "verifier", "threshold", "signers", "deployment_tx")
+#: What never changes for a treasury, whatever its configuration.
+TREASURY_IDENTITY_KEYS = ("vault_id", "verifier", "deployment_tx")
+
+
+def configurations(entry: dict) -> dict[int, dict]:
+    """Every signer configuration recorded for a treasury, by ``configNonce``: the one it was
+    first recorded at (``config_nonce``, 0 for entries written before reconfiguration existed)
+    and each later one under ``configurations``."""
+    known = {
+        int(entry.get("config_nonce", 0)): {
+            "threshold": entry.get("threshold"),
+            "signers": entry.get("signers") or [],
+        }
+    }
+    for later in entry.get("configurations") or []:
+        known[int(later["config_nonce"])] = {
+            "threshold": later.get("threshold"),
+            "signers": later.get("signers") or [],
+        }
+    return known
 
 
 def merge_treasury(record: dict, address: str, entry: dict) -> tuple[dict, bool]:
-    """Add a linked treasury under ``record["treasuries"]``. Returns the record and whether it
-    was added. The same treasury recorded again is left as it was; a different vault, verifier,
-    threshold, signer set or deployment under that address is refused."""
+    """Add a treasury under ``record["treasuries"]``, or a configuration it has reached since.
+    Returns the record and whether anything was added.
+
+    A treasury's vault, verifier and deployment are fixed. Its signers and threshold are fixed
+    *per configuration*: the same ``config_nonce`` recorded again with different ones is refused,
+    and a new one (after a reconfiguration, Phase 7b) is appended under ``configurations``.
+    Nothing recorded is ever overwritten."""
     address = checksum_address(address)
     merged = json.loads(json.dumps(record))
     existing = merged["treasuries"].get(address)
     if existing is None:
         merged["treasuries"][address] = json.loads(json.dumps(entry))
         return merged, True
-    for key in TREASURY_FIXED_KEYS:
+    for key in TREASURY_IDENTITY_KEYS:
         if existing.get(key) != entry.get(key):
             raise DeploymentError(
                 f"treasury {address} is already recorded with a different {key}; a record is "
                 "never overwritten"
             )
-    return merged, False
+    nonce = int(entry.get("config_nonce", 0))
+    known = configurations(existing)
+    offered = {"threshold": entry.get("threshold"), "signers": entry.get("signers") or []}
+    if nonce in known:
+        if known[nonce] != offered:
+            raise DeploymentError(
+                f"treasury {address} is already recorded at configuration {nonce} with different "
+                "signers or threshold; a record is never overwritten"
+            )
+        return merged, False
+    existing.setdefault("configurations", []).append({"config_nonce": nonce, **offered})
+    existing["configurations"].sort(key=lambda c: c["config_nonce"])
+    return merged, True
 
 
 def mark_treasury_unlinked(record: dict, address: str, when: str) -> dict:
