@@ -1,0 +1,81 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  A vault can have a <strong>treasury</strong>: a contract on the Sepolia test network that holds
+  ETH and pays out only when enough of the vault's approvers have signed that exact payment. The
+  contract checks their post-quantum signatures itself, so neither this server nor the account
+  that sends the transaction can move the money without them.
+</p>
+
+<h3>Creating one</h3>
+<p>
+  On the vault's <strong>Treasury</strong> tab, the owner chooses <strong>Create treasury</strong>.
+  Nothing is sent from the page: the server registers each approver's key on the network, deploys
+  the contract, waits for the blocks to be final, and checks everything it deployed before the
+  vault shows it as linked. It takes about fifteen minutes, and the tab shows how far it has got.
+  Send ETH to the treasury's address to fund it.
+</p>
+<p>
+  Each approver chooses which of their keys the treasury holds for them, on their
+  <a class="dt__link" href="{{ url_for('account.index') }}">account page</a> or from their phone:
+  the password key they use here, or their phone's own key. One key per person: the contract counts
+  keys, so this is what stops one person counting twice.
+</p>
+
+<h3>Paying</h3>
+<table class="dt">
+  <thead><tr><th style="width:12rem">Step</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Raise it</td>
+      <td>Under <strong>New decision</strong>, choose <strong>Payment</strong> and give the
+          recipient and the amount. The wording is written from the payment, so what people read
+          and what they sign cannot disagree.</td>
+    </tr>
+    <tr>
+      <td>Approve it</td>
+      <td>An approval signs twice with one password or one fingerprint: the vote, as for any
+          decision, and an authorisation over exactly this payment that the contract checks. A
+          phone works both out for itself and refuses to sign if the server's version differs.</td>
+    </tr>
+    <tr>
+      <td>Paid</td>
+      <td>Once enough approvals are in, the server sends the payment. The decision's
+          <strong>Payout</strong> panel shows the transaction, its block and its cost. On the
+          network, the payment carries the decision's own hash, so anyone can match the two.</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  Approvals expire: a payment decision is open for up to 30 days (7 unless you choose), and has
+  72 hours after that to be paid. Rejecting works exactly as for any decision and authorises
+  nothing.
+</p>
+
+<h3>When the vault changes</h3>
+<p>
+  If members join or leave, the approval threshold changes, or someone changes the key the treasury
+  holds for them, the Treasury tab shows the treasury as <strong>out of date</strong> and lists who
+  joins and leaves. The owner asks for the change; the treasury's <em>current</em> approvers approve
+  it, as they would a payment, and then it is made on the network. The server never changes who
+  controls the money by itself.
+</p>
+<p>
+  Two consequences to expect. Payments cannot be raised while a change is in progress. And a
+  change cancels every payment approval collected before it: those payments have to be raised and
+  approved again, because approvals given to one group of people are not carried over to another.
+</p>
+
+<h3>What this does not promise</h3>
+<ul>
+  <li><strong>It is a test network.</strong> The on-chain verifier is new and has not been
+      independently audited, so no real money should sit behind it.</li>
+  <li>An approval made with a <strong>password key</strong> is produced by this server, exactly as
+      a password-key vote is. The guarantee that what you approved is what gets paid holds end to
+      end for approvals made on a phone.</li>
+  <li>If fewer approvers than the threshold can ever sign again, the treasury cannot be changed and
+      its funds stay where they are. The app warns before any change that would cause this.</li>
+</ul>
+
+{% endblock %}

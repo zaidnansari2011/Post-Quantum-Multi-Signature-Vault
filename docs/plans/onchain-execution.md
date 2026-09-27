@@ -306,13 +306,13 @@ Runtime sizes: `QVaultTreasury` 9,471 bytes (9,451 before D42's nonce in the exe
 ### Phase 9: Evidence and documents
 
 - [ ] The public deployment record for treasuries the app links (found in Phase 7's live run): the in-app job (D36) never writes `chain/deployments/sepolia.json`, and on Azure the file is baked into the image, so a runtime write would not persist anyway. Decide where the record lives in production (committed from a periodic export, or a table the reseed guard also reads) so D16's copy protection and the public record cover app-created treasuries
-- [ ] ADR-0023 (this design, its limits, the measured costs)
-- [ ] `/docs` page for on-chain execution; README section
+- [x] ADR-0023 (this design, its limits, the measured costs) — [`docs/adr/0023-post-quantum-treasury-on-chain.md`](../adr/0023-post-quantum-treasury-on-chain.md)
+- [x] `/docs` page for on-chain execution; README section — `/docs/treasuries` (listed only while `ONCHAIN_EXECUTION_ENABLED`; the docs pages had no tests at all, now `tests/test_docs_pages.py`), README capability row, limitation and ADR links
 - [ ] Decision record / export includes the transaction hash and execution signatures; the offline verifier checks the execution signatures
 - [ ] Scripted end-to-end tamper demo (tamper after approval → payment refused → Etherscan confirms)
-- [ ] Runbook (D41) and the relayer key as a Container App secret (owner)
+- [ ] Runbook (D41) and the relayer key as a Container App secret (owner) *(runbook written: [`docs/runbooks/treasury.md`](../runbooks/treasury.md), with the exact commands to add the secret; the secret itself waits for the handset test)*
 - [ ] Deploy to Azure; an owner creates the first real treasury through the app; `link_treasury.py --check` passes against it *(deploy done 2026-09-27 on a teammate's subscription, `rg-qvault`, `project4.zaidansari.tech` kept — OWNER-ACTIONS §2.9; seeded, ledger verified, witness co-signing 133/133. Treasuries off there until the handset test; the first real treasury and the relayer secret come after)*
-- [ ] Defence pack: new claims and the limits to volunteer
+- [x] Defence pack: new claims and the limits to volunteer — `documents/defence-pack/DEFENCE-PACK.md` Parts 7 and 8 (outside this repository): three limits, four questions, and "why not a blockchain?" reconciled with the treasury
 - **Done when:** the demo runs from the script without improvising.
 
 ### Parity checklist

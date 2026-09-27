@@ -19,7 +19,7 @@ bp = Blueprint("docs", __name__, url_prefix="/docs")
 #: Pages that describe a surface which may not exist in this deployment. Listing one when the
 #: thing it documents is switched off sends a reader to a 404 from our own table of contents, so
 #: the gate is applied to the page list rather than only to the feature.
-GATED = {"trace": "GLASSBOX_ENABLED"}
+GATED = {"trace": "GLASSBOX_ENABLED", "treasuries": "ONCHAIN_EXECUTION_ENABLED"}
 
 # (slug, title, one-line summary) in reading order.
 PAGES = [
@@ -48,6 +48,11 @@ PAGES = [
         "algorithms",
         "Post-quantum algorithms",
         "The three standards in use, what they cost, and why they can be swapped.",
+    ),
+    (
+        "treasuries",
+        "Treasuries and payments",
+        "A vault that pays out on chain, only with its approvers' own signatures.",
     ),
     ("trace", "The live trace", "Watching the cryptography run, and checking its values yourself."),
 ]

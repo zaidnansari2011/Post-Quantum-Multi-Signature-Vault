@@ -53,6 +53,7 @@ measurable:
 | **Runtime algorithm switch** | Changes the algorithm for *new* keys only; a live re-verification of every stored artefact proves nothing broke. |
 | **Downgrade resistance** | Moving to a *lower* NIST security category is refused unless explicitly confirmed with a reason, and logged as a distinct event ([ADR-0012](docs/adr/0012-downgrade-resistance.md)). |
 | **Verify after sign** | No signature is ever emitted without being verified first ([ADR-0010](docs/adr/0010-verify-after-sign.md)). |
+| **Payments that execute on chain** | A vault can have a treasury contract on Sepolia that pays only when M approvers have signed that exact payment with ML-DSA-65, **verified by the contract itself** (ZKNox's Solidity verifier), so neither the server nor the account sending the transaction can redirect it. The phone recomputes what it signs and refuses a server that disagrees. First real payout: 3,272,465 gas ([ADR-0023](docs/adr/0023-post-quantum-treasury-on-chain.md), [runbook](docs/runbooks/treasury.md)). |
 
 ## Measured performance
 
@@ -260,7 +261,10 @@ the runtime algorithm switch would no longer be safe.
   [0018 static runtime version](docs/adr/0018-static-runtime-version.md) ·
   [0019 self-verifying decision record](docs/adr/0019-self-verifying-decision-record.md) ·
   [0020 glass-box live trace](docs/adr/0020-glass-box-live-trace.md) ·
-  [0021 adversary lab](docs/adr/0021-adversary-lab.md)
+  [0021 adversary lab](docs/adr/0021-adversary-lab.md) ·
+  [0022 handset client](docs/adr/0022-handset-client-for-an-approver.md) ·
+  [0023 post-quantum treasury on chain](docs/adr/0023-post-quantum-treasury-on-chain.md)
+- **[Treasury runbook](docs/runbooks/treasury.md)** — operating the on-chain treasuries: funding, limits, failures.
 
 ## Known limitations
 
@@ -276,6 +280,10 @@ Stated deliberately; each is discussed in the linked ADR.
   ([ADR-0002](docs/adr/0002-application-level-m-of-n.md)).
 - **Benchmarks are laptop-class.** The ratios between algorithms travel; the absolute numbers do
   not ([ADR-0008](docs/adr/0008-benchmark-methodology.md)).
+- **The on-chain verifier is unaudited** (its authors say so), which is why treasuries run on
+  the Sepolia test network only. A password-key approval is produced by the server, as its vote
+  is; the end-to-end guarantee is for approvals made on a phone
+  ([ADR-0023](docs/adr/0023-post-quantum-treasury-on-chain.md)).
 - **Not production-audited.** No independent security review, no side-channel analysis of the
   underlying PQClean implementations.
 
