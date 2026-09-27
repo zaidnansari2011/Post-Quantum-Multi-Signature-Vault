@@ -35,7 +35,12 @@ def init_scheduler(app):
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return None
 
-    from qvault.services import checkpoint_service, rotation_service, treasury_jobs
+    from qvault.services import (
+        checkpoint_service,
+        payout_service,
+        rotation_service,
+        treasury_jobs,
+    )
 
     def _in_context(job):
         def _run():
@@ -62,9 +67,15 @@ def init_scheduler(app):
         replace_existing=True,
     )
     if app.extensions.get("relayer") is not None:
-        # Treasury jobs (plan D36): one chain action per tick, and only while the feature is on.
+        # Treasury jobs (plan D36) and payouts (Phase 7): one chain action each per tick, and only
+        # while the feature is on. One job, run in order, so the shared relayer is never used from
+        # two threads at once; its one-pending-transaction rule (D21) makes the second wait.
+        def _chain_work():
+            treasury_jobs.tick_with_app_relayer()
+            payout_service.tick_with_app_relayer()
+
         scheduler.add_job(
-            _in_context(lambda: treasury_jobs.tick_with_app_relayer()),
+            _in_context(_chain_work),
             IntervalTrigger(seconds=int(app.config.get("TREASURY_TICK_SECONDS", 60))),
             id="treasury_jobs",
             replace_existing=True,

@@ -413,14 +413,20 @@ def _latest(job: TreasuryJob, purpose: str) -> TreasuryJobTransaction | None:
 
 
 def _reconcile(job: TreasuryJob, relayer: Relayer) -> None:
-    """Ask the chain about every transaction this job sent and has not settled (D21).
+    reconcile_transactions(job.transactions, relayer)
+
+
+def reconcile_transactions(transactions, relayer: Relayer) -> None:
+    """Ask the chain about every stored transaction not yet settled (D21). Shared by treasury jobs
+    and payouts (Phase 7): rows with ``raw``, ``state``, ``block_number``, ``gas_used`` and
+    ``fee_wei``, and optionally ``created_address``.
 
     A pending one is left alone: only its nonce being used by another transaction makes it dead.
     A transaction this relayer did not sign is left alone too — the relayer key was changed while
-    the job was in flight, and settling it against another account's nonces would say nothing
+    the work was in flight, and settling it against another account's nonces would say nothing
     (review M-1).
     """
-    for tx in job.transactions:
+    for tx in transactions:
         if tx.state != "sent":
             continue
         prepared = PreparedTransaction.from_raw(bytes(tx.raw))
@@ -440,7 +446,8 @@ def _reconcile(job: TreasuryJob, relayer: Relayer) -> None:
             tx.fee_wei = str(receipt.fee_wei)
             # A deployment's address comes from its own receipt; re-deriving it by scanning is a
             # guess that can miss, and missing it pays for a second treasury (review H-1).
-            tx.created_address = receipt.contract_address
+            if hasattr(tx, "created_address"):
+                tx.created_address = receipt.contract_address
         elif status.state is TxState.SUPERSEDED:
             tx.state = "superseded"
         elif status.state is TxState.UNKNOWN:
@@ -713,6 +720,7 @@ __all__ = [
     "limits_problems",
     "may_request",
     "open_job",
+    "reconcile_transactions",
     "remaining_limits",
     "request_link",
     "tick",

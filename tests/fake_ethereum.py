@@ -67,6 +67,9 @@ class Outcome:
     # (as SSTORE2 does in the verifier's setKey). Applied only when a transaction is included,
     # never by eth_call or eth_estimateGas, exactly as a simulation leaves no state behind.
     creates: tuple[bytes, ...] = ()
+    # State a contract changes, applied only when a successful transaction is included (never by
+    # a simulation), for fakes that keep state of their own.
+    on_include: Callable[[], None] | None = None
 
 
 Handler = Callable[[Call], Outcome]
@@ -278,6 +281,8 @@ class FakeNode:
         self._nonces[tx.sender] = tx.nonce + 1
         self._nonce_history.setdefault(tx.sender, []).append((self.block_number, tx.nonce + 1))
         created = create_address(tx.sender, tx.nonce) if tx.to is None else None
+        if outcome.success and outcome.on_include is not None:
+            outcome.on_include()
         if outcome.success:
             recipient = created or tx.to
             self.balances[recipient] = self.balances.get(recipient, 0) + tx.value

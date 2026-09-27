@@ -330,6 +330,8 @@ _TABLES_CREATED = (
     ExecutionSignature.__tablename__,
     TreasuryJob.__tablename__,
     TreasuryJobTransaction.__tablename__,
+    "executions",
+    "execution_transactions",
 )
 
 

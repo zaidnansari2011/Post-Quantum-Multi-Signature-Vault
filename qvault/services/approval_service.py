@@ -244,6 +244,14 @@ def refresh_expiry(proposal, *, now: datetime | None = None, commit: bool = True
         return False
     if now <= proposal.expires_at:
         return False
+    # Votes cast before the deadline decide it first: two final approvals racing each other can
+    # leave it open with M valid approvals (see finalize_stalled), and that is approved, not
+    # expired. Only reached once the deadline has passed, so the tally's cost is rare.
+    _finalize_if_decided(proposal, actor_id=None)
+    if proposal.status != "open":
+        if commit:
+            db.session.commit()
+        return False
 
     proposal.status = "expired"
     ledger_service.append(
@@ -264,8 +272,13 @@ def refresh_expiry(proposal, *, now: datetime | None = None, commit: bool = True
     return True
 
 
-def _finalize_if_decided(proposal, *, actor_id: int) -> None:
-    """Apply the M-of-N rule after a vote and record the terminal transition, if any."""
+def _finalize_if_decided(proposal, *, actor_id: int | None) -> None:
+    """Apply the M-of-N rule after a vote and record the terminal transition, if any.
+
+    ``actor_id`` is None when the scheduler applies it (``finalize_stalled``): the ledger then
+    names the system, as it does for an expiry, not a person who did nothing.
+    """
+    actor = "SYSTEM" if actor_id is None else f"user:{actor_id}"
     if proposal.status != "open":
         return
     approvals, rejections = tally(proposal)
@@ -282,7 +295,7 @@ def _finalize_if_decided(proposal, *, actor_id: int) -> None:
                 "M": proposal.required_m,
                 "N": proposal.required_n,
             },
-            actor=f"user:{actor_id}",
+            actor=actor,
             actor_id=actor_id,
             vault_id=proposal.vault_id,
             ref_type="proposal",
@@ -302,13 +315,42 @@ def _finalize_if_decided(proposal, *, actor_id: int) -> None:
                 "M": proposal.required_m,
                 "N": proposal.required_n,
             },
-            actor=f"user:{actor_id}",
+            actor=actor,
             actor_id=actor_id,
             vault_id=proposal.vault_id,
             ref_type="proposal",
             ref_id=proposal.proposal_uuid,
             commit=False,
         )
+
+
+def finalize_stalled(*, commit: bool = True) -> int:
+    """Decide open proposals whose verified votes already decide them; returns how many.
+
+    Two final votes committed at the same moment each tally before the other is visible, so each
+    sees M−1 and the decision stays open with M valid approvals, for ever: nothing else votes on
+    it. The scheduler runs this before the expiry sweep (plan Phase 7). It matters most for a
+    payment, which is only carried out once it is marked approved.
+    """
+    from qvault.models.proposal import Proposal
+
+    decided = 0
+    for proposal in Proposal.query.filter_by(status="open").all():
+        # Cheap filter first: tally() verifies every signature, and most open decisions are
+        # nowhere near decided.
+        enough = min(proposal.required_m, proposal.required_n - proposal.required_m + 1)
+        if len(proposal.signatures) < enough:
+            continue
+        try:
+            with db.session.begin_nested():
+                _finalize_if_decided(proposal, actor_id=None)
+        except Exception:  # noqa: BLE001 - one unreadable decision must not stop the others
+            current_app.logger.exception("could not decide proposal %s", proposal.proposal_uuid)
+            continue
+        decided += proposal.status != "open"
+    if commit:
+        db.session.commit()
+    return decided
 
 
 def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:

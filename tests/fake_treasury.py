@@ -10,12 +10,14 @@ runs the same flows against the real contracts.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from eth_abi import decode, encode
-from fake_ethereum import Call, FakeNode, Outcome
+from fake_ethereum import GENESIS_TIME, Call, FakeNode, Outcome
 
-from qvault.chain.digest import MAX_THRESHOLD, SIGNER_BYTES
+from qvault.chain import execute_call as ec
+from qvault.chain.digest import MAX_THRESHOLD, SIGNER_BYTES, execution_digest
 from qvault.chain.evm import checksum_address, keccak256
 from qvault.chain.key_storage import SET_KEY_SELECTOR
 from qvault.chain.mldsa_key import BLOB_BYTES, HALF_BYTES, pointer_code
@@ -50,6 +52,11 @@ class FakeTreasuries:
     deploy_gas: int = 2_700_000
     # Tests set these to make a deployed treasury report something else.
     lies: dict[str, object] = field(default_factory=dict)
+    # execute (Phase 7): checks an approver's signature for (identity, digest, signature). Tests
+    # install one backed by the real ML-DSA provider and the keys their treasury registered.
+    verify: Callable[[bytes, bytes, bytes], bool] | None = None
+    # Proposals each treasury has executed, as its `executed` mapping holds them.
+    executed: set[tuple[str, bytes]] = field(default_factory=set)
 
     def install(self, verifier: str) -> None:
         self.node.deploy_handler = self.deploy
@@ -107,6 +114,76 @@ class FakeTreasuries:
             result = encode(["bytes[]"], [self.lies.get("signers", signers)])
         elif selector == VIEWS["configNonce"]:
             result = encode(["uint256"], [self.lies.get("configNonce", 0)])
+        elif selector == ec.EXECUTED:
+            (pid,) = decode(["bytes32"], call.data[4:])
+            done = (call.to, bytes(pid)) in self.executed
+            # A read that races a submission: the view says no, the chain already says yes.
+            result = encode(["bool"], [self.lies.get("executed_view", done)])
+        elif selector == ec.IS_SIGNER:
+            (identity,) = decode(["bytes"], call.data[4:])
+            result = encode(["bool"], [bytes(identity) in self.lies.get("signers", signers)])
+        elif selector == ec.EXECUTE:
+            return self._execute(call, signers, threshold)
         else:
             return Outcome(False, b"", 30_000)
         return Outcome(True, result, 30_000)
+
+    def _execute(self, call: Call, signers: list[bytes], threshold: int) -> Outcome:
+        """``QVaultTreasury.execute``, in the contract's order of checks."""
+        pid, to, value, data, call_gas, valid_until, multisig = ec.decode_execute_args(call.data)
+        pid = bytes(pid)
+        per_signature = 1_541_829  # measured (plan §5 Phase 1)
+
+        def revert(signature: str, args: bytes = b"") -> Outcome:
+            return Outcome(False, keccak256(signature.encode())[:4] + args, 60_000)
+
+        if (call.to, pid) in self.executed:
+            return revert("AlreadyExecuted(bytes32)", pid)
+        # The transaction lands in the next block, whose time the fake node derives from its number.
+        if GENESIS_TIME + 12 * (self.node.block_number + 1) > valid_until:
+            return revert("Expired(uint64)", encode(["uint64"], [valid_until]))
+        nonce = self.lies.get("configNonce", 0)
+        digest = execution_digest(
+            chain_id=self.node.chain_id,
+            treasury=call.to,
+            config_nonce=nonce,
+            proposal_id=pid,
+            to=to,
+            value_wei=value,
+            data=bytes(data),
+            call_gas=call_gas,
+            valid_until=valid_until,
+        )
+        held = self.lies.get("signers", signers)
+        ids, sigs = decode(["bytes[]", "bytes[]"], multisig)
+        ids, sigs = [bytes(i) for i in ids], [bytes(s) for s in sigs]
+        valid = (
+            len(ids) == len(sigs)
+            and len(ids) >= threshold
+            and len(set(ids)) == len(ids)
+            and all(identity in held for identity in ids)
+            and self.verify is not None
+            and all(self.verify(i, digest, s) for i, s in zip(ids, sigs, strict=True))
+        )
+        gas = 80_000 + per_signature * len(ids)
+        if not valid:
+            return Outcome(False, keccak256(b"InvalidMultisig()")[:4], gas)
+        if call.gas < gas + call_gas * 64 // 63:
+            return Outcome(False, keccak256(b"InsufficientGas(uint256,uint256)")[:4], call.gas)
+        if self.node.balances.get(call.to, 0) < value:
+            return revert("CallFailed(bytes)", encode(["bytes"], [b""]))
+
+        def apply() -> None:
+            self.executed.add((call.to, pid))
+            self.node.balances[call.to] -= value
+            to_address = checksum_address(to)
+            self.node.balances[to_address] = self.node.balances.get(to_address, 0) + value
+
+        topics = (ec.EXECUTED_EVENT, pid, bytes(12) + bytes.fromhex(checksum_address(to)[2:]))
+        return Outcome(
+            True,
+            encode(["bytes"], [b""]),
+            gas + 21_000,
+            logs=((topics, encode(["uint256", "bytes32"], [value, keccak256(bytes(data))])),),
+            on_include=apply,
+        )
