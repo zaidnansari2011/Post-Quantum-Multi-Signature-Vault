@@ -64,7 +64,8 @@ contract QVaultTreasury is VerifierBound, MultiSignerERC7913, ReentrancyGuardTra
     /// @notice Decisions already carried out, by the decision's Q-Vault payload_hash.
     mapping(bytes32 proposalId => bool) public executed;
 
-    /// @notice Bound into every reconfiguration digest, so each one applies exactly once.
+    /// @notice Bound into every reconfiguration digest, so each one applies exactly once, and into
+    ///         every execution digest, so a reconfiguration voids every approval given before it.
     uint256 public configNonce;
 
     /// @notice Keys currently held by some signer, by keccak256(tr) (see _keyIdOf).
@@ -100,8 +101,12 @@ contract QVaultTreasury is VerifierBound, MultiSignerERC7913, ReentrancyGuardTra
         return _VERIFIER;
     }
 
-    /// @notice What M approvers sign to allow one call.
+    /// @notice What M approvers sign to allow one call, under configuration `nonce`.
+    /// @dev `execute` checks it at the current `configNonce`, so approvals given to one set of
+    ///      signers and threshold never carry over to the next: lowering a threshold cannot make
+    ///      the partial approvals of an earlier decision enough (plan D42).
     function executionDigest(
+        uint256 nonce,
         bytes32 proposalId,
         address to,
         uint256 value,
@@ -114,6 +119,7 @@ contract QVaultTreasury is VerifierBound, MultiSignerERC7913, ReentrancyGuardTra
                 EXECUTE_TAG,
                 block.chainid,
                 address(this),
+                nonce,
                 proposalId,
                 to,
                 value,
@@ -169,7 +175,8 @@ contract QVaultTreasury is VerifierBound, MultiSignerERC7913, ReentrancyGuardTra
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > validUntil) revert Expired(validUntil);
         if (data.length > MAX_CALL_DATA_BYTES) revert CallDataTooLarge(data.length, MAX_CALL_DATA_BYTES);
-        if (!_rawSignatureValidation(executionDigest(proposalId, to, value, data, callGas, validUntil), multisig)) {
+        bytes32 digest = executionDigest(configNonce, proposalId, to, value, data, callGas, validUntil);
+        if (!_rawSignatureValidation(digest, multisig)) {
             revert InvalidMultisig();
         }
         executed[proposalId] = true;

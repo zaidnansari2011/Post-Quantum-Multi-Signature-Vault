@@ -70,7 +70,9 @@ def test_a_proposal_payload_hashes_as_it_always_has(name):
     assert sha256_hex(proposal_signing_bytes(**inputs)) == expected
 
 
-#: A payment decision (on-chain execution, plan D22), frozen when payments were added. The phone's
+#: A payment decision (on-chain execution, plan D22), frozen when payments were added and re-frozen
+#: once, when D42 added ``config_nonce`` to the payment (2026-09-18, before any payment decision
+#: existed outside a test). The phone's
 #: TypeScript hashes these same inputs and must reach this exact value
 #: (tests/test_mobile_canonical.py); the browser verifier is held to Python's hash on real exported
 #: payment decisions instead (tests/test_offline_verifier.py).
@@ -83,6 +85,7 @@ PAYMENT_ACTION = {
     "data": "0x",
     "call_gas": 100000,
     "valid_until": 1790467200,
+    "config_nonce": 0,
 }
 PAYMENT = (
     {
@@ -100,7 +103,7 @@ PAYMENT = (
         "created_at_iso": "2026-09-17T15:00:00+00:00",
         "action": PAYMENT_ACTION,
     },
-    "8feadffac41d52a24d432b7cfcc42224347c5f08f0608534026383307281e375",
+    "4c1886935029bb452409efbca83271e8728002953ecc0adc1c4f1327c1a1d6ca",
 )
 
 
@@ -113,7 +116,11 @@ def test_the_payment_is_what_changes_the_hash():
     inputs, expected = PAYMENT
     without = {key: value for key, value in inputs.items() if key != "action"}
     assert sha256_hex(proposal_signing_bytes(**without)) != expected
-    for field, value in (("to", "0x000000000000000000000000000000000000bEEF"), ("value_wei", "1")):
+    for field, value in (
+        ("to", "0x000000000000000000000000000000000000bEEF"),
+        ("value_wei", "1"),
+        ("config_nonce", 1),
+    ):
         changed = {**inputs, "action": {**PAYMENT_ACTION, field: value}}
         assert sha256_hex(proposal_signing_bytes(**changed)) != expected
 

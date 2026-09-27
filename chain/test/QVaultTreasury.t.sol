@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {console} from "forge-std/Test.sol";
+import {console, stdStorage, StdStorage} from "forge-std/Test.sol";
 import {MultiSignerERC7913} from "@openzeppelin/contracts/utils/cryptography/signers/MultiSignerERC7913.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {ISigVerifier} from "InterfaceVerifier/IVerifier.sol";
@@ -12,6 +12,8 @@ import {TreasuryFixture} from "./TreasuryFixture.sol";
 /// Every signature in these tests was produced by Q-Vault's MLDSA65Provider (quantcrypt / PQClean)
 /// in scripts/gen_chain_fixtures.py. Nothing here signs anything.
 contract QVaultTreasuryTest is TreasuryFixture {
+    using stdStorage for StdStorage;
+
     uint256 internal constant TX_GAS_CAP = 16_777_216; // EIP-7825 per-transaction cap
 
     event Executed(bytes32 indexed proposalId, address indexed to, uint256 value, bytes32 dataHash);
@@ -28,20 +30,22 @@ contract QVaultTreasuryTest is TreasuryFixture {
     }
 
     function test_ExecutionDigestsMatchPython() public view {
-        string[8] memory scenarios = [
+        string[10] memory scenarios = [
             "execute_eth",
             "execute_call",
             "execute_reentrant",
             "execute_swallow",
             "execute_gas_probe",
             "execute_after_rotate",
+            "execute_after_move",
             "execute_three",
+            "execute_three_renewed",
             "execute_max"
         ];
         for (uint256 i = 0; i < scenarios.length; i++) {
             Call memory c = _call(scenarios[i]);
             assertEq(
-                treasury.executionDigest(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil),
+                treasury.executionDigest(c.nonce, c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil),
                 c.digest,
                 scenarios[i]
             );
@@ -269,7 +273,8 @@ contract QVaultTreasuryTest is TreasuryFixture {
     }
 
     /// Changing any ONE field the approvers signed invalidates the approval. One field per run, so
-    /// dropping any single field from the digest makes some run fail (re-review finding 6).
+    /// dropping any single field from the digest makes some run fail (re-review finding 6). The
+    /// configuration nonce is state, not an argument: testFuzz_ApprovalsHoldForOneConfigurationOnly.
     /// forge-config: default.fuzz.runs = 48
     function testFuzz_ChangingAnyOneExecutionFieldIsRejected(uint8 field, bytes32 random) public {
         Call memory c = _call("execute_eth");
@@ -491,9 +496,21 @@ contract QVaultTreasuryTest is TreasuryFixture {
         assertEq(treasury.threshold(), 3);
 
         Call memory c = _call("execute_three");
+        // Pinned (review M2): these approvals belong to the configuration now in force, so the
+        // refusal after the lowering below is the nonce's doing, not a stale fixture's.
+        assertEq(c.nonce, treasury.configNonce());
         bytes memory two = _multisig("execute_three", _keys(0, 1));
         vm.expectRevert(QVaultTreasury.InvalidMultisig.selector);
         treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, two);
+
+        // Positive control: at this nonce, all three of these approvals do execute.
+        uint256 snapshot = vm.snapshotState();
+        treasury.execute(
+            c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, _multisig("execute_three", _keys(0, 1, 3))
+        );
+        assertTrue(treasury.executed(c.proposalId));
+        vm.revertToState(snapshot);
+        assertFalse(treasury.executed(c.proposalId));
 
         // 3-of-3 {0, 1, 3} -> 2-of-2 {0, 1}: only valid if the threshold drops BEFORE the removal
         _reconfigure("reconfigure_lower", _keys(0, 1, 3));
@@ -501,8 +518,67 @@ contract QVaultTreasuryTest is TreasuryFixture {
         assertEq(treasury.getSignerCount(), 2);
         assertFalse(treasury.isSigner(_signer(3)));
 
-        _execute("execute_three", _keys(0, 1)); // now two suffice
+        // Two now meet the threshold, but not these two: they were given to the 3-of-3
+        // configuration, and a lower threshold must not make partial approvals enough (D42).
+        vm.expectRevert(QVaultTreasury.InvalidMultisig.selector);
+        treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, two);
+        assertFalse(treasury.executed(c.proposalId));
+
+        _execute("execute_three_renewed", _keys(0, 1)); // the same decision, approved again
         assertTrue(treasury.executed(c.proposalId));
+    }
+
+    /// Any reconfiguration voids the approvals given before it, not only one that lowers the
+    /// threshold: keys 0 and 1 stay signers and 2-of-3 stays the rule, yet their approvals of
+    /// execute_eth, given at nonce 0, no longer count (D42).
+    function test_AReconfigurationVoidsApprovalsGivenBeforeIt() public {
+        Call memory c = _call("execute_eth");
+        bytes memory multisig = _multisig("execute_eth", _keys(0, 1));
+        _reconfigure("reconfigure_rotate", _keys(0, 1));
+        assertTrue(treasury.isSigner(_signer(0)) && treasury.isSigner(_signer(1)));
+        assertEq(treasury.threshold(), 2);
+
+        vm.expectRevert(QVaultTreasury.InvalidMultisig.selector);
+        treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, multisig);
+    }
+
+    /// Approvals hold at exactly one configuration nonce (D42). The nonce is the treasury's own
+    /// state, so it is written directly rather than reached through reconfigurations.
+    /// forge-config: default.fuzz.runs = 48
+    function testFuzz_ApprovalsHoldForOneConfigurationOnly(uint256 nonce) public {
+        vm.assume(nonce != 0);
+        stdstore.target(address(treasury)).sig("configNonce()").checked_write(nonce);
+        assertEq(treasury.configNonce(), nonce);
+
+        Call memory c = _call("execute_eth");
+        bytes memory multisig = _multisig("execute_eth", _keys(0, 1));
+        vm.expectRevert(QVaultTreasury.InvalidMultisig.selector);
+        treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, multisig);
+    }
+
+    /// Approvals for a configuration the treasury has not reached are refused (review L1): the
+    /// ones execute_after_rotate carries were made at nonce 1, by keys that are signers at nonce 0.
+    function test_ApprovalsForAFutureConfigurationAreRefused() public {
+        assertEq(treasury.configNonce(), 0);
+        Call memory c = _call("execute_after_rotate");
+        assertEq(c.nonce, 1);
+        assertTrue(treasury.isSigner(_signer(2)) && treasury.isSigner(_signer(0)));
+        bytes memory multisig = _multisig("execute_after_rotate", _keys(2, 0));
+        vm.expectRevert(QVaultTreasury.InvalidMultisig.selector);
+        treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, multisig);
+    }
+
+    /// Both directions (review, weak tests): approvals made at nonce 1 hold at nonce 1 only, so
+    /// the treasury refuses them at 0, behind them, and at every nonce ahead of them.
+    /// forge-config: default.fuzz.runs = 48
+    function testFuzz_ApprovalsAtOneNonceFailAtEveryOther(uint256 nonce) public {
+        vm.assume(nonce != 1);
+        stdstore.target(address(treasury)).sig("configNonce()").checked_write(nonce);
+
+        Call memory c = _call("execute_after_rotate");
+        bytes memory multisig = _multisig("execute_after_rotate", _keys(2, 0));
+        vm.expectRevert(QVaultTreasury.InvalidMultisig.selector);
+        treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, multisig);
     }
 
     /// One field changed per run (re-review finding 6). The nonce is covered separately, by
@@ -538,12 +614,12 @@ contract QVaultTreasuryTest is TreasuryFixture {
         assertTrue(treasury.keyInUse(_keyId(0)), "the moved key is still held");
         assertEq(treasury.getSignerCount(), 3);
 
-        // Key 0's signature now counts through its new identity.
-        Call memory c = _call("execute_eth");
+        // Key 0's signature now counts through its new identity (given after the move, D42).
+        Call memory c = _call("execute_after_move");
         bytes[] memory signers = new bytes[](2);
         bytes[] memory sigs = new bytes[](2);
         (signers[0], signers[1]) = (moved, _signer(1));
-        (sigs[0], sigs[1]) = (_sig("execute_eth", 0), _sig("execute_eth", 1));
+        (sigs[0], sigs[1]) = (_sig("execute_after_move", 0), _sig("execute_after_move", 1));
         treasury.execute(c.proposalId, c.to, c.value, c.data, c.callGas, c.validUntil, abi.encode(signers, sigs));
         assertTrue(treasury.executed(c.proposalId));
     }

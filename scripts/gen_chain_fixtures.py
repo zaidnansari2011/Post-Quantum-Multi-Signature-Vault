@@ -147,13 +147,23 @@ def build(registry) -> tuple[dict, dict]:
         return out
 
     def execution(
-        label: str, to: str, value: int, data: bytes, call_gas: int, who: list[int]
+        label: str,
+        to: str,
+        value: int,
+        data: bytes,
+        call_gas: int,
+        who: list[int],
+        *,
+        nonce: int = 0,
     ) -> dict:
+        # ``nonce``: the treasury's configNonce these approvals are for (D42), i.e. how many
+        # reconfigurations the test applies before it submits them.
         assert value <= MAX_JSON_INT
         pid = _proposal_id(label)
         digest = execution_digest(
             chain_id=CHAIN_ID,
             treasury=TREASURY,
+            config_nonce=nonce,
             proposal_id=pid,
             to=to,
             value_wei=value,
@@ -162,6 +172,7 @@ def build(registry) -> tuple[dict, dict]:
             valid_until=VALID_UNTIL,
         )
         return {
+            "nonce": nonce,
             "proposal_id": _hex(pid),
             "to": to,
             "value": value,
@@ -272,15 +283,26 @@ def build(registry) -> tuple[dict, dict]:
         "reconfigure_remove_nonmember": reconfiguration(0, [], [signer_of[5]], 2, [0, 1]),
         # key 0 moves to fresh storage in one step: its old identity out, the new one in
         "reconfigure_move_key": reconfiguration(0, [duplicate_of_key0], [signer_of[0]], 2, [0, 1]),
-        # --- executions after reconfiguration ---
+        # --- executions after reconfiguration, each at the nonce it will be submitted at ---
         # Signed by 3 (rotated in), 2 (rotated out) and 0: 3+0 must pass, 2+0 must not.
         "execute_after_rotate": execution(
-            "execute_after_rotate", RECIPIENT, 2 * milli, b"", ETH_CALL_GAS, [3, 2, 0]
+            "execute_after_rotate", RECIPIENT, 2 * milli, b"", ETH_CALL_GAS, [3, 2, 0], nonce=1
         ),
+        # execute_eth's payment again, after key 0 moved storage: key 0 signs as its new identity.
+        "execute_after_move": execution(
+            "execute_eth", RECIPIENT, 1 * milli, b"", ETH_CALL_GAS, [0, 1], nonce=1
+        ),
+        # After rotate and raise (3-of-3 {0, 1, 3}); then lowering the threshold to 2 must NOT
+        # make two of these enough (D42). The same decision re-approved at nonce 3 executes.
         "execute_three": execution(
-            "execute_three", RECIPIENT, 3 * milli, b"", ETH_CALL_GAS, [0, 1, 3]
+            "execute_three", RECIPIENT, 3 * milli, b"", ETH_CALL_GAS, [0, 1, 3], nonce=2
         ),
-        "execute_max": execution("execute_max", RECIPIENT, 4 * milli, b"", ETH_CALL_GAS, everyone),
+        "execute_three_renewed": execution(
+            "execute_three", RECIPIENT, 3 * milli, b"", ETH_CALL_GAS, [0, 1], nonce=3
+        ),
+        "execute_max": execution(
+            "execute_max", RECIPIENT, 4 * milli, b"", ETH_CALL_GAS, everyone, nonce=1
+        ),
     }
     key_blobs = {
         "about": "Expanded key i is onchain_key_blob(treasury.json keys[i].public_key).",

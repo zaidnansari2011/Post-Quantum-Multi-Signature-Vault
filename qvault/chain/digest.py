@@ -6,12 +6,15 @@ It is established by ``chain/test/fixtures/treasury.json``, generated from these
 ``scripts/gen_chain_fixtures.py`` and checked twice: by pytest here, and by Foundry against the
 contract. A change on either side without the other fails one of the two suites.
 
-**What an execution digest binds, and why each field is there** (plan decisions D8, D18):
+**What an execution digest binds, and why each field is there** (plan decisions D8, D18, D42):
 
 * ``tag``: the operation *and* the contract version, so an execution signature can never be
   replayed as a reconfiguration, or against a future treasury with different semantics.
 * ``chain_id`` and ``treasury``: a signature is valid for one contract on one chain. Without these,
   the same approval could drain a second treasury holding the same signers.
+* ``config_nonce``: the treasury's configuration counter, which only a ``reconfigure`` moves.
+  Approvals given to one set of signers and threshold never carry over to the next, so lowering
+  a threshold cannot turn the partial approvals of an earlier decision into enough (D42).
 * ``proposal_id``: the decision's own ``payload_hash`` (D7). It joins the on-chain event to the
   offline-verifiable decision record, and the contract's ``executed`` mapping makes it one-shot.
 * ``to``, ``value`` and ``keccak256(data)``: exactly what moves. Whoever submits the transaction
@@ -106,6 +109,7 @@ def execution_digest(
     *,
     chain_id: int,
     treasury: str,
+    config_nonce: int,
     proposal_id: bytes,
     to: str,
     value_wei: int,
@@ -129,6 +133,7 @@ def execution_digest(
                 "bytes32",
                 "uint256",
                 "address",
+                "uint256",
                 "bytes32",
                 "address",
                 "uint256",
@@ -140,6 +145,7 @@ def execution_digest(
                 EXECUTE_TAG,
                 check_uint256(chain_id, "chain_id"),
                 checksum_address(treasury),
+                check_uint256(config_nonce, "config_nonce"),
                 pid,
                 checksum_address(to),
                 check_uint256(value_wei, "value_wei"),

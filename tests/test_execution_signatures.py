@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import json
 
+import fake_chain_nonce
 import pytest
 from test_device_api import _enrol_over_http
 from test_payment_decisions import PASSWORD, PAYMENTS, RECIPIENT, TREASURY, _payment, _vault
@@ -46,7 +47,14 @@ MALLORY = "0x000000000000000000000000000000000000dEaD"
 @pytest.fixture()
 def payments_on(app):
     app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    # Approving a payment asks the treasury its configuration (D43); this chain says 0.
+    app.extensions["fake_chain"] = fake_chain_nonce.install(app, TREASURY)
     return app
+
+
+@pytest.fixture()
+def chain(payments_on):
+    return payments_on.extensions["fake_chain"]
 
 
 def _provider(app, alg="ML-DSA-65"):
@@ -124,6 +132,7 @@ def test_approving_a_payment_signs_what_the_treasury_will_check(payments_on):
     expected = execution_digest(
         chain_id=action["chain_id"],
         treasury=action["treasury"],
+        config_nonce=action["config_nonce"],
         proposal_id=proposal_id(proposal.payload_hash),
         to=action["to"],
         value_wei=int(action["value_wei"]),
@@ -139,6 +148,34 @@ def test_approving_a_payment_signs_what_the_treasury_will_check(payments_on):
     assert _provider(payments_on).verify(
         bytes(stored.public_key), expected, bytes(stored.signature)
     )
+
+
+def test_a_payment_signs_the_treasury_configuration_it_was_raised_under(payments_on, chain):
+    # D42: the digest carries the treasury's configuration counter, copied into the signed
+    # payment when it is raised, so an approval is good for that configuration only.
+    owner, _other, vault, treasury = _vault("confignonce")
+    treasury.config_nonce = 4
+    chain.nonce = 4  # four reconfigurations, recorded here and on chain alike
+    db.session.commit()
+    proposal = _payment(vault, owner)
+    assert proposal.action.config_nonce == 4
+    assert proposal.action.canonical()["config_nonce"] == 4
+
+    approval_service.cast_vote(proposal, owner, PASSWORD, "approve")
+
+    action = proposal.action.canonical()
+    fields = dict(
+        chain_id=action["chain_id"],
+        treasury=action["treasury"],
+        proposal_id=proposal_id(proposal.payload_hash),
+        to=action["to"],
+        value_wei=int(action["value_wei"]),
+        call_gas=action["call_gas"],
+        valid_until=action["valid_until"],
+    )
+    stored = bytes(_signature_of(proposal, owner).digest)
+    assert stored == execution_digest(config_nonce=4, **fields)
+    assert stored != execution_digest(config_nonce=0, **fields)
 
 
 def test_the_ledger_records_the_execution_signature_beside_the_vote(payments_on):
@@ -266,6 +303,7 @@ def test_a_fault_in_the_payment_half_records_no_vote_at_all(payments_on):
         ("early-value", "value_wei", str(10**18)),
         ("early-gas", "call_gas", 1_000_000),
         ("early-until", "valid_until", 4_102_444_800),
+        ("early-nonce", "config_nonce", 1),  # approvals for a configuration not yet reached
     ],
 )
 def test_a_payment_edited_before_anyone_approves_is_never_signed(
@@ -465,6 +503,133 @@ def test_a_payment_whose_treasury_was_unlinked_cannot_be_approved(payments_on):
     with pytest.raises(ApprovalError, match="no longer linked"):
         approval_service.cast_vote(proposal, owner, WRONG, "approve")
     assert approval_service.vote_of(proposal, owner.id) is None
+
+
+def test_a_payment_raised_before_a_reconfiguration_cannot_be_approved(payments_on):
+    # The treasury now checks approvals at nonce 1; one made for nonce 0 could never be used,
+    # so it is refused before the password rather than stored as an approval that is not one.
+    owner, _other, vault, treasury = _vault("reconfigured")
+    proposal = _payment(vault, owner)
+    treasury.config_nonce = 1  # as Phase 7b records a finalized reconfiguration
+    db.session.commit()
+
+    with pytest.raises(ApprovalError, match="reconfigured since this payment was raised"):
+        approval_service.cast_vote(proposal, owner, WRONG, "approve")
+    assert approval_service.vote_of(proposal, owner.id) is None
+
+
+def test_a_payment_ahead_of_the_treasurys_configuration_is_called_altered(payments_on, chain):
+    # Review L2: a payment naming a configuration the treasury has not reached is not one raised
+    # "before a reconfiguration"; only an edit of this app's records produces it.
+    owner, _other, vault, treasury = _vault("ahead")
+    treasury.config_nonce = chain.nonce = 1
+    db.session.commit()
+    proposal = _payment(vault, owner)
+    treasury.config_nonce = 0  # the record put back after the payment was raised
+    db.session.commit()
+
+    with pytest.raises(ApprovalError, match="records may have been altered"):
+        approval_service.cast_vote(proposal, owner, WRONG, "approve")
+    assert approval_service.vote_of(proposal, owner.id) is None
+
+
+# --- the chain's own configuration (D43, review M1 of 6a′) -----------------------------------
+
+
+def test_a_record_moved_ahead_before_a_payment_is_raised_never_gets_it_signed(
+    payments_on, chain, monkeypatch
+):
+    # The residue D42 left: move the recorded nonce one ahead, raise a payment (it signs nonce 1,
+    # and its binding holds), and honest approvers would sign for a configuration the chain has
+    # not reached, usable the day it does. Only the chain's own answer rules it out.
+    owner, _other, vault, treasury = _vault("future")
+    treasury.config_nonce = 1  # a database edit; the chain is still at 0
+    db.session.commit()
+    proposal = _payment(vault, owner)
+    assert approval_service.verify_proposal_binding(proposal).ok
+    unlocks = _count_unlocks(monkeypatch)
+
+    with pytest.raises(ApprovalError, match="records may have been altered"):
+        approval_service.cast_vote(proposal, owner, PASSWORD, "approve")
+
+    assert unlocks == []  # refused before the password: no future-nonce signature exists
+    assert ExecutionSignature.query.count() == 0
+    assert approval_service.vote_of(proposal, owner.id) is None
+
+
+def test_a_phone_approval_at_a_nonce_the_chain_has_not_reached_is_refused(
+    payments_on, chain, client
+):
+    owner, _other, vault, treasury = _vault("phonefuture")
+    key, secret = _phone_seat(client, owner, treasury)
+    treasury.config_nonce = 1
+    db.session.commit()
+    proposal = _payment(vault, owner)
+    signed = _provider(payments_on).sign(secret, execution_service.digest_for(proposal))
+
+    with pytest.raises(ApprovalError, match="records may have been altered"):
+        _device_vote(payments_on, proposal, owner, key, secret, "approve", execution=signed)
+    assert ExecutionSignature.query.count() == 0
+    assert approval_service.vote_of(proposal, owner.id) is None
+
+
+def test_a_reconfiguration_this_app_has_not_recorded_yet_is_caught_on_chain(payments_on, chain):
+    # The chain moved on (a reconfiguration finalized, 7b has not written it down yet): an
+    # approval at the old nonce would never count, so it is refused like one the app knows about.
+    owner, _other, vault, _treasury = _vault("chainahead")
+    proposal = _payment(vault, owner)
+    chain.nonce = 1
+
+    with pytest.raises(ApprovalError, match="reconfigured since this payment was raised"):
+        approval_service.cast_vote(proposal, owner, WRONG, "approve")
+    assert approval_service.vote_of(proposal, owner.id) is None
+
+
+@pytest.mark.parametrize(
+    "outage",
+    [
+        "reverts",  # a contract, but not a treasury, at the address
+        "no-contract",  # nothing there: eth_call answers 0x, which must not read as nonce 0
+        "lost",  # the request never arrives
+        "no-relayer",  # this instance has no endpoint at all
+        "other-chain",  # the endpoint is not the payment's chain
+    ],
+)
+def test_no_answer_from_the_chain_signs_nothing(payments_on, chain, monkeypatch, outage):
+    # Fails closed (D43): a refusal can be retried, a signature for the wrong configuration can't
+    # be taken back.
+    owner, _other, vault, _treasury = _vault(f"outage-{outage}")
+    proposal = _payment(vault, owner)
+    if outage == "reverts":
+        chain.answering = False
+    elif outage == "no-contract":
+        chain.node.handlers.clear()
+        chain.node.code.clear()
+    elif outage == "lost":
+        chain.node.lose_request("eth_call")
+    elif outage == "no-relayer":
+        payments_on.extensions["relayer"] = None
+    else:
+        chain.relayer.chain_id = 1
+    unlocks = _count_unlocks(monkeypatch)
+
+    with pytest.raises(ApprovalError, match="could not be asked"):
+        approval_service.cast_vote(proposal, owner, PASSWORD, "approve")
+    assert unlocks == []
+    assert ExecutionSignature.query.count() == 0
+    assert approval_service.vote_of(proposal, owner.id) is None
+
+
+def test_a_rejection_and_a_plain_decision_never_ask_the_chain(payments_on, chain):
+    owner, other, vault, _treasury = _vault("offline")
+    payment = _payment(vault, owner)
+    plain = proposal_service.create_proposal(vault, owner, "Rotate the door code", "")
+    payments_on.extensions["relayer"] = None  # no chain at all
+
+    approval_service.cast_vote(payment, owner, PASSWORD, "reject")
+    approval_service.cast_vote(plain, other, PASSWORD, "approve")
+    assert approval_service.vote_of(payment, owner.id).decision == "reject"
+    assert approval_service.vote_of(plain, other.id).decision == "approve"
 
 
 def test_a_treasury_row_moved_to_another_vault_carries_none_of_this_vaults_payments(

@@ -137,8 +137,9 @@ abstract contract TreasuryFixture is Test {
         return QVaultTreasury(payable(at));
     }
 
-    /// An execution scenario's call fields.
+    /// An execution scenario's call fields, and the configNonce its approvals were given at.
     struct Call {
+        uint256 nonce;
         bytes32 proposalId;
         address to;
         uint256 value;
@@ -151,6 +152,7 @@ abstract contract TreasuryFixture is Test {
     function _call(string memory scenario) internal view returns (Call memory c) {
         string memory json = _json();
         string memory p = string.concat(".", scenario, ".");
+        c.nonce = vm.parseJsonUint(json, string.concat(p, "nonce"));
         c.proposalId = vm.parseJsonBytes32(json, string.concat(p, "proposal_id"));
         c.to = vm.parseJsonAddress(json, string.concat(p, "to"));
         c.value = vm.parseJsonUint(json, string.concat(p, "value"));

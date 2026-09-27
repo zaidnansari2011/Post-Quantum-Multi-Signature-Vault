@@ -40,6 +40,7 @@ def _transfer(**changes) -> EthTransfer:
         "to": RECIPIENT,
         "value_wei": 10**14,
         "deadline": NOW + timedelta(days=7),
+        "config_nonce": 0,
     }
     fields.update(changes)
     return build_eth_transfer(**fields)
@@ -55,7 +56,7 @@ def _signed(**changes) -> dict:
 
 
 def test_a_transfer_is_built_under_the_signed_policy():
-    transfer = _transfer(treasury=TREASURY.lower(), to=RECIPIENT.lower())
+    transfer = _transfer(treasury=TREASURY.lower(), to=RECIPIENT.lower(), config_nonce=3)
     assert transfer.canonical() == {
         "kind": "eth_transfer",
         "chain_id": 11_155_111,
@@ -65,6 +66,7 @@ def test_a_transfer_is_built_under_the_signed_policy():
         "data": "0x",
         "call_gas": ETH_TRANSFER_CALL_GAS,
         "valid_until": int((NOW + timedelta(days=7) + EXECUTION_WINDOW).timestamp()),
+        "config_nonce": 3,  # the treasury's configuration when raised (D42)
     }
     assert set(transfer.canonical()) == ACTION_KEYS
 
@@ -161,6 +163,10 @@ def test_the_canonical_shape_parses_back_to_the_same_transfer():
         (_signed(valid_until=MAX_SAFE_INTEGER + 1), "integer"),
         (_signed(valid_until=0), "positive"),
         (_signed(valid_until=-5), "integer"),
+        ({k: v for k, v in _signed().items() if k != "config_nonce"}, "missing"),
+        (_signed(config_nonce=-1), "integer"),
+        (_signed(config_nonce="0"), "integer"),
+        (_signed(config_nonce=MAX_SAFE_INTEGER + 1), "integer"),
     ],
 )
 def test_anything_but_the_exact_shape_is_refused(signed, message):
@@ -183,6 +189,7 @@ def test_the_execution_digest_binds_the_action_to_its_decision():
     assert transfer.execution_digest(PAYLOAD_HASH) == execution_digest(
         chain_id=11_155_111,
         treasury=TREASURY,
+        config_nonce=0,
         proposal_id=proposal_id(PAYLOAD_HASH),
         to=RECIPIENT,
         value_wei=10**14,
@@ -194,6 +201,10 @@ def test_the_execution_digest_binds_the_action_to_its_decision():
     assert transfer.execution_digest(PAYLOAD_HASH) != _transfer(
         value_wei=10**14 + 1
     ).execution_digest(PAYLOAD_HASH)
+    # D42: the same payment raised under another configuration is another approval.
+    assert transfer.execution_digest(PAYLOAD_HASH) != _transfer(config_nonce=1).execution_digest(
+        PAYLOAD_HASH
+    )
 
 
 def test_the_module_stays_free_of_flask_and_the_database():

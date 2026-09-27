@@ -18,6 +18,7 @@ import base64
 import json
 from datetime import UTC, datetime, timedelta
 
+import fake_chain_nonce
 import pytest
 from sqlalchemy import text
 from test_device_api import PASSWORD, _enrol_over_http, _provider
@@ -38,7 +39,8 @@ from qvault.services import (
 from qvault.services.proposal_service import PaymentRequest, ProposalError
 from qvault.services.signing import DS_PROPOSAL, signing_bytes_for, vote_signing_bytes
 
-TREASURY = "0x0000000000000000000000000000000000007EA5"  # a stand-in; nothing here touches a chain
+# A stand-in: the only chain here is fake_chain_nonce's, answering configNonce() for this address.
+TREASURY = "0x0000000000000000000000000000000000007EA5"
 VERIFIER = "0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C"  # the verifier deployed in Phase 3
 RECIPIENT = "0xF590cEe84F86510555150F13Ca83AEc613f1676b"
 PAYMENTS = {"X-QVault-Capabilities": "payment-action-1"}
@@ -47,6 +49,8 @@ PAYMENTS = {"X-QVault-Capabilities": "payment-action-1"}
 @pytest.fixture()
 def payments_on(app):
     app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    # Approving a payment asks the treasury its configuration (D43); this chain says 0.
+    app.extensions["fake_chain"] = fake_chain_nonce.install(app, TREASURY)
     return app
 
 
@@ -216,6 +220,7 @@ def test_a_payment_decision_cannot_carry_its_own_text(payments_on):
         ("chain_id", 1),
         ("call_gas", 21_000),
         ("valid_until", 4_102_444_800),
+        ("config_nonce", 1),
         ("data_hex", "0xa9059cbb"),
         ("kind", "erc20_transfer"),
     ],

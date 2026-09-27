@@ -102,7 +102,9 @@ def test_other_content_where_a_key_would_be_is_not_mistaken_for_it(chain, keys):
     code0, code1 = expected_codes(keys[0])
     # One half right, the other wrong; and the right halves, but not as a consecutive pair.
     node.put_code(create_address(VERIFIER, 1), code0)
-    node.put_code(create_address(VERIFIER, 2), code1[:-1] + b"\x01")
+    # Flip a bit rather than write a fixed byte: the keys are random, and one in 256 already ends
+    # in the byte that used to be written here, which made this "wrong" half the right one.
+    node.put_code(create_address(VERIFIER, 2), code1[:-1] + bytes([code1[-1] ^ 1]))
     node.put_code(create_address(VERIFIER, 3), code0)
     node.put_code(create_address(VERIFIER, 5), code1)
     node.set_nonce(VERIFIER, 6)

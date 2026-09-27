@@ -29,6 +29,8 @@ export interface PaymentAction {
   data: string;
   call_gas: number;
   valid_until: number;
+  /** The treasury's configuration counter when the decision was raised (D42). */
+  config_nonce: number;
 }
 
 /**
@@ -100,6 +102,7 @@ export function proposalSigningBytes(inputs: SigningInputs): Uint8Array {
       data: a.data,
       call_gas: a.call_gas,
       valid_until: a.valid_until,
+      config_nonce: a.config_nonce,
     };
   }
   return domainSeparated(DS_PROPOSAL, body);

@@ -50,7 +50,7 @@ def test_the_committed_artefact_is_the_treasury_under_foundry_toml():
     assert artifact.compiler["evm_version"] == default["evm_version"]
     assert artifact.compiler["via_ir"] is default["via_ir"]
     assert artifact.compiler["optimizer_runs"] == default["optimizer_runs"]
-    assert len(artifact.runtime_code) == 9_451  # plan §5 Phase 1
+    assert len(artifact.runtime_code) == 9_471  # plan §5 Phase 1 (9,451 before D42)
     assert len(artifact.immutable_spans) == 2
     assert "src/QVaultTreasury.sol" in artifact.sources
 

@@ -540,6 +540,10 @@ def _payment_digest(proposal, signer, key) -> bytes:
             f"different payment. Nothing was recorded. {binding.detail}"
         )
     problem = execution_service.approval_problem(proposal, signer, key)
+    if problem is None:
+        # Last, because it is the one check that leaves this server (D43): everything that can
+        # refuse from our own records has already had its say.
+        problem = execution_service.chain_nonce_problem(proposal)
     if problem is not None:
         raise ApprovalError(problem)
     try:

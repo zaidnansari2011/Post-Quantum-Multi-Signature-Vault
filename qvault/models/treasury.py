@@ -3,7 +3,9 @@
 See ``docs/plans/onchain-execution.md``. The tables carry every column Phases 5–7 need from the
 start (plan D27): ``db.create_all()`` creates missing tables but never adds a column to an
 existing one, so a column left for later could only arrive by a manual migration.
-``treasury_signers`` arrived in Phase 5 as a new table (D29).
+``treasury_signers`` arrived in Phase 5 as a new table (D29). The one exception is D42's
+``config_nonce`` on ``treasuries`` and ``proposal_actions``, added before any deployed database had
+either table; a development database that had them was recreated empty (plan Phase 6a').
 """
 
 from __future__ import annotations
@@ -50,6 +52,10 @@ class Treasury(db.Model):
     verifier_address = db.Column(db.String(42), nullable=False)  # EIP-55
     threshold_m = db.Column(db.Integer, nullable=False)
     signer_count = db.Column(db.Integer, nullable=False)
+    # The contract's configNonce as this app last confirmed it (plan D42): 0 at deployment,
+    # moved only by a finalized reconfiguration (Phase 7b). A payment signs the value it has
+    # when the payment is raised, and the treasury accepts approvals at its current one only.
+    config_nonce = db.Column(db.BigInteger, nullable=False, default=0)
 
     deployment_tx = db.Column(db.String(66), nullable=True)  # 0x-prefixed hash
     deployed_block = db.Column(db.BigInteger, nullable=True)
@@ -136,6 +142,7 @@ class ProposalAction(db.Model):
     data_hex = db.Column(db.Text, nullable=False)  # "0x" + lowercase hex
     call_gas = db.Column(db.BigInteger, nullable=False)
     valid_until = db.Column(db.BigInteger, nullable=False)  # unix seconds
+    config_nonce = db.Column(db.BigInteger, nullable=False)  # the treasury's, when raised (D42)
 
     created_at = db.Column(AwareDateTime, nullable=False, default=_utcnow)
 
@@ -157,6 +164,7 @@ class ProposalAction(db.Model):
             "data": _text(self.data_hex),
             "call_gas": _integer(self.call_gas),
             "valid_until": _integer(self.valid_until),
+            "config_nonce": _integer(self.config_nonce),
         }
 
 
