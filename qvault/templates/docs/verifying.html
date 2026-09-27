@@ -40,6 +40,8 @@
   <li>every signature is a valid post-quantum signature over exactly that;</li>
   <li>each signer was authorised when the decision opened — not merely a member today;</li>
   <li>the approval rule frozen at that same moment was satisfied;</li>
+  <li>for a payment, each approver's authorisation to pay is over exactly that payment, and is the
+      one the record logged; a payment the record says was made is backed by enough of them;</li>
   <li>the audit record's own entries for these events recompute;</li>
   <li>those entries name these exact signature bytes, and no others;</li>
   <li>the signers are the accounts the record registered;</li>
@@ -51,7 +53,7 @@
 <p>
   Steps 1 to 4 are what an ordinary "export the signatures" format gives you, and they are worth
   less than they look: whoever builds the file chooses what goes in it, so they could omit an
-  inconvenient rejection, or export a decision that never happened. Steps 5 to 10 are what stop
+  inconvenient rejection, or export a decision that never happened. Steps 6 to 11 are what stop
   that. The last one is the only step that still holds if the operator of this system is the one
   you are checking up on.
 </p>

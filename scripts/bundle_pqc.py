@@ -155,7 +155,10 @@ if __name__ == "__main__":
         {
             "ml_dsa65": "@noble/post-quantum/ml-dsa.js",
             "ml_dsa87": "@noble/post-quantum/ml-dsa.js",
-            "slh_dsa_shake_256f": "@noble/post-quantum/slh-dsa.js",
+            "sha256": "@noble/hashes/sha2.js",
+            # The treasury's execution digest (plan Phase 9); already bundled, ML-DSA uses SHA-3.
+            "keccak_256": "@noble/hashes/sha3.js",
+            # SLH-DSA is deliberately not exposed: see qvault/static/vendor/README.md.
         },
         pathlib.Path(sys.argv[1]),
     )

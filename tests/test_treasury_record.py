@@ -217,3 +217,85 @@ def test_a_copy_holding_keys_of_a_later_configuration_is_refused(app, tmp_path, 
         db.engine, unlink_treasury=False, now=lambda: None, say=said.append, path=path
     )
     assert not allowed and "a copy" in "\n".join(said)
+
+
+# --- the exported record of a payment that was made (plan Phase 9) ------------------------------
+
+
+def test_a_paid_decision_exports_its_payout_and_the_verifier_stands_behind_it(rworld):  # noqa: F811
+    from test_payouts import _approved_payment, _tick
+
+    from qvault.models import Execution
+    from qvault.services import checkpoint_service, export_service
+    from qvault.verify import verify_bundle
+
+    proposal = _approved_payment(rworld)
+    for _ in range(4):
+        _tick(rworld)
+        rworld.node.mine()
+    execution = Execution.query.one()
+    assert execution.state == "confirmed", execution.reason
+    checkpoint_service.maybe_checkpoint()
+    bundle = export_service.build_decision_bundle(proposal, sync_witness=False)
+
+    report = verify_bundle(bundle, registry=rworld.app.extensions["crypto"])
+    check = next(c for c in report.checks if c.key == "execution")
+    assert check.ok and not check.skipped, check.detail
+    assert execution.tx_hash in check.detail
+    assert report.facts["payout"] == {"tx_hash": execution.tx_hash, "block": execution.block_number}
+    # The identities are the ones the treasury was paid on.
+    held = {row.identity_hex for row in rworld.treasury.signers}
+    assert {s["identity_hex"] for s in bundle["execution"]["signatures"]} <= held
+
+
+# --- review fixes (2026-09-27) ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("nonce", [True, "7", -1, 1.9, None])
+def test_a_configuration_number_must_be_a_non_negative_integer(nonce):
+    record, _ = merge_treasury(empty_record(SEPOLIA), ADDRESS, _entry())
+    with pytest.raises(DeploymentError, match="non-negative integer"):
+        merge_treasury(record, ADDRESS, {**_entry(), "config_nonce": nonce})
+
+
+def test_publishing_never_raises_after_the_commit(recorded, app):
+    app.config["TREASURY_RECORD_PATH"] = ""
+    recorded.treasury.chain_id = 1  # a chain no record is kept for: deployments_path refuses
+    assert treasury_service.publish_record(recorded.treasury) is False
+
+
+def test_the_public_record_of_a_database_without_treasuries_is_empty(app, client):
+    from sqlalchemy import text
+
+    db.session.execute(text("DROP TABLE treasury_signers"))
+    db.session.execute(text("DROP TABLE treasuries"))
+    db.session.commit()
+    response = client.get("/treasuries.json")
+    assert response.status_code == 200 and response.get_json() == {"treasuries": {}}
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://project4.zaidansari.tech",
+        "http://127.0.0.1.evil.example",
+        "http://127.0.0.1@evil.example",
+        "https://user:secret@project4.zaidansari.tech",
+        "ftp://project4.zaidansari.tech",
+    ],
+)
+def test_the_export_reads_only_https_or_this_machine(url):
+    with pytest.raises(ValueError, match="https"):
+        _export_module()._from_url(url)
+
+
+def test_the_export_keeps_known_fields_and_refuses_the_wrong_shape():
+    export = _export_module()
+    kept = export.clean(
+        {"treasuries": {ADDRESS: {**_entry(), "configurations": [{"x": 1}], "note": "hi"}}}
+    )
+    assert "configurations" not in kept[ADDRESS] and "note" not in kept[ADDRESS]
+    assert kept[ADDRESS]["deployment_tx"] == _entry()["deployment_tx"]
+    for bad in ([], {"treasuries": []}, {"treasuries": {ADDRESS: "linked"}}, {}):
+        with pytest.raises(ValueError, match="treasury record"):
+            export.clean(bad)

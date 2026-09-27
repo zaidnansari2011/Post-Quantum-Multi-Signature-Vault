@@ -18,7 +18,9 @@ still runs on a machine that has not done ``playwright install``.
 
 from __future__ import annotations
 
+import base64
 import copy
+import json
 import pathlib
 from base64 import b64decode, b64encode
 
@@ -830,3 +832,143 @@ def test_the_verifiers_agree_on_malformed_and_float_payment_numbers(app, page, p
     as_float["decision"]["action"]["call_gas"] = 100000.0
     report = agree(app, page, as_float)
     assert report["ok"] is True, report["summary"]
+
+
+# --------------------------------------------------------------------------------------------
+# Payment authorisations (plan Phase 9): the signatures the treasury checks, in the record
+# --------------------------------------------------------------------------------------------
+
+
+def _check(report, key):
+    return next(c for c in report["checks"] if c["key"] == key)
+
+
+def test_the_payment_authorisations_travel_with_the_record_and_verify(app, page, payment_bundle):
+    carried = payment_bundle["execution"]["signatures"]
+    assert len(carried) == 2 and {c["custody"] for c in carried} == {"server"}
+    report = agree(app, page, payment_bundle)
+    check = _check(report, "execution")
+    assert check["ok"] and not check["skipped"], check["detail"]
+    assert "2 authorisation(s) over this payment" in check["detail"]
+
+
+def test_the_verifier_derives_the_digest_the_treasury_checks(app, payment_bundle):
+    """Its standalone copy (no Ethereum libraries) is the chain code's, byte for byte."""
+    from qvault.chain.action import parse
+    from qvault.verify.execution import execution_digest
+
+    action = payment_bundle["decision"]["action"]
+    payload_hash = payment_bundle["decision"]["payload_hash"]
+    assert execution_digest(action, payload_hash) == parse(action).execution_digest(payload_hash)
+    big = {**action, "value_wei": "123456789000000000000000001", "config_nonce": 7}
+    assert execution_digest(big, payload_hash) == parse(big).execution_digest(payload_hash)
+
+
+def test_a_forged_authorisation_is_rejected_in_the_browser_too(app, page, payment_bundle):
+    forged = copy.deepcopy(payment_bundle)
+    raw = bytearray(base64.b64decode(forged["execution"]["signatures"][0]["signature_b64"]))
+    raw[100] ^= 0x01
+    forged["execution"]["signatures"][0]["signature_b64"] = base64.b64encode(raw).decode()
+    report = agree(app, page, forged)
+    assert report["ok"] is False and not _check(report, "execution")["ok"]
+    assert "forged" in _check(report, "execution")["detail"]
+
+
+def test_an_authorisation_the_log_never_recorded_is_rejected_in_the_browser_too(
+    app, page, payment_bundle
+):
+    """Genuine for the payment, made with a key of the exporter's choosing: the bytes are not the
+    ones the log recorded beside that approval, so the section cannot carry anything new."""
+    from qvault.verify.execution import execution_digest
+
+    forged = copy.deepcopy(payment_bundle)
+    provider = app.extensions["crypto"].signature("ML-DSA-65")
+    kp = provider.keygen()
+    digest = execution_digest(forged["decision"]["action"], forged["decision"]["payload_hash"])
+    forged["execution"]["signatures"][0].update(
+        public_key_b64=base64.b64encode(kp.public_key).decode(),
+        signature_b64=base64.b64encode(provider.sign(kp.secret_key, digest)).decode(),
+    )
+    report = agree(app, page, forged)
+    assert report["ok"] is False
+    assert "no record" in _check(report, "execution")["detail"]
+
+
+def test_a_dropped_authorisation_is_rejected_in_the_browser_too(app, page, payment_bundle):
+    forged = copy.deepcopy(payment_bundle)
+    forged["execution"]["signatures"].pop()
+    report = agree(app, page, forged)
+    assert report["ok"] is False
+    assert "incomplete" in _check(report, "execution")["detail"]
+
+
+def test_removing_the_authorisations_is_caught_not_skipped(app, page, payment_bundle):
+    """Review M1: the log records each approval's authorisation, so a file without them is an
+    incomplete export, not an old one."""
+    stripped = copy.deepcopy(payment_bundle)
+    del stripped["execution"]
+    report = agree(app, page, stripped)
+    assert report["ok"] is False
+    check = _check(report, "execution")
+    assert not check["skipped"] and "leaves out" in check["detail"]
+
+
+def _payout_entry(bundle, uuid):
+    """A proposal_executed entry shaped like the real one (it will not recompute or prove)."""
+    raw = copy.deepcopy(bundle["log"]["entries"][-1])
+    raw.update(
+        event_type="proposal_executed",
+        ref_id=uuid,
+        payload_json=json.dumps(
+            {"proposal_uuid": uuid, "tx_hash": "0x" + "ab" * 32, "block": 1, "gas_used": 1}
+        ),
+    )
+    return raw
+
+
+def test_another_decisions_payout_does_not_make_this_one_paid(app, page, payment_bundle):
+    """Review M2: only an entry naming this decision counts as its payout."""
+    forged = copy.deepcopy(payment_bundle)
+    forged["log"]["entries"].append(_payout_entry(forged, "another-decision"))
+    js = in_browser(page, forged)
+    py = in_python(app, forged)
+    assert js["facts"].get("payout") is None and py.facts["payout"] is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"alg_id": "FOO"},  # review M3: the browser used to skip this and say Verified
+        {"alg_id": "ML-DSA-87"},
+        {"signer_id": True},
+        {"signer_id": [1]},
+        {"signer_id": None},
+        {"identity_hex": "0xdeadbeef"},
+    ],
+)
+def test_a_malformed_authorisation_fails_the_same_way_in_both(app, page, payment_bundle, change):
+    forged = copy.deepcopy(payment_bundle)
+    forged["execution"]["signatures"][0].update(change)
+    report = agree(app, page, forged)
+    assert report["ok"] is False and not _check(report, "execution")["ok"]
+
+
+def test_unpadded_base64_fails_the_same_way_in_both(app, page, payment_bundle):
+    """A browser's atob accepts base64 without its padding; Python's strict decoder does not. An
+    ML-DSA-65 public key (1,952 bytes) always ends in one "=", so stripping it tests exactly that.
+    """
+    forged = copy.deepcopy(payment_bundle)
+    entry = forged["execution"]["signatures"][0]
+    assert entry["public_key_b64"].endswith("=")
+    entry["public_key_b64"] = entry["public_key_b64"].rstrip("=")
+    report = agree(app, page, forged)
+    assert report["ok"] is False
+
+
+def test_an_authorisation_made_with_another_key_than_the_vote_is_refused(app, page, payment_bundle):
+    """Both are made with the one key the treasury holds; a genuine, logged authorisation under
+    another key would mean the log is wrong about who approved."""
+    forged = copy.deepcopy(payment_bundle)
+    forged["signatures"][0]["public_key_b64"] = forged["signatures"][1]["public_key_b64"]
+    report = agree(app, page, forged)
+    assert report["ok"] is False

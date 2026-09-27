@@ -902,6 +902,8 @@ def public_record() -> dict:
     """Every treasury this app has linked, as the public record describes each (plan Phase 9):
     ``{address: record_entry}``, linked and unlinked alike, with no names. What
     ``/treasuries.json`` serves and ``scripts/export_treasury_record.py`` merges."""
+    if not inspect(db.session.connection()).has_table(Treasury.__tablename__):
+        return {}  # a database from before treasuries: nothing linked, and nothing to read
     return {
         treasury.address: record_entry(treasury)
         for treasury in Treasury.query.order_by(Treasury.id).all()
@@ -929,18 +931,18 @@ def publish_record(treasury: Treasury) -> bool:
     file lives in the image and does not persist, so ``scripts/export_treasury_record.py`` is
     what brings the committed record up to date.
     """
-    from qvault.chain.deployments import DeploymentError, merge_treasury, update_record
+    from qvault.chain.deployments import merge_treasury, update_record
 
-    path = record_path_for(treasury.chain_id)
-    if path is None:
-        return False
     try:
+        path = record_path_for(treasury.chain_id)
+        if path is None:
+            return False
         update_record(
             path,
             treasury.chain_id,
             lambda current: merge_treasury(current, treasury.address, record_entry(treasury))[0],
         )
-    except (DeploymentError, OSError) as exc:
+    except Exception as exc:  # noqa: BLE001 - after the commit, a record problem is only logged
         current_app.logger.warning(
             "treasury %s not written to the record: %s", treasury.address, exc
         )

@@ -5616,5 +5616,5 @@ function astring(value, title = '') {
 
 Object.assign(__exports, { randomBytes, aarray, aobject, equalBytes, copyBytes, byteSwap64, baswap64If, validateOpts, validateVerOpts, validateSigOpts, splitCoder, vecCoder, cleanBytes, getMask, EMPTY, getMessage, checkHash, getMessagePrehash, astring, abytes: abytesDoc, concatBytes: concatBytesDoc });
 };
-global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-dsa.js').ml_dsa87, sha256: __req('hashes/sha2.js').sha256 };
+global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-dsa.js').ml_dsa87, sha256: __req('hashes/sha2.js').sha256, keccak_256: __req('hashes/sha3.js').keccak_256 };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

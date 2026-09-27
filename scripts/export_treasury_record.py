@@ -29,6 +29,7 @@ import json
 import os
 import pathlib
 import sys
+import urllib.parse
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -53,14 +54,57 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+#: What a record entry may carry; anything else an instance sends is dropped, never recorded.
+ENTRY_KEYS = (
+    "vault_id",
+    "verifier",
+    "threshold",
+    "signers",
+    "config_nonce",
+    "deployment_tx",
+    "block",
+    "linked_at",
+    "status",
+    "unlinked_at",
+)
+MAX_ANSWER_BYTES = 5_000_000
+
+
+class _HttpsOnly(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).scheme != "https":
+            raise ValueError("the instance redirected away from https")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _from_url(url: str) -> dict:
-    target = url.rstrip("/")
-    if not target.endswith("/treasuries.json"):
-        target += "/treasuries.json"
-    if not target.startswith("https://") and not target.startswith("http://127.0.0.1"):
+    parts = urllib.parse.urlsplit(url.rstrip("/"))
+    local = parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost")
+    if (parts.scheme != "https" and not local) or parts.username or parts.password:
         raise ValueError("an instance is read over https")
-    with urllib.request.urlopen(target, timeout=60) as response:  # noqa: S310 - https checked
-        return json.load(response)["treasuries"]
+    path = (
+        parts.path if parts.path.endswith("/treasuries.json") else parts.path + "/treasuries.json"
+    )
+    target = urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+    opener = urllib.request.build_opener(_HttpsOnly)
+    with opener.open(target, timeout=60) as response:  # noqa: S310 - scheme checked above
+        raw = response.read(MAX_ANSWER_BYTES + 1)
+    if len(raw) > MAX_ANSWER_BYTES:
+        raise ValueError("the instance's answer is too large to be a treasury record")
+    return clean(json.loads(raw))
+
+
+def clean(answer: object) -> dict:
+    """An instance's answer as record entries: the right shape, and known fields only."""
+    treasuries = answer.get("treasuries") if isinstance(answer, dict) else None
+    if not isinstance(treasuries, dict) or not all(
+        isinstance(entry, dict) for entry in treasuries.values()
+    ):
+        raise ValueError("the instance did not answer with a treasury record")
+    return {
+        address: {key: entry[key] for key in ENTRY_KEYS if key in entry}
+        for address, entry in treasuries.items()
+    }
 
 
 def _from_database() -> dict:
