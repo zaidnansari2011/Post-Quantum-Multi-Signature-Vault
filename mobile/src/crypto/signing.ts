@@ -49,8 +49,15 @@ export interface SigningInputs {
   action?: PaymentAction;
 }
 
-const NETWORKS: Record<number, string> = { 11155111: 'Sepolia' };
+export const NETWORKS: Record<number, string> = { 11155111: 'Sepolia' };
 const WEI_PER_ETH = 10n ** 18n;
+
+/** Exact ETH for a wei amount, as the server's `format_wei` writes it: no rounding, ever. */
+export function formatEth(valueWei: string): string {
+  const wei = BigInt(valueWei);
+  const fraction = (wei % WEI_PER_ETH).toString().padStart(18, '0').replace(/0+$/, '');
+  return (wei / WEI_PER_ETH).toString() + (fraction ? '.' + fraction : '') + ' ETH';
+}
 
 /**
  * The only text a payment decision may carry (plan D24), or null for a malformed payment. The
@@ -67,10 +74,7 @@ export function paymentText(action: PaymentAction): string | null {
   if (network === undefined || typeof action.treasury !== 'string' || typeof action.to !== 'string') {
     return null;
   }
-  const wei = BigInt(value);
-  const fraction = (wei % WEI_PER_ETH).toString().padStart(18, '0').replace(/0+$/, '');
-  const eth = (wei / WEI_PER_ETH).toString() + (fraction ? '.' + fraction : '') + ' ETH';
-  return `Pay ${eth} from this vault's treasury ${action.treasury} to ${action.to} on ${network}.`;
+  return `Pay ${formatEth(value)} from this vault's treasury ${action.treasury} to ${action.to} on ${network}.`;
 }
 
 export function proposalSigningBytes(inputs: SigningInputs): Uint8Array {

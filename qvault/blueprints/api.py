@@ -33,6 +33,7 @@ from qvault.chain.rpc import RpcError
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
+from qvault.models.treasury import TreasurySigner
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
@@ -40,6 +41,7 @@ from qvault.services import (
     approval_service,
     auth_service,
     device_service,
+    execution_service,
     key_service,
     proposal_service,
     treasury_jobs,
@@ -670,6 +672,32 @@ def _payment_view(stored) -> dict:
     }
 
 
+def _execution_view(proposal, user) -> dict:
+    """What the phone checks before it signs a payment's execution digest (plan Phase 6b).
+
+    ``digest`` is this server's digest, which the phone recomputes from ``signing_inputs`` and
+    refuses to sign if they differ; ``seat_fingerprint`` is the fingerprint of the key the
+    treasury holds for this user, so the phone can tell before any prompt whether an approval made
+    on it would count. Both are claims the phone checks, never inputs it signs.
+    """
+    try:
+        digest = execution_service.digest_for(proposal).hex()
+    except execution_service.ExecutionSignatureError:
+        digest = None  # an unreadable row; the binding check and the vote say why
+    action = proposal.action
+    seat = None
+    if action.treasury is not None:
+        seat = TreasurySigner.query.filter_by(
+            treasury_id=action.treasury.id, user_id=user.id
+        ).one_or_none()
+    return {
+        "digest": digest,
+        "seat_fingerprint": (
+            seat.key.public_fingerprint() if seat is not None and seat.key is not None else None
+        ),
+    }
+
+
 @bp.get("/proposals")
 @device_token_required
 def list_proposals():
@@ -723,6 +751,7 @@ def proposal_detail(uuid: str):
         # Present only for payments, so every other decision's inputs keep their exact key set.
         signing_inputs["action"] = proposal.action.canonical()
         detail["payment"] = _payment_view(proposal.action)
+        detail["execution"] = _execution_view(proposal, user)
     detail.update(
         {
             "action_text": proposal.action_text,
@@ -762,6 +791,19 @@ def cast_vote(uuid: str):
     body = _body()
     try:
         sig_bytes = _b64(body.get("signature_b64", ""), "signature_b64")
+        # Approving a payment carries the signature over the execution digest (plan Phase 6b);
+        # record_device_vote decides whether this vote must, or must not, carry one.
+        raw_execution = body.get("execution_signature_b64")
+        execution = (
+            None
+            if raw_execution is None
+            else (
+                _b64(raw_execution, "execution_signature_b64")
+                if isinstance(raw_execution, str)
+                # Not a string: decoded as empty, so the length check refuses it with a reason.
+                else b""
+            )
+        )
     except DeviceError as exc:
         return _error(exc.code, exc.message, 400)
 
@@ -775,6 +817,7 @@ def cast_vote(uuid: str):
             body.get("decision", ""),
             sig_bytes,
             reason=body.get("reason"),
+            execution=execution,
         )
     except ApprovalError as exc:
         return _error(_vote_code(str(exc)), str(exc), _VOTE_STATUS.get(_vote_code(str(exc)), 422))
@@ -789,6 +832,11 @@ def cast_vote(uuid: str):
                 "custody": sig.custody,
                 "alg_id": sig.alg_id,
                 "signature_sha256": sha256_hex(sig.signature),
+                # What was stored as the authorisation to pay, for the phone to compare with what
+                # it sent, as it does the vote's.
+                "execution_signature_sha256": (
+                    sha256_hex(execution) if execution is not None else None
+                ),
                 "signed_at": sig.created_at.isoformat() if sig.created_at else None,
             },
             proposal={
@@ -810,6 +858,8 @@ _VOTE_STATUS = {
     "decision_invalid": 422,
     "bad_signature_size": 422,
     "execution_signature_required": 422,
+    # D43: the treasury's nonce could not be read. Nothing was stored; the phone offers a retry.
+    "chain_unavailable": 503,
 }
 
 
@@ -820,6 +870,8 @@ def _vote_code(message: str) -> str:
     # in a form it can act on (plan D25), whatever else the sentence happens to contain.
     if "signature the treasury checks" in lowered:
         return "execution_signature_required"
+    if "could not be asked" in lowered:
+        return "chain_unavailable"
     if "already voted" in lowered:
         return "already_voted"
     if "not an authorised signer" in lowered:

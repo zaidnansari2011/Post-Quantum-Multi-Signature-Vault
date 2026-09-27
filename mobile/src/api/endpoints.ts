@@ -171,6 +171,8 @@ export function castVote(args: {
   uuid: string;
   decision: Decision;
   signatureB64: string;
+  /** Present exactly when approving a payment (plan Phase 6b). */
+  executionSignatureB64?: string | null;
   reason?: string | null;
 }) {
   return request(castVoteResponse, {
@@ -180,6 +182,7 @@ export function castVote(args: {
     body: {
       decision: args.decision,
       signature_b64: args.signatureB64,
+      ...(args.executionSignatureB64 ? { execution_signature_b64: args.executionSignatureB64 } : {}),
       reason: args.reason ?? null,
     },
   });
