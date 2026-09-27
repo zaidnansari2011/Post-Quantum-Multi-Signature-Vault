@@ -539,6 +539,10 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
 
     clock = clock or _Clock(datetime.now(UTC) - timedelta(weeks=HISTORY_WEEKS))
 
+    # End the session's transaction first. On Postgres, any read before this (main's user count,
+    # the reseed guard) leaves a transaction holding a lock on the tables, and drop_all runs on
+    # another connection, so it waited on this script's own lock for ever. SQLite never showed it.
+    db.session.remove()
     db.drop_all()
     from qvault.services.bootstrap_service import init_database
 
