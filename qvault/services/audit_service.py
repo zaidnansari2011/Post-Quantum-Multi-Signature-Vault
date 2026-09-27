@@ -68,6 +68,8 @@ SENTENCES = {
     "treasury_linked": "{who} linked {vault} to a treasury contract on Sepolia.",
     "signing_key_choice_changed": "{who} chose which of their keys a treasury registers.",
     "treasury_unlinked": "{who} unlinked {vault} from its treasury contract.",
+    "proposal_executed": "A payment approved in {vault} was paid out by its treasury.",
+    "proposal_execution_failed": "A payment approved in {vault} could not be paid out.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.

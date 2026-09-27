@@ -331,3 +331,61 @@ def test_database_rows_changed_after_linking_fail_the_check(app, node):
     db.session.rollback()
     assert problems() == []
     assert Treasury.query.count() == 1
+
+
+def test_an_approved_payment_is_paid_by_the_real_treasury(app, node):
+    """Plan Phase 7, end to end on the real contracts: a treasury linked by the app's job, a
+    payment approved through the web path (password keys, D43's nonce read from this chain), and
+    the executor submitting it, with a new relayer every tick as a restart would leave it. The
+    real ZKNox verifier checks each ML-DSA-65 approval; nothing here is faked."""
+    from qvault.chain.digest import proposal_id
+    from qvault.chain.execute_call import executed_calldata
+    from qvault.chain.rpc import call_request
+    from qvault.services import approval_service, payout_service, proposal_service, treasury_jobs
+    from qvault.services.proposal_service import PaymentRequest
+
+    rpc = node["rpc"]
+    users, vault = _vault()
+    app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    app.config["TREASURY_RELAYER_RESERVE_WEI"] = 0
+    job = treasury_jobs.request_link(vault, by=users[0], relayer=node["relayer"])
+    for _ in range(30):
+        if not job.is_open:
+            break
+        treasury_jobs.advance(
+            job,
+            relayer=node["relayer"],
+            artifact=treasury_artifact.committed(),
+            record=node["record"],
+        )
+        _mine(rpc)(0)
+    assert job.state == "done", job.reason
+    treasury = db.session.get(Treasury, job.treasury_id)
+    rpc.request("anvil_setBalance", [treasury.address, hex(10**18)])
+
+    recipient = "0x000000000000000000000000000000000000bEEF"
+    app.extensions["relayer"] = node["relayer"]  # the web path asks this chain for the nonce
+    proposal = proposal_service.create_proposal(
+        vault, users[0], "Pay the auditor", "", payment=PaymentRequest(recipient, 10**14)
+    )
+    for user in users[:2]:
+        approval_service.cast_vote(proposal, user, PASSWORD, "approve")
+    assert proposal.status == "approved"
+
+    for _ in range(6):
+        db.session.expire_all()
+        execution = payout_service.tick(relayer=Relayer(rpc, ANVIL_KEY, chain_id=SEPOLIA))
+        if execution is not None and not execution.is_open:
+            break
+        rpc.request("anvil_mine", [hex(1)])
+
+    execution = payout_service.payout_of(proposal)
+    assert execution.state == "confirmed", execution.reason
+    assert rpc.get_balance(recipient) == 10**14
+    assert rpc.get_balance(treasury.address) == 10**18 - 10**14
+    pid = proposal_id(proposal.payload_hash)
+    assert rpc.call(
+        call_request(sender=recipient, to=treasury.address, data=executed_calldata(pid))
+    ) == (1).to_bytes(32, "big")
+    print(f"\nmeasured gas: execute with 2 ML-DSA-65 approvals {execution.gas_used}")
+    assert 3_000_000 < execution.gas_used < payout_service.EXECUTE_GAS_BUDGET

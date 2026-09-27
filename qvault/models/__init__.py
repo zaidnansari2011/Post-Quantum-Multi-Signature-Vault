@@ -15,6 +15,7 @@ from .anchor import LedgerAnchor
 from .checkpoint import LogCheckpoint, WitnessCosignature
 from .config_models import AlgorithmConfig
 from .device import Device
+from .execution import Execution, ExecutionTransaction
 from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
@@ -47,5 +48,7 @@ __all__ = [
     "TreasurySigner",
     "TreasuryJob",
     "TreasuryJobTransaction",
+    "Execution",
+    "ExecutionTransaction",
     "SignerPreference",
 ]
