@@ -50,5 +50,36 @@
   },
   "network": "sepolia",
   "schema": 1,
-  "treasuries": {}
+  "treasuries": {
+    "0xD49174b703d6FBC5088b0f01C6E71B5Ef467f3D0": {
+      "block": 11793467,
+      "deployment_tx": "0xbec098ab91cd6b1b4737ee4ffddee3f87fa161ac235332143ae99ed464f44770",
+      "linked_at": "2026-09-27T13:09:07.232354+00:00",
+      "signers": [
+        {
+          "custody": "password",
+          "onchain_key_id": "0xa09c486d9febe7827850a0fb7ecf4498b09d442c52d10e37a39696d2659d0388",
+          "public_key_sha256": "4f674ae931c4a19c0134d861571271810ff571182b0d18a35793134d4b8e69cc",
+          "user_id": 1
+        },
+        {
+          "custody": "password",
+          "onchain_key_id": "0xe71f3c13ea13e070e8a1935d9e430e9883c150e23965f939d32d5d519bee2552",
+          "public_key_sha256": "2460c311feb54c4310d20699f7b8b3358bd757a14863f638591ccd1473e136b0",
+          "user_id": 2
+        },
+        {
+          "custody": "password",
+          "onchain_key_id": "0x2c591bd0364647edcb4eae8eda8e135738e862dd9adf976af39bf10596125f58",
+          "public_key_sha256": "0322a73b760acc7ab9f7022b1fa62334566c632be359bbe4375ea27648b1d369",
+          "user_id": 3
+        }
+      ],
+      "status": "linked",
+      "threshold": 2,
+      "unlinked_at": null,
+      "vault_id": 1,
+      "verifier": "0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C"
+    }
+  }
 }
