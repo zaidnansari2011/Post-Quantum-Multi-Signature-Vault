@@ -122,6 +122,9 @@ class BaseConfig:
     )
     TREASURY_LINK_COOLDOWN_DAYS = int(os.environ.get("TREASURY_LINK_COOLDOWN_DAYS", 30))
     TREASURY_TICK_SECONDS = int(os.environ.get("TREASURY_TICK_SECONDS", 60))
+    # Where the app writes the public record of the treasuries it links and reconfigures (plan
+    # Phase 9). Unset: the committed chain/deployments/<network>.json. "none" turns it off.
+    TREASURY_RECORD_PATH = os.environ.get("TREASURY_RECORD_PATH") or ""
 
 
 class DevConfig(BaseConfig):
@@ -155,6 +158,8 @@ class TestConfig(BaseConfig):
     ATTACK_LAB_ENABLED = True
     # Off, as in production: a test that creates a payment decision turns it on explicitly.
     ONCHAIN_EXECUTION_ENABLED = False
+    # Never the committed record: a test that wants one points this at a temporary file.
+    TREASURY_RECORD_PATH = "none"
 
 
 class ProdConfig(BaseConfig):

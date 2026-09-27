@@ -28,6 +28,7 @@ from sqlalchemy.engine import Engine
 
 from qvault.chain.deployments import (
     DeploymentError,
+    configurations,
     deployments_path,
     load_record,
     mark_treasury_unlinked,
@@ -116,16 +117,20 @@ def at_risk(engine: Engine, record: dict) -> list[AtRisk]:
             for address, entry in sorted(recorded.items()):
                 if entry.get("status") != "linked" or address in rows:
                     continue
-                signers = entry.get("signers") or []
-                ours = [s for s in signers if s.get("public_key_sha256") in held]
+                # Every configuration the record holds: a copy made before a reconfiguration
+                # holds the keys of an older one, and those are as irreplaceable (Phase 9).
+                known = configurations(entry)
+                every = [s for config in known.values() for s in config["signers"]]
+                ours = [s for s in every if s.get("public_key_sha256") in held]
                 if ours:
+                    current = known[max(known)]["signers"]
                     found.append(
                         AtRisk(
                             address,
                             entry.get("vault_id"),
                             "record",
-                            tuple(f"user {s.get('user_id')}" for s in ours),
-                            len(signers),
+                            tuple(sorted({f"user {s.get('user_id')}" for s in ours})),
+                            len(current),
                         )
                     )
     return found

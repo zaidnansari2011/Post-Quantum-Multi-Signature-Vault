@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from flask import current_app
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
@@ -887,12 +888,64 @@ def record_entry(treasury: Treasury) -> dict:
             }
             for row in treasury.signers
         ],
+        # The configuration these signers and this threshold belong to (Phase 7b).
+        "config_nonce": treasury.config_nonce,
         "deployment_tx": treasury.deployment_tx,
         "block": treasury.deployed_block,
         "linked_at": treasury.linked_at.isoformat(),
         "status": treasury.status,
         "unlinked_at": treasury.unlinked_at.isoformat() if treasury.unlinked_at else None,
     }
+
+
+def public_record() -> dict:
+    """Every treasury this app has linked, as the public record describes each (plan Phase 9):
+    ``{address: record_entry}``, linked and unlinked alike, with no names. What
+    ``/treasuries.json`` serves and ``scripts/export_treasury_record.py`` merges."""
+    return {
+        treasury.address: record_entry(treasury)
+        for treasury in Treasury.query.order_by(Treasury.id).all()
+    }
+
+
+def record_path_for(chain_id: int) -> Path | None:
+    """Where the app writes the public record, or None when it writes none (tests; "none")."""
+    configured = (current_app.config.get("TREASURY_RECORD_PATH") or "").strip()
+    if configured.lower() == "none":
+        return None
+    if configured:
+        return Path(configured)
+    from qvault.chain.deployments import deployments_path
+
+    return deployments_path(chain_id)
+
+
+def publish_record(treasury: Treasury) -> bool:
+    """Write ``treasury`` into the public record as it stands now (plan Phase 9), best effort.
+
+    Called when a link finishes and when a reconfiguration is applied, after the database has
+    committed: the chain and the database are the truth, and a record that cannot be written
+    (a read-only image, a lock held by an operator's run) must never undo either. On Azure the
+    file lives in the image and does not persist, so ``scripts/export_treasury_record.py`` is
+    what brings the committed record up to date.
+    """
+    from qvault.chain.deployments import DeploymentError, merge_treasury, update_record
+
+    path = record_path_for(treasury.chain_id)
+    if path is None:
+        return False
+    try:
+        update_record(
+            path,
+            treasury.chain_id,
+            lambda current: merge_treasury(current, treasury.address, record_entry(treasury))[0],
+        )
+    except (DeploymentError, OSError) as exc:
+        current_app.logger.warning(
+            "treasury %s not written to the record: %s", treasury.address, exc
+        )
+        return False
+    return True
 
 
 # --------------------------------------------------------------------------------------------

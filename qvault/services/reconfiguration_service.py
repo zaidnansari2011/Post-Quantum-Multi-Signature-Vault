@@ -54,7 +54,7 @@ from qvault.models import (
     Vault,
 )
 from qvault.models.reconfiguration import OPEN_STATES
-from qvault.services import key_service, ledger_service
+from qvault.services import key_service, ledger_service, treasury_service
 from qvault.services.treasury_jobs import (
     _afford,
     _plainly,
@@ -538,7 +538,11 @@ def advance(
             reconfiguration, "expired", f"gave up after its deadline: {reconfiguration.reason}", now
         )
     reconfiguration.updated_at = now()
+    applied = reconfiguration.state == "done"
     db.session.commit()
+    if applied:
+        # The record gains the new configuration once the database holds it (Phase 9).
+        treasury_service.publish_record(reconfiguration.treasury)
     return reconfiguration
 
 
