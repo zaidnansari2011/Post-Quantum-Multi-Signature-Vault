@@ -185,6 +185,7 @@ def create_proposal(
                 data_hex=signed["data"],
                 call_gas=signed["call_gas"],
                 valid_until=signed["valid_until"],
+                config_nonce=signed["config_nonce"],
             )
         )
 
@@ -282,6 +283,7 @@ def _payment_action(vault, payment, required_m, required_n, action_text, now, de
             to=payment.to,
             value_wei=payment.value_wei,
             deadline=deadline,
+            config_nonce=treasury.config_nonce,
         )
     except chain_action.ActionError as exc:
         raise ProposalError(f"{str(exc)[:1].upper()}{str(exc)[1:]}.") from None

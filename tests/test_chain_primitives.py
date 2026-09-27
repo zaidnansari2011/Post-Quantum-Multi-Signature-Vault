@@ -131,6 +131,7 @@ def _digest(**overrides):
     fields = {
         "chain_id": 11_155_111,
         "treasury": TREASURY,
+        "config_nonce": 0,
         "proposal_id": bytes([0x11] * 32),
         "to": RECIPIENT,
         "value_wei": 10**15,
@@ -153,6 +154,7 @@ def test_tags_are_versioned_and_distinct():
     [
         {"chain_id": 1},
         {"treasury": _addr(0x7EA6)},
+        {"config_nonce": 1},  # D42: another configuration, another approval
         {"proposal_id": bytes([0x12] + [0x11] * 31)},
         {"to": _addr(0xBEEE)},
         {"value_wei": 10**15 + 1},
@@ -181,6 +183,8 @@ def test_proposal_id_is_the_payload_hash():
         {"value_wei": 2**256},
         {"value_wei": True},
         {"chain_id": -5},
+        {"config_nonce": -1},
+        {"config_nonce": 2**256},
         {"proposal_id": bytes(31)},
         {"proposal_id": "11" * 32},  # hex text is not bytes
         {"to": "0xnothex"},

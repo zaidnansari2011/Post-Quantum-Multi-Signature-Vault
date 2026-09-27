@@ -60,6 +60,21 @@ def _view(rpc: EthRpc, address: str, data: bytes, types: list[str], block: int |
     return decode(types, rpc.call(call_request(sender=_READER, to=address, data=data), block))
 
 
+def read_config_nonce(rpc: EthRpc, address: str, block: int | str = "latest") -> int:
+    """The treasury's ``configNonce()`` at ``block`` (plan D43).
+
+    Raises ``ValueError`` for an answer that is not exactly one word, which is what an address
+    with no contract returns (``0x``): no answer is ever read as nonce 0.
+    """
+    raw = rpc.call(
+        call_request(sender=_READER, to=checksum_address(address), data=VIEWS["configNonce"]),
+        block,
+    )
+    if len(raw) != 32:
+        raise ValueError(f"configNonce() answered {len(raw)} bytes, not one 32-byte word")
+    return int.from_bytes(raw, "big")
+
+
 def check_treasury(
     rpc: EthRpc,
     address: str,

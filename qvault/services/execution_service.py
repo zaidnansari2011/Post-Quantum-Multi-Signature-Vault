@@ -26,6 +26,9 @@ from flask import current_app
 from qvault import glassbox
 from qvault.chain import action as chain_action
 from qvault.chain import digest as chain_digest
+from qvault.chain import treasury_check
+from qvault.chain.relayer import RelayerError
+from qvault.chain.rpc import RpcError
 from qvault.extensions import db
 from qvault.models import ExecutionSignature, TreasurySigner
 from qvault.services.treasury_service import ALGORITHM
@@ -102,6 +105,9 @@ def _seat(proposal, signer, key) -> tuple[TreasurySigner | None, str | None]:
             "This vault is no longer linked to the treasury this payment names, so the payment "
             "could not be executed. Raise the decision again once a treasury is linked."
         )
+    problem = _nonce_problem(action.config_nonce, treasury.config_nonce)
+    if problem is not None:
+        return None, problem
 
     registered = TreasurySigner.query.filter_by(
         treasury_id=treasury.id, user_id=signer.id
@@ -119,6 +125,72 @@ def _seat(proposal, signer, key) -> tuple[TreasurySigner | None, str | None]:
             f"{key.alg_id}. The treasury must be reconfigured before you can approve a payment."
         )
     return registered, None
+
+
+def _nonce_problem(signed: int, current: int) -> str | None:
+    """Why approvals signed at configuration ``signed`` would not count at ``current``, if not.
+
+    D42: the contract checks approvals at its current configuration only. A payment behind it was
+    raised before a reconfiguration; one *ahead* of it names a configuration that has never
+    existed, which only an edit of this app's records produces (review L2), and says so.
+    """
+    if signed == current:
+        return None
+    if signed < current:
+        return (
+            "This vault's treasury has been reconfigured since this payment was raised, so the "
+            "contract would no longer accept approvals of it. Raise the payment again."
+        )
+    return (
+        "This payment names a treasury configuration that does not exist yet, which this app "
+        "never records, so its records may have been altered. Nothing was signed; an "
+        "administrator needs to look at this decision."
+    )
+
+
+def chain_nonce_problem(proposal) -> str | None:
+    """Why the treasury on chain would not count an approval of this payment now, if not (D43).
+
+    ``_seat`` compares the payment's signed nonce with this app's record of the treasury, which
+    anyone who can edit the database can move: set it one ahead before a payment is raised and
+    every honest approver signs for a configuration the chain has not reached, a signature that
+    becomes usable the day it does. The chain's nonce only ever rises, so an approval signed at the
+    chain's *current* nonce can never be one for a future configuration.
+
+    **Fails closed.** If the chain cannot be asked, nothing is signed: this is a refusal the person
+    can retry, where a signature for the wrong configuration could never be taken back.
+    """
+    action = proposal.action
+    if action is None:
+        return None
+    unreachable = (
+        "Ethereum could not be asked which configuration this vault's treasury is at, and a "
+        "payment is only approved against the chain's own answer. Nothing was signed; try again "
+        "shortly."
+    )
+    relayer = current_app.extensions.get("relayer")
+    if relayer is None or relayer.chain_id != action.chain_id:
+        return unreachable
+    with glassbox.step(
+        "Ask the treasury which configuration it is at", code=treasury_check.read_config_nonce
+    ) as trace:
+        trace.annotate(
+            "The contract only counts approvals made at its current configuration. Reading that "
+            "from the chain, not from this server's records, means an edited record cannot have "
+            "anyone sign for a configuration the treasury has not reached."
+        )
+        trace.input("treasury", glassbox.Label(action.treasury_address))
+        trace.input(
+            "configuration this payment was raised under", glassbox.Label(action.config_nonce)
+        )
+        try:
+            relayer.check_chain()
+            onchain = treasury_check.read_config_nonce(relayer.rpc, action.treasury_address)
+        except (RpcError, RelayerError, ValueError):
+            trace.output("answer", glassbox.Label("none"))
+            return unreachable
+        trace.output("configuration on chain", glassbox.Label(onchain))
+    return _nonce_problem(action.config_nonce, onchain)
 
 
 def _wrong_key(held, key) -> str:
@@ -176,8 +248,10 @@ def record(proposal, signer, key, digest: bytes, signature: bytes) -> ExecutionS
     if key.owner_id != signer.id:
         raise ExecutionSignatureError("That key does not belong to you.")
     registered, problem = _seat(proposal, signer, key)
-    if problem is not None:
-        raise ExecutionSignatureError(problem)
+    if problem is not None or registered is None:  # no row always comes with a problem
+        raise ExecutionSignatureError(
+            problem or "None of your keys is registered on this treasury."
+        )
 
     provider = current_app.extensions["crypto"].signature(key.alg_id)
     expected = provider.meta.sizes["signature"]

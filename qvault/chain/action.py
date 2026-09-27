@@ -4,7 +4,7 @@ A payment decision's canonical payload carries an ``action`` object (plan D4). F
 implementations hash it: the server, the offline verifier, the browser verifier and the phone.
 Two of those are JavaScript, so the shape is chosen to hash identically everywhere (D22):
 
-* exactly eight keys, all required, nothing else;
+* exactly nine keys, all required, nothing else;
 * ``value_wei`` as a decimal string, because 10^18 wei is past what a JavaScript number holds
   exactly;
 * every other number a *safe* integer (at most 2^53 - 1), which a browser keeps exactly and the
@@ -20,6 +20,11 @@ The policy (D23) is applied once, at creation, and then signed along with everyt
 fixed ``call_gas`` generous enough for a contract wallet as recipient, a bounded deadline, and an
 execution window after it. The text a decision shows is generated from the action (D24), so the
 prose and the payment cannot disagree.
+
+``config_nonce`` is the treasury's configuration counter when the decision was raised (D42). It
+is signed like every other field, and the treasury checks approvals at its *current* counter,
+so a payment raised before a reconfiguration can no longer be carried out: approvals given to
+one set of signers never carry over to the next.
 
 Nothing here touches Flask, the database or the network.
 """
@@ -37,7 +42,17 @@ from qvault.services import signing
 
 KIND_ETH_TRANSFER = "eth_transfer"
 ACTION_KEYS = frozenset(
-    {"kind", "chain_id", "treasury", "to", "value_wei", "data", "call_gas", "valid_until"}
+    {
+        "kind",
+        "chain_id",
+        "treasury",
+        "to",
+        "value_wei",
+        "data",
+        "call_gas",
+        "valid_until",
+        "config_nonce",
+    }
 )
 MAX_SAFE_INTEGER = 2**53 - 1
 UINT256_MAX = 2**256 - 1
@@ -72,6 +87,7 @@ class EthTransfer:
     value_wei: int
     call_gas: int
     valid_until: int
+    config_nonce: int
 
     kind: ClassVar[str] = KIND_ETH_TRANSFER
     data: ClassVar[bytes] = b""
@@ -87,6 +103,7 @@ class EthTransfer:
             "data": "0x" + self.data.hex(),
             "call_gas": self.call_gas,
             "valid_until": self.valid_until,
+            "config_nonce": self.config_nonce,
         }
 
     @property
@@ -112,6 +129,7 @@ class EthTransfer:
         return execution_digest(
             chain_id=self.chain_id,
             treasury=self.treasury,
+            config_nonce=self.config_nonce,
             proposal_id=proposal_id(payload_hash),
             to=self.to,
             value_wei=self.value_wei,
@@ -158,9 +176,18 @@ def payment_deadline(now: datetime, requested: datetime | None) -> datetime:
 
 
 def build_eth_transfer(
-    *, chain_id: int, treasury: str, to: str, value_wei: int, deadline: datetime
+    *,
+    chain_id: int,
+    treasury: str,
+    to: str,
+    value_wei: int,
+    deadline: datetime,
+    config_nonce: int,
 ) -> EthTransfer:
-    """A new ETH transfer under the D23 policy. Addresses may be given in any valid form."""
+    """A new ETH transfer under the D23 policy. Addresses may be given in any valid form.
+
+    ``config_nonce`` is the treasury's configuration counter as recorded now (D42).
+    """
     if deadline.tzinfo is None:
         raise ActionError("a payment deadline must be timezone-aware")
     valid_until = int((deadline + EXECUTION_WINDOW).timestamp())
@@ -171,6 +198,7 @@ def build_eth_transfer(
         value_wei=value_wei,
         call_gas=ETH_TRANSFER_CALL_GAS,
         valid_until=valid_until,
+        config_nonce=config_nonce,
     )
 
 
@@ -199,6 +227,7 @@ def parse(obj: object) -> EthTransfer:
         value_wei=int(value),
         call_gas=obj["call_gas"],
         valid_until=obj["valid_until"],
+        config_nonce=obj["config_nonce"],
     )
 
 
@@ -210,6 +239,7 @@ def _checked(
     value_wei: object,
     call_gas: object,
     valid_until: object,
+    config_nonce: object,
 ) -> EthTransfer:
     chain = _safe_integer(chain_id, "chain_id")
     if chain not in NETWORKS:
@@ -224,6 +254,7 @@ def _checked(
     deadline = _safe_integer(valid_until, "valid_until")
     if deadline < 1:
         raise ActionError("valid_until must be a positive timestamp")
+    nonce = _safe_integer(config_nonce, "config_nonce")
     if to == treasury:
         raise ActionError("a treasury cannot pay itself")
     return EthTransfer(
@@ -233,6 +264,7 @@ def _checked(
         value_wei=value_wei,
         call_gas=gas,
         valid_until=deadline,
+        config_nonce=nonce,
     )
 
 

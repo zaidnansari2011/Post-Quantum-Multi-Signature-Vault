@@ -567,16 +567,22 @@ def test_dropping_the_blank_verifier_on_itself_explains_rather_than_confuses(app
 
 def _linked_treasury(vault, *users):
     """A linked treasury with the vault's signers registered, as Phase 5 writes it (plan D29).
-    Nothing here touches a chain, so the on-chain fields are placeholders."""
+    The on-chain fields are placeholders; the only chain is one that answers ``configNonce()``,
+    which approving a payment asks (D43)."""
+    import fake_chain_nonce
+    from flask import current_app
+
     from qvault.chain.digest import key_id
     from qvault.extensions import db
     from qvault.models.treasury import Treasury, TreasurySigner
     from qvault.services import key_service
 
+    address = "0x0000000000000000000000000000000000007EA5"
+    fake_chain_nonce.install(current_app, address)
     treasury = Treasury(
         vault_id=vault.id,
         chain_id=11_155_111,
-        address="0x0000000000000000000000000000000000007EA5",
+        address=address,
         verifier_address="0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C",
         threshold_m=2,
         signer_count=len(users),
@@ -641,6 +647,7 @@ def test_a_payment_decision_verifies_in_the_browser_with_the_same_hash(app, page
         ("valid_until", 4_102_444_800),
         ("chain_id", 1),
         ("call_gas", 21_000),
+        ("config_nonce", 1),  # D42: approvals for another configuration
         ("data", "0xa9059cbb"),
         ("kind", "erc20_transfer"),
     ],

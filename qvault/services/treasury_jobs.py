@@ -74,6 +74,7 @@ from qvault.services.treasury_service import (
     find_deployed_treasury,
     linked_treasury,
     recorded_verifier,
+    schema_problems,
     store_link,
 )
 
@@ -204,6 +205,11 @@ def request_link(
     vault: Vault, *, by: User, relayer: Relayer, now: Callable[[], datetime] = _utcnow
 ) -> TreasuryJob:
     """Record a request to give ``vault`` a treasury. Sends nothing; the scheduler does the work."""
+    # Before anything else reads these tables: on a database from an older build the reads below
+    # would fail on the missing column rather than say what is wrong (6a′ L3).
+    schema = schema_problems()
+    if schema:
+        raise LinkRefused(["this database is not the schema this code expects", *schema])
     problems = []
     if not may_request(vault, by):
         problems.append(f"{by.email} does not own {vault.name}")

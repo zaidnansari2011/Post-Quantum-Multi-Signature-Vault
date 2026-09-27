@@ -155,6 +155,15 @@ def test_a_second_request_is_refused_while_one_is_open(world):
         _request(world)
 
 
+def test_a_database_from_an_older_build_is_refused_before_anything_reads_it(world):
+    # 6a′ L3: a proposal_actions without D42's column fails every proposal page that loads a
+    # payment, so a vault must not get a treasury (and with it payments) on top of it.
+    db.session.execute(db.text("ALTER TABLE proposal_actions DROP COLUMN config_nonce"))
+    with pytest.raises(LinkRefused, match="proposal_actions lacks column.s. config_nonce"):
+        _request(world)
+    assert TreasuryJob.query.count() == 0
+
+
 def test_the_database_refuses_two_open_jobs_for_one_vault(world):
     _request(world)
     db.session.add(

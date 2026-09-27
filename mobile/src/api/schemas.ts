@@ -166,6 +166,8 @@ export const paymentActionSchema = z
     data: z.literal('0x'),
     call_gas: z.number().int(),
     valid_until: z.number().int(),
+    // A count of reconfigurations (D42): never negative, which a signed-integer check alone allows.
+    config_nonce: z.number().int().nonnegative(),
   })
   .strict();
 

@@ -52,7 +52,9 @@ EXECUTIONS = (
     "execute_swallow",
     "execute_gas_probe",
     "execute_after_rotate",
+    "execute_after_move",
     "execute_three",
+    "execute_three_renewed",
     "execute_max",
 )
 RECONFIGURATIONS = (
@@ -198,6 +200,7 @@ def test_execution_digests_are_reproduced(fixture, name):
     assert _b(s["digest"]) == execution_digest(
         chain_id=fixture["chain_id"],
         treasury=fixture["treasury"],
+        config_nonce=s["nonce"],
         proposal_id=_b(s["proposal_id"]),
         to=s["to"],
         value_wei=s["value"],

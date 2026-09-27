@@ -37,7 +37,19 @@ from qvault.chain.rpc import EthRpc, RpcResponseError, call_request
 from qvault.chain.treasury_artifact import TreasuryArtifact
 from qvault.chain.treasury_check import Expectation, ExpectedSigner, check_treasury
 from qvault.extensions import db
-from qvault.models import Device, Key, SignerPreference, Treasury, TreasurySigner, User, Vault
+from qvault.models import (
+    Device,
+    ExecutionSignature,
+    Key,
+    ProposalAction,
+    SignerPreference,
+    Treasury,
+    TreasuryJob,
+    TreasuryJobTransaction,
+    TreasurySigner,
+    User,
+    Vault,
+)
 from qvault.services import key_service, ledger_service
 
 SEPOLIA = 11_155_111
@@ -308,7 +320,17 @@ _TABLES_READ = (
     "log_checkpoints",
     "algorithm_config",
 )
-_TABLES_CREATED = (Treasury.__tablename__, TreasurySigner.__tablename__)
+#: Created where absent, and checked column by column where present: a table from an older build
+#: missing one of this code's columns (``proposal_actions.config_nonce``, D42) fails every page
+#: that loads it, so a vault must not get a treasury, and with it payments, on top of that (6a′ L3).
+_TABLES_CREATED = (
+    Treasury.__tablename__,
+    TreasurySigner.__tablename__,
+    ProposalAction.__tablename__,
+    ExecutionSignature.__tablename__,
+    TreasuryJob.__tablename__,
+    TreasuryJobTransaction.__tablename__,
+)
 
 
 def schema_problems() -> list[str]:
