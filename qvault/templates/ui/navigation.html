@@ -1,0 +1,71 @@
+{# Page-level navigation (styles: components.css, "tabs", "page header", and the shell's crumbs).
+
+   tabs(items, current, label)
+     Tabs routed in the URL (?tab=...): each tab is a link, so back, reload and a shared link all
+     land on the same tab, and the page works without JavaScript. items is a list of dicts with
+     key, label, href and optionally count. The current tab has aria-current="page". label names
+     the strip for screen readers ("Vault sections").
+
+   page_header(title, description=None, status=None, facts=[], action=None)
+     The top of a screen: the title with its status trailing it, an optional one-line description,
+     a meta line of labelled facts, and at most one primary action.
+     status   markup from ui/status.html, e.g. status('approved').
+     facts    a list of (label, value) pairs, rendered as a description list ("Rule: Any 2 of 3"),
+              never as a " · " chain. A value may be markup.
+     action   one dict {label, href} for a link, or a caller() block for anything else (a form
+              with a button). Secondary actions belong in the page body or a menu, not here.
+
+   breadcrumbs(items)
+     items is a list of (label, href) pairs; the last is the current page and its href is ignored.
+#}
+{% from "ui/buttons.html" import button %}
+
+{% macro tabs(items, current, label) -%}
+<nav class="q-tabs" aria-label="{{ label }}">
+  {%- for item in items %}
+  <a class="q-tab" href="{{ item.href }}"{% if item.key == current %} aria-current="page"{% endif %}>
+    <span class="q-tab__l">{{ item.label }}{% if item.count is defined and item.count is not none %}<span class="q-count">{{ item.count }}</span>{% endif %}</span>
+  </a>
+  {%- endfor %}
+</nav>
+{%- endmacro %}
+
+{% macro page_header(title, description=None, status=None, facts=[], action=None) -%}
+<header class="q-ph">
+  <div class="q-ph__row">
+    <div class="q-ph__tw">
+      <h1 class="q-ph__t">{{ title }}</h1>
+      {%- if status %}{{ status }}{% endif %}
+    </div>
+    {%- if caller is defined %}
+    <div class="q-ph__act">{{ caller() }}</div>
+    {%- elif action %}
+    <div class="q-ph__act">{{ button(action.label, 'primary', href=action.href) }}</div>
+    {%- endif %}
+  </div>
+  {%- if description %}
+  <p class="q-ph__d">{{ description }}</p>
+  {%- endif %}
+  {%- if facts %}
+  <dl class="q-facts">
+    {%- for label, value in facts %}
+    <div class="q-fact"><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+    {%- endfor %}
+  </dl>
+  {%- endif %}
+</header>
+{%- endmacro %}
+
+{% macro breadcrumbs(items) -%}
+<nav aria-label="Breadcrumb" class="q-crumbs-nav">
+  <ol class="q-crumbs">
+    {%- for label, href in items %}
+    {%- if loop.last %}
+    <li><span aria-current="page">{{ label }}</span></li>
+    {%- else %}
+    <li><a href="{{ href }}">{{ label }}</a></li>
+    {%- endif %}
+    {%- endfor %}
+  </ol>
+</nav>
+{%- endmacro %}

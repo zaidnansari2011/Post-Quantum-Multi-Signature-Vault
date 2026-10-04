@@ -1,0 +1,23 @@
+{# Avatars (styles: components.css, "avatars"). A person is a round initial; there are no photos.
+
+   avatar(name, size=24, decorative=False)
+     name        the person's display name (or email); the first letter is drawn.
+     size        20, 24 or 32.
+     decorative  True when the name is already written beside it, so it is not read twice.
+
+   avatar_stack(names, max=3, size=24)
+     Up to max avatars overlapping, then "+N". Read as one list of the names.
+#}
+
+{% macro avatar(name, size=24, decorative=False) -%}
+<span class="q-av{% if size != 24 %} q-av--{{ size }}{% endif %}"
+  {%- if decorative %} aria-hidden="true"{% else %} role="img" aria-label="{{ name }}" title="{{ name }}"{% endif %}>{{ ui_initials(name) }}</span>
+{%- endmacro %}
+
+{% macro avatar_stack(names, max=3, size=24) -%}
+{%- set names = names|list -%}
+<span class="q-avs" role="img" aria-label="{{ names|join(', ') }}">
+  {%- for name in names[:max] %}{{ avatar(name, size, decorative=True) }}{% endfor -%}
+  {%- if names|length > max %}<span class="q-avs__more" aria-hidden="true">+{{ names|length - max }}</span>{% endif -%}
+</span>
+{%- endmacro %}
