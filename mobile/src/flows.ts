@@ -7,6 +7,8 @@ import * as api from './api/endpoints.ts';
 import { getAlgorithm, negotiateAlgorithm } from './crypto/algorithms.ts';
 import {
   deviceEnrolmentBytes,
+  formatEth,
+  NETWORKS,
   paymentText,
   signingInputsToPayloadHash,
   voteSigningBytes,
@@ -25,14 +27,23 @@ import type { ProposalDetail, ReconfigurationView } from './api/schemas.ts';
  * compromised, or something rewrote the response in flight; in both cases signing would attest to
  * a document this device never actually saw.
  */
+export type MismatchReason = 'hash' | 'payment_text' | 'display_text' | 'display_policy';
+
 export class PayloadMismatchError extends Error {
   readonly expected: string;
   readonly actual: string;
-  constructor(expected: string, actual: string) {
+  /**
+   * Which check failed: the hash itself; a payment whose text describes another payment; or a
+   * decision whose displayed text or threshold is not the one the hash covers. In the last three
+   * the hashes agree, so `expected` and `actual` alone cannot say what was wrong.
+   */
+  readonly reason: MismatchReason;
+  constructor(expected: string, actual: string, reason: MismatchReason = 'hash') {
     super('This proposal does not match its own signature payload. Refusing to sign.');
     this.name = 'PayloadMismatchError';
     this.expected = expected;
     this.actual = actual;
+    this.reason = reason;
   }
 }
 
@@ -135,7 +146,19 @@ export function verifyProposalIntegrity(detail: ProposalDetail): string {
   const action = detail.signing_inputs.action;
   if (action !== undefined && detail.signing_inputs.action_text !== paymentText(action)) {
     // The hash matches, but the words on screen describe a different payment from the one signed.
-    throw new PayloadMismatchError(detail.payload_hash, recomputed);
+    throw new PayloadMismatchError(detail.payload_hash, recomputed, 'payment_text');
+  }
+  if (detail.action_text !== detail.signing_inputs.action_text) {
+    // The response carries the decision text twice, and only `signing_inputs.action_text` is under
+    // the hash. A server sending two different texts would have one shown and the other signed.
+    // The screens render the signed copy, but a disagreement is never benign, so it is refused.
+    throw new PayloadMismatchError(detail.payload_hash, recomputed, 'display_text');
+  }
+  const policy = detail.signing_inputs.policy;
+  if (detail.required_m !== policy.M || detail.required_n !== policy.N) {
+    // The same for the threshold: shown "3 of 5" over a signed "1 of 5", one approval would be
+    // read as one of three while the record it completes says one was enough.
+    throw new PayloadMismatchError(detail.payload_hash, recomputed, 'display_policy');
   }
   return recomputed;
 }
@@ -188,6 +211,31 @@ export interface VoteOutcome {
   protection: ProtectionLevel;
 }
 
+/**
+ * The decision's signed text, cut to fit an OS biometric prompt: the first line, at most 80
+ * characters, ending in an ellipsis when anything was dropped. The full text is on the sheet the
+ * person has just read; this only tells them which decision the prompt is for.
+ */
+export function promptSummary(actionText: string): string {
+  const whole = actionText.trim();
+  const firstLine = whole.split(/\r\n|[\n\r\u2028\u2029]/, 1)[0];
+  const chars = Array.from(firstLine);
+  if (firstLine === whole && chars.length <= 80) return whole;
+  return chars.slice(0, 79).join('').trimEnd() + '…';
+}
+
+/**
+ * What the biometric prompt names. A payment's text spends its first 80 characters on the
+ * treasury's own address, so a payment is named by its amount, recipient and network instead,
+ * from the signed payment (which verifyProposalIntegrity has matched to the signed text). Never
+ * cut: a cut amount or address would be worse than a long prompt.
+ */
+export function promptSubject(inputs: ProposalDetail['signing_inputs']): string {
+  const action = inputs.action;
+  if (action === undefined) return promptSummary(inputs.action_text);
+  return `Pay ${formatEth(action.value_wei)} to ${action.to} on ${NETWORKS[action.chain_id]}.`;
+}
+
 export async function voteOnProposal(args: {
   custody: Custody;
   token: string;
@@ -203,7 +251,11 @@ export async function voteOnProposal(args: {
   const execution = paymentApproval(args.detail, payloadHash, args.decision, args.identity);
 
   const verb = args.decision === 'approve' ? 'Approve' : 'Reject';
-  const protection = await args.custody.confirmPresence(`${verb}: ${args.detail.title}`);
+  // The prompt names the decision by its signed text, never by its title: the title is not under
+  // the hash, so a server could make it say anything (as approveTreasuryChange's prompt does).
+  const protection = await args.custody.confirmPresence(
+    `${verb}: ${promptSubject(args.detail.signing_inputs)}`,
+  );
 
   const pair = await args.custody.deriveKeyPair(args.identity.algId);
   if (!pair) throw new Error('This device no longer holds a signing key. Enrol it again.');
