@@ -41,7 +41,7 @@ from qvault.models.device import Device
 from qvault.models.key import Key
 from qvault.models.user import User
 from qvault.security import master_key
-from qvault.services import key_service, ledger_service
+from qvault.services import key_service, ledger_service, notification_service
 from qvault.services.signing import device_enrolment_bytes
 
 CHALLENGE_TTL_SECONDS = 300  # 5 minutes: long enough for a slow keygen, short enough to matter
@@ -224,6 +224,9 @@ def enrol(
         ref_id=str(device.id),
         commit=False,
     )
+    # A security notification, which cannot be switched off: a device that can sign for this
+    # person now exists, and if they did not enrol it, someone else has their password.
+    notification_service.device_enrolled(device)
     if commit:
         db.session.commit()
     return device, raw_token

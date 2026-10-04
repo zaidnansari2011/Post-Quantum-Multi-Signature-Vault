@@ -23,7 +23,7 @@ from qvault.models.key import Key
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember, VaultPolicy
 from qvault.security import master_key
-from qvault.services import ledger_service
+from qvault.services import ledger_service, notification_service
 from qvault.services.rotation_policy import rotation_deadline
 
 
@@ -125,6 +125,9 @@ def add_member(
         commit=False,
     )
     try:
+        # Inside the try: the trigger flushes, which is where a racing add of the same member
+        # first meets uq_vault_member.
+        notification_service.member_added(member, actor_id=actor_id)
         if commit:
             db.session.commit()
     except IntegrityError as exc:
@@ -247,7 +250,7 @@ def set_threshold(vault: Vault, threshold_m: int, *, actor_id: int, commit: bool
         return
 
     vault.policy.threshold_m = threshold_m
-    ledger_service.append(
+    entry = ledger_service.append(
         "vault_threshold_changed",
         {"vault_id": vault.id, "from": previous, "to": threshold_m},
         actor=f"user:{actor_id}",
@@ -257,5 +260,6 @@ def set_threshold(vault: Vault, threshold_m: int, *, actor_id: int, commit: bool
         ref_id=str(vault.id),
         commit=False,
     )
+    notification_service.threshold_changed(vault, previous=previous, actor_id=actor_id, entry=entry)
     if commit:
         db.session.commit()

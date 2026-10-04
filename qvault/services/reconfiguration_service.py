@@ -54,7 +54,7 @@ from qvault.models import (
     Vault,
 )
 from qvault.models.reconfiguration import OPEN_STATES
-from qvault.services import key_service, ledger_service, treasury_service
+from qvault.services import key_service, ledger_service, notification_service, treasury_service
 from qvault.services.treasury_jobs import (
     _afford,
     _plainly,
@@ -875,6 +875,7 @@ def _apply(reconfiguration, signers, storage, expected, verifier, now) -> None:
     )
     reconfiguration.state, reconfiguration.reason = "done", None
     reconfiguration.finished_at = now()
+    notification_service.treasury_reconfigured(reconfiguration, now=now())
 
 
 # --------------------------------------------------------------------------------------------
