@@ -4,3 +4,29 @@
  * as they are converted. Until then qvault.css, loaded after this file, maps every existing class
  * onto the same tokens, so the whole product already wears the new look.
  */
+
+/* ---------------------------------------------------------------- segmented control
+ * A small set of mutually exclusive choices that apply at once, such as the theme. The current
+ * choice is aria-pressed="true" on its button. */
+
+.seg {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--border-hover); border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.seg__b {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--target-min); padding: 0 var(--space-8);
+  border: 0; border-radius: var(--radius-badge);
+  background: transparent; color: var(--text-muted);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
+}
+.seg__b:hover { background: var(--fill); color: var(--text); }
+.seg__b[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-fg); }
+
+/* The theme picker in the rail's foot, until the avatar menu replaces it. */
+.themepick { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-top: var(--space-12); }
+.themepick__label { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); color: var(--text-subtle); }

@@ -1,9 +1,13 @@
 <!doctype html>
-<html lang="en">
+{# data-theme is set here, on the server, so the first paint is already in the reader's theme. No
+   attribute means System: the stylesheet follows prefers-color-scheme (rework S25). #}
+<html lang="en"{% if theme %} data-theme="{{ theme }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  {# The canvas colour before any stylesheet arrives: the chosen theme, or whichever the system
+     asks for. #}
+  <meta name="color-scheme" content="{{ theme or 'light dark' }}">
   <title>{% block title %}Q-Vault{% endblock %}</title>
   {# Every asset is served locally. A demonstration must not depend on the venue's network, and
      a CDN failure would strip the entire interface mid-presentation. See docs/adr/0011.
@@ -111,6 +115,19 @@
           <span class="tiny muted truncate" style="display:block">{{ current_user.email }}</span>
         </span>
       </div>
+      {# Moves into the avatar menu with the new shell. Each button posts its own value, so the
+         choice works without JavaScript. #}
+      <form class="themepick" method="post" action="{{ url_for('theme.set_theme') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+        <span class="themepick__label" id="themepick-label">Theme</span>
+        <span class="seg" role="group" aria-labelledby="themepick-label">
+          {% for value in theme_choices %}
+          <button class="seg__b" type="submit" name="theme" value="{{ value }}"
+                  aria-pressed="{{ 'true' if (theme or 'system') == value else 'false' }}">{{ value | capitalize }}</button>
+          {% endfor %}
+        </span>
+      </form>
       <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:.5rem">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn--ghost btn--sm btn--block" type="submit">Sign out</button>
