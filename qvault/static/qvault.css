@@ -75,74 +75,9 @@
 }
 
 /* ============================================================================================
-   SHELL: the sidebar recedes (muted items on a subtle surface); the accent marks only where you
-   are. The new shell (top bar, avatar menu, drawer) replaces this markup in R1's next step.
+   PAGE CHROME: the header and body regions inside the shell. The shell itself (sidebar, top bar,
+   drawer) is components.css's .q-shell, drawn by base.html.
    ============================================================================================ */
-
-.app { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
-/* The sidebar is sticky and one viewport tall; on a page longer than that, its column carries on
-   underneath it in the same colour, with the same hairline. */
-@media (min-width: 60.01rem) {
-  .app {
-    background: linear-gradient(to right, var(--bg-subtle) calc(var(--sidebar-w) - 1px),
-      var(--border) calc(var(--sidebar-w) - 1px) var(--sidebar-w), transparent var(--sidebar-w));
-  }
-}
-
-.side {
-  background: var(--bg-subtle); color: var(--text-muted);
-  border-right: var(--border-width) solid var(--border);
-  display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
-}
-.side__brand {
-  display: flex; align-items: center; gap: var(--space-8);
-  height: var(--topbar-h); padding: 0 var(--space-20); flex: none;
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line);
-  font-weight: var(--weight-strong); color: var(--text); text-decoration: none;
-}
-.side__brand:hover { color: var(--text); }
-/* The mark is the product's identity, so it carries the accent. */
-.side__brand svg { color: var(--accent); }
-.side__nav { padding: var(--space-4) var(--space-12) var(--space-12); display: flex; flex-direction: column; gap: var(--space-2); }
-.side__link {
-  display: flex; align-items: center; gap: var(--space-8);
-  min-height: var(--control-h); padding: var(--space-6) var(--space-8);
-  border-radius: var(--radius-control);
-  color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none;
-  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
-}
-.side__link svg { flex: 0 0 auto; color: var(--text-subtle); }
-.side__link:hover { background: var(--fill); color: var(--text); }
-.side__link:hover svg { color: var(--text-muted); }
-.side__link[aria-current="page"] { background: var(--accent-subtle); color: var(--accent-fg); }
-.side__link[aria-current="page"] svg { color: var(--accent-fg); }
-
-/* The count of decisions waiting on you: a neutral count, because the number is data. */
-.side__badge {
-  margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; padding: 0 var(--space-6);
-  border-radius: var(--radius-badge); background: var(--fill-hover); color: var(--text-muted);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
-  font-variant-numeric: tabular-nums;
-}
-.side__link[aria-current="page"] .side__badge { background: var(--accent-subtle-hover); color: var(--accent-fg); }
-.side__sep { height: var(--border-width); background: var(--border); margin: var(--space-8); }
-.side__foot { margin-top: auto; padding: var(--space-12) var(--space-12) var(--space-16); border-top: var(--border-width) solid var(--border); }
-
-.side__user { display: flex; align-items: center; gap: var(--space-8); min-width: 0; padding: 0 var(--space-4); }
-.side__user .small { color: var(--text); font-weight: var(--weight-medium); }
-.side__user .muted { color: var(--text-subtle); }
-.side__avatar {
-  width: 28px; height: 28px; border-radius: var(--radius-full); flex: 0 0 auto;
-  background: var(--fill); box-shadow: inset 0 0 0 var(--border-width) var(--border);
-  display: grid; place-items: center;
-  font-size: var(--text-caption-size); line-height: 1; font-weight: var(--weight-strong); color: var(--text-muted);
-}
-
-/* min-height so the signed-OUT shell (which has no .app grid to inherit from) can centre its
-   content instead of pinning it to the top of a mostly empty viewport. */
-.main { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
 
 /* Page header: title, a meta line, the screen's one figure, and its actions. It sits on the page,
    not on a white band: the content below it is what gets a surface. */
@@ -565,18 +500,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
    SIGNED OUT: no sidebar, so these pages stand on their own.
    ============================================================================================ */
 
-/* The signed-out shell has no `.app` grid; `.main` carries min-height and this centres within it. */
+/* Inside .q-pub (a full-height column) the body fills what the header leaves and centres in it. */
 .body--anon { display: grid; place-items: center; }
-
-/* A footer rail for the signed-out pages, so /login is not a dead end. */
-.anonbar {
-  display: flex; align-items: center; gap: var(--space-16); flex-wrap: wrap;
-  padding: var(--space-12) var(--space-24); border-top: var(--border-width) solid var(--border);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle);
-}
-.anonbar a { color: var(--text-muted); text-decoration: none; }
-.anonbar a:first-child { font-weight: var(--weight-strong); color: var(--text); }
-.anonbar a:hover { color: var(--text); text-decoration: underline; }
 
 .auth { max-width: 22rem; margin: 0 auto; width: 100%; }
 .auth__mark {
@@ -646,16 +571,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 }
 
 /* ============================================================================================
-   RESPONSIVE: below 60rem the sidebar becomes a block above the page. The new shell replaces
-   this with a drawer.
+   RESPONSIVE: below 60rem the page regions take the mobile gutter. (The sidebar's own drawer is
+   in components.css.)
    ============================================================================================ */
 
 @media (max-width: 60rem) {
-  .app { grid-template-columns: minmax(0, 1fr); }
-  .side { position: static; height: auto; border-right: 0; border-bottom: var(--border-width) solid var(--border); }
-  .side__nav { flex-direction: row; flex-wrap: wrap; }
-  .side__sep { display: none; }
-  .side__foot { margin-top: 0; }
   .head, .toolbar, .body, .pager { padding-left: var(--gutter-mobile); padding-right: var(--gutter-mobile); }
   .tabs { padding-left: var(--space-8); padding-right: var(--space-8); }
   .head__figure { align-items: flex-start; }
