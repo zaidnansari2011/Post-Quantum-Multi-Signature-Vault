@@ -367,15 +367,16 @@ the log does not control. Me writing it into the repo the log ships from is exac
 it exists to break — so the last step has to be you, in public, in advance.
 
 Both values, read from the running witness on 2026-10-04 (its own key, and the log key it has
-pinned for origin `project4.zaidansari.tech/ledger`):
+pinned for origin `project4.zaidansari.tech/team-ledger`):
 
 | | | |
 | --- | --- | --- |
-| **The log** | `6e4025ccb44f44c4` | ML-DSA-65, signs every checkpoint |
+| **The log** | `78afee3014ee9c09` | ML-DSA-65, signs every checkpoint |
 | **The witness** | `810fb51e5e2f75a8` | ML-DSA-87, `witness-1`, separate process and key |
 
-The 2026-09-27 redeployment (§2.9) made new keys. The values published before it, log
-`951dbf99653347de` and witness `c79ad5683b2e9109`, belong to the retired deployment.
+Retired logs (§2.9): `project4.zaidansari.tech/ledger` with log `6e4025ccb44f44c4`
+(2026-09-27 to 2026-10-04), and before it `qvault-azure-demo` with log `951dbf99653347de` and
+witness `c79ad5683b2e9109`. The witness kept its key through the 2026-10-04 restart.
 
 Each is `SHA-256(public key)` truncated to 16 hex characters — the same rule as
 `Key.public_fingerprint()`, so a value shown on a phone, on the website and in an export can be
@@ -543,13 +544,25 @@ app update. Cloudflare records (DNS only, grey cloud): `CNAME project4 →
 qvault.livelybeach-69506dc5.centralindia.azurecontainerapps.io` and `TXT asuid.project4 →
 97845A9A…910A`. HTTPS is Azure's free managed certificate.
 
-**A fresh start, not a migration:** the demo data was re-seeded (7 users, 6 vaults, 30 decisions,
-ledger 133 entries, verified). Demo sign-in as before (`ada@qvault.demo`). Consequences:
+**The team's own accounts since 2026-10-04.** At your request the database was wiped and restarted
+with only the four of you, for testing: Zaid Ansari (`zaid@gmail.com`, administrator), Hassaan
+Shaikh (`hassan@gmail.com`), Gracian Lopes (`gracian@gmail.com`) and Atharva Tike
+(`atharv@gmail.com`), all signers on **Team vault** (2 of 4, owned by Zaid). The passwords are the
+simple ones you chose; they are deliberately not written in this public repository. Anyone who
+guesses one can sign as that person, so change them at `/account` before anything that matters.
+Done with `scripts/reset_to_team.py`, run once as the `qvault-seed` job (its command was then put
+back to the harmless default, which refuses a database with users). The log restarted under a new
+origin, `project4.zaidansari.tech/team-ledger`, so the witness accepted it without losing its key;
+new log fingerprint **`78afee3014ee9c09`** (§2.5). The demo personas, the 27 September history and
+`ada@qvault.demo` are gone from the live site; the laptop's database still has them.
 
-- **New fingerprints — republish them (§2.5):** the log is now **`6e4025ccb44f44c4`** (ML-DSA-65)
-  and the witness **`810fb51e5e2f75a8`** (ML-DSA-87, `witness-1`). The values in §2.5 describe
-  the old deployment.
-- **Phones must enrol again:** the old accounts, devices and tokens were in the old database.
+History of this database, for the record:
+
+- **2026-09-27, a fresh start, not a migration:** demo data re-seeded (7 users, 6 vaults, 30
+  decisions, ledger 133 entries), log `6e4025ccb44f44c4`. Your team's August accounts were in the
+  old database on your own subscription and were not carried over; they still are there unless that
+  database has been deleted.
+- **Phones must enrol again:** devices and tokens belong to the database they were enrolled on.
 - **On-chain treasuries are on** since 2026-10-04 (your call: switched on before the handset test,
   web and password keys only). The relayer key and the RPC endpoint are Container App secrets
   (`executor-private-key`, `sepolia-rpc-url`); `/admin/chain` reads *Funded*. The Treasury vault
@@ -558,12 +571,14 @@ ledger 133 entries, verified). Demo sign-in as before (`ada@qvault.demo`). Conse
   cost 0.0307 ETH. Funded with 0.01 ETH from the relayer (your OK), then **a test payout ran end to
   end** the same day: Ada raised 0.001 ETH to `0xF590…676b`, Ada and Brij approved, and the app
   paid it in [`0x5afb834b…0548`](https://sepolia.etherscan.io/tx/0x5afb834ba468f717b4213af88dba951c8905c4d43c03ba31e5df82d753f70548)
-  (block 11,842,867, 3,273,463 gas, 0.00344 ETH). Afterwards: treasury 0.009 ETH, relayer
-  0.1597 ETH. The older treasury `0xD491…f3D0` lives in the laptop's demo database.
-- **Phone approvers on this treasury need a relink.** Its seats are password keys. To approve
-  payments from a phone, an approver enrols the phone, chooses the phone key (Account, key
-  choice), and the vault owner requests a change on the Treasury tab (a reconfiguration, ~0.009
-  ETH per new key plus ~0.004).
+  (block 11,842,867, 3,273,463 gas, 0.00344 ETH). Before the team restart its remaining 0.009 ETH
+  was paid back to the relayer (net +0.0056 ETH after gas) and the treasury was **unlinked** (its
+  approvers' keys went with the wipe); relayer now ~0.165 ETH. The older treasury `0xD491…f3D0`
+  lives in the laptop's demo database.
+- **Team vault has no treasury yet.** Creating one is the owner's button on its Treasury tab
+  (~0.04 ETH for four keys). Decide first which of you sign from a phone: each approver's seat is
+  the key they have chosen when it is created, and changing a seat later is a reconfiguration
+  (~0.009 ETH per new key plus ~0.004).
 
 **Yours to do:**
 
@@ -583,8 +598,11 @@ ledger 133 entries, verified). Demo sign-in as before (`ada@qvault.demo`). Conse
    one always-on 0.5 vCPU replica (~$15–20/month). Ask them to glance at their credit monthly.
 3. **Your old deployment** (`qvault-rg` on your own subscription `88f39ece…`): the container is
    stopped, but a Postgres server there still bills while it exists. Your subscription is no
-   longer signed in on this laptop, and I do not touch it, so this one is yours. Export it first
-   if anything in it matters. Either delete only the database server:
+   longer signed in on this laptop, and I do not touch it, so this one is yours. **It is the only
+   copy of the team's August accounts, keys and decisions, and of the `qvault-azure-demo` log.**
+   The live site no longer needs them, but export it first (`pg_dump`) if the dissertation might
+   cite that history; to stop paying without losing it, `az postgres flexible-server stop` instead.
+   To delete, either remove only the database server:
 
    ```powershell
    az login                      # your own account, then:

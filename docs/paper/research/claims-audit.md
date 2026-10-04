@@ -464,7 +464,8 @@ the exact configuration demonstrated is not the configuration that would be depl
   A fingerprint produced after the fact proves nothing; one committed to in advance is evidence" —
   is **the step that converts the whole witness argument from mechanism into property**, and it is
   still open. See §5, G13. *(Update 2026-10-04: the 2026-09-27 redeployment replaced both keys; the
-  current values are log `6e4025ccb44f44c4` and witness `810fb51e5e2f75a8`, see G13.)*
+  current values are log `78afee3014ee9c09` (restarted again 2026-10-04 for the team's accounts) and
+  witness `810fb51e5e2f75a8`, see G13.)*
 
 ### 3.6 Mobile / device custody
 
@@ -819,7 +820,7 @@ at all.
 disproportionate.* The witness already runs on separate Azure infrastructure (§3.5), so the
 remaining gap is not infrastructure but **channel**: OWNER-ACTIONS §2.5 correctly observes that
 publishing the fingerprint inside the repository the log ships from "is exactly the circularity it
-exists to break". Put log `6e4025ccb44f44c4` and witness `810fb51e5e2f75a8` somewhere the log does
+exists to break". Put log `78afee3014ee9c09` and witness `810fb51e5e2f75a8` somewhere the log does
 not control — a slide, a printed handout, a timestamped post — **before** any demonstration or data
 collection, then run the verifier with `--expect-log` / `--expect-witness` and show it passing.
 This is what converts the entire witness argument from *mechanism* into *property*, and it is the
