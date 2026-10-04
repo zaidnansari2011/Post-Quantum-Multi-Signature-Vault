@@ -29,6 +29,19 @@ class RegisterForm(FlaskForm):
     submit = SubmitField("Create account")
 
 
+class InviteRegisterForm(FlaskForm):
+    """Creating an account from an invitation link. No email field: the account's address is the
+    one the invitation was sent to (workspace_service.register_through_invitation)."""
+
+    display_name = StringField("Full name", validators=[DataRequired(), Length(max=255)])
+    password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=1024)])
+    confirm = PasswordField(
+        "Confirm password",
+        validators=[DataRequired(), EqualTo("password", message="Passwords must match")],
+    )
+    submit = SubmitField("Create account and join")
+
+
 class LoginForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
     password = PasswordField("Password", validators=[DataRequired()])

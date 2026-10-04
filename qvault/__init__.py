@@ -116,6 +116,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from .blueprints.record import bp as record_bp
     from .blueprints.vaults import bp as vaults_bp
     from .blueprints.verify import bp as verify_bp
+    from .blueprints.workspace import bp as workspace_bp
 
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
@@ -126,6 +127,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(docs_bp)
     app.register_blueprint(verify_bp)
+    app.register_blueprint(workspace_bp)
     # Every route inside 404s unless GLASSBOX_ENABLED, so registering it unconditionally keeps
     # one gate in one place rather than splitting it between here and the blueprint.
     app.register_blueprint(glassbox_bp)
