@@ -3,12 +3,13 @@
 Three concerns live here together because separating them is how disclosure bugs happen.
 
 **Scoping is not a filter.** A reader may see entries for vaults they belong to, their own actions,
-and global SYSTEM events. That restriction is applied first and unconditionally, and every user
-filter is ANDed onto it. A query builder that let a filter *replace* the scope — or that applied
-filters to the whole table and scoped afterwards with a limit already applied — would leak another
-tenant's activity. ``export`` therefore goes through exactly the same builder as the on-screen list
-rather than its own query; an export path with its own scoping logic is a second chance to get it
-wrong.
+global SYSTEM events, and the events of a workspace they own, administer or audit (invitations,
+role changes, removals: plan S10). That restriction is applied first and unconditionally, and
+every user filter is ANDed onto it. A query builder that let a filter *replace* the scope — or
+that applied filters to the whole table and scoped afterwards with a limit already applied —
+would leak another tenant's activity. ``export`` therefore goes through exactly the same builder
+as the on-screen list rather than its own query; an export path with its own scoping logic is a
+second chance to get it wrong.
 
 **Narration is shared.** The chain stores machine event names because they go into the hash
 preimage and must never change. Both the screen and the CSV render them as sentences naming the
@@ -23,12 +24,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from sqlalchemy import distinct, or_, select
+from sqlalchemy import String, and_, cast, distinct, or_, select
 
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
+from qvault.models.workspace import Workspace, WorkspaceMember
+
+# Workspace roles that see the workspace's own events in the audit record.
+WORKSPACE_AUDIT_ROLES = ("owner", "admin", "auditor")
 
 PER_PAGE = 50
 MAX_PER_PAGE = 200
@@ -74,6 +79,14 @@ SENTENCES = {
     "treasury_reconfiguration_failed": "A change to {vault}'s treasury did not go through.",
     "proposal_executed": "A payment approved in {vault} was paid out by its treasury.",
     "proposal_execution_failed": "A payment approved in {vault} could not be paid out.",
+    # The workspace layer (plan S10, S11). Recorded against the workspace, not a vault.
+    "workspace_created": "{who} created {workspace}.",
+    "invitation_created": "{who} invited someone to {workspace}.",
+    "invitation_resent": "{who} sent a new invitation link for {workspace}.",
+    "invitation_revoked": "{who} withdrew an invitation to {workspace}.",
+    "invitation_accepted": "{who} accepted an invitation and joined {workspace}.",
+    "workspace_role_changed": "{who} changed a member's role in {workspace}.",
+    "workspace_member_removed": "{who} removed a member from {workspace}.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.
@@ -150,10 +163,17 @@ class Filters:
 def _scope(user: User):
     """The rows this user may see, as a SQL condition. Applied to every query in this module."""
     member_vaults = select(VaultMember.vault_id).where(VaultMember.user_id == user.id)
+    # ref_id is text in the hash preimage, so the workspace ids are compared as text too.
+    audited_workspaces = select(cast(WorkspaceMember.workspace_id, String)).where(
+        WorkspaceMember.user_id == user.id,
+        WorkspaceMember.status == "active",
+        WorkspaceMember.role.in_(WORKSPACE_AUDIT_ROLES),
+    )
     return or_(
         LedgerEntry.vault_id.in_(member_vaults),
         LedgerEntry.actor == f"user:{user.id}",
         LedgerEntry.actor == "SYSTEM",
+        and_(LedgerEntry.ref_type == "workspace", LedgerEntry.ref_id.in_(audited_workspaces)),
     )
 
 
@@ -189,6 +209,11 @@ def narrate(entries) -> list[dict]:
     entries = list(entries)
     actor_ids = {e.actor_id for e in entries if e.actor_id}
     vault_ids = {e.vault_id for e in entries if e.vault_id}
+    workspace_ids = {
+        int(e.ref_id)
+        for e in entries
+        if e.ref_type == "workspace" and e.ref_id and e.ref_id.isdigit()
+    }
     people = (
         {u.id: (u.display_name or u.email) for u in User.query.filter(User.id.in_(actor_ids))}
         if actor_ids
@@ -197,16 +222,26 @@ def narrate(entries) -> list[dict]:
     vaults = (
         {v.id: v.name for v in Vault.query.filter(Vault.id.in_(vault_ids))} if vault_ids else {}
     )
+    workspaces = (
+        {w.id: w.name for w in Workspace.query.filter(Workspace.id.in_(workspace_ids))}
+        if workspace_ids
+        else {}
+    )
 
     out = []
     for e in entries:
         who = "The system" if e.actor == "SYSTEM" else people.get(e.actor_id, "Someone")
         vault = vaults.get(e.vault_id, "a vault")
+        workspace = (
+            workspaces.get(int(e.ref_id), "the workspace")
+            if e.ref_type == "workspace" and e.ref_id and e.ref_id.isdigit()
+            else "the workspace"
+        )
         template = SENTENCES.get(e.event_type)
         # An event this table has not been taught yet must still render as a readable line. An
         # audit view that silently drops rows it does not recognise is worse than an ugly one.
         sentence = (
-            template.format(who=who, vault=vault)
+            template.format(who=who, vault=vault, workspace=workspace)
             if template
             else f"{who}: {e.event_type.replace('_', ' ')}."
         )

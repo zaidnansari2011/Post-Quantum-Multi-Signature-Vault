@@ -10,7 +10,7 @@ from qvault.crypto.kdf import DEFAULT_PARAMS, new_salt
 from qvault.extensions import db
 from qvault.models.user import User
 from qvault.security.passwords import hash_password, verify_password
-from qvault.services import key_service, ledger_service
+from qvault.services import key_service, ledger_service, workspace_service
 
 # A fixed dummy verifier used to equalise login timing when an email does not exist,
 # so an unregistered email costs the same Argon2id work as a registered one (no enumeration).
@@ -25,11 +25,22 @@ def _normalise_email(email: str) -> str:
     return email.strip().lower()
 
 
-def register_user(email: str, display_name: str, password: str) -> User:
+def register_user(
+    email: str,
+    display_name: str,
+    password: str,
+    *,
+    place: bool = True,
+    commit: bool = True,
+) -> User:
     """Create a user, generate their PQC signing keypair, and log a ledger event — atomically.
 
     On registration the user's identity becomes a post-quantum keypair, not merely a password:
     the private key is wrapped at rest under a KEK derived from ``password``.
+
+    With ``place`` (the default) the new account joins a workspace as
+    ``workspace_service.place_registrant`` decides. Accepting an invitation passes ``place=False``
+    and ``commit=False`` and joins the invitation's workspace in the same transaction.
     """
     email = _normalise_email(email)
     if User.query.filter_by(email=email).first() is not None:
@@ -64,6 +75,10 @@ def register_user(email: str, display_name: str, password: str) -> User:
         ref_id=str(user.id),
         commit=False,
     )
+    if place:
+        workspace_service.place_registrant(user)
+    if not commit:
+        return user
 
     # The DB UNIQUE(email) constraint is the authoritative guard against a check-then-insert
     # race: if a concurrent registration wins, the commit raises IntegrityError, which we map
