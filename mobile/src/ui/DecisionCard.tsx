@@ -14,12 +14,14 @@
 //
 // The status word is gone from the open-queue case entirely: every decision in that queue is open,
 // so printing "open" on each one is a column of the same word. It returns only in history, where
-// the outcome is the point.
+// the outcome is the point, and it is the word every other screen shows (`status.ts`): a list row
+// still marked open after its deadline reads Expired here, as it does on Home.
 
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Card, Row, Seal } from './index.tsx';
 import { color, space, statusTone, type } from '../theme.ts';
+import { decisionStatus, statusWord } from '../status.ts';
 import { expiryPhrase, urgencyOf, whenPhrase } from '../time.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
 
@@ -36,15 +38,14 @@ export function DecisionCard({
   const urgency = urgencyOf(proposal.expires_at);
   const expiry = expiryPhrase(proposal.expires_at);
   const complete = proposal.approvals >= proposal.required_m;
+  const status = decisionStatus(proposal);
 
   return (
     <Card onPress={onPress} accessibilityLabel={proposal.title}>
       <Row style={{ justifyContent: 'space-between' }} gap={space.md}>
         <Seal filled={proposal.approvals} required={proposal.required_m} />
         {showOutcome ? (
-          <Text style={[s.outcome, { color: outcomeColor(proposal.status) }]}>
-            {outcomeWord(proposal.status)}
-          </Text>
+          <Text style={[s.outcome, { color: outcomeColor(status) }]}>{statusWord(status)}</Text>
         ) : expiry ? (
           <Text style={[s.expiry, { color: expiryColor(urgency) }]}>{expiry}</Text>
         ) : null}
@@ -89,21 +90,6 @@ function expiryColor(urgency: ReturnType<typeof urgencyOf>): string {
 function outcomeColor(status: string): string {
   const t = statusTone(status);
   return t === 'sealed' ? color.sealed : t === 'broken' ? color.broken : color.ink3;
-}
-
-function outcomeWord(status: string): string {
-  switch (status) {
-    case 'approved':
-      return 'Approved';
-    case 'rejected':
-      return 'Rejected';
-    case 'expired':
-      return 'Expired';
-    case 'open':
-      return 'Open';
-    default:
-      return status;
-  }
 }
 
 const s = StyleSheet.create({

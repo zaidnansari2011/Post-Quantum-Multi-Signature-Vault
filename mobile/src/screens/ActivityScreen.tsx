@@ -11,7 +11,7 @@
 // belongs here eventually; it needs server-side support to be honest about matching, since this
 // list is capped at 200 rows and filtering a truncated list would quietly lie about the result.
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
@@ -22,6 +22,8 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
+import { decisionStatus } from '../status.ts';
+import { parseInstant } from '../time.ts';
 
 type Filter = 'all' | 'open' | 'approved' | 'rejected';
 
@@ -46,11 +48,10 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
     void handleUnauthorized();
   }
 
-  const rows = useMemo(() => {
-    const all = query.data?.proposals ?? [];
-    const matched = filter === 'all' ? all : all.filter((p) => matches(p, filter));
-    return [...matched].sort(newestFirst);
-  }, [query.data, filter]);
+  // Not memoised on the data, for the same reason as the queue on Home: a decision that passes its
+  // deadline while the list is cached moves from Open to Declined the next time the screen draws.
+  const all = query.data?.proposals ?? [];
+  const rows = (filter === 'all' ? [...all] : all.filter((p) => matches(p, filter))).sort(newestFirst);
 
   const transportFailure =
     query.error && !(query.error instanceof ApiError && query.error.status === 401)
@@ -139,13 +140,14 @@ function Segmented({ value, onChange }: { value: Filter; onChange: (f: Filter) =
  * in time" is on the decision itself, where there is room to state it.
  */
 function matches(p: ProposalSummary, filter: Filter): boolean {
-  if (filter === 'rejected') return p.status === 'rejected' || p.status === 'expired';
-  return p.status === filter;
+  const status = decisionStatus(p);
+  if (filter === 'rejected') return status === 'rejected' || status === 'expired';
+  return status === filter;
 }
 
 function newestFirst(a: ProposalSummary, b: ProposalSummary): number {
-  const ax = a.expires_at ? Date.parse(a.expires_at) : 0;
-  const bx = b.expires_at ? Date.parse(b.expires_at) : 0;
+  const ax = a.expires_at ? parseInstant(a.expires_at) : 0;
+  const bx = b.expires_at ? parseInstant(b.expires_at) : 0;
   return bx - ax;
 }
 

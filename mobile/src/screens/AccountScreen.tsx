@@ -34,7 +34,7 @@ import {
 } from '../ui/index.tsx';
 import { Sheet } from '../ui/Sheet.tsx';
 import { color, space, type } from '../theme.ts';
-import { exactly, whenPhrase } from '../time.ts';
+import { exactly, whenAfter } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import type { ProtectionLevel } from '../custody.ts';
@@ -174,7 +174,7 @@ function OtherDevice({ device }: { device: Device }) {
           {device.fingerprint ?? '—'}
         </Text>
         <Text style={s.otherMeta}>
-          {revoked ? `Revoked ${whenPhrase(device.revoked_at)}` : `Last used ${whenPhrase(device.last_seen_at)}`}
+          {revoked ? whenAfter('Revoked', device.revoked_at) : whenAfter('Last used', device.last_seen_at)}
         </Text>
       </View>
       <Chip label={revoked ? 'Revoked' : 'Active'} tone={revoked ? 'broken' : 'sealed'} />
