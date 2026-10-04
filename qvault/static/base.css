@@ -1,0 +1,102 @@
+/* Q-Vault base layer: the reset, the page, the type roles, links, focus and motion.
+ *
+ * Loaded after tokens.css and before everything else, so components and the compatibility layer
+ * (qvault.css) override it, never the other way round. Every value is a token: this file names no
+ * colour of its own. Element defaults stay close to the browser's (paragraph and list margins are
+ * kept) because the existing screens were laid out against them.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  font-weight: var(--text-body-weight);
+  /* Every amount, count and time lines up in columns (plan section 6). */
+  font-variant-numeric: var(--numeric);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Form controls take the page's face instead of the platform's 13.33px system font. */
+button, input, select, textarea { font-family: inherit; font-size: inherit; line-height: inherit; letter-spacing: inherit; }
+
+b, strong { font-weight: var(--weight-strong); }
+small { font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+time { white-space: nowrap; }
+img { max-width: 100%; }
+hr { border: 0; border-top: var(--border-width) solid var(--border); margin: var(--space-16) 0; }
+
+/* ---------------------------------------------------------------- headings */
+
+h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: var(--weight-strong); color: var(--text); }
+h1 { font-size: var(--text-title-size); line-height: var(--text-title-line); letter-spacing: var(--text-title-tracking); }
+h2 { font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); }
+h3, h4, h5, h6 { font-size: var(--text-body-size); line-height: var(--text-body-line); }
+
+/* ---------------------------------------------------------------- the type roles (plan section 6)
+ * Seven steps on a 4px line-height grid. Sentence case everywhere: there is no uppercase role. */
+
+.t-caption { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); }
+.t-body { font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-weight); }
+.t-strong { font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.t-title-sm { font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.t-title { font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); }
+.t-figure { font-size: var(--text-figure-size); line-height: var(--text-figure-line); font-weight: var(--text-figure-weight); letter-spacing: var(--text-figure-tracking); }
+/* The decision text, the words people sign: the only serif in the product. */
+.t-decision { font-family: var(--font-serif); font-size: var(--text-decision-size); line-height: var(--text-decision-line); font-weight: var(--text-decision-weight); overflow-wrap: anywhere; }
+.t-decision-hero { font-family: var(--font-serif); font-size: var(--text-decision-hero-size); line-height: var(--text-decision-hero-line); font-weight: var(--text-decision-weight); overflow-wrap: anywhere; }
+/* Hashes, keys, addresses and IDs only. Mono runs large, so 13px mono sits with 14px sans. */
+.t-code { font-family: var(--font-mono); font-size: var(--text-code-size); line-height: var(--text-code-line); font-weight: var(--weight-regular); font-variant-ligatures: none; }
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  font-variant-ligatures: none;
+}
+pre { line-height: var(--text-code-line); }
+
+/* ---------------------------------------------------------------- links
+ * Underlined in running text: the link colour alone is too close to the ink to tell them apart
+ * (WCAG 1.4.1). Navigation, rows and buttons drop the underline in their own rules. */
+
+a {
+  color: var(--link);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+a:hover { color: var(--link-hover); }
+
+/* ---------------------------------------------------------------- focus and selection */
+
+/* 2px, 2px off the element, so the ring is measured against the page and never against a filled
+ * button; --focus is checked at 3:1 on every surface by tests/test_design_tokens.py. */
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+::selection { background: var(--selection); color: var(--selection-text); }
+
+/* ---------------------------------------------------------------- motion
+ * Reduced motion keeps colour and opacity changes and drops movement: transforms jump instead of
+ * travelling, and looping animations stop after one frame. */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: color, background-color, border-color, outline-color, opacity, box-shadow !important;
+    scroll-behavior: auto !important;
+  }
+}
