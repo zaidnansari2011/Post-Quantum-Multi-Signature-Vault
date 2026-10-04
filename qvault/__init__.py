@@ -155,17 +155,19 @@ def create_app(config_name: str | None = None) -> Flask:
     csrf.exempt(api_bp)
 
     @app.errorhandler(HTTPException)
-    def _json_errors_under_api(exc):
-        """Return JSON for /api/ failures; leave the HTML surface byte-for-byte unchanged.
+    def _errors(exc):
+        """JSON for /api/ failures; everywhere else, an error page with a next step.
 
         Registered app-wide rather than on the blueprint because a 404 or 405 raised during URL
         *matching* has no blueprint to attribute it to — ``request.blueprint`` is None — so a
         blueprint-scoped handler would never fire for an unknown /api/ path, and a mobile client
-        would get an HTML error page where it expected JSON. Returning ``exc`` unchanged for
-        everything else reproduces Werkzeug's default page exactly.
+        would get an HTML error page where it expected JSON. An unhandled exception reaches here
+        too, as a 500.
         """
         if not request.path.startswith("/api/"):
-            return exc
+            from .errors import render_error_page
+
+            return render_error_page(exc)
         return (
             jsonify(
                 ok=False,
