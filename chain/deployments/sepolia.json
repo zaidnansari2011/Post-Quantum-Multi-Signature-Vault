@@ -76,9 +76,9 @@
           "user_id": 3
         }
       ],
-      "status": "linked",
+      "status": "unlinked",
       "threshold": 2,
-      "unlinked_at": null,
+      "unlinked_at": "2026-10-04T15:22:12.369486+00:00",
       "vault_id": 1,
       "verifier": "0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C"
     },
