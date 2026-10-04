@@ -361,10 +361,10 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R4: Notifications, in-app
 
-- [ ] Notification model and triggers (S12); reminders on the scheduler (+1/+3/+6 business days); "due in 24h"; requester "Remind" (once a day)
+- [x] Notification model and triggers (S12); reminders on the scheduler (+1/+3/+6 business days); "due in 24h"; requester "Remind" (once a day). `0003_notifications` (new tables only). Triggers sit in the services, inside each event's transaction and a savepoint, so a failed notification never stops a vote. Needs you is decided by state: a request stays there while its decision still waits on the recipient (open, before its deadline, unsigned by them, still an approver); one they never answered then moves to Updates and says how it ended; one they answered, and every reminder, leaves the inbox. Reminders stop in a decision's last 24 hours, where one warning replaces them; a scheduler that was down sends only the latest reminder due
 - [ ] Bell popover, inbox page (Needs you / Updates, read/unread, archive), unread badge
 - [ ] Preferences grid (events × in-app/email/push; email and push columns show "Not set up" until R8; security events locked on)
-- [ ] API for the phone's inbox (R7 consumes it)
+- [x] API for the phone's inbox (R7 consumes it): `GET /api/v1/notifications?section=needs_you|updates|archived&page&per_page`, `GET .../unread`, `POST .../<id>/read`, `POST .../read-all` (optional section), `POST .../<id>/archive`, and `POST /api/v1/proposals/<uuid>/remind`; zod schemas added to `mobile/src/api/schemas.ts`, checked against real responses by a probe
 - **Done when:** raising a decision notifies every eligible approver in-app within one scheduler tick, reminders fire on schedule in a clock-moved test, and preferences are honoured.
 
 ### Phase R5: Decision depth
