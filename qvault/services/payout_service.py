@@ -51,7 +51,12 @@ from qvault.models import (
     ProposalAction,
 )
 from qvault.models.execution import OPEN_STATES
-from qvault.services import approval_service, execution_service, ledger_service
+from qvault.services import (
+    approval_service,
+    execution_service,
+    ledger_service,
+    notification_service,
+)
 from qvault.services.treasury_jobs import limits_problems, reconcile_transactions
 
 _READER = "0x0000000000000000000000000000000000000000"
@@ -243,6 +248,7 @@ def _end(execution: Execution, state: str, reason: str, now, *, spent=None) -> N
         ref_id=proposal.proposal_uuid,
         commit=False,
     )
+    notification_service.payout_finished(execution, now=now())
 
 
 def _confirm(execution: Execution, tx: ExecutionTransaction | None, now) -> None:
@@ -270,6 +276,7 @@ def _confirm(execution: Execution, tx: ExecutionTransaction | None, now) -> None
         ref_id=proposal.proposal_uuid,
         commit=False,
     )
+    notification_service.payout_finished(execution, now=now())
 
 
 def _view(relayer: Relayer, treasury: str, data: bytes) -> bytes:

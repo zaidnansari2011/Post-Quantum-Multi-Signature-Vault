@@ -58,6 +58,7 @@ from qvault.services import (  # noqa: E402
     auth_service,
     checkpoint_service,
     ledger_service,
+    notification_service,
     proposal_service,
     publication_service,
     rotation_service,
@@ -152,6 +153,8 @@ def _frozen_clock(clock: _Clock):
         (ledger_service, "_utcnow_iso", lambda: clock.t.isoformat()),
         (proposal_model, "_utcnow", lambda: clock.t),
         (signature_model, "_utcnow", lambda: clock.t),
+        # Notifications are dated when their event happened, not when the seed ran (plan R4).
+        (notification_service, "_utcnow", lambda: clock.t),
     ]
     saved = [(obj, name, getattr(obj, name)) for obj, name, _ in targets]
     try:
