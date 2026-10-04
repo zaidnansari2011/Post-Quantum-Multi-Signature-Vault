@@ -6,6 +6,11 @@ or a decision already reached. What membership changes *can* break is the vault'
 eligible signers than the threshold M leaves every subsequent proposal unable to reach approval,
 so the operations here refuse that rather than allow a deadlocked vault.
 
+Who can be added is scoped to the vault's workspace (``workspace_service``): an address that belongs
+to nobody there, or to someone in another workspace, is refused with the same message, so this
+cannot be used to learn who is registered elsewhere. Only someone with an enrolled signing key can
+be made an approver (plan S11); existing members keep their standing.
+
 Not supported: transferring ownership. ``Vault.owner_id`` is a column other code reads as always
 valid, and a transfer would have to move it, re-check the signer count, and decide what happens to
 the outgoing owner's role — all in one transaction. It is a real feature, not a one-liner, and no
@@ -23,7 +28,7 @@ from qvault.models.key import Key
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember, VaultPolicy
 from qvault.security import master_key
-from qvault.services import ledger_service
+from qvault.services import ledger_service, workspace_service
 from qvault.services.rotation_policy import rotation_deadline
 
 
@@ -100,23 +105,51 @@ def create_vault(
     return vault
 
 
+def _require_enrolled_key(user: User) -> None:
+    """An approver is someone who can sign: no enrolled key, no place in the quorum (plan S11)."""
+    if not workspace_service.has_enrolled_key(user):
+        raise MembershipError(
+            f"{user.display_name} has no signing key yet, so they can't approve. "
+            "Add them as a viewer for now."
+        )
+
+
 def add_member(
-    vault: Vault, email: str, role: str = "signer", *, actor_id: int, commit: bool = True
+    vault: Vault,
+    email: str,
+    role: str = "signer",
+    *,
+    actor_id: int,
+    invitation_id: int | None = None,
+    commit: bool = True,
 ) -> VaultMember:
-    """Add an existing user (looked up by email) to ``vault`` with ``role``."""
+    """Add a member of the vault's workspace (looked up by email) to ``vault`` with ``role``.
+
+    ``invitation_id`` names the invitation that granted this, when the person joined through one;
+    the actor is then the inviter, who chose the vault and the role.
+    """
     if role not in ("signer", "viewer"):
         raise MembershipError("Role must be 'signer' or 'viewer'.")
-    user = User.query.filter_by(email=email.strip().lower()).first()
+    user = workspace_service.find_member_user(
+        workspace_service.workspace_of_vault(vault), email=email
+    )
     if user is None:
-        raise MembershipError("No registered user with that email.")
+        raise MembershipError(
+            "No one in this workspace has that email. Invite them to the workspace first."
+        )
     if vault.is_member(user.id):
         raise MembershipError("That user is already a member of this vault.")
+    if role == "signer":
+        _require_enrolled_key(user)
 
     member = VaultMember(vault_id=vault.id, user_id=user.id, member_role=role)
     db.session.add(member)
+    payload = {"vault_id": vault.id, "user_id": user.id, "email": user.email, "role": role}
+    if invitation_id is not None:
+        payload["invitation_id"] = invitation_id
     ledger_service.append(
         "member_added",
-        {"vault_id": vault.id, "user_id": user.id, "email": user.email, "role": role},
+        payload,
         actor=f"user:{actor_id}",
         actor_id=actor_id,
         vault_id=vault.id,
@@ -180,6 +213,8 @@ def change_member_role(
 
     if role == "viewer":
         _guard_signer_count(vault, losing_user_id=user_id)
+    else:
+        _require_enrolled_key(member.user)
 
     previous = member.member_role
     member.member_role = role

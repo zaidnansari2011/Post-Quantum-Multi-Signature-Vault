@@ -35,7 +35,6 @@ from qvault.extensions import db
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.treasury import TreasurySigner
-from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
@@ -50,6 +49,7 @@ from qvault.services import (
     treasury_jobs,
     treasury_service,
     vault_service,
+    workspace_service,
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
@@ -205,9 +205,17 @@ _ENROL_STATUS = {
 @device_token_required
 def whoami():
     user = g.api_user
+    member = workspace_service.current_membership(user)
     return jsonify(
         ok=True,
         user={"id": user.id, "email": user.email, "display_name": user.display_name},
+        # The workspace this person works in, and their role there (plan S10). Null when they
+        # belong to none, which can happen after an admin removes them.
+        workspace=(
+            None
+            if member is None
+            else {"id": member.workspace_id, "name": member.workspace.name, "role": member.role}
+        ),
         device=_device_json(g.api_device, current_id=g.api_device.id),
         # Which key treasuries register for this person (D37), when this instance has treasuries.
         my_key=(
@@ -300,17 +308,11 @@ def list_people():
     sends the id back; the server resolves it to a user. Nothing the device holds afterwards is
     usable as a credential or reachable off the platform.
 
-    Names are still personal data, so the set is kept to what building a vault needs: the caller is
-    excluded, since they are already its owner and first signer.
-
-    If this ever becomes multi-tenant, SCOPE THIS BEFORE THAT HAPPENS -- an unscoped directory
-    would show one customer's staff to another. There is no tenant concept to scope by today, so
-    the check cannot be written yet and is recorded here rather than left to be rediscovered.
+    Names are still personal data, so the set is kept to what building a vault needs: the active
+    members of the caller's own workspace (plan S10), without the caller, since they are already
+    the vault's owner and first signer. Nobody in another workspace is ever listed.
     """
-    user = g.api_user
-    people = (
-        User.query.filter(User.id != user.id).order_by(User.display_name.asc()).limit(500).all()
-    )
+    people = workspace_service.colleagues(g.api_user, limit=500)
     return jsonify(
         ok=True,
         people=[{"user_id": p.id, "name": p.display_name} for p in people],
@@ -350,11 +352,15 @@ def create_vault():
     # names and opaque ids from /people -- the address is resolved here, server-side, so the device
     # never has to hold one. `member_emails` stays for anything driving the API directly.
     emails = [e.strip().lower() for e in (body.get("member_emails") or []) if str(e).strip()]
+    workspace = workspace_service.current_workspace(user)
     for raw_id in body.get("member_ids") or []:
         try:
-            person = db.session.get(User, int(raw_id))
+            person_id = int(raw_id)
         except (TypeError, ValueError):
             return _error("bad_member", "member_ids must be whole numbers.", 422)
+        # Resolved inside the caller's workspace only: an id from anywhere else is answered
+        # exactly as one that does not exist, so ids cannot be used to find other customers' staff.
+        person = workspace_service.find_member_user(workspace, user_id=person_id)
         if person is None:
             return _error("unknown_member", "One of the people chosen no longer exists.", 422)
         # Skipping the caller is not a silent drop: they are the owner and already a signer, so

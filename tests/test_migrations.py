@@ -128,6 +128,17 @@ def _current_revision(url: str) -> str | None:
         return MigrationContext.configure(connection).get_current_revision()
 
 
+def _baseline_tables(tmp_path: Path) -> list[sa.Table]:
+    """The models' tables as ``create_all`` built them before any later revision: the schema every
+    existing database has. Read off the baseline revision itself, so a new revision's tables are
+    left out without this list being edited."""
+    url = _sqlite(tmp_path, "baseline-only.db")
+    command.upgrade(_alembic(url), BASELINE)
+    with _engine(url) as engine:
+        names = set(sa.inspect(engine).get_table_names())
+    return [table for table in db.metadata.sorted_tables if table.name in names]
+
+
 # --------------------------------------------------------------------------------------------
 
 
@@ -228,7 +239,7 @@ def test_stamping_a_create_all_database_changes_no_table(tmp_path, monkeypatch):
     the documented command has it: stamp the baseline, then upgrade to the head."""
     url = _sqlite(tmp_path, "existing.db")
     with _engine(url) as engine:
-        db.metadata.create_all(engine)
+        db.metadata.create_all(engine, tables=_baseline_tables(tmp_path))
     before = _schema(url)
     monkeypatch.setenv("DATABASE_URL", url)
 
@@ -240,6 +251,133 @@ def test_stamping_a_create_all_database_changes_no_table(tmp_path, monkeypatch):
     command.upgrade(_alembic(None), "head")
     assert _current_revision(url) == _head()
     assert _unmigrated_changes(url) == []
+
+
+# --------------------------------------------------------------------------------------------
+# 0002_workspaces: every existing user joins one workspace, by either route.
+
+# Admin is not the earliest account, so "the admin, or failing that the earliest" is tested.
+_PEOPLE = [
+    ("first@e.com", "First", "user", "2026-01-05 09:00:00.000000"),
+    ("admin@e.com", "Admin", "admin", "2026-01-06 09:00:00.000000"),
+    ("third@e.com", "Third", "user", "2026-01-07 09:00:00.000000"),
+]
+
+
+def _add_people(url: str, people=_PEOPLE) -> None:
+    users = sa.table(
+        "users",
+        sa.column("email", sa.String()),
+        sa.column("display_name", sa.String()),
+        sa.column("password_hash", sa.Text()),
+        sa.column("kek_salt", sa.LargeBinary()),
+        sa.column("kdf_params", sa.Text()),
+        sa.column("role", sa.String()),
+        sa.column("created_at", sa.String()),
+    )
+    rows = [
+        {
+            "email": email,
+            "display_name": name,
+            "password_hash": "x",
+            "kek_salt": b"\0" * 16,
+            "kdf_params": "{}",
+            "role": role,
+            "created_at": created,
+        }
+        for email, name, role, created in people
+    ]
+    with _engine(url) as engine, engine.begin() as connection:
+        connection.execute(users.insert(), rows)
+
+
+def _workspace_rows(url: str) -> tuple[list, list]:
+    """The workspace tables exactly as stored, text and all."""
+    with _engine(url) as engine, engine.connect() as connection:
+        workspaces = connection.exec_driver_sql(
+            "SELECT id, name, slug, created_at FROM workspaces ORDER BY id"
+        ).all()
+        members = connection.exec_driver_sql(
+            "SELECT workspace_id, user_id, role, status, joined_at FROM workspace_members "
+            "ORDER BY user_id"
+        ).all()
+    return [tuple(r) for r in workspaces], [tuple(r) for r in members]
+
+
+def test_upgrading_a_database_with_users_puts_them_all_in_one_workspace(tmp_path):
+    url = _sqlite(tmp_path, "existing.db")
+    command.upgrade(_alembic(url), BASELINE)
+    _add_people(url)
+
+    command.upgrade(_alembic(url), "head")
+
+    workspaces, members = _workspace_rows(url)
+    assert workspaces == [(1, "Q-Vault", "q-vault", "2026-01-05 09:00:00.000000")]
+    assert members == [
+        (1, 1, "member", "active", "2026-01-05 09:00:00.000000"),
+        (1, 2, "owner", "active", "2026-01-06 09:00:00.000000"),
+        (1, 3, "member", "active", "2026-01-07 09:00:00.000000"),
+    ]
+
+
+def test_without_an_admin_the_earliest_user_becomes_the_owner(tmp_path):
+    url = _sqlite(tmp_path, "existing.db")
+    command.upgrade(_alembic(url), BASELINE)
+    _add_people(url, [(e, n, "user", c) for e, n, _, c in reversed(_PEOPLE)])
+
+    command.upgrade(_alembic(url), "head")
+
+    _, members = _workspace_rows(url)
+    owners = [user_id for _, user_id, role, *_ in members if role == "owner"]
+    assert owners == [3]  # first@e.com, inserted last but created first
+
+
+def test_upgrading_an_empty_database_creates_no_workspace(tmp_path):
+    url = _sqlite(tmp_path, "empty.db")
+    command.upgrade(_alembic(url), "head")
+    assert _workspace_rows(url) == ([], [])
+
+
+def test_the_startup_step_leaves_the_same_rows_as_the_revision(tmp_path, monkeypatch):
+    """A stamped database upgraded by Alembic, and a ``create_all`` database started by the app,
+    end up with byte-identical workspace rows."""
+    import config
+    from qvault import create_app
+
+    migrated = _sqlite(tmp_path, "migrated.db")
+    command.upgrade(_alembic(migrated), BASELINE)
+    _add_people(migrated)
+    command.upgrade(_alembic(migrated), "head")
+
+    started = _sqlite(tmp_path, "started.db")
+    with _engine(started) as engine:
+        db.metadata.create_all(engine, tables=_baseline_tables(tmp_path))
+    _add_people(started)
+    monkeypatch.setattr(config.TestConfig, "SQLALCHEMY_DATABASE_URI", started)
+    app = create_app("testing")  # create_all adds the new tables; seed() moves people in
+    with app.app_context():
+        db.engine.dispose()
+
+    assert _workspace_rows(started) == _workspace_rows(migrated)
+    assert _workspace_rows(started)[0]  # not vacuous: there is a workspace
+
+
+def test_the_revision_names_the_workspace_the_service_does():
+    from importlib import import_module
+
+    from qvault.services import workspace_service
+
+    revision = import_module("migrations.versions.0002_workspaces")
+    assert revision.DEFAULT_WORKSPACE_NAME == workspace_service.DEFAULT_WORKSPACE_NAME
+    assert revision.DEFAULT_WORKSPACE_SLUG == workspace_service.DEFAULT_WORKSPACE_SLUG
+
+
+def test_the_data_step_renders_as_postgresql_sql():
+    output = io.StringIO()
+    command.upgrade(_alembic(POSTGRES_URL, output=output), "head", sql=True)
+    sql = " ".join(output.getvalue().split())
+    assert "INSERT INTO workspaces (name, slug, created_at) SELECT 'Q-Vault'" in sql
+    assert "INSERT INTO workspace_members" in sql
 
 
 def test_an_explicit_url_wins_over_database_url(tmp_path, monkeypatch):
