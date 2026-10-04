@@ -13,7 +13,7 @@
 //   separate elements with real spacing, and where one of them matters more than the others it is
 //   allowed to be bigger.
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -34,7 +34,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 
+import { middleOut } from '../format.ts';
 import { color, elevation, motion, radius, space, tone, type as type_, type StatusTone } from '../theme.ts';
 
 export { Seal } from './Seal.tsx';
@@ -290,6 +292,70 @@ export function KeyValue({
   );
 }
 
+/**
+ * A long identifier -- an address -- with a label, shortened in the middle, and a Copy action.
+ *
+ * Forty-two characters of mono is a value nobody reads and everybody has to scroll past. Its two
+ * ends are what a person compares against another screen, so those survive ("0xD491…f3D0"), and
+ * shortening never hides the value: tapping it shows it whole and selectable, Copy puts the whole
+ * of it on the clipboard, and a screen reader hears all of it.
+ *
+ * Not for the recipient or the treasury inside a payment someone is about to sign: those are shown
+ * whole, because there the reader is checking every character of what they authorise.
+ */
+export function Identifier({ label, value }: { label: string; value: string }) {
+  const [whole, setWhole] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const short = middleOut(value);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const copy = async () => {
+    let ok = false;
+    try {
+      ok = await Clipboard.setStringAsync(value);
+    } catch {
+      ok = false;
+    }
+    // Where nothing can be written to the clipboard, the value is shown whole to select instead.
+    if (ok) setCopied(true);
+    else setWhole(true);
+  };
+
+  return (
+    <View style={s.kv}>
+      <Text style={s.kvLabel}>{label}</Text>
+      <View style={s.identifier}>
+        <Pressable
+          onPress={() => setWhole((w) => !w)}
+          disabled={short === value}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}, ${value}`}
+          accessibilityHint={whole ? 'Shortens it again' : 'Shows it in full'}
+          style={{ flex: 1 }}
+        >
+          <Text style={s.kvMono} selectable={whole}>
+            {whole ? value : short}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => void copy()}
+          accessibilityRole="button"
+          accessibilityLabel={copied ? `${label} copied` : `Copy the ${label.toLowerCase()}`}
+          hitSlop={8}
+          style={({ pressed }) => [s.copy, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={s.copyText}>{copied ? 'Copied' : 'Copy'}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /** A status token. Sentence case, because an interface that shouts every state is exhausting. */
 export function Chip({ label, tone: t = 'neutral' }: { label: string; tone?: StatusTone }) {
   const palette = tone[t];
@@ -541,6 +607,18 @@ const s = StyleSheet.create({
   kvLabel: { ...type_.micro, color: color.ink3 },
   kvValue: { ...type_.body },
   kvMono: { ...type_.hash },
+
+  identifier: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  copy: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderWidth: 1,
+    borderColor: color.rule,
+    borderRadius: radius.chip + 2,
+    backgroundColor: color.surface,
+  },
+  copyText: { ...type_.micro, fontSize: 12.5, color: color.ink2 },
 
   chip: {
     borderWidth: 1,
