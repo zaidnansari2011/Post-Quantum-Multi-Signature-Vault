@@ -225,11 +225,21 @@ def test_upgrade_renders_as_postgresql_sql():
 
 def test_stamping_a_create_all_database_changes_no_table(tmp_path, monkeypatch):
     """The runbook's procedure for an existing database, with its URL in DATABASE_URL exactly as
-    the documented command has it: stamp the baseline, then upgrade to the head."""
+    the documented command has it: stamp the baseline, then upgrade to the head.
+
+    An existing database was built by ``create_all`` at the tag, so it has the baseline's tables
+    and none that a later revision adds: ``create_all`` is limited to those tables here."""
+    baseline = _sqlite(tmp_path, "baseline.db")
+    command.upgrade(_alembic(baseline), BASELINE)
+    with _engine(baseline) as engine:
+        tag_tables = set(sa.inspect(engine).get_table_names()) - {"alembic_version"}
     url = _sqlite(tmp_path, "existing.db")
     with _engine(url) as engine:
-        db.metadata.create_all(engine)
+        db.metadata.create_all(
+            engine, tables=[t for t in db.metadata.sorted_tables if t.name in tag_tables]
+        )
     before = _schema(url)
+    assert set(before) == tag_tables
     monkeypatch.setenv("DATABASE_URL", url)
 
     command.stamp(_alembic(None), BASELINE)
