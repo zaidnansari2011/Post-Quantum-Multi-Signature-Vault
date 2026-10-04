@@ -46,6 +46,8 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("sod_default", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column("checklist_dismissed_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_workspaces_slug"), "workspaces", ["slug"], unique=True)
