@@ -14,9 +14,24 @@
 // Motion: the sheet rises on a spring with no overshoot, and the page behind it dims and settles
 // back a little. That backward step is doing real work -- it says the page is still there and this
 // is a layer over it, which is what makes the cancel affordance obvious without labelling it.
+//
+// Height: a decision can run to 4,000 characters, and a sheet that simply grew with its content
+// pushed its own title and the opening of the text off the top of the screen, so the first words
+// a person saw were somewhere in the middle of what they were signing. The sheet now stops short
+// of the top of the screen; its content scrolls between a fixed title and fixed actions
+// (`footer`), so the title, the start of the text and the Sign button are all on screen at once.
 
-import { type ReactNode, useEffect } from 'react';
-import { BackHandler, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { type ReactNode, useEffect, useState } from 'react';
+import {
+  BackHandler,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -33,18 +48,27 @@ export function Sheet({
   onClose,
   title,
   children,
+  footer,
   dismissible = true,
 }: {
   visible: boolean;
   onClose: () => void;
   title?: string;
+  /** Scrolls when it is taller than the room the sheet has. */
   children: ReactNode;
+  /** The actions, pinned under the content: always on screen, however long the content is. */
+  footer?: ReactNode;
   /** False while a signature is in flight: closing midway would leave the outcome ambiguous. */
   dismissible?: boolean;
 }) {
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  // Whether the content is longer than its room. A rule then separates it from the actions, so a
+  // reader can see the text carries on above the buttons rather than ending there.
+  const [room, setRoom] = useState(0);
+  const [content, setContent] = useState(0);
+  const overflowing = content > room + 1;
 
   const progress = useSharedValue(0);
 
@@ -87,13 +111,31 @@ export function Sheet({
           style={[
             s.panel,
             elevation.sheet,
-            { paddingBottom: Math.max(space.lg, insets.bottom + space.sm) },
+            {
+              // A strip of the page stays visible above the sheet, as a place to tap away and as
+              // the sign that this is a layer over the decision, not a new screen.
+              maxHeight: Math.min(height * 0.9, height - insets.top - space.xl),
+              paddingBottom: Math.max(space.lg, insets.bottom + space.sm),
+            },
             panelStyle,
           ]}
         >
           <View style={s.grip} />
-          {title ? <Text style={s.title}>{title}</Text> : null}
-          {children}
+          {title ? (
+            <Text style={s.title} accessibilityRole="header">
+              {title}
+            </Text>
+          ) : null}
+          <ScrollView
+            style={s.body}
+            contentContainerStyle={s.bodyContent}
+            onLayout={(e) => setRoom(e.nativeEvent.layout.height)}
+            onContentSizeChange={(_, h) => setContent(h)}
+            keyboardShouldPersistTaps="handled"
+          >
+            {children}
+          </ScrollView>
+          {footer ? <View style={[s.footer, overflowing && s.footerRuled]}>{footer}</View> : null}
         </Animated.View>
       </View>
     </Modal>
@@ -121,4 +163,10 @@ const s = StyleSheet.create({
     marginBottom: space.sm,
   },
   title: { ...type.title, fontSize: 18, lineHeight: 24 },
+  // Its own height up to the room left between the title and the actions, and no more: `flexGrow`
+  // 0 keeps a short sheet short, `flexShrink` 1 lets a long one hand the overflow to the scroll.
+  body: { flexGrow: 0, flexShrink: 1 },
+  bodyContent: { gap: space.md },
+  footer: { gap: space.sm },
+  footerRuled: { borderTopWidth: 1, borderTopColor: color.rule, paddingTop: space.md },
 });
