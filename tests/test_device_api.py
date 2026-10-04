@@ -232,6 +232,13 @@ def test_the_client_can_recompute_the_payload_hash_itself(app, client):
     }
     recomputed = sha256_hex(DS_PROPOSAL + b"|" + canonical_json(inputs))
     assert recomputed == detail["payload_hash"] == proposal.payload_hash
+    # The phone refuses a response whose display copies differ from the signed ones (rework plan
+    # S19), so an honest server must always send them equal.
+    assert detail["action_text"] == inputs["action_text"]
+    assert (detail["required_m"], detail["required_n"]) == (
+        inputs["policy"]["M"],
+        inputs["policy"]["N"],
+    )
 
 
 def test_the_awaiting_list_shows_only_what_is_waiting_on_you(app, client):
