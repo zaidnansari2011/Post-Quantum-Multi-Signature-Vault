@@ -94,7 +94,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
       return { ok: true as const, hash: verifyProposalIntegrity(detail) };
     } catch (err) {
       if (err instanceof PayloadMismatchError) {
-        return { ok: false as const, expected: err.expected, actual: err.actual };
+        return { ok: false as const, expected: err.expected, actual: err.actual, reason: err.reason };
       }
       throw err;
     }
@@ -154,6 +154,9 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
   const status = outcome?.status ?? detail.status;
   const expiry = expiryPhrase(detail.expires_at);
   const urgency = urgencyOf(detail.expires_at);
+  // The threshold as signed. The top-level copy is not under the hash (verifyProposalIntegrity
+  // refuses a response whose two copies differ), so nothing on this screen reads it.
+  const { M: requiredM, N: requiredN } = detail.signing_inputs.policy;
 
   return (
     <Screen edges={['top']}>
@@ -185,8 +188,14 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
             they are even being asked. Long decisions step down to a reading size and hand the
             screen's moment of scale to the quorum instead, which is where it belongs once the text
             is a document rather than a sentence. */}
-        <Text style={detail.action_text.length > LONG_DECISION ? s.decisionLong : s.decision}>
-          {detail.action_text}
+        {/* Always the signed copy of the text: `detail.action_text` is not under the hash, and
+            verifyProposalIntegrity refuses a response whose two copies disagree. */}
+        <Text
+          style={
+            detail.signing_inputs.action_text.length > LONG_DECISION ? s.decisionLong : s.decision
+          }
+        >
+          {detail.signing_inputs.action_text}
         </Text>
         {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
         {detail.payout ? <Payout payout={detail.payout} /> : null}
@@ -197,11 +206,11 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
         <View style={s.quorum}>
           <Seal
             filled={approvals}
-            required={detail.required_m}
+            required={requiredM}
             size={13}
-            celebrate={outcome !== null && approvals >= detail.required_m}
+            celebrate={outcome !== null && approvals >= requiredM}
           />
-          <Text style={s.quorumText}>{quorumPhrase(approvals, detail.required_m, status)}</Text>
+          <Text style={s.quorumText}>{quorumPhrase(approvals, requiredM, status)}</Text>
         </View>
 
         <Row gap={space.md} style={{ marginTop: space.sm, flexWrap: 'wrap' }}>
@@ -220,7 +229,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
               title={
                 outcome.status === 'rejected'
                   ? 'You rejected this decision.'
-                  : approvals >= detail.required_m
+                  : approvals >= requiredM
                     ? 'Signed. The threshold is met.'
                     : 'Signed on this device.'
               }
@@ -232,10 +241,21 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
         {/* The cryptography: one line when it holds, the whole screen when it does not. */}
         <View style={{ marginTop: space.xl }}>
           <Assurance ok={!!integrity?.ok}>
-            <KeyValue label="Payload hash" mono value={integrity?.ok ? integrity.hash : detail.payload_hash} />
-            {!integrity?.ok && integrity ? (
-              <KeyValue label="Server stated" mono value={integrity.expected} />
-            ) : null}
+            {integrity && !integrity.ok ? (
+              <>
+                {/* What this phone derived, then what the server claimed: two different values
+                    when the hash itself disagrees, the same value when the text did. */}
+                <KeyValue label="Derived on this phone" mono value={integrity.actual} />
+                <KeyValue label="Server stated" mono value={integrity.expected} />
+                <KeyValue label="Failed check" value={MISMATCH_REASON[integrity.reason]} />
+              </>
+            ) : (
+              <KeyValue
+                label="Payload hash"
+                mono
+                value={integrity?.ok ? integrity.hash : detail.payload_hash}
+              />
+            )}
             <KeyValue label="Nonce" mono value={detail.signing_inputs.nonce} />
             <KeyValue
               label="Attached file"
@@ -246,7 +266,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
             <KeyValue label="This device" mono value={identity.fingerprint} />
             <KeyValue
               label="Policy"
-              value={`${detail.required_m} of ${detail.required_n} authorised signers`}
+              value={`${requiredM} of ${requiredN} authorised signers`}
             />
             <KeyValue label="Raised" value={exactly(detail.signing_inputs.created_at)} />
           </Assurance>
@@ -304,7 +324,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
         visible={confirming && outcome !== null}
         approved={voted === 'approve'}
         filled={approvals}
-        required={detail.required_m}
+        required={requiredM}
         onDone={() => setConfirming(false)}
       />
     </Screen>
@@ -333,7 +353,7 @@ function ConfirmSheet({
   onConfirm: () => void;
 }) {
   const approving = decision === 'approve';
-  const completes = approving && detail.approvals + 1 >= detail.required_m;
+  const completes = approving && detail.approvals + 1 >= detail.signing_inputs.policy.M;
 
   return (
     <Sheet
@@ -342,7 +362,7 @@ function ConfirmSheet({
       dismissible={!busy}
       title={approving ? 'Approve this decision' : 'Reject this decision'}
     >
-      <Text style={s.confirmAction}>{detail.action_text}</Text>
+      <Text style={s.confirmAction}>{detail.signing_inputs.action_text}</Text>
       {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
 
       <Text style={s.confirmNote}>
@@ -522,6 +542,14 @@ function describe(err: unknown): { title: string; detail?: string } {
  * large setting stops feeling emphatic and starts feeling like a wall.
  */
 const LONG_DECISION = 180;
+
+/** Which integrity check refused the decision, in the words the Assurance drawer shows. */
+const MISMATCH_REASON: Record<PayloadMismatchError['reason'], string> = {
+  hash: 'The contents do not hash to the stated payload hash',
+  payment_text: 'The text describes a different payment from the one signed',
+  display_text: 'The text sent for display is not the text that would be signed',
+  display_policy: 'The approval threshold sent for display is not the one that would be signed',
+};
 
 const s = StyleSheet.create({
   decision: { ...type.decision, marginTop: space.sm },
