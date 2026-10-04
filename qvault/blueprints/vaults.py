@@ -139,6 +139,10 @@ def vault_detail(vid: int):
     is_owner = vault.member_for(current_user.id).member_role == "owner"
     signer_vaults = inbox_service.signer_vault_ids(current_user)
     treasury = treasury_jobs.view(vault) if _treasuries_on() else None
+    if tab == "treasury" and treasury is None:
+        # Switched off, the tab is not offered; a link to it must not reach a panel with nothing
+        # to show (it raised a 500 for an owner).
+        tab = "decisions"
     linked = treasury_service.linked_treasury(vault) if treasury is not None else None
     change = reconfiguration_service.view(vault, current_user) if linked is not None else None
     return render_template(

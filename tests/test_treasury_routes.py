@@ -125,6 +125,10 @@ def test_the_tab_is_not_there_when_the_feature_is_off(world):
     page = _page(world, tab="decisions")
     assert "tab=treasury" not in page
     assert world.client.post(f"/vaults/{world.vault.id}/treasury", data={}).status_code == 404
+    # An old link to the tab lands on the decisions instead of failing.
+    response = world.client.get(f"/vaults/{world.vault.id}?tab=treasury")
+    assert response.status_code == 200
+    assert "Create treasury" not in response.get_data(as_text=True)
 
 
 def test_a_refusal_is_shown_as_it_stands(world):

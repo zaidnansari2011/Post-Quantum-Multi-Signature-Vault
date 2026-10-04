@@ -316,8 +316,8 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] Research 01–05 (2026-10-04)
 - [x] This plan, drafted (2026-10-04)
 - [x] Owner reviewed the plan (2026-10-04): S1 app-led ✓; S25 dark mode built in gracefully ✓; S15, S18 and the rest as recommended ✓; S19 fix approved for the working project
-- [ ] Commit the screenshot harnesses as tools: `scripts/ui_shots.py` (web) and `mobile/tools/web-shots/` (app, already built)
-- [ ] Alembic baseline revision of the current schema (S8); `create_all` remains for tests
+- [x] Commit the screenshot harnesses as tools: `scripts/ui_shots.py` (web; finds one decision per status from the vaults' own pages, `--theme both` for dark) and `mobile/tools/web-shots/` (app) (2026-10-04)
+- [x] Alembic baseline revision of the current schema (S8); `create_all` remains for startup and tests. `0001_baseline`, held to `create_all` by `tests/test_migrations.py` on SQLite and as PostgreSQL SQL; existing databases are stamped at the switch ([runbook](../runbooks/database-migrations.md)) (2026-10-04)
 - [ ] `tests/test_design_tokens.py` scaffold (contrast pairs, type scale on the 4px grid)
 - **Done when:** the owner has approved the plan and the tooling is committed.
 
@@ -412,7 +412,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [ ] Staging: a second container app off the rework image, with its **own** database (a new database on the existing Postgres server), seeded with the team's accounts; witness and relayer off unless the owner wants them
 - [ ] The team tests on staging; issues fixed
 - [ ] ⚑ The owner decides: switch, or stay on the tag
-- [ ] Switch procedure: back up the live database; deploy; smoke test; keep the tagged image ready. Rollback: redeploy `ee70586` (or the tag's image) against the backup
+- [ ] Switch procedure: back up the live database; stamp it `0001_baseline`, `alembic check`, then `alembic upgrade head`, all before the new image first starts ([runbook](../runbooks/database-migrations.md)); deploy; smoke test; keep the tagged image ready. Rollback: redeploy `ee70586` (or the tag's image) against the backup
 
 ---
 
@@ -499,3 +499,4 @@ integration (P2 if time allows), i18n, a public API for third parties, mainnet.
 | --- | --- | --- | --- |
 | 2026-10-04 | R0 | Safety net (tag, branch, worktree); baseline screenshots (web 33×2, app 54); research 01–05; plan drafted. Found on the way: the phone's display-only decision text (S19), seven web defects (§3) | — |
 | 2026-10-04 | R0 | **Owner decisions recorded** (S1 app-led, S25 dark mode built in, S15/S18 as recommended). **S19 fixed on the working branch** (`d0cae74`): the phone renders and prompts with the signed text only, refuses a response whose two copies differ, and its integrity drawer shows the hash it derived. A three-lens adversarial review (20 agents) confirmed 6 of 16 findings, all fixed in the same commit: the threshold gap (high), the prompt's 81-character edge, a payment prompt cut inside the treasury address, a stand-in that could hide an early prompt, and missing tests (forged hash, cut boundaries, server copies agree). 12 hand mutations killed; full suite green. Deferred to R7: the confirm sheet does not scroll (pre-existing). Found: no OTA has ever been published and the only APK is runtime 1, so the fix reaches phones with the next build | — |
+| 2026-10-04 | R0 | **Tooling:** `scripts/ui_shots.py` (both themes) and the Alembic baseline `0001_baseline` (6 tests; five hand-broken baselines all caught; checked against a copy of the laptop database, which will stamp cleanly; autogenerate misses partial-index predicate changes, so those are written by hand). Fixed on the way: `/vaults/<id>?tab=treasury` raised a 500 for an owner when treasuries are off (the live site has them on, so it was never affected) | — |
