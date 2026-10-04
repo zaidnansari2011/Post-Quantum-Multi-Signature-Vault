@@ -114,6 +114,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from .blueprints.glassbox import bp as glassbox_bp
     from .blueprints.ledger import bp as ledger_bp
     from .blueprints.record import bp as record_bp
+    from .blueprints.theme import bp as theme_bp
     from .blueprints.vaults import bp as vaults_bp
     from .blueprints.verify import bp as verify_bp
 
@@ -132,6 +133,9 @@ def create_app(config_name: str | None = None) -> Flask:
     # The public record of a shared decision. GET-only and session-free, so it needs neither
     # login_required nor a CSRF exemption -- there is no form here to forge.
     app.register_blueprint(record_bp)
+    # The reader's colour theme: a cookie, read on every page so <html> is themed before first
+    # paint (rework S25).
+    app.register_blueprint(theme_bp)
     # Public verification takes no session and writes nothing, so there is no state for a CSRF
     # token to protect — and requiring one would break `curl -F bundle=@decision.json /verify/`,
     # which is how anyone would actually script a check.
