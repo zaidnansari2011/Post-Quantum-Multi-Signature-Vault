@@ -9,10 +9,18 @@ that already hold data.
 
 - `alembic.ini` and `migrations/` at the repository root. `migrations/env.py` reads the models'
   metadata (`qvault.models`) and the database URL the app would use.
-- One revision, **`0001_baseline`**: the schema as the models define it at tag
-  `v1-working-2026-10-04`, which is the schema every existing database already has.
-- Startup still runs `db.create_all()` and the test suite still builds its databases that way.
-  Nothing about how the app starts has changed.
+- **`0001_baseline`**: the schema as the models define it at tag `v1-working-2026-10-04`, which
+  is the schema every existing database already has.
+- **`0002_workspaces`** (plan R3): three new tables (`workspaces`, `workspace_members`,
+  `invitations`) and a data step that puts every existing user into one workspace, named
+  "Q-Vault": the administrator, or with none the earliest user, as its Owner, everyone else as a
+  Member. It changes no existing table and writes no ledger entry. On an empty database it creates
+  the tables and nothing else.
+- Startup still runs `db.create_all()` and the test suite still builds its databases that way. A
+  database built by `create_all` before the workspace tables existed gets them from `create_all`,
+  and the startup step `workspace_service.ensure_default_workspace` then does what the data step
+  does, once, while no workspace exists. The two routes leave identical rows
+  (`tests/test_migrations.py`).
 - `tests/test_migrations.py` holds the two routes together: `upgrade head` must build exactly what
   `create_all` builds, on SQLite and in the SQL it renders for PostgreSQL. A model change without a
   revision fails that test.

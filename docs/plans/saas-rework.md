@@ -351,9 +351,9 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R3: Workspace and people · Alembic migration
 
-- [ ] Workspace model, membership, roles (S10); migration of existing users into one workspace; `/api/v1/people` scoped to the workspace
-- [ ] Members page (Active / Invited / Suspended), role changes, removal
-- [ ] Invitations by link (S11): create, copy, expire, resend, revoke; acceptance page with all its states; audit events for each
+- [x] Workspace model, membership, roles (S10); migration of existing users into one workspace; `/api/v1/people` scoped to the workspace (2026-10-05, `rework/r3-workspaces`): `0002_workspaces` plus the same step at startup; the people list, picked ids and add-member-by-email resolve only inside the caller's workspace; only someone with an enrolled key can be made an approver; removal refused while the person is still in a vault. Until R6, registering without an invitation joins the first workspace, as before. Vaults have no workspace column yet: a vault belongs to its owner's workspace
+- [ ] Members page (Active / Invited / Suspended), role changes, removal (service functions and ledger events done 2026-10-05; the page is next)
+- [ ] Invitations by link (S11): create, copy, expire, resend, revoke; acceptance page with all its states; audit events for each (service, 7-day hashed links and ledger events done 2026-10-05, checked by both verifiers; the pages are next)
 - [ ] Workspace settings (general, members, vault defaults, danger zone with typed confirmation)
 - [ ] Getting-started checklist for a new workspace (3–5 items, completes on real events)
 - [ ] Phone: workspace-aware API responses (no UI change beyond names)
