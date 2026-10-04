@@ -94,7 +94,9 @@ def test_the_vendored_assets_are_actually_present():
     """The templates now depend on these paths; a missing file is a broken page, not a fallback."""
     required = [
         STATIC / "vendor" / "fonts.css",
-        STATIC / "vendor" / "fonts" / "Archivo-var.woff2",
+        STATIC / "vendor" / "fonts" / "PublicSans-var.woff2",
+        STATIC / "vendor" / "fonts" / "SourceSerif4-400.woff2",
+        STATIC / "vendor" / "fonts" / "JetBrainsMono-var.woff2",
         STATIC / "qvault.css",
     ]
     missing = [str(p.relative_to(PROJECT_ROOT)) for p in required if not p.is_file()]
@@ -102,8 +104,8 @@ def test_the_vendored_assets_are_actually_present():
 
     fonts = list((STATIC / "vendor" / "fonts").glob("*.woff2"))
     assert (
-        len(fonts) >= 6
-    ), f"expected the Archivo + Inter + JetBrains Mono weights, found {len(fonts)}"
+        len(fonts) >= 4
+    ), f"expected the Public Sans + Source Serif 4 + JetBrains Mono files, found {len(fonts)}"
 
 
 def test_no_bootstrap_class_survives_in_a_template():
@@ -171,8 +173,9 @@ def test_every_vendored_font_is_reachable_over_http(client):
     for name in (
         "qvault.css",
         "vendor/fonts.css",
-        "vendor/fonts/Inter-400.woff2",
-        "vendor/fonts/Archivo-var.woff2",
+        "vendor/fonts/PublicSans-var.woff2",
+        "vendor/fonts/SourceSerif4-400.woff2",
+        "vendor/fonts/JetBrainsMono-var.woff2",
     ):
         resp = client.get(f"/static/{name}")
         assert resp.status_code == 200, f"/static/{name} -> {resp.status_code}"
