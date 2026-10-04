@@ -152,6 +152,7 @@ def request_challenge():
         ok=True,
         user_id=user.id,
         display_name=user.display_name,
+        workspace=_workspace_json(user),
         challenge=challenge,
         expires_at=expires_at.isoformat(),
         eligible_algorithms=list(key_service.DEVICE_ELIGIBLE_SIG_ALGS),
@@ -201,21 +202,31 @@ _ENROL_STATUS = {
 # -- session --------------------------------------------------------------------------------------
 
 
+def _workspace_json(user) -> dict | None:
+    """The workspace this person works in and their role there (plan S10), or None when they
+    belong to none, which can happen after an admin removes them. Additive for the phone: its
+    schemas ignore fields they do not name."""
+    member = workspace_service.current_membership(user)
+    if member is None:
+        return None
+    return {
+        "id": member.workspace_id,
+        "name": member.workspace.name,
+        "role": member.role,
+        "role_name": workspace_service.role_name(member.role),
+    }
+
+
 @bp.get("/me")
 @device_token_required
 def whoami():
     user = g.api_user
-    member = workspace_service.current_membership(user)
     return jsonify(
         ok=True,
         user={"id": user.id, "email": user.email, "display_name": user.display_name},
         # The workspace this person works in, and their role there (plan S10). Null when they
         # belong to none, which can happen after an admin removes them.
-        workspace=(
-            None
-            if member is None
-            else {"id": member.workspace_id, "name": member.workspace.name, "role": member.role}
-        ),
+        workspace=_workspace_json(user),
         device=_device_json(g.api_device, current_id=g.api_device.id),
         # Which key treasuries register for this person (D37), when this instance has treasuries.
         my_key=(
@@ -313,8 +324,11 @@ def list_people():
     the vault's owner and first signer. Nobody in another workspace is ever listed.
     """
     people = workspace_service.colleagues(g.api_user, limit=500)
+    workspace = _workspace_json(g.api_user)
     return jsonify(
         ok=True,
+        # Which workspace the list is drawn from, so a picker can say whose people these are.
+        workspace=None if workspace is None else {"id": workspace["id"], "name": workspace["name"]},
         people=[{"user_id": p.id, "name": p.display_name} for p in people],
     )
 
