@@ -15,7 +15,9 @@ that already hold data.
   `invitations`) and a data step that puts every existing user into one workspace, named
   "Q-Vault": the administrator, or with none the earliest user, as its Owner, everyone else as a
   Member. It changes no existing table and writes no ledger entry. On an empty database it creates
-  the tables and nothing else.
+  the tables and nothing else. `workspaces` also holds the separation-of-duties default for new
+  vaults (`sod_default`, off, plan S15) and when the getting-started checklist was hidden
+  (`checklist_dismissed_at`).
 - Startup still runs `db.create_all()` and the test suite still builds its databases that way. A
   database built by `create_all` before the workspace tables existed gets them from `create_all`,
   and the startup step `workspace_service.ensure_default_workspace` then does what the data step

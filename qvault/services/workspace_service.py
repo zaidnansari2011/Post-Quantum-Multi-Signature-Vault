@@ -473,6 +473,11 @@ def _usable(token: str) -> Invitation:
             "unknown_invitation",
             "This invitation link isn't valid. Check that you copied all of it.",
         )
+    return check_usable(invitation)
+
+
+def check_usable(invitation: Invitation) -> Invitation:
+    """Raise the refusal an acceptance would meet now, or return the invitation."""
     state = invitation.state(_now())
     inviter = invitation.inviter.display_name if invitation.inviter else "the person who sent it"
     if state == "accepted":
@@ -720,12 +725,7 @@ def remove_member(workspace: Workspace, user_id: int, *, actor: User, commit: bo
     _require_rank(actor_member, member.role, "remove an owner")
     _guard_last_owner(workspace, member, "removed")
 
-    vaults = (
-        Vault.query.join(VaultMember, VaultMember.vault_id == Vault.id)
-        .filter(VaultMember.user_id == user_id)
-        .order_by(Vault.name.asc())
-        .all()
-    )
+    vaults = vaults_of(user_id)
     if vaults:
         names = ", ".join(v.name for v in vaults)
         who = member.user.display_name if member.user else "They"
@@ -742,6 +742,223 @@ def remove_member(workspace: Workspace, user_id: int, *, actor: User, commit: bo
         db.session.commit()
 
 
+def outranks_or_equals(actor_role: str, role: str) -> bool:
+    """Whether someone with actor_role may act on, or grant, role."""
+    return _RANK.get(actor_role, 0) >= _RANK.get(role, 99)
+
+
 def role_name(role: str) -> str:
     """The role as the interface writes it."""
     return _ROLE_NAMES.get(role, role.title())
+
+
+# --------------------------------------------------------------------------------------------
+# Suspending, leaving and settings
+
+
+def _require_other(member: WorkspaceMember, actor: User, what: str) -> None:
+    if member.user_id == actor.id:
+        raise WorkspaceError("not_yourself", f"You can't {what} yourself.")
+
+
+def suspend_member(
+    workspace: Workspace, user_id: int, *, actor: User, commit: bool = True
+) -> WorkspaceMember:
+    """Suspend a member: they drop out of the people list, can't be added to a vault and can't
+    manage the workspace. The vaults they are already in are unchanged; each vault's owner
+    changes those (the workspace does not change who can sign)."""
+    actor_member = _require_manager(workspace, actor)
+    member = _require_member(workspace, user_id)
+    _require_other(member, actor, "suspend")
+    if not member.is_active:
+        raise WorkspaceError("already_suspended", "That person is already suspended.")
+    _require_rank(actor_member, member.role, "suspend an owner")
+    _guard_last_owner(workspace, member, "suspended")
+    member.status = "suspended"
+    _log(
+        "workspace_member_suspended",
+        workspace,
+        actor.id,
+        {"user_id": user_id, "role": member.role},
+    )
+    if commit:
+        db.session.commit()
+    return member
+
+
+def reinstate_member(
+    workspace: Workspace, user_id: int, *, actor: User, commit: bool = True
+) -> WorkspaceMember:
+    """Make a suspended member active again, with the role they had."""
+    actor_member = _require_manager(workspace, actor)
+    member = _require_member(workspace, user_id)
+    if member.is_active:
+        raise WorkspaceError("not_suspended", "That person isn't suspended.")
+    _require_rank(actor_member, member.role, "reinstate an owner")
+    member.status = "active"
+    _log(
+        "workspace_member_reinstated",
+        workspace,
+        actor.id,
+        {"user_id": user_id, "role": member.role},
+    )
+    if commit:
+        db.session.commit()
+    return member
+
+
+def vaults_of(user_id: int) -> list[Vault]:
+    """The vaults this person belongs to, by name."""
+    return (
+        Vault.query.join(VaultMember, VaultMember.vault_id == Vault.id)
+        .filter(VaultMember.user_id == user_id)
+        .order_by(Vault.name.asc())
+        .all()
+    )
+
+
+def leave_workspace(workspace: Workspace, user: User, *, commit: bool = True) -> None:
+    """Leave a workspace. Owners can't (another owner changes their role first), and nobody can
+    while they are still in a vault, for the same reason as ``remove_member``."""
+    member = _require_member(workspace, user.id)
+    if member.role == "owner":
+        raise WorkspaceError(
+            "owner_cannot_leave",
+            "Owners can't leave a workspace. Ask another owner to change your role first.",
+        )
+    vaults = vaults_of(user.id)
+    if vaults:
+        names = ", ".join(v.name for v in vaults)
+        raise WorkspaceError(
+            "still_in_vaults",
+            f"You still belong to {names}. Ask each vault's owner to remove you first.",
+        )
+    role = member.role
+    db.session.delete(member)
+    _log("workspace_member_left", workspace, user.id, {"user_id": user.id, "role": role})
+    if commit:
+        db.session.commit()
+
+
+def rename_workspace(
+    workspace: Workspace, name: str, *, actor: User, commit: bool = True
+) -> Workspace:
+    """Change the workspace's name. Its slug, which nothing shows yet, stays the same."""
+    _require_manager(workspace, actor)
+    name = (name or "").strip()
+    if not name:
+        raise WorkspaceError("name_required", "Give the workspace a name.")
+    if len(name) > 120:
+        raise WorkspaceError("name_too_long", "Workspace names are limited to 120 characters.")
+    if name == workspace.name:
+        return workspace
+    previous = workspace.name
+    workspace.name = name
+    _log("workspace_renamed", workspace, actor.id, {"from": previous, "to": name})
+    if commit:
+        db.session.commit()
+    return workspace
+
+
+def set_vault_defaults(
+    workspace: Workspace, *, sod_default: bool, actor: User, commit: bool = True
+) -> Workspace:
+    """Store the separation-of-duties default for new vaults (plan S15). Nothing enforces it until
+    vaults gain the setting (phase R5), and it never changes a vault that already exists."""
+    _require_manager(workspace, actor)
+    sod_default = bool(sod_default)
+    if workspace.sod_default == sod_default:
+        return workspace
+    workspace.sod_default = sod_default
+    _log(
+        "workspace_settings_changed",
+        workspace,
+        actor.id,
+        {"separation_of_duties_default": sod_default},
+    )
+    if commit:
+        db.session.commit()
+    return workspace
+
+
+# --------------------------------------------------------------------------------------------
+# Getting started
+
+
+def vault_ids_of(workspace: Workspace) -> list[int]:
+    """The workspace's vaults: those whose owner's workspace this is."""
+    owner_ids = [m.user_id for m in members(workspace)]
+    if not owner_ids:
+        return []
+    vaults = Vault.query.filter(Vault.owner_id.in_(owner_ids)).order_by(Vault.id.asc()).all()
+    homes: dict[int, Workspace | None] = {}
+    ids = []
+    for vault in vaults:
+        if vault.owner_id not in homes:
+            homes[vault.owner_id] = current_workspace(vault.owner_id)
+        home = homes[vault.owner_id]
+        if home is not None and home.id == workspace.id:
+            ids.append(vault.id)
+    return ids
+
+
+def getting_started(workspace: Workspace) -> list[dict]:
+    """The checklist a new workspace sees on Home. Each item is done by a real event, never by
+    ticking it: a vault exists, someone else is in or invited, a second person holds a signing
+    key, a decision was raised, and one was approved."""
+    from qvault.models.proposal import Proposal  # proposal models import vault ones
+    from qvault.models.signature import Signature
+
+    vault_ids = vault_ids_of(workspace)
+    everyone = members(workspace)
+    active = [m for m in everyone if m.is_active]
+    enrolled = sum(1 for m in active if has_enrolled_key(m.user_id))
+    invited = (
+        len(everyone) > 1
+        or Invitation.query.filter_by(workspace_id=workspace.id).first() is not None
+    )
+    raised = approved = False
+    if vault_ids:
+        raised = (
+            db.session.scalar(select(Proposal.id).where(Proposal.vault_id.in_(vault_ids)).limit(1))
+            is not None
+        )
+        approved = (
+            db.session.scalar(
+                select(Signature.id)
+                .join(Proposal, Proposal.id == Signature.proposal_id)
+                .where(Proposal.vault_id.in_(vault_ids), Signature.decision == "approve")
+                .limit(1)
+            )
+            is not None
+        )
+    return [
+        {"key": "vault", "label": "Create a vault", "done": bool(vault_ids)},
+        {"key": "invite", "label": "Invite someone to the workspace", "done": invited},
+        {"key": "key", "label": "A second person enrols a signing key", "done": enrolled >= 2},
+        {"key": "decision", "label": "Raise a decision", "done": raised},
+        {"key": "approve", "label": "Approve a decision", "done": approved},
+    ]
+
+
+def checklist_for(user: User) -> tuple[Workspace, list[dict]] | None:
+    """The checklist to show this person on Home, or None. Only owners and admins see it, and
+    only until every item is done or one of them hides it."""
+    member = current_membership(user)
+    if not can_manage(member):
+        return None
+    workspace = member.workspace
+    if workspace.checklist_dismissed_at is not None:
+        return None
+    items = getting_started(workspace)
+    if all(i["done"] for i in items):
+        return None
+    return workspace, items
+
+
+def dismiss_checklist(workspace: Workspace, *, actor: User, commit: bool = True) -> None:
+    """Hide the checklist for the whole workspace. A display preference, so it is not logged."""
+    _require_manager(workspace, actor)
+    workspace.checklist_dismissed_at = _now()
+    if commit:
+        db.session.commit()

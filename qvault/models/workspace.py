@@ -44,6 +44,12 @@ class Workspace(db.Model):
     name = db.Column(db.String(120), nullable=False)
     slug = db.Column(db.String(64), unique=True, nullable=False, index=True)
     created_at = db.Column(AwareDateTime, nullable=False, default=_utcnow)
+    # Vault defaults (plan S15): whether a new vault stops the person who raised a decision from
+    # approving it. Stored here; vaults start honouring it in phase R5. Off unless an owner or
+    # admin turns it on.
+    sod_default = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # When an owner or admin hid the getting-started checklist on Home. Null while it shows.
+    checklist_dismissed_at = db.Column(AwareDateTime, nullable=True)
 
     members = db.relationship(
         "WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan"

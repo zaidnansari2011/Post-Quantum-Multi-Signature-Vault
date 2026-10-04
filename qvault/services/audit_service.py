@@ -87,6 +87,11 @@ SENTENCES = {
     "invitation_accepted": "{who} accepted an invitation and joined {workspace}.",
     "workspace_role_changed": "{who} changed a member's role in {workspace}.",
     "workspace_member_removed": "{who} removed a member from {workspace}.",
+    "workspace_member_suspended": "{who} suspended a member of {workspace}.",
+    "workspace_member_reinstated": "{who} reinstated a suspended member of {workspace}.",
+    "workspace_member_left": "{who} left {workspace}.",
+    "workspace_renamed": "{who} renamed the workspace to {workspace}.",
+    "workspace_settings_changed": "{who} changed the vault defaults for {workspace}.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.
