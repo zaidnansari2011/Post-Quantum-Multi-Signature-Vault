@@ -9,10 +9,12 @@
 // "3 of 4 must sign" is the whole governance arrangement in five words, and it is the fact people
 // get wrong when they are asked to remember it.
 //
-// `awaiting_me` is the server's count of decisions in that vault still needing THIS signer -- not
-// the number open in it. A badge that counts other people's outstanding work is a badge that is
-// wrong in a way the reader cannot see, and one wrong badge is enough to teach someone to stop
-// trusting all of them.
+// The "needs you" count is decisions in that vault still needing THIS signer -- not the number
+// open in it. A badge that counts other people's outstanding work is a badge that is wrong in a way
+// the reader cannot see, and one wrong badge is enough to teach someone to stop trusting all of
+// them. It is counted from the same list as the queue on Home, narrowed the same way: the server's
+// `awaiting_me` still counts a decision whose deadline has passed until something reads it, so it
+// is used only until that list arrives.
 
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -35,7 +37,8 @@ import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
-import type { VaultSummary } from '../api/schemas.ts';
+import type { ProposalSummary, VaultSummary } from '../api/schemas.ts';
+import { stillOpen } from '../status.ts';
 
 export default function VaultsScreen({
   onOpen,
@@ -55,6 +58,13 @@ export default function VaultsScreen({
   if (query.error instanceof ApiError && query.error.status === 401) {
     void handleUnauthorized();
   }
+
+  const awaiting = useQuery({
+    queryKey: ['proposals', 'awaiting'],
+    queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
+    retry: (count, err) => !(err instanceof ApiError) && count < 2,
+  });
+  const needsYou = awaiting.data ? countByVault(stillOpen(awaiting.data.proposals)) : null;
 
   const vaults = query.data?.vaults ?? [];
   const transportFailure =
@@ -78,7 +88,11 @@ export default function VaultsScreen({
         }
         ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
         renderItem={({ item }) => (
-          <VaultRow vault={item} onPress={() => onOpen(item.vault_id)} />
+          <VaultRow
+            vault={item}
+            needsYou={needsYou ? (needsYou.get(item.vault_id) ?? 0) : item.awaiting_me}
+            onPress={() => onOpen(item.vault_id)}
+          />
         )}
         ListHeaderComponent={
           <View>
@@ -126,18 +140,23 @@ export default function VaultsScreen({
   );
 }
 
-function VaultRow({ vault, onPress }: { vault: VaultSummary; onPress: () => void }) {
+function VaultRow({
+  vault,
+  needsYou,
+  onPress,
+}: {
+  vault: VaultSummary;
+  needsYou: number;
+  onPress: () => void;
+}) {
   return (
     <Card onPress={onPress} accessibilityLabel={vault.name}>
       <Row style={{ justifyContent: 'space-between' }} gap={space.md}>
         <Text style={s.name} numberOfLines={1}>
           {vault.name}
         </Text>
-        {vault.awaiting_me > 0 ? (
-          <Chip
-            label={vault.awaiting_me === 1 ? '1 needs you' : `${vault.awaiting_me} need you`}
-            tone="waiting"
-          />
+        {needsYou > 0 ? (
+          <Chip label={needsYou === 1 ? '1 needs you' : `${needsYou} need you`} tone="waiting" />
         ) : null}
       </Row>
 
@@ -150,6 +169,12 @@ function VaultRow({ vault, onPress }: { vault: VaultSummary; onPress: () => void
       ) : null}
     </Card>
   );
+}
+
+function countByVault(proposals: ProposalSummary[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const p of proposals) counts.set(p.vault_id, (counts.get(p.vault_id) ?? 0) + 1);
+  return counts;
 }
 
 /**
