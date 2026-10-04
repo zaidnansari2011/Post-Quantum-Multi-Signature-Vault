@@ -6,6 +6,10 @@ proves every check before biometrics passed and anything else proves a refusal c
 
 * a payment decision whose text is not the text generated from its signed payment is refused as a
   mismatch, even though its hash is correct;
+* any decision whose text or threshold sent for display is not its signed copy is refused as a
+  mismatch, and the biometric prompt names the decision by its signed text (a payment by its signed
+  amount and recipient), never by its unsigned title (rework plan S19: the response carries each
+  twice and only one copy is under the hash);
 * the phone derives the treasury's execution digest itself and refuses an approval when the
   server's differs, or when the treasury holds another key for this person;
 * the phone's digest is byte for byte the Python one, which the contract mirrors.
@@ -58,6 +62,10 @@ def _big_payment():
 
 
 CONSISTENT = _signing_inputs(INPUTS["action"], INPUTS["action_text"])
+LONG_TEXT = (
+    "Renew the Calderwood Mutual commercial liability policy for 2027 at the quoted premium of "
+    "GBP 48,200, with cover unchanged.\nAuthorises finance to sign the renewal schedule."
+)
 HONEST = {"digest": DIGEST, "seat_fingerprint": FINGERPRINT}
 
 CASES = {
@@ -96,6 +104,65 @@ CASES = {
     # Objecting authorises no payment, so none of the payment checks apply.
     "reject_without_a_seat": {"inputs": CONSISTENT, "decision": "reject"},
     "plain_decision": {"inputs": _signing_inputs(None, "Hire a second auditor.")},
+    "forged_hash": {
+        "inputs": _signing_inputs(None, "Hire a second auditor."),
+        "payload_hash": "00" * 32,
+    },
+    # S19: the hash covers one copy of the text and the server shows another.
+    "display_text_differs": {
+        "inputs": _signing_inputs(None, "Grant Mallory standing production write access."),
+        "display_text": "Hire a second auditor.",
+    },
+    "display_text_differs_on_a_payment": {
+        "inputs": CONSISTENT,
+        "display_text": "Pay the auditor's invoice.",
+        "execution": HONEST,
+        "fingerprint": FINGERPRINT,
+    },
+    # Objecting checks the decision first as well.
+    "display_text_differs_on_a_rejection": {
+        "inputs": _signing_inputs(None, "Grant Mallory standing production write access."),
+        "display_text": "Hire a second auditor.",
+        "decision": "reject",
+    },
+    # Shown as needing one more approval than the signed policy does: one approval would be read
+    # as one of several while the record it completes says it was enough.
+    "threshold_shown_higher": {
+        "inputs": _signing_inputs(None, "Grant Mallory standing production write access."),
+        "required_m": INPUTS["required_m"] + 1,
+    },
+    "signer_count_shown_differently": {
+        "inputs": CONSISTENT,
+        "required_n": INPUTS["required_n"] + 2,
+        "execution": HONEST,
+        "fingerprint": FINGERPRINT,
+    },
+    # The title is not signed, so the prompt must not repeat it.
+    "misleading_title": {
+        "inputs": _signing_inputs(None, "Rotate the root signing key tonight."),
+        "title": "Approve the team lunch",
+    },
+    "long_text": {
+        "inputs": _signing_inputs(None, LONG_TEXT),
+        "title": "Quarterly vendor renewal",
+    },
+}
+
+
+# What the prompt keeps of a decision's text: the first line, at most 80 code points, with an
+# ellipsis whenever anything was dropped.
+SUMMARIES = {
+    "x" * 80: "x" * 80,
+    "x" * 81: "x" * 79 + "…",
+    "x" * 80 + "\nThe rest.": "x" * 79 + "…",
+    "Hire a second auditor.\nStarting in March.": "Hire a second auditor.…",
+    "Hire a second auditor.\r\nStarting in March.": "Hire a second auditor.…",
+    "Hire a second auditor.\u2028Starting in March.": "Hire a second auditor.…",
+    "  Hire a second auditor.\n\n": "Hire a second auditor.",
+    "word " * 20: ("word " * 16).rstrip() + "…",
+    # Counted in code points, as people see them, not in UTF-16 units.
+    "\U0001f512" * 80: "\U0001f512" * 80,
+    "\U0001f512" * 81: "\U0001f512" * 79 + "…",
 }
 
 
@@ -104,7 +171,10 @@ def results(tmp_path_factory) -> dict:
     tmp = tmp_path_factory.mktemp("payment-guard")
     in_path, out_path = tmp / "in.json", tmp / "out.json"
     in_path.write_text(
-        json.dumps({"cases": [{"name": n, **v} for n, v in CASES.items()]}), encoding="utf-8"
+        json.dumps(
+            {"cases": [{"name": n, **v} for n, v in CASES.items()], "summaries": list(SUMMARIES)}
+        ),
+        encoding="utf-8",
     )
     run = subprocess.run(
         ["node", str(PROBE), str(in_path), str(out_path)],
@@ -155,9 +225,75 @@ def test_an_approval_the_phone_cannot_stand_behind_is_refused_before_the_prompt(
     results, name, refusal
 ):
     assert results[name]["vote"] == refusal
+    assert results[name]["prompt"] is None
 
 
 def test_a_rejection_and_a_plain_decision_skip_the_payment_checks(results):
     assert results["reject_without_a_seat"]["vote"] == "reached_prompt"
     assert results["plain_decision"]["integrity"] == "ok"
     assert results["plain_decision"]["vote"] == "reached_prompt"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "display_text_differs",
+        "display_text_differs_on_a_payment",
+        "display_text_differs_on_a_rejection",
+    ],
+)
+def test_a_decision_shown_with_other_words_than_it_signs_is_refused_before_the_prompt(
+    results, name
+):
+    assert results[name]["integrity"] == "mismatch:display_text"
+    assert results[name]["vote"] == "mismatch"
+    assert results[name]["prompt"] is None
+
+
+@pytest.mark.parametrize("name", ["threshold_shown_higher", "signer_count_shown_differently"])
+def test_a_decision_shown_with_another_threshold_than_it_signs_is_refused_before_the_prompt(
+    results, name
+):
+    assert results[name]["integrity"] == "mismatch:display_policy"
+    assert results[name]["vote"] == "mismatch"
+    assert results[name]["prompt"] is None
+
+
+def test_each_refusal_names_the_check_that_failed(results):
+    assert results["forged_hash"]["integrity"] == "mismatch:hash"
+    assert results["forged_hash"]["vote"] == "mismatch"
+    assert results["forged_hash"]["prompt"] is None
+    assert results["text_describes_another_payment"]["integrity"] == "mismatch:payment_text"
+
+
+def test_the_prompt_names_the_decision_by_its_signed_text_not_its_title(results):
+    plain = results["plain_decision"]
+    assert plain["prompt"] == "Approve: Hire a second auditor."
+    lunch = results["misleading_title"]
+    assert lunch["vote"] == "reached_prompt"
+    assert lunch["prompt"] == "Approve: Rotate the root signing key tonight."
+    assert "lunch" not in lunch["prompt"]
+    assert results["reject_without_a_seat"]["prompt"].startswith("Reject: Pay ")
+
+
+def test_a_payment_prompt_names_the_amount_and_the_recipient_in_full(results):
+    # The payment's own text, less the treasury's address that would otherwise fill the prompt.
+    action = CASES["consistent_payment"]["inputs"]["action"]
+    subject = payment_text(action).replace(f" from this vault's treasury {action['treasury']}", "")
+    assert results["consistent_payment"]["prompt"] == f"Approve: {subject}"
+    assert action["to"] in subject and action["treasury"] not in subject
+
+
+def test_a_long_decision_is_cut_to_fit_the_prompt_and_says_so(results):
+    prompt = results["long_text"]["prompt"]
+    summary = prompt.removeprefix("Approve: ")
+    assert summary.endswith("…")
+    assert len(summary) <= 80
+    assert LONG_TEXT.startswith(summary[:-1].rstrip())
+    assert "Quarterly vendor renewal" not in prompt
+
+
+@pytest.mark.parametrize("text", list(SUMMARIES))
+def test_the_prompt_summary_keeps_the_first_line_and_marks_any_cut(results, text):
+    assert results["summaries"][text] == SUMMARIES[text]
+    assert len(SUMMARIES[text]) <= 80
