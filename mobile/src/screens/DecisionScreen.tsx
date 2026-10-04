@@ -355,35 +355,39 @@ function ConfirmSheet({
   const approving = decision === 'approve';
   const completes = approving && detail.approvals + 1 >= detail.signing_inputs.policy.M;
 
+  // The text and the payment scroll; the consequence and the two buttons stay pinned under them,
+  // so however long the decision is, its title, its opening words and the choice are all on screen.
   return (
     <Sheet
       visible={decision !== null}
       onClose={onCancel}
       dismissible={!busy}
       title={approving ? 'Approve this decision' : 'Reject this decision'}
+      footer={
+        <>
+          <Text style={s.confirmNote}>
+            {approving && detail.signing_inputs.action
+              ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
+              : approving
+              ? completes
+                ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
+                : 'Your signature is recorded against this decision and cannot be withdrawn.'
+              : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
+          </Text>
+          <View style={{ gap: space.sm, marginTop: space.xs }}>
+            <Button
+              label={approving ? 'Sign approval' : 'Sign rejection'}
+              variant={approving ? 'primary' : 'danger'}
+              onPress={onConfirm}
+              busy={busy}
+            />
+            <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} />
+          </View>
+        </>
+      }
     >
       <Text style={s.confirmAction}>{detail.signing_inputs.action_text}</Text>
       {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
-
-      <Text style={s.confirmNote}>
-        {approving && detail.signing_inputs.action
-          ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
-          : approving
-          ? completes
-            ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
-            : 'Your signature is recorded against this decision and cannot be withdrawn.'
-          : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
-      </Text>
-
-      <View style={{ gap: space.sm, marginTop: space.xs }}>
-        <Button
-          label={approving ? 'Sign approval' : 'Sign rejection'}
-          variant={approving ? 'primary' : 'danger'}
-          onPress={onConfirm}
-          busy={busy}
-        />
-        <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} />
-      </View>
     </Sheet>
   );
 }

@@ -227,7 +227,24 @@ export default function NewVaultScreen({
       {/* Multi-select and stays open: adding four people should be four taps, not four round trips
           through a sheet that closes itself each time. The tick is the state, so nothing has to be
           remembered between them. */}
-      <Sheet visible={picking} onClose={() => setPicking(false)} title="Choose signers">
+      <Sheet
+        visible={picking}
+        onClose={() => setPicking(false)}
+        title="Choose signers"
+        footer={
+          <Button
+            label={
+              picked.length === 0
+                ? 'Done'
+                : picked.length === 1
+                  ? 'Done, 1 signer added'
+                  : `Done, ${picked.length} signers added`
+            }
+            onPress={() => setPicking(false)}
+          />
+        }
+      >
+        {/* The sheet scrolls a long list itself and keeps Done in view under it. */}
         {peopleQuery.isLoading ? (
           <Loading />
         ) : (peopleQuery.data?.people.length ?? 0) === 0 ? (
@@ -236,44 +253,31 @@ export default function NewVaultScreen({
             detail="Signers must already be registered on this Q-Vault."
           />
         ) : (
-          <ScrollView style={s.pickList} showsVerticalScrollIndicator={false}>
-            <Card>
-              {(peopleQuery.data?.people ?? []).map((person, i) => {
-                const on = picked.some((p) => p.user_id === person.user_id);
-                return (
-                  <View key={person.user_id}>
-                    {i > 0 ? <Divider /> : null}
-                    <Pressable
-                      onPress={() => toggle(person)}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: on }}
-                      accessibilityLabel={person.name}
-                      style={({ pressed }) => [s.pickRow, pressed && { opacity: 0.6 }]}
-                    >
-                      <Text style={s.pickName} numberOfLines={1}>
-                        {person.name}
-                      </Text>
-                      <View style={[s.check, on && s.checkOn]}>
-                        {on ? <Text style={s.checkGlyph}>✓</Text> : null}
-                      </View>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </Card>
-          </ScrollView>
+          <Card>
+            {(peopleQuery.data?.people ?? []).map((person, i) => {
+              const on = picked.some((p) => p.user_id === person.user_id);
+              return (
+                <View key={person.user_id}>
+                  {i > 0 ? <Divider /> : null}
+                  <Pressable
+                    onPress={() => toggle(person)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={person.name}
+                    style={({ pressed }) => [s.pickRow, pressed && { opacity: 0.6 }]}
+                  >
+                    <Text style={s.pickName} numberOfLines={1}>
+                      {person.name}
+                    </Text>
+                    <View style={[s.check, on && s.checkOn]}>
+                      {on ? <Text style={s.checkGlyph}>✓</Text> : null}
+                    </View>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </Card>
         )}
-
-        <Button
-          label={
-            picked.length === 0
-              ? 'Done'
-              : picked.length === 1
-                ? 'Done, 1 signer added'
-                : `Done, ${picked.length} signers added`
-          }
-          onPress={() => setPicking(false)}
-        />
       </Sheet>
     </Screen>
   );
@@ -329,7 +333,6 @@ const s = StyleSheet.create({
   owner: { ...type.micro, color: color.ink4 },
   remove: { ...type.micro, color: color.broken },
 
-  pickList: { maxHeight: 360 },
   pickRow: {
     flexDirection: 'row',
     alignItems: 'center',
