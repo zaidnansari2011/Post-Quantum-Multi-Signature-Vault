@@ -81,8 +81,9 @@ export default function VaultsScreen({
         keyExtractor={(v) => String(v.vault_id)}
         refreshControl={
           <RefreshControl
-            refreshing={query.isRefetching}
-            onRefresh={() => void query.refetch()}
+            refreshing={query.isRefetching || awaiting.isRefetching}
+            // The "need you" counts come from the awaiting list, so a pull refreshes both.
+            onRefresh={() => void Promise.all([query.refetch(), awaiting.refetch()])}
             tintColor={color.ink3}
           />
         }

@@ -22,7 +22,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Card, Row, Seal } from './index.tsx';
 import { color, space, statusTone, type } from '../theme.ts';
 import { decisionStatus, statusWord } from '../status.ts';
-import { expiryPhrase, urgencyOf, whenPhrase } from '../time.ts';
+import { deadlineWhen, expiryPhrase, urgencyOf } from '../time.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
 
 export function DecisionCard({
@@ -60,7 +60,7 @@ export function DecisionCard({
           {proposal.vault_name ?? `Vault ${proposal.vault_id}`}
         </Text>
         {showOutcome ? (
-          <Text style={s.when}>{whenPhrase(proposal.expires_at)}</Text>
+          <Text style={s.when}>{deadlineWhen(proposal.expires_at)}</Text>
         ) : proposal.rejections > 0 ? (
           <Text style={s.rejected}>
             {proposal.rejections} rejected

@@ -98,6 +98,8 @@ PHRASES = [
     {"name": "deadline_in_two_hours_naive", "iso": _naive(NOW + timedelta(hours=2))},
     {"name": "deadline_passed", "iso": _aware(NOW - timedelta(minutes=1))},
     {"name": "deadline_this_instant", "iso": _aware(NOW)},
+    {"name": "deadline_thirty_seconds_away", "iso": _aware(NOW + timedelta(seconds=30))},
+    {"name": "deadline_thirty_seconds_ago", "iso": _naive(NOW - timedelta(seconds=30))},
 ]
 
 DECISIONS = {
@@ -259,6 +261,35 @@ def test_a_deadline_is_expired_only_once_it_has_passed(results):
     # The server keeps a decision open at its deadline's exact instant (now <= expires_at).
     assert results["phrases"]["deadline_this_instant"]["expiry"] != "Expired"
     assert results["phrases"]["deadline_this_instant"]["urgency"] == "critical"
+
+
+def test_a_deadline_still_ahead_is_a_date_in_a_list_never_just_now(results):
+    # A history card's date is the deadline. The skew allowance is for stamps of things that
+    # happened; an open decision's deadline thirty seconds away has not happened.
+    ahead = results["phrases"]["deadline_thirty_seconds_away"]
+    assert ahead["when"] == "Just now"  # what the card printed before
+    assert ahead["deadline"] != "Just now" and "ago" not in ahead["deadline"]
+    assert any(ch.isdigit() for ch in ahead["deadline"])
+
+
+def test_a_deadline_that_has_passed_reads_as_when_it_passed(results):
+    phrases = results["phrases"]
+    assert phrases["deadline_thirty_seconds_ago"]["deadline"] == "Just now"
+    assert phrases["deadline_passed"]["deadline"] == "1 minute ago"
+    assert phrases["signed_hours_ago"]["deadline"] == "2 hours ago"
+    # At its exact instant the server still keeps it open, so it is not yet in the past.
+    assert phrases["deadline_this_instant"]["deadline"] == phrases["deadline_this_instant"]["when"]
+
+
+def test_the_vaults_pull_to_refresh_refetches_the_list_its_counts_come_from():
+    # The "N need you" chips are counted from the awaiting list, not the vault list; a pull that
+    # refreshed only the vaults left the counts stale for up to the query's 60 s staleTime.
+    source = (MOBILE_DIR / "src" / "screens" / "VaultsScreen.tsx").read_text(encoding="utf-8")
+    refresh = source[
+        source.index("<RefreshControl") : source.index("/>", source.index("<RefreshControl"))
+    ]
+    assert "awaiting.refetch()" in refresh and "query.refetch()" in refresh
+    assert "awaiting.isRefetching" in refresh
 
 
 @pytest.mark.parametrize("name", list(DECISIONS) + list(NAIVE_DECISIONS))

@@ -9,7 +9,14 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { middleOut } from '../src/format.ts';
 import { decisionStatus, statusWord, stillOpen, type StatusFacts } from '../src/status.ts';
-import { expiryPhrase, parseInstant, urgencyOf, whenAfter, whenPhrase } from '../src/time.ts';
+import {
+  deadlineWhen,
+  expiryPhrase,
+  parseInstant,
+  urgencyOf,
+  whenAfter,
+  whenPhrase,
+} from '../src/time.ts';
 
 type Input = {
   now: number;
@@ -33,6 +40,7 @@ const phrases: Record<string, unknown> = {};
 for (const c of input.phrases) {
   phrases[c.name] = {
     when: whenPhrase(c.iso, now),
+    deadline: deadlineWhen(c.iso, now),
     after: c.verb ? whenAfter(c.verb, c.iso, now) : null,
     expiry: expiryPhrase(c.iso, now),
     urgency: urgencyOf(c.iso, now),
