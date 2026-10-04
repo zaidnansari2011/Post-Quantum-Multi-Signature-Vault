@@ -360,26 +360,32 @@ locked.
 
 *Your effort:* three commands, one small YAML edit, then re-upload your files.
 
-### 2.5 Publish the key fingerprints — `PARTLY DONE` (2026-08-21)
+### 2.5 Publish the key fingerprints — `PARTLY DONE` (2026-08-21; values renewed 2026-10-04)
 
 *Why it's yours:* a fingerprint is only worth anything if it reaches the reader through a channel
 the log does not control. Me writing it into the repo the log ships from is exactly the circularity
 it exists to break — so the last step has to be you, in public, in advance.
 
-Both values, recomputed from the keys the running services served on 2026-08-21:
+Both values, read from the running witness on 2026-10-04 (its own key, and the log key it has
+pinned for origin `project4.zaidansari.tech/ledger`):
 
 | | | |
 | --- | --- | --- |
-| **The log** | `951dbf99653347de` | ML-DSA-65, signs every checkpoint |
-| **The witness** | `c79ad5683b2e9109` | ML-DSA-87, `witness-1`, separate process and key |
+| **The log** | `6e4025ccb44f44c4` | ML-DSA-65, signs every checkpoint |
+| **The witness** | `810fb51e5e2f75a8` | ML-DSA-87, `witness-1`, separate process and key |
+
+The 2026-09-27 redeployment (§2.9) made new keys. The values published before it, log
+`951dbf99653347de` and witness `c79ad5683b2e9109`, belong to the retired deployment.
 
 Each is `SHA-256(public key)` truncated to 16 hex characters — the same rule as
 `Key.public_fingerprint()`, so a value shown on a phone, on the website and in an export can be
 compared by eye.
 
-*What I've done:* published both on the **Q-Vault Crypto Inventory** page, which is hosted on
-claude.ai rather than served by Q-Vault, so it is already a channel independent of the thing it
-vouches for.
+*What I've done:* published both on the **Q-Vault Crypto Inventory** page
+(<https://claude.ai/artifact/Xo12wyizGRiDudEG2cqX2E>), which is hosted on claude.ai rather than
+served by Q-Vault, so it is a channel independent of the thing it vouches for. Updated to the new
+values on 2026-10-04, with a note naming the retired ones. **The page is private until you share
+it** (its Share menu, "anyone with the link"); until then it publishes nothing to anyone else.
 
 *What's still yours, and it is the part that carries the argument:* **put the witness fingerprint
 on a slide, or write it on the board, before the demo starts.** Then when the verifier reports *the
@@ -391,7 +397,7 @@ demonstrating the property.
 To use either:
 
 ```
-python -m qvault.verify decision-xxxxxxxx.qvault.html --expect-witness c79ad5683b2e9109
+python -m qvault.verify decision-xxxxxxxx.qvault.html --expect-witness 810fb51e5e2f75a8
 ```
 
 or paste it into the offline record's **Pin the keys you were told to expect** field. A correct
@@ -551,16 +557,35 @@ ledger 133 entries, verified). Demo sign-in as before (`ada@qvault.demo`). Conse
 **Yours to do:**
 
 1. **Back up the new `SERVER_MASTER_KEY`** into a password manager. Without it the vault files and
-   the log's SYSTEM key can never be unwrapped. It is a Container App secret on `qvault`, and a
-   copy is in the session scratchpad on this laptop (`scratchpad/azure/master_key`), which is
-   temporary.
+   the log's SYSTEM key can never be unwrapped. It is a Container App secret on `qvault`; on
+   2026-10-04 I checked that the scratchpad copy on this laptop is byte-identical to it, but that
+   folder is temporary. Either line puts the key on your clipboard without showing it; paste it
+   into the password manager, then copy something else:
+
+   ```powershell
+   # from the scratchpad copy (while it still exists)
+   Get-Content "$env:LOCALAPPDATA\Temp\claude\c--Users-Zaid-Documents-4th-year-project\3b36b092-d14a-4e4c-813d-1b3b0df3710d\scratchpad\azure\master_key" | Set-Clipboard
+   # or straight from Azure
+   az containerapp secret show -n qvault -g rg-qvault --subscription 4e995e2f-5117-441f-97d2-149256d6215b --secret-name server-master-key --query value -o tsv | Set-Clipboard
+   ```
 2. **Your teammate:** they own the billing. The standing cost is roughly the Postgres server plus
    one always-on 0.5 vCPU replica (~$15–20/month). Ask them to glance at their credit monthly.
-3. **Your old deployment** (`qvault-rg` on your own subscription): the container is stopped, but a
-   Postgres server there still bills while it exists. Once you are happy with this one, delete it,
-   or at least stop its Postgres, so it stops using your credits. Export it first if anything in
-   it matters.
-4. Republish the two fingerprints above (§2.5).
+3. **Your old deployment** (`qvault-rg` on your own subscription `88f39ece…`): the container is
+   stopped, but a Postgres server there still bills while it exists. Your subscription is no
+   longer signed in on this laptop, and I do not touch it, so this one is yours. Export it first
+   if anything in it matters. Either delete only the database server:
+
+   ```powershell
+   az login                      # your own account, then:
+   az account set --subscription 88f39ece-...   # your full subscription id
+   az postgres flexible-server list -g qvault-rg --query "[].name" -o tsv
+   az postgres flexible-server delete -g qvault-rg -n <the name it printed> --yes
+   ```
+
+   or remove the whole old deployment (stopped app, old witness, storage, database) in one go with
+   `az group delete -n qvault-rg --yes`. Nothing live uses it.
+4. ~~Republish the two fingerprints above (§2.5).~~ `DONE` 2026-10-04 on the Crypto Inventory
+   page; what is left is sharing that page and putting the witness value on a slide (§2.5).
 
 **Found while deploying:** `scripts/seed_demo.py` deadlocked on Postgres (its own open transaction
 held a lock `drop_all` waited on — SQLite never shows it), and the image workflow did not rebuild
