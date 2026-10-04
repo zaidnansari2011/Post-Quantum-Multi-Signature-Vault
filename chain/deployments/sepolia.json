@@ -51,6 +51,37 @@
   "network": "sepolia",
   "schema": 1,
   "treasuries": {
+    "0x5788ccACAdCe9F3A0447B6fBFe009D8A6c821461": {
+      "block": 11842630,
+      "config_nonce": 0,
+      "deployment_tx": "0xb9a31b24f13330dce069d2bfdab95f76c6093d084a52dd538c583cd70ddeb766",
+      "linked_at": "2026-10-04T14:25:53.467769+00:00",
+      "signers": [
+        {
+          "custody": "password",
+          "onchain_key_id": "0xc6f46f19b5835c1f6f5d2cbef2259862aeef5355cbeda6905b7390e99989d7be",
+          "public_key_sha256": "be220ac0f5a7a8ee964b6bccf67c1eb74e944f60e18b49e6c053048a5a28caea",
+          "user_id": 1
+        },
+        {
+          "custody": "password",
+          "onchain_key_id": "0xe49d649aacaaab0416ac4447c9a0c0fe134a3aef80582d3d27a2f8a0545e6c30",
+          "public_key_sha256": "343f1af72f568da9371419ae1eb5de41912117961bc3d2002be09202faf28103",
+          "user_id": 2
+        },
+        {
+          "custody": "password",
+          "onchain_key_id": "0x934e27ba81ee5d0ea1c53d399fce954cc05359774b8ed321fa751ddf42a0e5e7",
+          "public_key_sha256": "6d3c271d7e1b9a62c1411aae0b89d73d69714f260ad7cacb2ae0b3cd98ff38ed",
+          "user_id": 3
+        }
+      ],
+      "status": "linked",
+      "threshold": 2,
+      "unlinked_at": null,
+      "vault_id": 1,
+      "verifier": "0x31a85de8CB44BC89c53487A69d20b3DC3dB7487C"
+    },
     "0xD49174b703d6FBC5088b0f01C6E71B5Ef467f3D0": {
       "block": 11793467,
       "deployment_tx": "0xbec098ab91cd6b1b4737ee4ffddee3f87fa161ac235332143ae99ed464f44770",
