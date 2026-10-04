@@ -110,6 +110,19 @@ export function whenAfter(verb: string, iso: string | null | undefined, now = Da
   return `${verb} ${relative(iso, now)}`;
 }
 
+/**
+ * A deadline as a list's date: when it passed, or the date it falls on while it is still ahead.
+ *
+ * `whenPhrase` is for things that happened, so it reads a stamp up to a minute in this phone's
+ * future as "just now" (clock skew). A deadline in the future has not happened; read that way, an
+ * open decision's date turned "Just now" for the last minute before its deadline.
+ */
+export function deadlineWhen(iso: string | null | undefined, now = Date.now()): string {
+  const at = parseInstant(iso);
+  if (!Number.isNaN(at) && at > now) return absolute(at);
+  return whenPhrase(iso, now);
+}
+
 /** The full stamp, for the places that genuinely need one -- an audit row, a signature record. */
 export function exactly(iso: string | null | undefined): string {
   if (!iso) return '—';
