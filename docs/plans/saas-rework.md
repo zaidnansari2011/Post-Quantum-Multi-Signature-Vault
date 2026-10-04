@@ -1,6 +1,6 @@
 # Plan: Q-Vault as a SaaS product (the rework)
 
-**Status:** DRAFT for the owner's review, 2026-10-04 · **Branch:** `saas-rework` (worktree
+**Status:** APPROVED 2026-10-04 (owner: app-led direction, dark mode built in gracefully, recommendations accepted for the rest; S19 fixed on the working branch) · **Branch:** `saas-rework` (worktree
 `q-vault-rework`) · **Fallback:** tag `v1-working-2026-10-04` · **Owner actions:** [§10](#10-what-the-owner-decides-and-provides)
 
 This is the working plan for the rework. Build in the order below: tick each box when it is done,
@@ -20,7 +20,7 @@ moment, not just at the end.
 | The working project is frozen at a known-good point | Tag `v1-working-2026-10-04` on `cf617e4`, pushed. It is what `project4.zaidansari.tech` runs (image `ee70586`, scripts `52fdfb6`, records `cf617e4`). |
 | Rework commits never touch the working branch | All work is on `saas-rework`, in its own worktree (`q-vault-rework`). The original folder stays on `onchain-execution`. |
 | The rework can never deploy itself | `deploy.yml` deploys only from `main`. Pushing `saas-rework` builds an image in GHCR and nothing else. **`saas-rework` is never merged into `onchain-execution` or `main` without the owner's explicit go-ahead.** |
-| Rework phone builds never reach the team's phones | Rework mobile builds publish only to a separate EAS update channel (`rework`), never the production channel the installed apps follow. Checked before every OTA publish. |
+| Rework phone builds never reach the team's phones | Installed builds follow the EAS channel **`preview`** (`app.json` request header; `eas.json` preview profile). Rework builds publish only to an EAS branch and channel named `rework`, never `preview` or `production`, checked before every publish. Note: no OTA update has ever been published; the only APK built (2026-08-20) is runtime `1`, and the code has been runtime `2` since 2026-09-17, so updates cannot reach it anyway. |
 | The rework never shares a database with the live site | A staging deployment, if the owner wants one, gets its own database (§8, Phase R10). The live database is never migrated by rework code. |
 | Every phase ends shippable | Each phase ends with the full suite green, screenshots taken, and nothing half-converted. If the deadline arrives mid-plan, the last completed phase is a coherent product, and so is the tag. |
 | Fixes to the live product are separate decisions | A defect found during the rework that also affects the working project (for example S19) is reported to the owner. It is fixed on the working branch only with their OK, as its own small commit. |
@@ -141,6 +141,8 @@ a signature over another for any non-payment decision. Payments are protected by
 altered text); confirmed in code: `mobile/src/flows.ts:130-141` checks one field,
 `mobile/src/screens/DecisionScreen.tsx:188-189,345` display the other.
 
+**Fixed 2026-10-04 (`d0cae74`, on the working branch).** The phone renders the text only from `signing_inputs`, refuses a response whose two copies differ, and names the decision in the biometric prompt by its signed text (a payment by its signed amount and recipient), never by its unsigned title. The adversarial review of the fix found the same gap in the **threshold**: every "M of N" on the decision screen read top-level `required_m`/`required_n`, which the hash does not cover, so a server could show "3 of 5" over a signed "1 of 5". Fixed in the same commit: the screen reads `signing_inputs.policy`, and a mismatch is refused. **Still unsigned by design:** the vault's name and the signers' names. A check on `vault_id` was proposed and rejected in review (a lying server would simply send matching ids); binding the name needs a protocol change (the vault's identity under the hash), not a display fix.
+
 ### Missing outright (the customer's view)
 
 Workspace/organisation, invitations, any notification, onboarding, password recovery story,
@@ -159,7 +161,7 @@ the owner's to make; the recommendation is given.
 
 | # | Decision | Why | Rejected |
 | --- | --- | --- | --- |
-| S1 ⚑ | **One product, one design language, led by the app's direction**: Public Sans for the interface, Source Serif 4 for the decision text itself, JetBrains Mono for hashes, keys and addresses only; ink-navy neutrals. The web adopts it; the app tightens to the shared token set. | The owner prefers the app. The serif-for-the-thing-being-signed idea is distinctive, meaningful (a decision *is* a document) and owned, which is the opposite of a template. Public Sans (USWDS) reads institutional and trustworthy. All three are OFL and vendorable, which the offline-asset tests require. | Research 01's default (Inter + indigo + Radix Sand): excellent, but Inter at default weights is itself listed as a template tell, and it would make the web unlike the app the owner likes. Kept as the fallback if the style tile (R1.1) does not land. |
+| S1 ✓ owner 2026-10-04 | **One product, one design language, led by the app's direction**: Public Sans for the interface, Source Serif 4 for the decision text itself, JetBrains Mono for hashes, keys and addresses only; ink-navy neutrals. The web adopts it; the app tightens to the shared token set. | The owner prefers the app. The serif-for-the-thing-being-signed idea is distinctive, meaningful (a decision *is* a document) and owned, which is the opposite of a template. Public Sans (USWDS) reads institutional and trustworthy. All three are OFL and vendorable, which the offline-asset tests require. | Research 01's default (Inter + indigo + Radix Sand): excellent, but Inter at default weights is itself listed as a template tell, and it would make the web unlike the app the owner likes. Kept as the fallback if the style tile (R1.1) does not land. |
 | S2 | **Measured tokens, not picked ones:** a seven-step type scale on a 4px line-height grid with tuned weights; a 12-step neutral ramp; radius by role (4/6/8/12/full); four elevation levels with shadows only on overlays; motion 0/100/150/200–240ms. Full spec in §6. | Every reference system works this way, and the audit of `qvault.css` (01 §8.3) shows ours does not. | Restyling screen by screen without a token layer, which is how 24 font sizes happened. |
 | S3 | **One accent colour, used for identity and interaction only** (primary action, focus ring, links, selection, active nav), never for a data value or a status. Status keeps its closed semantic set. **Supersedes ADR-0013 rule 2**, recorded as ADR-0024. | The absence of any accent is the single largest cause of the "not yet styled" read (01 §8.3). Polaris and Radix both separate brand roles from status roles. | Keeping "colour only means status" (the austerity that failed three reviews); a gradient brand (a listed tell). |
 | S4 | **"The interface states consequences, not concepts."** Status lines and consequence lines are allowed ("Rejecting ends this decision for everyone"); concept explanation stays in `/docs`. **Revises ADR-0014's "explains nothing"**, in the same ADR-0024. | Research 02's copy examples are all status and consequence lines, and fit the spirit of 0014. "Explains nothing" over-corrected into screens with no guidance at the moments that matter. | Restoring teaching copy (rejection #1, August). |
@@ -183,17 +185,17 @@ the owner's to make; the recommendation is given.
 | S12 | **Notifications as one subsystem with three deliveries:** in-app (bell popover, inbox page, unread badge) in R4; email and phone push in R8. Triggers: decision raised, reminder, due within 24h, comment or mention, approved, rejected (with reason), expired, payout paid or failed, invited or added to a vault, vault rule changed, and security events (new device, password changed, recovery used), which cannot be switched off. Reminders at +1, +3 and +6 business days. A preferences grid of events × channels. **Never approve from an email or a notification:** they deep-link into the app, where signing happens. | Finding #1. "Never approve from email/push" follows Fireblocks, Brex and C1 (C1 does not even allow step-up approvals in chat) and Apple's HIG; a Q-Vault approval is a signature with the user's key. | Approve-from-email links (a phishing and blind-signing surface). |
 | S13 | **Decision types: General, Payment, Production access, Contract.** Each type has its own fields and **generates the decision text deterministically**, exactly as payments already do (`paymentText`, D24 of the on-chain plan); the phone re-derives the text before signing. The signed format (`action_text`) does not change (S9). | Finding #3, at zero cost to the signed format: the pattern is already proven, tested and verified on the phone. | Adding structured fields to the signed payload (would need new vectors across four implementations). |
 | S14 | **A "who approves" preview before submitting:** "Any 2 of Ada, Brij, Chen · Due 6 Oct · You can't approve your own decision" (when S15 applies). | Ramp, Zip (02 §1.6). Turns the quorum into something the requester sees before it bites. | — |
-| S15 ⚑ | **Separation of duties as a vault setting**: "The person who raises a decision can also approve it": **off by default for new vaults**, on for existing vaults so nothing changes underneath them. Shown on the vault and in the preview. | Default in Fireblocks, Ramp, Wise, Opal (02 §8, 03 §1). Mercury's subtle variant confuses people, so the setting is explicit. | Changing existing vaults silently. |
+| S15 ✓ owner accepted the recommendation 2026-10-04 | **Separation of duties as a vault setting**: "The person who raises a decision can also approve it": **off by default for new vaults**, on for existing vaults so nothing changes underneath them. Shown on the vault and in the preview. | Default in Fireblocks, Ramp, Wise, Opal (02 §8, 03 §1). Mercury's subtle variant confuses people, so the setting is explicit. | Changing existing vaults silently. |
 | S16 | **Reject takes a reason (required), and a decision can be withdrawn and raised again.** "Request changes" is withdraw-and-re-raise with a link to the original, because signatures bind the content: an edited decision *is* a new decision. Comments are a separate, unsigned discussion thread, labelled as not part of what is signed. | DocuSign, Wise, Spendesk (reason required); Ramp, Zip (request changes). Making "edits invalidate signatures" visible is one of Q-Vault's differentiators. | Editing a decision in place (impossible to do honestly with content-bound signatures). |
 | S17 | **A decision code**: the first 8 hex characters of the payload hash, grouped `7F3A-91C2`, shown on the web decision page, in the phone's approve sheet (computed on the phone) and in exports. Copy: "Check this code matches your phone." | Finding #9; costs nothing, needs no format change (it is a display of a hash both sides already compute). | Word-list fingerprints (later, for keys). |
-| S18 ⚑ | **Recovery, stated honestly first, built in R9.** A "Forgot password?" page that says what cannot be done and what can: (a) approve from your paired phone, which holds its own key; (b) ask your vault's approvers to approve a **key replacement** (a quorum decision); (c) a **Recovery Kit**: a high-entropy code issued at sign-up that wraps a second copy of the signing key, printable, "not a backup code". (c) is new cryptography and gets a written design and an adversarial review before it is built. | Table stake #7 (04). 1Password, Bitwarden, Proton, Safe, Fireblocks (04 §8). Today the answer is "there is no reset", which is true but is not a design. | An email password reset that silently loses the signing key. |
-| S19 | **Fix the phone's display-only text.** The phone renders the decision text only from `signing_inputs` (the checked field), and refuses to offer signing if `detail.action_text` and `signing_inputs.action_text` differ. Tested with a probe like the existing payment guard. Also show the recomputed hash in the integrity-failure panel. | The security defect in §3. In the rework regardless; **in the working project only with the owner's OK** (§0, §10). | — |
+| S18 ✓ owner accepted the recommendation 2026-10-04 (the R9 design is still reviewed before code) | **Recovery, stated honestly first, built in R9.** A "Forgot password?" page that says what cannot be done and what can: (a) approve from your paired phone, which holds its own key; (b) ask your vault's approvers to approve a **key replacement** (a quorum decision); (c) a **Recovery Kit**: a high-entropy code issued at sign-up that wraps a second copy of the signing key, printable, "not a backup code". (c) is new cryptography and gets a written design and an adversarial review before it is built. | Table stake #7 (04). 1Password, Bitwarden, Proton, Safe, Fireblocks (04 §8). Today the answer is "there is no reset", which is true but is not a design. | An email password reset that silently loses the signing key. |
+| S19 ✓ fixed on `onchain-execution` `d0cae74` (owner OK 2026-10-04), carried into `saas-rework`; the adversarial review widened it to the threshold | **Fix the phone's display-only text.** The phone renders the decision text only from `signing_inputs` (the checked field), and refuses to offer signing if `detail.action_text` and `signing_inputs.action_text` differ. Tested with a probe like the existing payment guard. Also show the recomputed hash in the integrity-failure panel. | The security defect in §3. In the rework regardless; **in the working project only with the owner's OK** (§0, §10). | — |
 | S20 | **Expiry made visible and consistent:** an "Expiring soon" queue, a 24-hour warning notification, expired decisions leave every "needs you" queue, and expired shows the same everywhere with "Raise again". | Anchorage calls silent expiry "easy to miss"; the baseline shows it happening. | — |
 | S21 | **Sign-up creates a workspace;** sign-in stays email + password (it unlocks the signing key) with "Forgot password?" beside the label; an honest password screen at sign-up ("This password also unlocks your signing key. We can't reset it."). Passkeys and SSO are later and only *sign in*, never unlock (Bitwarden's "log in" vs "unlock"). | Linear, Stripe, Bitwarden, OWASP (04 §2). | Magic-link sign-in that implies the key is also recovered. |
 | S22 | **The public face:** a landing page that names the job ("No single person can move the money."), shows the real product, replaces the four crypto statistics with a **live, verifiable log strip** ("Log head #12,481 · witnessed 9 s ago · Verify offline →"), and links a **Security page** built on Apple PQ3's levels-ladder idea. Plus: pricing placeholder (honest), changelog, a status page driven by `/healthz` and witness freshness, a real footer. | 04 §1 and Stage 1. The live log strip is something no template has. | Customer logos and badges we do not have. |
 | S23 | **The phone stays a first-class signer** (phone parity, the standing rule) and gains: the shared tokens, an in-app notification inbox (R7), push (R8), decision types, the decision code, workspace awareness. Rework builds use the `rework` EAS channel only (§0). | The custody-tool model (Fireblocks, Safe) puts Q-Vault in the "phone is never inferior" group, a selling point (02 §9). | — |
 | S24 | **Accessibility to WCAG 2.2 AA as a test, not a hope:** token contrast pairs checked by a unit test; 24px minimum targets (44px on touch); visible 2px focus; every control labelled; `aria-live` for async updates; reduced motion honoured. | 01 §7. Several current failures (input borders, missing labels) are invisible until measured. | — |
-| S25 ⚑ | **Dark mode is designed in the token layer from the start but shipped last (R10 or later),** only if time allows. | Every system studied supports it; doing the token architecture right now makes it cheap later. Shipping it early doubles the screenshot review. | — |
+| S25 ✓ owner 2026-10-04: *"incorporate dark mode gracefully"* | **Dark mode is part of the design system from the first token, not a late theme.** Every colour token has a light and a dark value (Radix-style functional steps, re-measured for contrast in both); every component is built and screenshotted in both; the web follows `prefers-color-scheme` with a manual override (System / Light / Dark) in the avatar menu, stored per user, applied before first paint (no flash); dark surfaces step lighter instead of using shadows (Carbon layering); status colours keep their meaning in both. The offline verifier already has a dark theme to match. **Phone:** `app.json` forces `userInterfaceStyle: "light"`; switching it to `automatic` is a native config change, so it needs a `runtimeVersion` bump and a new APK (R7), not an OTA. | Every system studied supports it (01 §2.6). Built in from the start it costs little; bolted on later it doubles the review and misses edge states. | Shipping dark mode last as an optional extra (the draft's recommendation, overridden by the owner). |
 
 ---
 
@@ -313,7 +315,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] Baseline: 33 web screens (desktop and phone widths) and 54 app screens over the demo dataset (2026-10-04)
 - [x] Research 01–05 (2026-10-04)
 - [x] This plan, drafted (2026-10-04)
-- [ ] ⚑ Owner reviews the plan; S1, S15, S18, S25 and the §10 items answered
+- [x] Owner reviewed the plan (2026-10-04): S1 app-led ✓; S25 dark mode built in gracefully ✓; S15, S18 and the rest as recommended ✓; S19 fix approved for the working project
 - [ ] Commit the screenshot harnesses as tools: `scripts/ui_shots.py` (web) and `mobile/tools/web-shots/` (app, already built)
 - [ ] Alembic baseline revision of the current schema (S8); `create_all` remains for tests
 - [ ] `tests/test_design_tokens.py` scaffold (contrast pairs, type scale on the 4px grid)
@@ -323,7 +325,8 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 - [ ] **R1.1 Style tile ⚑:** one HTML page showing the type scale, colours, components and two real screens (Home and a decision) in the new language, for the owner to approve before anything is converted. Includes the logo mark.
 - [ ] Vendor Public Sans and Source Serif 4 (woff2, OFL, update `static/vendor/README.md`); drop Archivo; dedupe the five identical Inter files
-- [ ] Token CSS (`tokens.css`, `base.css`, `components.css`, `utilities.css`) replacing `qvault.css`; light theme only, dark tokens stubbed (S25)
+- [ ] Token CSS (`tokens.css`, `base.css`, `components.css`, `utilities.css`) replacing `qvault.css`, with **light and dark values for every token** (S25), contrast-tested in both
+- [ ] Theme switching: `prefers-color-scheme` by default, a System / Light / Dark choice in the avatar menu stored per user, applied before first paint
 - [ ] Jinja component macros (`templates/ui/`) and `static/qvault.js` behaviours (S7)
 - [ ] The shell: sidebar, top bar (search and bell present; the bell is wired in R4), avatar menu, help menu, mobile drawer
 - [ ] Error pages for 400/403/404/405/413/500 and CSRF failure, signed in or out, with a next step
@@ -331,7 +334,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [ ] Every existing screen converted to the new components, same content and behaviour
 - [ ] Defect fixes: signed-out docs; add-member tab; info flashes; `.visually-hidden`; verify paste box; POST-renders-instead-of-redirects
 - [ ] Accessibility pass (S24) with the token test green
-- **Done when:** every baseline screen has an "after" twin at both widths, the owner has reviewed them, and no test was weakened (every changed HTML assertion is listed in the log with its reason, §9).
+- **Done when:** every baseline screen has an "after" twin at both widths **and in both themes**, the owner has reviewed them, and no test was weakened (every changed HTML assertion is listed in the log with its reason, §9).
 
 ### Phase R2: The core screens
 
@@ -383,8 +386,11 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R7: The phone app · `rework` EAS channel only
 
-- [ ] S19 display fix (if not already done on the working branch) and the defects in §3 (time zones, title on decision page, expired queue, role chip colour, "Just now", Expired vs Open)
-- [ ] Shared tokens (type scale, colours, radius) aligned with §6
+- [x] S19 display fix: done on the working branch (`d0cae74`) and carried here
+- [ ] The defects in §3 (time zones, title on decision page, expired queue, role chip colour, "Just now", Expired vs Open)
+- [ ] The confirm sheet scrolls: a long decision (the form allows 4,000 characters) currently pushes the sheet's title and the opening of the text off the top of the screen. The text and payment block scroll; the title and the Sign/Cancel buttons stay fixed. Found in the S19 review; it predates the fix
+- [ ] Shared tokens (type scale, colours, radius) aligned with §6, light and dark
+- [ ] Dark mode on the phone: `userInterfaceStyle: "automatic"`, theme-aware components, **`runtimeVersion` bump and a new APK** (a native config change; owner builds it, §2.3 of OWNER-ACTIONS)
 - [ ] Notification inbox (from R4's API), decision types (R5), decision code in the approve sheet (S17), workspace and invitation acceptance
 - [ ] Web-harness screenshots of every screen against the baseline
 - **Done when:** the phone parity checklist for every R2–R5 feature is ticked on a handset (owner).
@@ -407,7 +413,6 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [ ] The team tests on staging; issues fixed
 - [ ] ⚑ The owner decides: switch, or stay on the tag
 - [ ] Switch procedure: back up the live database; deploy; smoke test; keep the tagged image ready. Rollback: redeploy `ee70586` (or the tag's image) against the backup
-- [ ] Dark mode (S25) if time allows
 
 ---
 
@@ -416,7 +421,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - **The suite stays green at every commit,** and nothing is weakened to get there. About 150
   assertions check rendered HTML (§9); each one changed is changed on purpose and logged.
 - **Screenshot review is the acceptance test for visual work:** `scripts/ui_shots.py` (web, desktop
-  and phone widths) and `mobile/tools/web-shots/` (app) re-run after each phase, compared with
+  and phone widths, light and dark) and `mobile/tools/web-shots/` (app) re-run after each phase, compared with
   `baseline/`, and shown to the owner.
 - **Tokens are tested:** contrast pairs, scale membership, no stray font sizes in the CSS
   (a test greps for `font-size` values outside the scale).
@@ -453,11 +458,11 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 | Item | Why it is the owner's | Recommendation |
 | --- | --- | --- |
-| **S19 in the working project** | It changes the live app (an OTA update to the team's phones) | Yes: a small, tested fix on `onchain-execution`, published to the production channel, because it closes a real signing gap |
-| S1 visual direction | Taste and brand | App-led (Public Sans, Source Serif, navy), decided on the R1.1 style tile |
-| S15 separation of duties | Product policy | Off by default for new vaults |
-| S18 recovery | New cryptography, product promise | Approve the three-route design for R9 |
-| S25 dark mode | Scope | Last, if time allows |
+| **S19 in the working project** | It changes the live app | **Done** `d0cae74`: fixed and tested on `onchain-execution`. It reaches phones with the next build (an APK at runtime 2, or Expo Go from source); an OTA could not reach the runtime-1 APK. The owner builds the APK once the rework's changes are finished |
+| S1 visual direction | Taste and brand | **Decided: app-led.** The R1.1 style tile confirms the details |
+| S15 separation of duties | Product policy | **Decided:** off by default for new vaults |
+| S18 recovery | New cryptography, product promise | **Decided:** the three routes; the written design is reviewed before R9 code |
+| S25 dark mode | Scope | **Decided:** built in from R1 in both themes; the phone's needs a new APK |
 | Logo mark | Brand | From the quorum seal, approved on the style tile |
 | Staging environment | Cost on the teammate's subscription (a scale-to-zero container app and a database on the existing server) | Yes, in R10 |
 | Email provider | A third-party account and DNS records (SPF, DKIM, DMARC) on `zaidansari.tech` | Azure Communication Services Email (already on Azure) or Postmark |
@@ -493,3 +498,4 @@ integration (P2 if time allows), i18n, a public API for third parties, mainnet.
 | Date | Phase | What landed | Commit |
 | --- | --- | --- | --- |
 | 2026-10-04 | R0 | Safety net (tag, branch, worktree); baseline screenshots (web 33×2, app 54); research 01–05; plan drafted. Found on the way: the phone's display-only decision text (S19), seven web defects (§3) | — |
+| 2026-10-04 | R0 | **Owner decisions recorded** (S1 app-led, S25 dark mode built in, S15/S18 as recommended). **S19 fixed on the working branch** (`d0cae74`): the phone renders and prompts with the signed text only, refuses a response whose two copies differ, and its integrity drawer shows the hash it derived. A three-lens adversarial review (20 agents) confirmed 6 of 16 findings, all fixed in the same commit: the threshold gap (high), the prompt's 81-character edge, a payment prompt cut inside the treasury address, a stand-in that could hide an early prompt, and missing tests (forged hash, cut boundaries, server copies agree). 12 hand mutations killed; full suite green. Deferred to R7: the confirm sheet does not scroll (pre-existing). Found: no OTA has ever been published and the only APK is runtime 1, so the fix reaches phones with the next build | — |
