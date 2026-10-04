@@ -29,24 +29,26 @@
   --weight-regular: 400;
   --weight-caption: 450;
   --weight-medium: 500;
-  --weight-strong: 600;
+  --weight-strong: 600;           /* titles only; strong body text is 560 */
 
-  /* Seven steps on a 4px line-height grid (plan §6). rem, so text follows browser zoom. */
+  /* Nine styles on a 4px line-height grid (plan §6): the seven, the decision text at two sizes, and a
+   * 13px mono step for hashes. rem, so text follows browser zoom. */
   --text-caption-size: 0.75rem;          /* 12 */
   --text-caption-line: 1rem;             /* 16 */
   --text-caption-weight: 450;
   --text-body-size: 0.875rem;            /* 14 */
   --text-body-line: 1.25rem;             /* 20 */
   --text-body-weight: 400;
-  --text-body-strong-weight: 600;
+  --text-body-strong-weight: 560;  /* row titles, buttons, names in sentences: 600 is a solid stripe at 14px */
+  --text-badge-weight: 500;        /* badge labels: 12px on a tint needs a little more than the caption's 450 */
   --text-title-sm-size: 1rem;            /* 16 */
   --text-title-sm-line: 1.5rem;          /* 24 */
   --text-title-sm-weight: 600;
   --text-title-size: 1.25rem;            /* 20 */
   --text-title-line: 1.75rem;            /* 28 */
   --text-title-weight: 600;
-  --text-title-tracking: -0.01em;
-  --text-figure-size: 1.5rem;            /* 24, the one moment of scale per screen */
+  --text-title-tracking: -0.015em; /* Public Sans runs loose at 20px */
+  --text-figure-size: 1.5rem;            /* 24: balances and totals; never on a page that shows decision text */
   --text-figure-line: 2rem;              /* 32 */
   --text-figure-weight: 600;
   --text-figure-tracking: -0.015em;
@@ -55,7 +57,7 @@
   --text-decision-hero-size: 1.375rem;   /* 22, decision text as the page's subject */
   --text-decision-hero-line: 2rem;       /* 32 */
   --text-decision-weight: 400;
-  --text-code-size: 0.8125rem;           /* 13: mono runs large; 13 mono sits with 14 sans */
+  --text-code-size: 0.8125rem;           /* 13, mono only: mono runs large; 13 mono sits with 14 sans (plan §6) */
   --text-code-line: 1.25rem;             /* 20 */
   --text-input-size-touch: 1rem;         /* inputs below 768px, so iOS does not zoom */
 
@@ -167,7 +169,7 @@
   --accent-8: #739DEC;
   --accent-9: #2D60C3;    /* solid: primary button, link, focus ring, checked control */
   --accent-10: #2152B0;   /* hover */
-  --accent-11: #224FA6;   /* accent text on accent-subtle */
+  --accent-11: #234993;   /* accent text on accent-subtle: L 0.42, a clear step below 10 (hover) */
   --accent-12: #152C58;
 
   /* Surfaces. Light separates by tone and hairline; shadows are for overlays only. */
@@ -178,6 +180,9 @@
   --fill: var(--neutral-3);
   --fill-hover: var(--neutral-4);
   --fill-active: var(--neutral-5);
+  /* Hover inside menus, popovers, dialogs and sheets. In light it equals --fill; in dark the raised
+   * surface is already --neutral-3, so a hover there must step to --neutral-5. */
+  --fill-raised-hover: var(--neutral-3);
 
   --border: var(--neutral-6);
   --border-hover: var(--neutral-7);
@@ -215,7 +220,8 @@
   /* Status: a closed set of five tones (S6). Success, warning and critical are the app's
    * sealed / waiting / broken triplets, unchanged. Info is steel blue at hue 225: half the accent's
    * chroma and 37 degrees away from it, so a status never reads as a link or a button.
-   * Tone map: Needs your signature -> warning; Waiting on N, Queued -> info;
+   * Tone map: Needs your signature -> warning; Queued (and later Scheduled) -> info;
+   * Waiting on N -> neutral (pending, but not yours to act on);
    * Approved, Paid -> success; Rejected, Failed -> critical; Expired, Withdrawn -> neutral. */
   --status-neutral-fg: var(--neutral-11);
   --status-neutral-bg: var(--neutral-3);
@@ -292,6 +298,7 @@
     /* Dark surfaces step lighter instead of casting shadows. bg-subtle and surface share step 2. */
     --surface: var(--neutral-2);
     --surface-raised: var(--neutral-3);
+    --fill-raised-hover: var(--neutral-5);
 
     --accent-text: #FFFFFF;
     --link: var(--accent-11);
@@ -371,6 +378,7 @@
   /* Dark surfaces step lighter instead of casting shadows. bg-subtle and surface share step 2. */
   --surface: var(--neutral-2);
   --surface-raised: var(--neutral-3);
+  --fill-raised-hover: var(--neutral-5);
 
   --accent-text: #FFFFFF;
   --link: var(--accent-11);

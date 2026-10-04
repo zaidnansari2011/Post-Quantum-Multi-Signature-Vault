@@ -335,7 +335,7 @@
   min-height: 20px; padding: var(--space-2) var(--space-6);
   border: var(--border-width) solid var(--status-neutral-border); border-radius: var(--radius-badge);
   background: var(--status-neutral-bg); color: var(--status-neutral-fg);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-badge-weight);
   white-space: nowrap;
 }
 .chip--sealed  { color: var(--status-success-fg);  background: var(--status-success-bg);  border-color: var(--status-success-border); }
