@@ -103,6 +103,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
         return db.session.get(User, int(user_id))
 
+    # The component macros' helpers: the status vocabulary, times, hashes (templates/ui/).
+    from . import ui
+
+    ui.register(app)
+
     # --- Blueprints -------------------------------------------------------
     from .blueprints.account import bp as account_bp
     from .blueprints.admin import bp as admin_bp

@@ -1,0 +1,44 @@
+{# Buttons (styles: components.css, "buttons").
+
+   button(label, variant='secondary', type='button', href=None, size=None, icon=None,
+          loading=False, disabled=False, block=False, name=None, value=None, attrs={})
+     variant   primary (the screen's one main action), secondary (bordered), ghost (borderless,
+               for low-emphasis actions in bars and rows), danger (destroys or ends something).
+     href      renders a link styled as a button; type, name and value are then ignored.
+     size      None (32px), 'sm' (28px, toolbars and rows) or 'lg' (40px, sign-in screens).
+     loading   keeps the label and adds the busy dots and aria-busy; the button is also disabled
+               so a second click cannot submit twice. qvault.js sets it on submit for any button
+               with data-busy-on-submit.
+     attrs     extra attributes, escaped (data-*, aria-*, form, formaction ...).
+
+   icon_button(icon_name, label, variant='ghost', ...)
+     A square button with no visible text; label becomes its accessible name and tooltip.
+#}
+{% from "ui/icons.html" import icon %}
+
+{% macro _classes(variant, size, block, extra='') -%}
+q-btn q-btn--{{ variant }}{% if size %} q-btn--{{ size }}{% endif %}{% if block %} q-btn--block{% endif %}{% if extra %} {{ extra }}{% endif %}
+{%- endmacro %}
+
+{% macro button(label, variant='secondary', type='button', href=None, size=None, icon=None,
+                loading=False, disabled=False, block=False, name=None, value=None, attrs={}) -%}
+{%- if href and not disabled -%}
+<a class="{{ _classes(variant, size, block) }}" href="{{ href }}"{{ attrs|xmlattr }}>
+  {%- if icon %}{{ _lead_icon(icon) }}{% endif %}<span>{{ label }}</span></a>
+{%- else -%}
+<button class="{{ _classes(variant, size, block) }}" type="{{ type }}"
+  {%- if name %} name="{{ name }}"{% endif %}{% if value is not none %} value="{{ value }}"{% endif %}
+  {%- if disabled or loading %} disabled{% endif %}{% if loading %} aria-busy="true"{% endif %}{{ attrs|xmlattr }}>
+  {%- if icon %}{{ _lead_icon(icon) }}{% endif %}<span>{{ label }}</span><span class="q-btn__busy" aria-hidden="true"><i></i><i></i><i></i></span></button>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro _lead_icon(name) -%}{{ icon(name) }}{%- endmacro %}
+
+{% macro icon_button(icon_name, label, variant='ghost', type='button', size=None, href=None, attrs={}) -%}
+{%- if href -%}
+<a class="{{ _classes(variant, size, False, 'q-btn--icon') }}" href="{{ href }}" aria-label="{{ label }}" title="{{ label }}"{{ attrs|xmlattr }}>{{ icon(icon_name) }}</a>
+{%- else -%}
+<button class="{{ _classes(variant, size, False, 'q-btn--icon') }}" type="{{ type }}" aria-label="{{ label }}" title="{{ label }}"{{ attrs|xmlattr }}>{{ icon(icon_name) }}</button>
+{%- endif -%}
+{%- endmacro %}

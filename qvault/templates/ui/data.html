@@ -1,0 +1,102 @@
+{# Data display (styles: components.css, "data table", "panels and key-value", "hash with copy").
+
+   data_table(columns, has_rows, filtered=False, sort=None, descending=False, sort_href=None,
+              empty_title='Nothing here yet', empty_caption=None, empty_action=None,
+              clear_href=None, compact=False, label=None)
+     A table whose body rows come from caller() (each a <tr>, cells in column order).
+     columns   a list of dicts: key, label, and optionally sortable (bool), numeric (bool, right
+               aligned) and hide_label (bool: the header is read but not shown, for an actions
+               column).
+     sort      the key the rows are sorted by; that header gets aria-sort. sort_href(key) is a
+               callable (a macro works) giving the URL that sorts by that key, so sorting is a
+               link and survives a reload.
+     has_rows  False draws one of two states instead of rows. filtered=True means filters hid
+               everything: "No results" with a way to clear them (clear_href). Otherwise the list
+               is genuinely empty: empty_title, empty_caption and an optional empty_action
+               {label, href}. The two must never read the same.
+     label     the table's caption, read by screen readers and hidden on screen.
+
+   kv_panel(items, title=None)
+     A panel of labelled facts, as a description list. items is a list of (label, value) pairs;
+     a value may be markup.
+
+   hash(value, label='value', head=8, tail=6)
+     A hash, key, address or ID: mono, middle-truncated so both ends can be compared by eye, the
+     full value in the tooltip, and a copy button for the full value. label completes the button's
+     name: "Copy " ~ label.
+
+   reltime(moment)
+     A <time> whose text is the absolute time; qvault.js rewrites it to "3 minutes ago" and keeps
+     the absolute time as its title. Without JavaScript the absolute time stays.
+#}
+{% from "ui/icons.html" import icon %}
+{% from "ui/buttons.html" import button %}
+
+{% macro data_table(columns, has_rows, filtered=False, sort=None, descending=False, sort_href=None,
+                    empty_title='Nothing here yet', empty_caption=None, empty_action=None,
+                    clear_href=None, compact=False, label=None) -%}
+<div class="q-table-wrap">
+<table class="q-table{% if compact %} q-table--compact{% endif %}">
+  {%- if label %}<caption class="visually-hidden">{{ label }}</caption>{% endif %}
+  <thead>
+    <tr>
+      {%- for col in columns %}
+      <th scope="col"{% if col.numeric %} class="is-num"{% endif %}
+        {%- if sort and col.key == sort %} aria-sort="{{ 'descending' if descending else 'ascending' }}"{% endif %}>
+        {%- if col.hide_label %}<span class="visually-hidden">{{ col.label }}</span>
+        {%- elif col.sortable and sort_href %}<a class="q-sort" href="{{ sort_href(col.key) }}">{{ col.label }}{{ icon('sort') }}</a>
+        {%- else %}{{ col.label }}{% endif -%}
+      </th>
+      {%- endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {%- if has_rows %}
+    {{ caller() }}
+    {%- else %}
+    <tr class="q-table__none">
+      <td colspan="{{ columns|length }}">
+        {%- if filtered %}
+        <div class="q-empty" data-empty="no-results">
+          <p class="q-empty__t">No results</p>
+          <p class="q-empty__c">Nothing matches these filters.</p>
+          {%- if clear_href %}{{ button('Clear filters', 'secondary', href=clear_href, size='sm') }}{% endif %}
+        </div>
+        {%- else %}
+        <div class="q-empty" data-empty="empty">
+          <p class="q-empty__t">{{ empty_title }}</p>
+          {%- if empty_caption %}<p class="q-empty__c">{{ empty_caption }}</p>{% endif %}
+          {%- if empty_action %}{{ button(empty_action.label, 'primary', href=empty_action.href, size='sm') }}{% endif %}
+        </div>
+        {%- endif %}
+      </td>
+    </tr>
+    {%- endif %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}
+
+{% macro kv_panel(items, title=None) -%}
+<section class="q-panel">
+  {%- if title %}<div class="q-panel__hd"><h2 class="q-panel__t">{{ title }}</h2></div>{% endif %}
+  <dl class="q-kv">
+    {%- for label, value in items %}
+    <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+    {%- endfor %}
+  </dl>
+</section>
+{%- endmacro %}
+
+{% macro hash(value, label='value', head=8, tail=6) -%}
+<span class="q-hash">
+  <code class="q-hash__v" title="{{ value }}">{{ ui_truncate(value, head, tail) }}</code>
+  <button class="q-copy" type="button" data-copy="{{ value }}" aria-label="Copy {{ label }}" title="Copy {{ label }}">
+    <span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span>
+  </button>
+</span>
+{%- endmacro %}
+
+{% macro reltime(moment) -%}
+<time datetime="{{ ui_iso(moment) }}" data-relative title="{{ ui_absolute(moment) }}">{{ ui_absolute(moment) }}</time>
+{%- endmacro %}

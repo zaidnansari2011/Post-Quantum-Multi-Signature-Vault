@@ -1,0 +1,14 @@
+{# The product mark, in one place: the owner may still choose another from the style tile's
+   mark sheet, and swapping it must be a change to this file only.
+
+   Current mark: "closing" (style-tile/mark/closing.svg), a ring with its last mark arriving: the
+   quorum sealing. Drawn in currentColor; .q-mark gives it the accent.
+
+   mark(size=20)
+     size   the rendered width and height in pixels. Always decorative: the wordmark or the
+            link's own name says "Q-Vault".
+#}
+
+{% macro mark(size=20) -%}
+<svg class="q-mark" viewBox="0 0 32 32" width="{{ size }}" height="{{ size }}" fill="currentColor" aria-hidden="true" focusable="false"><path d="M18.472 27.528A13 13 0 1 1 27.528 18.472A7 7 0 0 0 23.419 18.181A9 9 0 1 0 18.181 23.419A7 7 0 0 0 18.472 27.528Z"/><path d="M20 25A5 5 0 1 1 30 25A5 5 0 1 1 20 25Z"/></svg>
+{%- endmacro %}

@@ -1,9 +1,165 @@
-/* Q-Vault components: the new component library (rework S7), built only from tokens.css.
+/* Q-Vault components: the component library (rework S7), built only from tokens.css.
  *
- * Each component here is the style half of a Jinja macro in templates/ui/; screens move onto them
- * as they are converted. Until then qvault.css, loaded after this file, maps every existing class
- * onto the same tokens, so the whole product already wears the new look.
+ * Each block here is the style half of a Jinja macro in templates/ui/ (the macro's file is named
+ * in the block's heading). Every class carries the q- prefix: qvault.css, the compatibility layer
+ * loaded after this file, still owns the old unprefixed names (.btn, .tabs, .panel, .banner ...)
+ * for the screens not yet converted, and the two must not restyle each other. When the last screen
+ * moves over, qvault.css is deleted and nothing here changes.
+ *
+ * Rules: colour from tokens only; font sizes from the type scale only; radius by role (4 badges,
+ * 6 controls, 8 cards and popovers, 12 dialogs); shadows on overlays only (e2 menus, e3 dialogs).
  */
+
+:root {
+  --gutter: var(--gutter-desktop);
+}
+@media (max-width: 767px) {
+  :root { --gutter: var(--gutter-mobile); }
+}
+
+/* ---------------------------------------------------------------- icons (ui/icons.html) */
+
+.q-icon {
+  flex: none; display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
+  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  overflow: visible;
+}
+.q-mark { flex: none; display: block; color: var(--accent); }
+
+/* ---------------------------------------------------------------- buttons (ui/buttons.html) */
+
+.q-btn {
+  --btn-h: var(--control-h);
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-6);
+  height: var(--btn-h); padding-inline: var(--space-12); margin: 0;
+  border: var(--border-width) solid transparent; border-radius: var(--radius-control);
+  font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight);
+  white-space: nowrap; user-select: none; text-decoration: none; cursor: pointer; flex: none;
+  transition: background-color var(--duration-press) var(--ease-standard),
+    border-color var(--duration-press) var(--ease-standard),
+    transform var(--duration-press) var(--ease-standard);
+}
+.q-btn--primary { background: var(--accent); color: var(--accent-text); }
+.q-btn--primary:hover { background: var(--accent-hover); color: var(--accent-text); }
+.q-btn--secondary { background: var(--surface); color: var(--text); border-color: var(--border-hover); }
+.q-btn--secondary:hover { background: var(--fill); color: var(--text); }
+.q-btn--ghost { background: transparent; color: var(--text); }
+.q-btn--ghost:hover { background: var(--fill); color: var(--text); }
+.q-btn--danger { background: var(--danger); color: var(--danger-text); }
+.q-btn--danger:hover { background: var(--danger-hover); color: var(--danger-text); }
+.q-btn:active:not(:disabled):not([aria-busy="true"]) { transform: scale(0.98); }
+.q-btn--secondary:active:not(:disabled), .q-btn--ghost:active:not(:disabled) { background: var(--fill-hover); }
+.q-btn:disabled, .q-btn[aria-disabled="true"] {
+  background: var(--fill-disabled); color: var(--text-disabled); border-color: var(--border-disabled);
+  cursor: not-allowed; transform: none;
+}
+.q-btn--ghost:disabled { background: transparent; border-color: transparent; }
+.q-btn--sm { --btn-h: var(--control-h-sm); padding-inline: var(--space-8); }
+.q-btn--lg { --btn-h: var(--control-h-lg); padding-inline: var(--space-16); }
+.q-btn--block { width: 100%; }
+.q-btn--icon { width: var(--btn-h); padding: 0; }
+.q-btn .q-icon { color: inherit; }
+
+/* Loading keeps the label: the dots sit beside it, the button keeps its width, and the label is
+ * still what a screen reader announces (aria-busy says the rest). */
+.q-btn[aria-busy="true"] { cursor: progress; }
+.q-btn__busy { display: none; align-items: center; gap: 3px; height: 16px; }
+.q-btn[aria-busy="true"] .q-btn__busy { display: inline-flex; }
+.q-btn__busy i {
+  width: 5px; height: 5px; border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.25px currentColor;
+  animation: q-busy 1200ms steps(1, end) infinite;
+}
+.q-btn__busy i:nth-child(2) { animation-delay: 300ms; }
+.q-btn__busy i:nth-child(3) { animation-delay: 600ms; }
+@keyframes q-busy { 0% { background: transparent; } 25% { background: currentColor; } 75% { background: transparent; } }
+
+/* An icon-only button in a bar: square, quiet, the hover fill is its only edge. */
+.q-ib {
+  position: relative; flex: none;
+  display: inline-grid; place-items: center;
+  width: var(--control-h); height: var(--control-h); padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted);
+  cursor: pointer; list-style: none;
+  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
+}
+.q-ib::-webkit-details-marker { display: none; }
+.q-ib:hover, [open] > .q-ib { background: var(--fill); color: var(--text); }
+
+/* ---------------------------------------------------------------- forms (ui/forms.html) */
+
+.q-field { display: grid; gap: var(--space-6); min-width: 0; align-content: start; margin-bottom: var(--space-16); }
+.q-field__label { font-weight: var(--weight-medium); color: var(--text); }
+.q-field__cap { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); color: var(--text-subtle); margin: 0; }
+.q-field__err {
+  display: flex; gap: var(--space-6); align-items: flex-start; margin: 0;
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  color: var(--status-critical-fg);
+}
+.q-field__err .q-icon { width: 14px; height: 14px; margin-top: 1px; vertical-align: 0; }
+
+.q-input, .q-select {
+  display: block; width: 100%; height: var(--control-h); padding-inline: var(--space-12); margin: 0;
+  border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-control);
+  background: var(--surface); color: var(--text);
+  transition: border-color var(--duration-press) var(--ease-standard);
+}
+textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6); resize: vertical; }
+.q-input::placeholder { color: var(--text-subtle); opacity: 1; }
+.q-input:hover, .q-select:hover { border-color: var(--text-subtle); }
+.q-input:focus, .q-select:focus { outline: none; }
+.q-input:focus-visible, .q-select:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-input[aria-invalid="true"], .q-select[aria-invalid="true"] { border-color: var(--status-critical-fg); }
+.q-input:disabled, .q-select:disabled { background: var(--fill-disabled); border-color: var(--border-disabled); color: var(--text-disabled); cursor: not-allowed; }
+.q-input--mono { font-family: var(--font-mono); font-size: var(--text-code-size); font-variant-ligatures: none; }
+
+/* The select keeps the native control (keyboard, mobile pickers, form posting) and draws its own
+ * chevron, so it looks like the inputs beside it. */
+.q-selwrap { position: relative; display: block; }
+.q-select { appearance: none; -webkit-appearance: none; padding-right: var(--space-32); cursor: pointer; }
+.q-selwrap > .q-icon { position: absolute; right: var(--space-8); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+
+.q-cb, .q-rd {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 2px 0 0;
+  width: 16px; height: 16px; display: inline-grid; place-content: center;
+  border: var(--border-width) solid var(--border-strong); background: var(--surface); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-cb { border-radius: var(--radius-badge); }
+.q-cb::before {
+  content: ""; width: 10px; height: 10px; background: var(--accent-text); transform: scale(0);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transition: transform var(--duration-press) var(--ease-enter);
+}
+.q-cb:checked { background: var(--accent); border-color: var(--accent); }
+.q-cb:checked::before { transform: scale(1); }
+.q-rd { border-radius: var(--radius-full); }
+.q-rd:checked { border: 5px solid var(--accent); background: var(--accent-text); }
+.q-cb:hover:not(:checked):not(:disabled), .q-rd:hover:not(:checked):not(:disabled) { border-color: var(--text-subtle); }
+.q-cb:disabled, .q-rd:disabled { background: var(--fill-disabled); border-color: var(--border-disabled); cursor: not-allowed; }
+.q-cb:disabled::before { background: var(--text-disabled); }
+.q-choice { display: flex; gap: var(--space-8); align-items: flex-start; }
+.q-choice label { cursor: pointer; }
+.q-choice__cap { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-choices { display: grid; gap: var(--space-8); border: 0; margin: 0 0 var(--space-16); padding: 0; min-width: 0; }
+.q-choices > legend { padding: 0; margin-bottom: var(--space-6); font-weight: var(--weight-medium); }
+
+.q-sw {
+  appearance: none; -webkit-appearance: none; position: relative; flex: none; margin: 0;
+  width: 32px; height: 20px; border-radius: var(--radius-full); background: var(--border-strong); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-sw::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: var(--radius-full); background: var(--accent-text);
+  transition: transform var(--duration-popover) var(--ease-standard);
+}
+.q-sw:checked { background: var(--accent); }
+.q-sw:checked::before { transform: translateX(12px); }
+.q-sw:disabled { background: var(--border-disabled); cursor: not-allowed; }
+.q-sw:disabled::before { background: var(--fill-disabled); }
+.q-swrow { display: flex; gap: var(--space-12); align-items: flex-start; }
+.q-swrow label { cursor: pointer; }
 
 /* ---------------------------------------------------------------- segmented control
  * A small set of mutually exclusive choices that apply at once, such as the theme. The current
@@ -24,9 +180,381 @@
   cursor: pointer; white-space: nowrap;
   transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
 }
-.seg__b:hover { background: var(--fill); color: var(--text); }
+.seg__b:hover { background: var(--fill-raised-hover); color: var(--text); }
 .seg__b[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-fg); }
 
-/* The theme picker in the rail's foot, until the avatar menu replaces it. */
-.themepick { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-top: var(--space-12); }
-.themepick__label { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); color: var(--text-subtle); }
+/* The theme choice, inside a menu: the label on the left, the three-way control on the right. */
+.themepick { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); margin: 0; }
+.themepick__label { color: var(--text-muted); }
+
+/* ---------------------------------------------------------------- badges and counts (ui/status.html) */
+
+.q-badge {
+  display: inline-flex; align-items: center; gap: var(--space-4);
+  min-height: 20px; padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-badge);
+  background: var(--b-bg); color: var(--b-fg);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-badge-weight);
+  white-space: nowrap; flex: none; vertical-align: middle;
+}
+.q-badge--neutral { --b-fg: var(--status-neutral-fg); --b-bg: var(--status-neutral-bg); }
+.q-badge--info { --b-fg: var(--status-info-fg); --b-bg: var(--status-info-bg); }
+.q-badge--success { --b-fg: var(--status-success-fg); --b-bg: var(--status-success-bg); }
+.q-badge--warning { --b-fg: var(--status-warning-fg); --b-bg: var(--status-warning-bg); }
+.q-badge--critical { --b-fg: var(--status-critical-fg); --b-bg: var(--status-critical-bg); }
+
+.q-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding-inline: var(--space-6);
+  border-radius: var(--radius-badge); background: var(--fill-hover); color: var(--text-muted);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+
+/* ---------------------------------------------------------------- the quorum marks (ui/status.html)
+ * One mark per approval the rule needs, filled as approvals arrive. A count of people, never a bar. */
+
+.q-marks { --mark: 10px; --mark-gap: 4px; display: inline-flex; align-items: center; gap: var(--mark-gap); flex: none; vertical-align: middle; }
+.q-marks--md { --mark: 12px; --mark-gap: 6px; }
+.q-marks--lg { --mark: 20px; --mark-gap: 8px; }
+.q-mark-dot {
+  flex: none; width: var(--mark); height: var(--mark);
+  border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.5px var(--mark-empty);
+}
+.q-marks--lg .q-mark-dot { box-shadow: inset 0 0 0 2px var(--mark-empty); }
+.q-mark-dot.is-on { background: var(--mark-filled); box-shadow: none; }
+.q-quorum { display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+
+/* ---------------------------------------------------------------- avatars (ui/avatars.html) */
+
+.q-av {
+  --av: 24px;
+  flex: none; display: inline-grid; place-items: center;
+  width: var(--av); height: var(--av); border-radius: var(--radius-full);
+  background: var(--fill); color: var(--text-muted);
+  box-shadow: inset 0 0 0 var(--border-width) var(--border);
+  font-size: var(--text-caption-size); line-height: 1; font-weight: var(--text-body-strong-weight);
+  user-select: none;
+}
+.q-av--20 { --av: 20px; }
+.q-av--32 { --av: 32px; font-size: var(--text-body-size); }
+.q-avs { display: inline-flex; align-items: center; flex: none; }
+.q-avs .q-av { box-shadow: inset 0 0 0 var(--border-width) var(--border), 0 0 0 2px var(--av-ring, var(--surface)); }
+.q-avs .q-av + .q-av, .q-avs .q-av + .q-avs__more { margin-left: -4px; }
+.q-avs__more {
+  display: inline-grid; place-items: center; height: var(--av, 24px); min-width: 20px; padding-inline: var(--space-4);
+  border-radius: var(--radius-full); background: var(--fill-hover); color: var(--text-muted);
+  box-shadow: 0 0 0 2px var(--av-ring, var(--surface));
+  font-size: var(--text-caption-size); line-height: 1; font-weight: var(--text-body-strong-weight);
+}
+
+/* ---------------------------------------------------------------- tabs (ui/navigation.html)
+ * Tabs are links: each is its own URL, so the back button, a shared link and a reload all land on
+ * the same tab. The current one is aria-current="page". */
+
+.q-tabs { display: flex; align-items: stretch; gap: var(--space-8); box-shadow: inset 0 -1px 0 var(--border); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.q-tab {
+  position: relative; display: inline-flex; align-items: center; height: 40px; flex: none;
+  color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none;
+}
+.q-tab__l { display: inline-flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-8); border-radius: var(--radius-control); transition: background-color var(--duration-press) var(--ease-standard); }
+.q-tab:hover { color: var(--text); }
+.q-tab:hover .q-tab__l { background: var(--fill); }
+.q-tab[aria-current="page"] { color: var(--text); }
+.q-tab[aria-current="page"]::after {
+  content: ""; position: absolute; left: var(--space-8); right: var(--space-8); bottom: 0; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--accent);
+}
+.q-tab:focus-visible { outline: none; }
+.q-tab:focus-visible .q-tab__l { outline: var(--focus-width) solid var(--focus); outline-offset: 0; }
+.q-tab .q-count { height: 18px; min-width: 18px; padding-inline: var(--space-4); }
+
+/* ---------------------------------------------------------------- page header (ui/navigation.html) */
+
+.q-ph { display: grid; gap: var(--space-8); margin-bottom: var(--space-24); }
+.q-ph__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-16) var(--space-24); flex-wrap: wrap; }
+.q-ph__tw { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8) var(--space-12); min-width: 0; }
+.q-ph__t { margin: 0; font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); text-wrap: balance; }
+.q-ph__d { margin: 0; color: var(--text-muted); max-width: 76ch; }
+.q-ph__act { display: flex; align-items: center; gap: var(--space-8); flex: none; }
+.q-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-24); margin: 0; }
+.q-fact { display: flex; align-items: center; gap: var(--space-6); }
+.q-fact dt { color: var(--text-subtle); }
+.q-fact dd { display: flex; align-items: center; gap: var(--space-6); margin: 0; color: var(--text); }
+
+/* ---------------------------------------------------------------- panels and key-value (ui/data.html) */
+
+.q-panel { background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); min-width: 0; --av-ring: var(--surface); }
+.q-panel__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-12) var(--space-16); border-bottom: var(--border-width) solid var(--border); }
+.q-panel__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-kv { display: grid; grid-template-columns: var(--kv-label, 168px) minmax(0, 1fr); margin: 0; }
+.q-kv > div { display: contents; }
+.q-kv dt { padding: var(--space-12) var(--space-16); color: var(--text-muted); }
+.q-kv dd { padding: var(--space-12) var(--space-16) var(--space-12) 0; margin: 0; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.q-kv > div + div > dt, .q-kv > div + div > dd { border-top: var(--border-width) solid var(--border); }
+@media (max-width: 767px) {
+  .q-kv { grid-template-columns: minmax(0, 1fr); }
+  .q-kv dt { padding: var(--space-12) var(--space-16) 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+  .q-kv dd { padding: var(--space-2) var(--space-16) var(--space-12); }
+  .q-kv > div + div > dd { border-top: 0; }
+}
+
+/* ---------------------------------------------------------------- hash with copy (ui/data.html) */
+
+.q-hash { display: inline-flex; align-items: center; gap: var(--space-4); min-width: 0; max-width: 100%; vertical-align: middle; }
+.q-hash__v { font-family: var(--font-mono); font-size: var(--text-code-size); line-height: var(--text-code-line); color: var(--text-muted); font-variant-ligatures: none; white-space: nowrap; }
+.q-copy {
+  position: relative; display: inline-grid; place-items: center; flex: none;
+  width: var(--target-min); height: var(--target-min); padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-subtle); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
+}
+.q-copy:hover { background: var(--fill); color: var(--text); }
+.q-copy .q-copy__ok { display: none; }
+.q-copy.is-done { color: var(--status-success-fg); }
+.q-copy.is-done .q-copy__i { display: none; }
+.q-copy.is-done .q-copy__ok { display: block; }
+
+/* ---------------------------------------------------------------- data table (ui/data.html) */
+
+.q-table-wrap { overflow-x: auto; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); --av-ring: var(--surface); }
+.q-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.q-table th, .q-table td { height: var(--row-h); padding: var(--space-8) var(--space-16); text-align: left; vertical-align: middle; }
+.q-table thead th {
+  height: 36px; background: var(--bg-subtle); color: var(--text-subtle); white-space: nowrap;
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
+  border-bottom: var(--border-width) solid var(--border);
+}
+.q-table tbody tr + tr > * { border-top: var(--border-width) solid var(--border); }
+.q-table tbody tr:hover > * { background: var(--fill); }
+.q-table .is-num { text-align: right; }
+.q-table--compact td { height: var(--row-h-compact); padding-block: var(--space-4); }
+.q-sort { display: inline-flex; align-items: center; gap: var(--space-4); color: inherit; text-decoration: none; }
+.q-sort:hover { color: var(--text); }
+.q-sort .q-icon { width: 12px; height: 12px; vertical-align: 0; }
+th[aria-sort] .q-sort { color: var(--text); }
+.q-table__none > td { height: auto; padding: 0; }
+.q-table tbody tr.q-table__none:hover > * { background: none; }
+
+/* ---------------------------------------------------------------- banner, empty state (ui/feedback.html) */
+
+.q-banner {
+  display: flex; gap: var(--space-12); align-items: flex-start; margin-bottom: var(--space-16);
+  padding: var(--space-12) var(--space-16); border: var(--border-width) solid var(--bn-line); border-radius: var(--radius-card);
+  background: var(--bn-bg); color: var(--text);
+}
+.q-banner > .q-icon { color: var(--bn-fg); margin-top: 2px; vertical-align: 0; }
+.q-banner__b { display: grid; gap: var(--space-2); min-width: 0; flex: 1; }
+.q-banner__t { font-weight: var(--text-body-strong-weight); }
+.q-banner__act { flex: none; display: flex; gap: var(--space-8); }
+.q-banner--neutral { --bn-fg: var(--status-neutral-fg); --bn-bg: var(--status-neutral-bg); --bn-line: var(--status-neutral-border); }
+.q-banner--info { --bn-fg: var(--status-info-fg); --bn-bg: var(--status-info-bg); --bn-line: var(--status-info-border); }
+.q-banner--success { --bn-fg: var(--status-success-fg); --bn-bg: var(--status-success-bg); --bn-line: var(--status-success-border); }
+.q-banner--warning { --bn-fg: var(--status-warning-fg); --bn-bg: var(--status-warning-bg); --bn-line: var(--status-warning-border); }
+.q-banner--critical { --bn-fg: var(--status-critical-fg); --bn-bg: var(--status-critical-bg); --bn-line: var(--status-critical-border); }
+
+.q-empty { display: grid; gap: var(--space-2); justify-items: start; padding: var(--space-24) var(--space-16); }
+.q-empty__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-empty__c { margin: 0; color: var(--text-muted); max-width: 60ch; }
+.q-empty .q-btn { margin-top: var(--space-12); }
+
+/* ---------------------------------------------------------------- toast (ui/feedback.html)
+ * Server-rendered, so the message is in the page with or without JavaScript; qvault.js only adds
+ * the timed dismissal, which pauses while the pointer or focus is on the toast. */
+
+.q-toasts {
+  position: fixed; left: var(--gutter); bottom: calc(var(--space-24) + env(safe-area-inset-bottom, 0px)); z-index: var(--z-toast);
+  display: grid; gap: var(--space-8); max-width: min(420px, calc(100vw - 2 * var(--gutter)));
+}
+.q-toast {
+  display: flex; align-items: flex-start; gap: var(--space-8);
+  padding: var(--space-12) var(--space-12) var(--space-12) var(--space-16); border-radius: var(--radius-card);
+  background: var(--chrome-bg); color: var(--chrome-text); box-shadow: var(--shadow-e2);
+  transition: opacity var(--duration-dialog) var(--ease-enter), transform var(--duration-dialog) var(--ease-enter);
+}
+.q-toast > .q-icon { color: var(--chrome-text-muted); margin-top: 2px; vertical-align: 0; }
+.q-toast__m { flex: 1; min-width: 0; }
+.q-toast .q-ib { width: var(--target-min); height: var(--target-min); color: var(--chrome-text-muted); margin: -2px -4px -2px 0; }
+.q-toast .q-ib:hover { background: var(--chrome-bg-raised); color: var(--chrome-text); }
+.q-toast.is-leaving { opacity: 0; transform: translateY(4px); transition-duration: var(--duration-dialog-exit); transition-timing-function: var(--ease-exit); }
+@starting-style { .q-toast { opacity: 0; transform: translateY(8px); } }
+
+/* ---------------------------------------------------------------- menus (ui/menus.html)
+ * A menu is a <details>: it opens and closes without JavaScript, and qvault.js adds Escape, the
+ * outside click, arrow keys and returning focus to the button. */
+
+.q-menu { position: relative; display: inline-flex; }
+.q-menu > summary { list-style: none; }
+.q-menu > summary::-webkit-details-marker { display: none; }
+.q-menu__panel {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: var(--z-popover);
+  min-width: 224px; max-width: calc(100vw - 2 * var(--gutter)); padding: var(--space-4);
+  background: var(--surface-raised); border-radius: var(--radius-card); box-shadow: var(--shadow-e2);
+  color: var(--text); text-align: left;
+}
+.q-menu--start .q-menu__panel { right: auto; left: 0; }
+.q-menu--up .q-menu__panel { top: auto; bottom: calc(100% + 4px); }
+.q-menu[open] .q-menu__panel { animation: q-pop-in var(--duration-popover) var(--ease-enter) both; }
+@keyframes q-pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.q-menu__i {
+  display: flex; align-items: center; gap: var(--space-8); width: 100%; min-height: var(--control-h);
+  padding: var(--space-6) var(--space-8); margin: 0; border: 0; border-radius: var(--radius-control);
+  background: transparent; color: var(--text); font: inherit; text-align: left; text-decoration: none;
+  cursor: pointer; white-space: nowrap;
+}
+.q-menu__i .q-icon { color: var(--text-subtle); }
+.q-menu__i:hover { background: var(--fill-raised-hover); color: var(--text); }
+.q-menu__i:focus-visible { outline-offset: -2px; }
+.q-menu__i--danger, .q-menu__i--danger .q-icon { color: var(--status-critical-fg); }
+.q-menu__sep { height: var(--border-width); margin: var(--space-4) calc(-1 * var(--space-4)); background: var(--border); border: 0; }
+.q-menu__head { display: grid; gap: var(--space-2); padding: var(--space-8) var(--space-8) var(--space-6); min-width: 0; }
+.q-menu__head b { font-weight: var(--text-body-strong-weight); overflow: hidden; text-overflow: ellipsis; }
+.q-menu__head span { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; }
+.q-menu form { margin: 0; }
+
+/* ---------------------------------------------------------------- dialog (ui/feedback.html) */
+
+.q-dialog {
+  width: min(480px, calc(100vw - 2 * var(--gutter))); max-width: none; max-height: calc(100dvh - 48px);
+  margin: auto; padding: 0; border: 0; border-radius: var(--radius-dialog);
+  background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-e3);
+  overflow: hidden; --av-ring: var(--surface-raised);
+  transition: opacity var(--duration-dialog) var(--ease-enter), transform var(--duration-dialog) var(--ease-enter),
+    overlay var(--duration-dialog) allow-discrete, display var(--duration-dialog) allow-discrete;
+}
+.q-dialog[open] { display: flex; flex-direction: column; }
+.q-dialog:not([open]) { opacity: 0; transform: translateY(4px); transition-duration: var(--duration-dialog-exit); transition-timing-function: var(--ease-exit); }
+@starting-style { .q-dialog[open] { opacity: 0; transform: translateY(8px) scale(0.98); } }
+.q-dialog::backdrop { background: var(--backdrop); }
+.q-dlg__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-20) var(--space-24) 0; }
+.q-dlg__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-dlg__bd { display: grid; gap: var(--space-16); padding: var(--space-16) var(--space-24); overflow-y: auto; min-height: 0; }
+.q-dlg__ft { display: flex; justify-content: flex-end; gap: var(--space-8); padding: var(--space-16) var(--space-24) var(--space-24); border-top: var(--border-width) solid var(--border); }
+.q-dlg__ft form { margin: 0; }
+@media (max-width: 640px) {
+  .q-dialog { width: 100%; max-height: calc(100dvh - 24px); margin: auto 0 0; border-radius: var(--radius-dialog) var(--radius-dialog) 0 0; }
+  .q-dlg__ft { flex-direction: column-reverse; padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom, 0px)); }
+  .q-dlg__ft .q-btn, .q-dlg__ft form { width: 100%; }
+  .q-dlg__ft .q-btn { --btn-h: var(--target-touch); }
+}
+
+/* ================================================================ the shell (base.html, ui/shell.html)
+ * A 240px sidebar that collapses to a 56px icon rail; a 48px top bar; below 768px the sidebar is a
+ * drawer behind the menu button. */
+
+.q-shell { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.q-shell.is-rail { grid-template-columns: var(--sidebar-w-rail) minmax(0, 1fr); }
+
+.q-side {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: var(--space-20);
+  padding: 0 var(--space-12) var(--space-12);
+  background: var(--bg-subtle); border-right: var(--border-width) solid var(--border);
+  --av-ring: var(--bg-subtle);
+}
+.q-side__brand {
+  display: flex; align-items: center; gap: var(--space-8); height: var(--topbar-h); flex: none;
+  padding-inline: var(--space-8); color: var(--text); text-decoration: none;
+  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong);
+}
+.q-side__brand:hover { color: var(--text); }
+.q-side__brand .q-mark { width: 20px; height: 20px; }
+.q-nav { display: grid; gap: var(--space-2); }
+.q-nav__label { padding: 0 var(--space-8) var(--space-4); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); }
+.q-nav-i {
+  display: flex; align-items: center; gap: var(--space-8); height: var(--control-h); padding-inline: var(--space-8);
+  border-radius: var(--radius-control); color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none;
+  white-space: nowrap; transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-nav-i .q-icon { color: var(--text-subtle); }
+.q-nav-i:hover { background: var(--fill); color: var(--text); }
+.q-nav-i:hover .q-icon { color: var(--text-muted); }
+.q-nav-i[aria-current="page"] { background: var(--accent-subtle); color: var(--accent-fg); }
+.q-nav-i[aria-current="page"] .q-icon { color: var(--accent-fg); }
+.q-nav-i .q-count { margin-left: auto; }
+.q-nav-i[aria-current="page"] .q-count { background: var(--accent-subtle-hover); color: var(--accent-fg); }
+.q-side__foot { margin-top: auto; display: flex; }
+.q-side__close { display: none; }
+
+/* The icon rail: labels leave the screen but stay in the accessibility tree. */
+.q-shell.is-rail .q-side { padding-inline: var(--space-8); align-items: center; }
+.q-shell.is-rail .q-side__brand { padding-inline: 0; justify-content: center; width: 100%; }
+.q-shell.is-rail .q-nav { width: 100%; }
+.q-shell.is-rail .q-nav-i { justify-content: center; padding: 0; }
+.q-shell.is-rail .q-side__word, .q-shell.is-rail .q-nav-i__l, .q-shell.is-rail .q-nav__label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.q-shell.is-rail .q-nav-i .q-count { position: absolute; transform: translate(12px, -10px); min-width: 16px; height: 16px; padding-inline: var(--space-4); }
+.q-shell.is-rail .q-nav-i { position: relative; }
+.q-shell.is-rail .q-side__foot { justify-content: center; }
+.q-shell.is-rail .q-rail-icon--collapse, .q-shell:not(.is-rail) .q-rail-icon--expand { display: none; }
+
+.q-main { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
+.q-top {
+  position: sticky; top: 0; z-index: var(--z-sticky);
+  display: flex; align-items: center; gap: var(--space-12); height: var(--topbar-h); flex: none;
+  padding-inline: var(--gutter) var(--space-12);
+  background: var(--bg); border-bottom: var(--border-width) solid var(--border);
+}
+.q-top__menu { display: none; }
+.q-crumbs { display: flex; align-items: center; gap: var(--space-6); flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; color: var(--text-muted); }
+.q-crumbs li { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
+.q-crumbs li + li::before { content: "/"; color: var(--text-subtle); }
+.q-crumbs a { color: var(--text-muted); text-decoration: none; white-space: nowrap; }
+.q-crumbs a:hover { color: var(--text); text-decoration: underline; }
+.q-crumbs [aria-current="page"] { color: var(--text); font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-top__end { display: flex; align-items: center; gap: var(--space-4); }
+.q-avbtn { width: var(--control-h); height: var(--control-h); border-radius: var(--radius-full); }
+.q-avbtn:hover .q-av, [open] > .q-avbtn .q-av { background: var(--fill-hover); color: var(--text); }
+.q-avbtn:hover, [open] > .q-avbtn { background: transparent; }
+.q-scrim { display: none; }
+
+@media (max-width: 767px) {
+  .q-shell, .q-shell.is-rail { grid-template-columns: minmax(0, 1fr); }
+  .q-side, .q-shell.is-rail .q-side {
+    position: fixed; inset: 0 auto 0 0; z-index: var(--z-dialog); width: min(300px, 85vw); height: 100dvh;
+    padding-inline: var(--space-12); align-items: stretch;
+    box-shadow: var(--shadow-e3); transform: translateX(-100%); visibility: hidden;
+    transition: transform var(--duration-dialog) var(--ease-exit), visibility 0s linear var(--duration-dialog);
+  }
+  .q-shell.is-drawer .q-side { transform: none; visibility: visible; transition: transform var(--duration-dialog) var(--ease-enter); }
+  /* The drawer is always the full sidebar, whatever the desktop rail setting. */
+  .q-shell.is-rail .q-side__word, .q-shell.is-rail .q-nav-i__l, .q-shell.is-rail .q-nav__label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .q-shell.is-rail .q-side__brand { justify-content: flex-start; padding-inline: var(--space-8); }
+  .q-shell.is-rail .q-nav-i { justify-content: flex-start; padding-inline: var(--space-8); }
+  .q-shell.is-rail .q-nav-i .q-count { position: static; transform: none; }
+  .q-side__foot { display: none; }
+  .q-side__close { display: inline-grid; margin-left: auto; }
+  .q-scrim { display: block; position: fixed; inset: 0; z-index: calc(var(--z-dialog) - 1); background: var(--backdrop); opacity: 0; pointer-events: none; transition: opacity var(--duration-dialog) var(--ease-standard); }
+  .q-shell.is-drawer .q-scrim { opacity: 1; pointer-events: auto; }
+  .q-top { padding-inline: var(--space-8); gap: var(--space-8); }
+  .q-top__menu { display: inline-grid; }
+  /* At phone width the top bar names the page; the full trail is one tap away in the drawer. */
+  .q-crumbs li:not(:last-child) { display: none; }
+  .q-crumbs li + li::before { content: none; }
+}
+
+/* ---------------------------------------------------------------- the public header (signed out) */
+
+.q-pub { display: flex; flex-direction: column; min-height: 100vh; }
+.q-pub__bar {
+  display: flex; align-items: center; gap: var(--space-16); height: var(--topbar-h); flex: none;
+  padding-inline: var(--gutter); border-bottom: var(--border-width) solid var(--border); background: var(--bg);
+}
+.q-pub__brand { display: inline-flex; align-items: center; gap: var(--space-8); color: var(--text); text-decoration: none; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong); }
+.q-pub__brand:hover { color: var(--text); }
+.q-pub__brand .q-mark { width: 20px; height: 20px; }
+.q-pub__nav { display: flex; align-items: center; gap: var(--space-4); margin-left: auto; }
+.q-pub__nav > a { padding: var(--space-6) var(--space-8); border-radius: var(--radius-control); color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap; }
+.q-pub__nav > a:hover { background: var(--fill); color: var(--text); }
+.q-pub__nav > a[aria-current="page"] { color: var(--text); }
+@media (max-width: 560px) { .q-pub__nav > a.q-pub__opt { display: none; } }
+
+/* ---------------------------------------------------------------- error pages (errors.html) */
+
+.q-error { max-width: 36rem; padding: var(--space-48) 0; display: grid; gap: var(--space-12); justify-items: start; }
+.q-error__code { color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.q-error__t { margin: 0; font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); }
+.q-error__p { margin: 0; color: var(--text-muted); }
+.q-error__act { display: flex; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); }
+.q-pub .q-error { margin: 0 auto; padding-inline: var(--gutter); width: 100%; }

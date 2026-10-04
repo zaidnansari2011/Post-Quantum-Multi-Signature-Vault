@@ -1,0 +1,44 @@
+{# Status and the quorum (styles: components.css, "badges" and "the quorum marks").
+
+   status(key, n=None)
+     The closed vocabulary of S6, from qvault/ui.py: needs_you, waiting (n = approvals still
+     needed), approved, rejected, expired, withdrawn, queued, paid, failed. Each always has the
+     same word and tone; an unknown key fails the render instead of inventing a status.
+
+   badge(text, tone='neutral')
+     A label that is not a decision status (an algorithm, a role). tone is one of the five:
+     neutral, info, success, warning, critical. Colour is never the only signal: the text is.
+
+   count(n, label=None)
+     A small number beside a nav item or tab. label is read instead of the bare number.
+
+   quorum(approved, required, size='sm', show_count=True)
+     One mark per approval the rule needs, filled as approvals arrive: discrete marks that fill to
+     the threshold, never a progress bar. Approvals past the threshold do not add marks. size is
+     sm (10px, rows), md (12px) or lg (20px, the decision page). The marks are one image whose
+     name says the count, e.g. "1 of 2 approvals"; show_count adds the visible "1 of 2".
+#}
+
+{% macro badge(text, tone='neutral') -%}
+<span class="q-badge q-badge--{{ ui_tone(tone) }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro status(key, n=None) -%}
+{%- set word, tone = ui_status(key, n) -%}
+<span class="q-badge q-badge--{{ tone }}" data-status="{{ key }}">{{ word }}</span>
+{%- endmacro %}
+
+{% macro count(n, label=None) -%}
+<span class="q-count"{% if label %} aria-label="{{ label }}"{% endif %}>{{ n }}</span>
+{%- endmacro %}
+
+{% macro quorum(approved, required, size='sm', show_count=True) -%}
+{%- set filled = [approved, required]|min -%}
+<span class="q-quorum">
+  <span class="q-marks{% if size != 'sm' %} q-marks--{{ size }}{% endif %}" role="img"
+        aria-label="{{ approved }} of {{ required }} approval{{ '' if required == 1 else 's' }}">
+    {%- for i in range(required) %}<span class="q-mark-dot{% if i < filled %} is-on{% endif %}"></span>{% endfor -%}
+  </span>
+  {%- if show_count %}<span aria-hidden="true">{{ approved }} of {{ required }}</span>{% endif %}
+</span>
+{%- endmacro %}
