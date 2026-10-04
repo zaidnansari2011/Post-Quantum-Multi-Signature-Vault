@@ -1,8 +1,18 @@
+{# Flashed messages. A confirmation (success, info) is a toast: it is in the page, announced
+   politely, and fades on its own (ui/feedback.html). A warning or an error stays inline until it
+   is dismissed, because a message about something that went wrong must not disappear. #}
+{% from "ui/feedback.html" import toast %}
 {% with messages = get_flashed_messages(with_categories=true) %}
-  {% for category, message in messages %}
+  {% set toasts = messages | selectattr(0, 'in', ['success', 'info', 'message']) | list %}
+  {% for category, message in messages if category not in ('success', 'info', 'message') %}
     <div class="alert alert-{{ 'danger' if category == 'error' else category }}" role="alert">
       <span>{{ message }}</span>
       <button type="button" class="btn-close" data-dismiss aria-label="Dismiss">&times;</button>
     </div>
   {% endfor %}
+  {% if toasts %}
+  <div class="q-toasts" role="status" aria-live="polite">
+    {% for category, message in toasts %}{{ toast(message, 'success' if category == 'success' else 'info') }}{% endfor %}
+  </div>
+  {% endif %}
 {% endwith %}
