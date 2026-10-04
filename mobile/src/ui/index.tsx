@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -34,7 +35,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Clipboard from 'expo-clipboard';
 
 import { middleOut } from '../format.ts';
 import { color, elevation, motion, radius, space, tone, type as type_, type StatusTone } from '../theme.ts';
@@ -293,37 +293,31 @@ export function KeyValue({
 }
 
 /**
- * A long identifier -- an address -- with a label, shortened in the middle, and a Copy action.
+ * A long identifier -- an address -- with a label, shortened in the middle, and a Share action.
  *
  * Forty-two characters of mono is a value nobody reads and everybody has to scroll past. Its two
  * ends are what a person compares against another screen, so those survive ("0xD491…f3D0"), and
- * shortening never hides the value: tapping it shows it whole and selectable, Copy puts the whole
- * of it on the clipboard, and a screen reader hears all of it.
+ * shortening never hides the value: tapping it shows it whole and selectable, Share hands the whole
+ * of it to the system sheet (which offers Copy), and a screen reader hears all of it.
+ *
+ * Share rather than a clipboard module: it is part of React Native, so this adds no native code to
+ * an APK already built at this runtime version (ADR-0018). A clipboard module would crash such an
+ * install on launch when the update reached it.
  *
  * Not for the recipient or the treasury inside a payment someone is about to sign: those are shown
  * whole, because there the reader is checking every character of what they authorise.
  */
 export function Identifier({ label, value }: { label: string; value: string }) {
   const [whole, setWhole] = useState(false);
-  const [copied, setCopied] = useState(false);
   const short = middleOut(value);
 
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const copy = async () => {
-    let ok = false;
+  const share = async () => {
     try {
-      ok = await Clipboard.setStringAsync(value);
+      await Share.share({ message: value });
     } catch {
-      ok = false;
+      // Where there is no share sheet, the value is shown whole to select instead.
+      setWhole(true);
     }
-    // Where nothing can be written to the clipboard, the value is shown whole to select instead.
-    if (ok) setCopied(true);
-    else setWhole(true);
   };
 
   return (
@@ -343,13 +337,13 @@ export function Identifier({ label, value }: { label: string; value: string }) {
           </Text>
         </Pressable>
         <Pressable
-          onPress={() => void copy()}
+          onPress={() => void share()}
           accessibilityRole="button"
-          accessibilityLabel={copied ? `${label} copied` : `Copy the ${label.toLowerCase()}`}
+          accessibilityLabel={`Share the ${label.toLowerCase()}`}
           hitSlop={8}
           style={({ pressed }) => [s.copy, pressed && { opacity: 0.6 }]}
         >
-          <Text style={s.copyText}>{copied ? 'Copied' : 'Copy'}</Text>
+          <Text style={s.copyText}>Share</Text>
         </Pressable>
       </View>
     </View>
