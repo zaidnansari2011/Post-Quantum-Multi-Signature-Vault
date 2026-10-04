@@ -1,0 +1,6 @@
+/* Q-Vault components: the new component library (rework S7), built only from tokens.css.
+ *
+ * Each component here is the style half of a Jinja macro in templates/ui/; screens move onto them
+ * as they are converted. Until then qvault.css, loaded after this file, maps every existing class
+ * onto the same tokens, so the whole product already wears the new look.
+ */

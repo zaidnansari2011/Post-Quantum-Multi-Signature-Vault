@@ -1,0 +1,413 @@
+/* Q-Vault design tokens (rework R1.1, the style tile).
+ *
+ * One design language for the web and the phone, led by the app (S1): ink-navy neutrals, Public Sans
+ * for interface, Source Serif 4 for the decision text only, JetBrains Mono for hashes only.
+ * Dark mode is in the token layer from the start (S25): every colour token below has a light value in
+ * :root and a dark value in the two dark blocks, which must stay identical.
+ *
+ * Every colour pair the components rely on is measured by tools/contrast.py, which writes
+ * contrast.md. Run it after any change here; it exits non-zero on a failing pair.
+ *
+ * Naming: --text, --text-muted, --text-subtle are COLOURS. --text-caption, --text-body ... are the
+ * type scale (font shorthands built from their -size / -line / -weight parts), as named in plan §6.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---------------------------------------------------------------- type */
+
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  /* The decision text only: the thing being signed. */
+  --font-serif: "Source Serif 4", "Source Serif Pro", Charter, "Bitstream Charter", "Sitka Text",
+    Cambria, Georgia, serif;
+  /* Hashes, keys, addresses and IDs only; never ordinary numbers (those use tabular sans). */
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --weight-regular: 400;
+  --weight-caption: 450;
+  --weight-medium: 500;
+  --weight-strong: 600;
+
+  /* Seven steps on a 4px line-height grid (plan §6). rem, so text follows browser zoom. */
+  --text-caption-size: 0.75rem;          /* 12 */
+  --text-caption-line: 1rem;             /* 16 */
+  --text-caption-weight: 450;
+  --text-body-size: 0.875rem;            /* 14 */
+  --text-body-line: 1.25rem;             /* 20 */
+  --text-body-weight: 400;
+  --text-body-strong-weight: 600;
+  --text-title-sm-size: 1rem;            /* 16 */
+  --text-title-sm-line: 1.5rem;          /* 24 */
+  --text-title-sm-weight: 600;
+  --text-title-size: 1.25rem;            /* 20 */
+  --text-title-line: 1.75rem;            /* 28 */
+  --text-title-weight: 600;
+  --text-title-tracking: -0.01em;
+  --text-figure-size: 1.5rem;            /* 24, the one moment of scale per screen */
+  --text-figure-line: 2rem;              /* 32 */
+  --text-figure-weight: 600;
+  --text-figure-tracking: -0.015em;
+  --text-decision-size: 1.125rem;        /* 18, decision text on the detail page */
+  --text-decision-line: 1.75rem;         /* 28 */
+  --text-decision-hero-size: 1.375rem;   /* 22, decision text as the page's subject */
+  --text-decision-hero-line: 2rem;       /* 32 */
+  --text-decision-weight: 400;
+  --text-code-size: 0.8125rem;           /* 13: mono runs large; 13 mono sits with 14 sans */
+  --text-code-line: 1.25rem;             /* 20 */
+  --text-input-size-touch: 1rem;         /* inputs below 768px, so iOS does not zoom */
+
+  /* Shorthands for `font:`. `font` resets font-variant, so set tabular figures after it. */
+  --text-caption: var(--text-caption-weight) var(--text-caption-size)/var(--text-caption-line) var(--font-sans);
+  --text-body: var(--text-body-weight) var(--text-body-size)/var(--text-body-line) var(--font-sans);
+  --text-body-strong: var(--text-body-strong-weight) var(--text-body-size)/var(--text-body-line) var(--font-sans);
+  --text-title-sm: var(--text-title-sm-weight) var(--text-title-sm-size)/var(--text-title-sm-line) var(--font-sans);
+  --text-title: var(--text-title-weight) var(--text-title-size)/var(--text-title-line) var(--font-sans);
+  --text-figure: var(--text-figure-weight) var(--text-figure-size)/var(--text-figure-line) var(--font-sans);
+  --text-decision: var(--text-decision-weight) var(--text-decision-size)/var(--text-decision-line) var(--font-serif);
+  --text-decision-hero: var(--text-decision-weight) var(--text-decision-hero-size)/var(--text-decision-hero-line) var(--font-serif);
+  --text-code: var(--weight-regular) var(--text-code-size)/var(--text-code-line) var(--font-mono);
+  --numeric: tabular-nums;               /* font-variant-numeric on every amount, count and time */
+
+  /* ---------------------------------------------------------------- space */
+
+  --space-2: 0.125rem;
+  --space-4: 0.25rem;
+  --space-6: 0.375rem;
+  --space-8: 0.5rem;
+  --space-12: 0.75rem;
+  --space-16: 1rem;
+  --space-20: 1.25rem;
+  --space-24: 1.5rem;
+  --space-32: 2rem;
+  --space-40: 2.5rem;
+  --space-48: 3rem;
+  --space-64: 4rem;
+  --gutter-mobile: 1rem;
+  --gutter-desktop: 1.5rem;
+
+  /* ---------------------------------------------------------------- radius, by role */
+
+  --radius-badge: 4px;     /* badges, tags, checkboxes, kbd */
+  --radius-control: 6px;   /* buttons, inputs, selects, menu items */
+  --radius-card: 8px;      /* cards, panels, popovers, menus, toasts */
+  --radius-dialog: 12px;   /* dialogs and sheets */
+  --radius-full: 9999px;   /* avatars, quorum marks, status dots */
+
+  /* ---------------------------------------------------------------- lines and focus */
+
+  --border-width: 1px;
+  --focus-width: 2px;
+  --focus-offset: 2px;     /* the ring sits off the element, so it is measured against the page, never against a filled button */
+
+  /* ---------------------------------------------------------------- motion */
+
+  --duration-instant: 0ms;       /* command palette, keyboard actions */
+  --duration-press: 100ms;       /* hover and press colour */
+  --duration-popover: 150ms;     /* menus, popovers, tooltips */
+  --duration-dialog: 220ms;      /* dialogs, sheets, toasts (200-240) */
+  --duration-dialog-exit: 160ms; /* exits are faster than entrances */
+  --duration-seal: 620ms;        /* the quorum closing: the one orchestrated moment */
+  --ease-enter: cubic-bezier(0, 0, 0.38, 0.9);
+  --ease-exit: cubic-bezier(0.2, 0, 1, 0.9);
+  --ease-standard: cubic-bezier(0.2, 0, 0.38, 0.9);
+  --ease-seal: cubic-bezier(0.34, 1.36, 0.64, 1); /* a little overshoot; the seal only */
+
+  /* ---------------------------------------------------------------- density and shell */
+
+  --control-h-sm: 28px;    /* toolbars, table rows */
+  --control-h: 32px;
+  --control-h-lg: 40px;    /* auth screens */
+  --row-h: 40px;
+  --row-h-compact: 32px;   /* audit log */
+  --target-min: 24px;      /* WCAG 2.5.8 */
+  --target-touch: 44px;
+  --topbar-h: 48px;
+  --sidebar-w: 240px;
+  --sidebar-w-rail: 56px;
+  --content-max: 1280px;
+  --detail-main: 720px;
+  --detail-aside: 320px;
+  --z-sticky: 10;
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+
+  /* ================================================================ colour, light */
+
+  /* Neutral: 12 steps at the ink's hue (OKLCH h 261-265), chroma rising toward the ink.
+   * Steps 1, 3, 4, 6, 9, 11, 12 are the app's own values (paper, sunk, sunk2, rule, ink3, ink2, ink).
+   * 8 and 10 are solved, not picked: 8 is the lightest step at >= 3:1 on every surface an input can
+   * sit on (incl. hovered and selected rows); 10 is the lightest at >= 4.5:1 on the same set. */
+  --neutral-1: #F7F8FA;   /* app background (paper) */
+  --neutral-2: #F3F5F8;   /* subtle background: sidebar, table header */
+  --neutral-3: #EFF1F5;   /* component background (sunk) */
+  --neutral-4: #E7EAF0;   /* hover (sunk2) */
+  --neutral-5: #E1E5EC;   /* active, pressed */
+  --neutral-6: #DDE1E9;   /* hairline border (rule) */
+  --neutral-7: #CED4DE;   /* hover border, stronger divider */
+  --neutral-8: #7C8597;   /* input and checkbox border, empty quorum mark: >= 3:1 */
+  --neutral-9: #6B7688;   /* solid (ink3) */
+  --neutral-10: #5F697C;  /* subtle text: >= 4.5:1 on steps 1-4, white and the selection tint */
+  --neutral-11: #4A5568;  /* muted text (ink2) */
+  --neutral-12: #16233A;  /* text (ink) */
+
+  /* Accent: the ink turned up. Same hue as the ink (262 vs 261), lightness raised from 0.26 to 0.51,
+   * chroma held at 0.165: well under a framework blue (Tailwind blue-600 is 0.215), so it reads as
+   * cobalt ink rather than a default. Identity and interaction only. */
+  --accent-1: #F8FBFF;
+  --accent-2: #F1F6FF;
+  --accent-3: #E7EFFF;    /* subtle: selected row, active nav item */
+  --accent-4: #DAE7FF;    /* subtle hover; text selection */
+  --accent-5: #CBDEFF;
+  --accent-6: #B7D1FE;
+  --accent-7: #9ABCF9;    /* border on a selected card */
+  --accent-8: #739DEC;
+  --accent-9: #2D60C3;    /* solid: primary button, link, focus ring, checked control */
+  --accent-10: #2152B0;   /* hover */
+  --accent-11: #224FA6;   /* accent text on accent-subtle */
+  --accent-12: #152C58;
+
+  /* Surfaces. Light separates by tone and hairline; shadows are for overlays only. */
+  --bg: var(--neutral-1);
+  --bg-subtle: var(--neutral-2);
+  --surface: #FFFFFF;           /* cards, panels, inputs: flat, with a hairline border */
+  --surface-raised: #FFFFFF;    /* menus, popovers, dialogs, sheets: white plus a shadow */
+  --fill: var(--neutral-3);
+  --fill-hover: var(--neutral-4);
+  --fill-active: var(--neutral-5);
+
+  --border: var(--neutral-6);
+  --border-hover: var(--neutral-7);
+  --border-strong: var(--neutral-8);
+
+  --text: var(--neutral-12);
+  --text-muted: var(--neutral-11);
+  --text-subtle: var(--neutral-10); /* also placeholders */
+
+  /* Disabled is its own scheme, never opacity. Exempt from contrast (WCAG 1.4.3). */
+  --text-disabled: var(--neutral-8);
+  --fill-disabled: var(--neutral-3);
+  --border-disabled: var(--neutral-6);
+
+  --accent: var(--accent-9);
+  --accent-hover: var(--accent-10);
+  --accent-text: #FFFFFF;
+  --accent-subtle: var(--accent-3);
+  --accent-subtle-hover: var(--accent-4);
+  --accent-border: var(--accent-7);
+  --accent-fg: var(--accent-11);
+  --link: var(--accent-9);
+  --link-hover: var(--accent-10);
+  --focus: var(--accent-9);
+  /* ::selection sets BOTH: { background: var(--selection); color: var(--selection-text) }.
+   * A tint pale enough for subtle text at 4.5:1 would be invisible on white (1.15:1). */
+  --selection: var(--accent-4);
+  --selection-text: var(--text);
+
+  /* Destructive actions (Reject, Revoke). An action colour, not a status. */
+  --danger: #A82D20;
+  --danger-hover: #942318;
+  --danger-text: #FFFFFF;
+
+  /* Status: a closed set of five tones (S6). Success, warning and critical are the app's
+   * sealed / waiting / broken triplets, unchanged. Info is steel blue at hue 225: half the accent's
+   * chroma and 37 degrees away from it, so a status never reads as a link or a button.
+   * Tone map: Needs your signature -> warning; Waiting on N, Queued -> info;
+   * Approved, Paid -> success; Rejected, Failed -> critical; Expired, Withdrawn -> neutral. */
+  --status-neutral-fg: var(--neutral-11);
+  --status-neutral-bg: var(--neutral-3);
+  --status-neutral-border: var(--neutral-6);
+  --status-info-fg: #136782;
+  --status-info-bg: #E5F3F8;
+  --status-info-border: #AFD5E4;
+  --status-success-fg: #1B6B4F;
+  --status-success-bg: #E8F2EC;
+  --status-success-border: #B4D5C4;
+  --status-warning-fg: #8A5A12;
+  --status-warning-bg: #FAF2E3;
+  --status-warning-border: #E7D3AA;
+  --status-critical-fg: #A82D20;
+  --status-critical-bg: #FBEBE9;
+  --status-critical-border: #EEC2BC;
+
+  /* The quorum seal: discrete marks, never a bar. Both must read at >= 3:1 (WCAG 1.4.11). */
+  --mark-filled: var(--status-success-fg);
+  --mark-empty: var(--border-strong);
+
+  /* Chrome: the phone's tab bar and tooltips. Deeper and bluer than the ink, from the app. */
+  --chrome-bg: #0E1729;
+  --chrome-bg-raised: #1B2740;
+  --chrome-border: #293552;
+  --chrome-text: #EEF1F6;
+  --chrome-text-muted: #93A0B8;
+
+  /* Elevation. e0 is flat with a hairline (no token). Shadows are tinted with the chrome navy, not
+   * black, so they sit in the same temperature as the ink. */
+  --shadow-e1: 0 1px 0 rgb(14 23 41 / 0.04), 0 1px 3px rgb(14 23 41 / 0.06);
+  --shadow-e2: 0 0 0 1px rgb(14 23 41 / 0.08), 0 2px 4px rgb(14 23 41 / 0.04),
+    0 8px 16px -4px rgb(14 23 41 / 0.10);
+  --shadow-e3: 0 0 0 1px rgb(14 23 41 / 0.08), 0 8px 16px -4px rgb(14 23 41 / 0.08),
+    0 24px 40px -8px rgb(14 23 41 / 0.16);
+  --backdrop: rgb(14 23 41 / 0.40);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    /* Neutral, dark: the same hue, a deep ink rather than black (L 0.20, chroma 0.018).
+     * 8 and 10 are solved like the light ones, against steps 1-4 and the selection tint. */
+    --neutral-1: #11161E;
+    --neutral-2: #171C25;
+    --neutral-3: #1D232E;
+    --neutral-4: #232936;
+    --neutral-5: #29303E;
+    --neutral-6: #313947;
+    --neutral-7: #404859;
+    --neutral-8: #6A7385;
+    --neutral-9: #798293;
+    --neutral-10: #8891A1;
+    --neutral-11: #B9C0CD;
+    --neutral-12: #EEF1F6;
+
+    /* Accent, dark. 9 sits in a narrow window: white text needs luminance <= 0.183, a checked box
+     * on a dialog needs >= 0.150. Links move to 11: no single colour can carry white text at 4.5:1
+     * and also read at 4.5:1 on a near-black page. */
+    --accent-1: #101622;
+    --accent-2: #121C2E;
+    --accent-3: #162542;
+    --accent-4: #192D53;
+    --accent-5: #1D3563;
+    --accent-6: #244076;
+    --accent-7: #2E5091;
+    --accent-8: #355EAE;
+    --accent-9: #376ACF;
+    --accent-10: #3F71D3;
+    --accent-11: #8BB3FA;
+    --accent-12: #DCE9FF;
+
+    /* Dark surfaces step lighter instead of casting shadows. bg-subtle and surface share step 2. */
+    --surface: var(--neutral-2);
+    --surface-raised: var(--neutral-3);
+
+    --accent-text: #FFFFFF;
+    --link: var(--accent-11);
+    --link-hover: var(--accent-12);
+    --focus: var(--accent-10);
+    --selection: var(--accent-5);
+
+    --danger: #C24339;
+    --danger-hover: #C64A40;
+    --danger-text: #FFFFFF;
+
+    /* Status, dark: same hues and meanings; light text on a deep tint of its own hue. */
+    --status-neutral-bg: var(--neutral-4);
+    --status-info-fg: #88C9E2;
+    --status-info-bg: #0E2C36;
+    --status-info-border: #22576A;
+    --status-success-fg: #7BD3A9;
+    --status-success-bg: #122E21;
+    --status-success-border: #235941;
+    --status-warning-fg: #EFBE77;
+    --status-warning-bg: #342611;
+    --status-warning-border: #694D20;
+    --status-critical-fg: #F89A8F;
+    --status-critical-bg: #401B18;
+    --status-critical-border: #813933;
+
+    --chrome-bg: var(--neutral-2);
+    --chrome-bg-raised: var(--neutral-4);
+    --chrome-border: var(--neutral-6);
+    --chrome-text: var(--neutral-12);
+    --chrome-text-muted: var(--neutral-10);
+
+    /* A ring and a lighter surface carry the elevation; the shadow stays small. */
+    --shadow-e1: 0 1px 0 rgb(0 0 0 / 0.32);
+    --shadow-e2: 0 0 0 1px rgb(255 255 255 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 4px 12px rgb(0 0 0 / 0.24);
+    --shadow-e3: 0 0 0 1px rgb(255 255 255 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.05),
+      0 16px 32px -8px rgb(0 0 0 / 0.36);
+    --backdrop: rgb(5 8 13 / 0.64);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Neutral, dark: the same hue, a deep ink rather than black (L 0.20, chroma 0.018).
+   * 8 and 10 are solved like the light ones, against steps 1-4 and the selection tint. */
+  --neutral-1: #11161E;
+  --neutral-2: #171C25;
+  --neutral-3: #1D232E;
+  --neutral-4: #232936;
+  --neutral-5: #29303E;
+  --neutral-6: #313947;
+  --neutral-7: #404859;
+  --neutral-8: #6A7385;
+  --neutral-9: #798293;
+  --neutral-10: #8891A1;
+  --neutral-11: #B9C0CD;
+  --neutral-12: #EEF1F6;
+
+  /* Accent, dark. 9 sits in a narrow window: white text needs luminance <= 0.183, a checked box
+   * on a dialog needs >= 0.150. Links move to 11: no single colour can carry white text at 4.5:1
+   * and also read at 4.5:1 on a near-black page. */
+  --accent-1: #101622;
+  --accent-2: #121C2E;
+  --accent-3: #162542;
+  --accent-4: #192D53;
+  --accent-5: #1D3563;
+  --accent-6: #244076;
+  --accent-7: #2E5091;
+  --accent-8: #355EAE;
+  --accent-9: #376ACF;
+  --accent-10: #3F71D3;
+  --accent-11: #8BB3FA;
+  --accent-12: #DCE9FF;
+
+  /* Dark surfaces step lighter instead of casting shadows. bg-subtle and surface share step 2. */
+  --surface: var(--neutral-2);
+  --surface-raised: var(--neutral-3);
+
+  --accent-text: #FFFFFF;
+  --link: var(--accent-11);
+  --link-hover: var(--accent-12);
+  --focus: var(--accent-10);
+  --selection: var(--accent-5);
+
+  --danger: #C24339;
+  --danger-hover: #C64A40;
+  --danger-text: #FFFFFF;
+
+  /* Status, dark: same hues and meanings; light text on a deep tint of its own hue. */
+  --status-neutral-bg: var(--neutral-4);
+  --status-info-fg: #88C9E2;
+  --status-info-bg: #0E2C36;
+  --status-info-border: #22576A;
+  --status-success-fg: #7BD3A9;
+  --status-success-bg: #122E21;
+  --status-success-border: #235941;
+  --status-warning-fg: #EFBE77;
+  --status-warning-bg: #342611;
+  --status-warning-border: #694D20;
+  --status-critical-fg: #F89A8F;
+  --status-critical-bg: #401B18;
+  --status-critical-border: #813933;
+
+  --chrome-bg: var(--neutral-2);
+  --chrome-bg-raised: var(--neutral-4);
+  --chrome-border: var(--neutral-6);
+  --chrome-text: var(--neutral-12);
+  --chrome-text-muted: var(--neutral-10);
+
+  /* A ring and a lighter surface carry the elevation; the shadow stays small. */
+  --shadow-e1: 0 1px 0 rgb(0 0 0 / 0.32);
+  --shadow-e2: 0 0 0 1px rgb(255 255 255 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 4px 12px rgb(0 0 0 / 0.24);
+  --shadow-e3: 0 0 0 1px rgb(255 255 255 / 0.10), inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 16px 32px -8px rgb(0 0 0 / 0.36);
+  --backdrop: rgb(5 8 13 / 0.64);
+}
