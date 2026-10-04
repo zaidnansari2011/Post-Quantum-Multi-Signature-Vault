@@ -405,7 +405,7 @@ value adds a passing check; a wrong one turns the verdict red.
 
 *Your effort:* one line on a slide.
 
-### 2.8 On-chain execution on Sepolia — `IN PROGRESS` (added 2026-09-17)
+### 2.8 On-chain execution on Sepolia — `LIVE` (added 2026-09-17; on in production 2026-10-04)
 
 Approved Treasury decisions will pay out on Sepolia through a contract that checks the M-of-N
 ML-DSA-65 signatures itself. Before building anything, a local Foundry test confirmed that
@@ -550,9 +550,20 @@ ledger 133 entries, verified). Demo sign-in as before (`ada@qvault.demo`). Conse
   and the witness **`810fb51e5e2f75a8`** (ML-DSA-87, `witness-1`). The values in §2.5 describe
   the old deployment.
 - **Phones must enrol again:** the old accounts, devices and tokens were in the old database.
-- **On-chain treasuries are off** (`ONCHAIN_EXECUTION_ENABLED=false`) and the relayer's Sepolia key
-  is **not** on Azure yet; adding it is one secret when the handset test (§3.3) is done. The
-  treasury `0xD491…f3D0` lives in the laptop's demo database, not in this one.
+- **On-chain treasuries are on** since 2026-10-04 (your call: switched on before the handset test,
+  web and password keys only). The relayer key and the RPC endpoint are Container App secrets
+  (`executor-private-key`, `sepolia-rpc-url`); `/admin/chain` reads *Funded*. The Treasury vault
+  (#1) is linked to [`0x5788ccACAdCe9F3A0447B6fBFe009D8A6c821461`](https://sepolia.etherscan.io/address/0x5788ccACAdCe9F3A0447B6fBFe009D8A6c821461), 2 of 3,
+  Ada, Brij and Chen on their password keys; deployment tx `0xb9a31b24…`, block 11,842,630. Linking
+  cost 0.0307 ETH. Funded with 0.01 ETH from the relayer (your OK), then **a test payout ran end to
+  end** the same day: Ada raised 0.001 ETH to `0xF590…676b`, Ada and Brij approved, and the app
+  paid it in [`0x5afb834b…0548`](https://sepolia.etherscan.io/tx/0x5afb834ba468f717b4213af88dba951c8905c4d43c03ba31e5df82d753f70548)
+  (block 11,842,867, 3,273,463 gas, 0.00344 ETH). Afterwards: treasury 0.009 ETH, relayer
+  0.1597 ETH. The older treasury `0xD491…f3D0` lives in the laptop's demo database.
+- **Phone approvers on this treasury need a relink.** Its seats are password keys. To approve
+  payments from a phone, an approver enrols the phone, chooses the phone key (Account, key
+  choice), and the vault owner requests a change on the Treasury tab (a reconfiguration, ~0.009
+  ETH per new key plus ~0.004).
 
 **Yours to do:**
 
