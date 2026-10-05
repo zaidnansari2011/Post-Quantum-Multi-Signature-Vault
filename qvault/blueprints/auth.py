@@ -30,7 +30,7 @@ def _safe_next(target: str | None) -> str | None:
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
-        return redirect(url_for("auth.dashboard"))
+        return redirect(url_for("core.index"))
     form = RegisterForm()
     if form.validate_on_submit():
         try:
@@ -49,7 +49,7 @@ def register():
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("auth.dashboard"))
+        return redirect(url_for("core.index"))
     form = LoginForm()
     if form.validate_on_submit():
         user = auth_service.authenticate(form.email.data, form.password.data)
@@ -57,7 +57,8 @@ def login():
             flash("Invalid email or password.", "danger")
             return render_template("login.html", form=form)
         login_user(user)
-        return redirect(_safe_next(request.args.get("next")) or url_for("auth.dashboard"))
+        # Home is the work queue: signing in should land on what needs you, not on settings.
+        return redirect(_safe_next(request.args.get("next")) or url_for("core.index"))
     return render_template("login.html", form=form)
 
 

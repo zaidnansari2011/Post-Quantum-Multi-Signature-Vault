@@ -84,3 +84,22 @@ def test_register_endpoint_logs_user_in(client):
     )
     assert resp.status_code == 200
     assert b"post-quantum" in resp.data.lower()  # dashboard mentions the PQC identity
+
+
+def test_signing_in_lands_on_home(client):
+    client.post(
+        "/register",
+        data={
+            "display_name": "Erin",
+            "email": "erin@e.com",
+            "password": "a-strong-password",
+            "confirm": "a-strong-password",
+        },
+    )
+    client.post("/logout")
+    resp = client.post("/login", data={"email": "erin@e.com", "password": "a-strong-password"})
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
+    # Already signed in: /login and /register go to Home too.
+    assert client.get("/login").headers["Location"] == "/"
+    assert client.get("/register").headers["Location"] == "/"
