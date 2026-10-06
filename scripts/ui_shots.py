@@ -100,7 +100,7 @@ def discover(page: Page, base: str) -> tuple[int, dict[str, str]]:
                 continue
             words = text.lower()
             for status in STATUSES:
-                if status not in found and re.search(rf"\b{status}\b", words):
+                if status not in found and re.search(STATUS_WORDS[status], words):
                     found[status] = href
                     break
         if len(found) == len(STATUSES):

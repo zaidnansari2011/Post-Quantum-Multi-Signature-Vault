@@ -836,3 +836,138 @@ th[aria-sort] .q-sort { color: var(--text); }
   .q-addrow__f { grid-template-columns: minmax(0, 1fr) auto; }
   .q-addrow__f .q-field:first-child { grid-column: 1 / -1; }
 }
+
+/* ---------------------------------------------------------------- New decision (vaults/proposal_new.html) */
+
+/* The type: two cards, each its own URL (?kind=payment), so the choice survives a reload. */
+.q-typepick { display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-24); }
+.q-typecard {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: var(--space-8); row-gap: var(--space-2);
+  flex: 1 1 240px; max-width: 320px; padding: var(--space-12) var(--space-16);
+  border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card);
+  background: var(--surface); color: var(--text); text-decoration: none;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-typecard > .q-icon { margin-top: 2px; color: var(--text-subtle); }
+.q-typecard__t { font-weight: var(--text-body-strong-weight); }
+.q-typecard__c { grid-column: 2; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+a.q-typecard:hover { background: var(--fill); color: var(--text); }
+.q-typecard[aria-current="page"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-subtle); }
+.q-typecard[aria-current="page"] > .q-icon { color: var(--accent-fg); }
+.q-typecard.is-off { border-style: dashed; border-color: var(--border-hover); background: transparent; color: var(--text-subtle); cursor: not-allowed; }
+.q-typecard.is-off .q-typecard__c { color: var(--text-subtle); }
+
+/* The form, the preview beside it, and the actions under the form. One column on a phone, where
+ * the preview comes before the button it is about. */
+.q-compose {
+  display: grid; gap: var(--space-8) var(--space-32); align-items: start;
+  grid-template-columns: minmax(0, 640px); grid-template-areas: "fields" "preview" "act";
+}
+@media (min-width: 1100px) {
+  .q-compose { grid-template-columns: minmax(0, 640px) 320px; grid-template-areas: "fields preview" "act preview"; }
+}
+.q-compose__fields { grid-area: fields; min-width: 0; }
+.q-compose__act { grid-area: act; display: flex; gap: var(--space-8); align-items: center; padding-top: var(--space-8); }
+.q-compose__note { margin: 0 0 var(--space-16); color: var(--text-muted); }
+/* The decision text is what people sign, so it is set as the product sets signed words. */
+.q-compose textarea.q-input {
+  min-height: 168px; padding-block: var(--space-8);
+  font-family: var(--font-serif); font-size: var(--text-decision-size); line-height: var(--text-decision-line);
+}
+
+.q-preview {
+  grid-area: preview; display: grid; gap: var(--space-16); align-content: start; min-width: 0;
+  padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+  background: var(--bg-subtle); --av-ring: var(--bg-subtle);
+}
+@media (min-width: 1100px) { .q-preview { position: sticky; top: calc(var(--topbar-h) + var(--space-24)); } }
+.q-preview__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-preview__rule { display: flex; align-items: center; gap: var(--space-12); margin: 0; font-weight: var(--text-body-strong-weight); }
+.q-preview__people { display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-16); margin: 0; padding: 0; list-style: none; }
+.q-preview__people li { display: inline-flex; align-items: center; gap: var(--space-8); }
+.q-preview__facts { display: grid; gap: var(--space-12); margin: 0; padding-top: var(--space-16); border-top: var(--border-width) solid var(--border); }
+.q-preview__facts > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-8); }
+.q-preview__facts dt { color: var(--text-subtle); }
+.q-preview__facts dd { margin: 0; color: var(--text); }
+.q-preview__cap { margin: 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* An input with a unit inside its right edge ("ETH"). */
+.q-inwrap { position: relative; display: block; }
+.q-inwrap .q-input { padding-right: var(--space-48); }
+.q-inwrap__sfx { position: absolute; right: var(--space-12); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+
+/* ---------------------------------------------------------------- the due field (ui/forms.html: due_field)
+ * A typed text input with a calendar button; qvault.js draws the month grid and the time list. */
+
+.q-date { position: relative; display: block; max-width: 320px; }
+.q-date__in { padding-right: var(--space-40); font-variant-numeric: tabular-nums; }
+.q-date__btn {
+  position: absolute; right: 2px; top: 2px; display: inline-grid; place-items: center;
+  width: 28px; height: 28px; padding: 0; margin: 0; border: 0; border-radius: var(--radius-badge);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.q-date__btn:hover, .q-date__btn[aria-expanded="true"] { background: var(--fill); color: var(--text); }
+.q-date__read { display: block; color: var(--text); font-weight: var(--weight-medium); }
+.q-date__pop {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-popover);
+  width: 296px; padding: var(--space-12);
+  background: var(--surface-raised); border-radius: var(--radius-card); box-shadow: var(--shadow-e2);
+  animation: q-pop-in var(--duration-popover) var(--ease-enter) both;
+}
+.q-cal__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-bottom: var(--space-8); }
+.q-cal__m { font-weight: var(--text-body-strong-weight); }
+.q-cal__nav { display: flex; gap: var(--space-2); }
+.q-cal__nav .q-ib:disabled { color: var(--text-disabled); background: transparent; cursor: not-allowed; }
+.q-cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.q-cal__wd { display: grid; place-items: center; height: 24px; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-cal__d {
+  display: grid; place-items: center; height: 36px; padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.q-cal__d:hover:not(:disabled) { background: var(--fill-raised-hover); }
+.q-cal__d.is-today { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.q-cal__d[aria-pressed="true"], .q-cal__d[aria-pressed="true"]:hover { background: var(--accent); color: var(--accent-text); box-shadow: none; }
+.q-cal__d:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.q-cal__d.is-out { visibility: hidden; }
+.q-cal__time { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-top: var(--space-12); padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
+.q-cal__time label { color: var(--text-muted); }
+.q-cal__time .q-selwrap { width: 112px; }
+.q-cal__ft { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-12); }
+@media (max-width: 767px) {
+  .q-date { max-width: none; }
+  .q-date__pop { width: min(320px, calc(100vw - 2 * var(--gutter))); }
+  .q-cal__d { height: 40px; }
+}
+
+/* ---------------------------------------------------------------- file drop zone (ui/forms.html: file_drop) */
+
+.q-drop { position: relative; display: block; }
+.q-drop__in { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip-path: inset(50%); }
+.q-drop__zone {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8);
+  min-height: 64px; padding: var(--space-12) var(--space-16);
+  border: var(--border-width) dashed var(--border-strong); border-radius: var(--radius-card);
+  background: var(--surface); color: var(--text-muted); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-drop__zone > .q-icon { color: var(--text-subtle); }
+.q-drop__zone:hover, .q-drop.is-over .q-drop__zone { background: var(--fill); border-color: var(--text-subtle); }
+.q-drop__in:focus-visible + .q-drop__zone { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-drop__act { color: var(--link); font-weight: var(--weight-medium); }
+.q-drop__name { flex-basis: 100%; color: var(--text); font-weight: var(--text-body-strong-weight); overflow-wrap: anywhere; }
+.q-drop__name:empty { display: none; }
+.q-drop.is-filled .q-drop__or { display: none; }
+
+@media (max-width: 767px) {
+  /* A phone keeps the one primary action beside the headline, as an icon (screens.md C.2). */
+  .q-home .q-ph__row { flex-wrap: nowrap; }
+  .q-home .q-ph__act .q-btn--primary { width: var(--target-touch); height: var(--target-touch); padding: 0; }
+  .q-home .q-ph__act .q-btn--primary > span:not(.q-btn__busy),
+  .q-home .q-ph__act .q-btn--primary > .q-icon:last-child:not(:first-child) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .q-compose__act { flex-direction: column; align-items: stretch; }
+  .q-compose__act .q-btn { --btn-h: var(--target-touch); }
+  .q-typecard { max-width: none; }
+}

@@ -333,6 +333,291 @@
     });
   }
 
+  /* ------------------------------------------------------------------ the due field
+   * [data-due-field] (ui/forms.html, due_field): a text input holding "YYYY-MM-DD HH:MM" in UTC.
+   * The calendar button opens a month grid and a time list that write that input; the moment is
+   * read back in words under the field and in any [data-due-echo] (the "who approves" preview).
+   * Without this script the input is still a text field the form reads. */
+
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December'];
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  // The typed value as a UTC instant, or null. Accepts the form's two formats.
+  function parseDue(text) {
+    var m = /^\s*(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})\s*$/.exec(text || '');
+    if (!m) return null;
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+    if (d.getUTCMonth() !== +m[2] - 1 || +m[4] > 23 || +m[5] > 59) return null;
+    return d;
+  }
+
+  function formatDue(d) {
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+      ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+  }
+
+  function dayStart(d) { return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); }
+
+  // "Tue 13 Oct 2026, 17:00 UTC, in 7 days": the same words the server writes (ui.due).
+  function describeDue(d) {
+    var words = DAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()].slice(0, 3) +
+      ' ' + d.getUTCFullYear() + ', ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
+    var left = d.getTime() - Date.now();
+    if (left <= 0) return words + ', which has already passed.';
+    var hours = Math.floor(left / 3600000);
+    var span = hours < 1 ? Math.max(1, Math.floor(left / 60000)) + ' minutes'
+      : hours < 48 ? hours + (hours === 1 ? ' hour' : ' hours')
+      : Math.floor(hours / 24) + ' days';
+    return words + ', in ' + span + '.';
+  }
+
+  function dueBounds(field) {
+    var min = field.getAttribute('data-min');
+    var max = field.getAttribute('data-max');
+    return { min: min ? new Date(min) : null, max: max ? new Date(max) : null };
+  }
+
+  function readBack(field) {
+    var input = field.querySelector('.q-date__in');
+    var d = parseDue(input.value);
+    var empty = field.getAttribute('data-empty') || '';
+    var text = input.value.trim() === '' ? empty : d ? describeDue(d) : 'Type it as 2026-10-13 17:00.';
+    var out = field.querySelector('[data-due-read]');
+    if (out) out.textContent = text;
+    doc.querySelectorAll('[data-due-echo="' + input.id + '"]').forEach(function (echo) {
+      echo.textContent = text;
+    });
+  }
+
+  function buildCalendar(field, month) {
+    var pop = field.querySelector('[data-due-pop]');
+    var input = field.querySelector('.q-date__in');
+    var chosen = parseDue(input.value);
+    var bounds = dueBounds(field);
+    var today = new Date();
+    var first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
+    var days = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0)).getUTCDate();
+    var minDay = bounds.min ? dayStart(bounds.min) : null;
+    var maxDay = bounds.max ? dayStart(bounds.max) : null;
+    var html = '<div class="q-cal__hd"><span class="q-cal__m" aria-live="polite">' +
+      MONTHS[first.getUTCMonth()] + ' ' + first.getUTCFullYear() + '</span><span class="q-cal__nav">' +
+      '<button class="q-ib" type="button" data-cal-step="-1" aria-label="Previous month"' +
+      (minDay !== null && first.getTime() <= minDay ? ' disabled' : '') + '>' + chevron('left') + '</button>' +
+      '<button class="q-ib" type="button" data-cal-step="1" aria-label="Next month"' +
+      (maxDay !== null && Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 1) > maxDay ? ' disabled' : '') +
+      '>' + chevron('right') + '</button></span></div><div class="q-cal__grid" role="group" aria-label="' +
+      MONTHS[first.getUTCMonth()] + ' ' + first.getUTCFullYear() + '">';
+    // Weeks start on Monday, as UK calendars do.
+    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].forEach(function (w) {
+      html += '<span class="q-cal__wd" aria-hidden="true">' + w.slice(0, 2) + '</span>';
+    });
+    var lead = (first.getUTCDay() + 6) % 7;
+    for (var i = 0; i < lead; i++) html += '<span class="q-cal__d is-out" aria-hidden="true"></span>';
+    for (var day = 1; day <= days; day++) {
+      var at = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), day);
+      var date = new Date(at);
+      var off = (minDay !== null && at < minDay) || (maxDay !== null && at > maxDay);
+      var picked = chosen && dayStart(chosen) === at;
+      html += '<button class="q-cal__d' + (at === dayStart(today) ? ' is-today' : '') + '" type="button" data-cal-day="' +
+        at + '" aria-pressed="' + (picked ? 'true' : 'false') + '" aria-label="' + DAY_NAMES[date.getUTCDay()] + ' ' +
+        day + ' ' + MONTHS[date.getUTCMonth()] + ' ' + date.getUTCFullYear() + '"' + (off ? ' disabled' : '') +
+        ' tabindex="-1">' + day + '</button>';
+    }
+    html += '</div><div class="q-cal__time"><label for="' + input.id + '-time">Time, UTC</label>' +
+      '<span class="q-selwrap"><select class="q-select" id="' + input.id + '-time" data-cal-time>';
+    var current = chosen ? pad(chosen.getUTCHours()) + ':' + pad(chosen.getUTCMinutes()) : '17:00';
+    var listed = false;
+    for (var t = 0; t < 48; t++) {
+      var value = pad(Math.floor(t / 2)) + ':' + (t % 2 ? '30' : '00');
+      if (value === current) listed = true;
+      html += '<option' + (value === current ? ' selected' : '') + '>' + value + '</option>';
+    }
+    if (!listed) html = html.replace('<select class="q-select" id="' + input.id + '-time" data-cal-time>',
+      '<select class="q-select" id="' + input.id + '-time" data-cal-time><option selected>' + current + '</option>');
+    html += '</select>' + chevron('down') + '</span></div><div class="q-cal__ft">' +
+      '<button class="q-btn q-btn--ghost q-btn--sm" type="button" data-cal-clear>Clear</button>' +
+      '<button class="q-btn q-btn--secondary q-btn--sm" type="button" data-cal-done>Done</button></div>';
+    pop.innerHTML = html;
+    pop.setAttribute('data-month', first.getTime());
+    // One day in the tab order: the chosen one, else today or the first that can be picked.
+    var focusable = pop.querySelector('.q-cal__d[aria-pressed="true"]:not(:disabled)') ||
+      pop.querySelector('.q-cal__d.is-today:not(:disabled)') || pop.querySelector('.q-cal__d[data-cal-day]:not(:disabled)');
+    if (focusable) focusable.tabIndex = 0;
+    return focusable;
+  }
+
+  function chevron(way) {
+    var paths = { left: 'M9.75 4.5 6.25 8l3.5 3.5', right: 'M6.25 4.5 9.75 8l-3.5 3.5', down: 'M4.5 6.25 8 9.75l3.5-3.5' };
+    return '<svg class="q-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="' +
+      paths[way] + '"/></svg>';
+  }
+
+  function openDue(field) {
+    var pop = field.querySelector('[data-due-pop]');
+    var button = field.querySelector('[data-due-open]');
+    var chosen = parseDue(field.querySelector('.q-date__in').value);
+    var bounds = dueBounds(field);
+    var base = chosen || bounds.min || new Date();
+    var day = buildCalendar(field, base);
+    pop.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    if (day) day.focus();
+  }
+
+  function closeDue(field, refocus) {
+    var pop = field.querySelector('[data-due-pop]');
+    if (pop.hidden) return;
+    pop.hidden = true;
+    field.querySelector('[data-due-open]').setAttribute('aria-expanded', 'false');
+    if (refocus) field.querySelector('[data-due-open]').focus();
+  }
+
+  function setDue(field, dayAt) {
+    var pop = field.querySelector('[data-due-pop]');
+    var input = field.querySelector('.q-date__in');
+    var time = (pop.querySelector('[data-cal-time]') || {}).value || '17:00';
+    var parts = time.split(':');
+    var day = new Date(dayAt);
+    var moment = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), +parts[0], +parts[1]));
+    var bounds = dueBounds(field);
+    // A day that is today can still be past at the chosen time; never write a moment before min.
+    if (bounds.min && moment < bounds.min) {
+      moment = new Date(Math.ceil((bounds.min.getTime() + 60000) / 1800000) * 1800000);
+    }
+    if (bounds.max && moment > bounds.max) moment = bounds.max;
+    input.value = formatDue(moment);
+    readBack(field);
+  }
+
+  doc.addEventListener('click', function (e) {
+    var t = e.target;
+    doc.querySelectorAll('[data-due-field]').forEach(function (field) {
+      if (!field.contains(t)) closeDue(field, false);
+    });
+    var field = t.closest('[data-due-field]');
+    if (!field) return;
+    if (t.closest('[data-due-open]')) {
+      if (field.querySelector('[data-due-pop]').hidden) openDue(field); else closeDue(field, true);
+      return;
+    }
+    var step = t.closest('[data-cal-step]');
+    if (step && !step.disabled) {
+      var pop = field.querySelector('[data-due-pop]');
+      var month = new Date(+pop.getAttribute('data-month'));
+      month.setUTCMonth(month.getUTCMonth() + (+step.getAttribute('data-cal-step')));
+      buildCalendar(field, month);
+      var again = pop.querySelector('[data-cal-step="' + step.getAttribute('data-cal-step') + '"]');
+      if (again && !again.disabled) again.focus();
+      else { var d = pop.querySelector('.q-cal__d[tabindex="0"]'); if (d) d.focus(); }
+      return;
+    }
+    var dayButton = t.closest('[data-cal-day]');
+    if (dayButton && !dayButton.disabled) {
+      setDue(field, +dayButton.getAttribute('data-cal-day'));
+      var at = +dayButton.getAttribute('data-cal-day');
+      buildCalendar(field, new Date(at));
+      var same = field.querySelector('[data-cal-day="' + at + '"]');
+      if (same) same.focus();
+      return;
+    }
+    if (t.closest('[data-cal-clear]')) {
+      field.querySelector('.q-date__in').value = '';
+      readBack(field);
+      closeDue(field, true);
+      return;
+    }
+    if (t.closest('[data-cal-done]')) closeDue(field, true);
+  });
+
+  doc.addEventListener('change', function (e) {
+    var select = e.target.closest('[data-cal-time]');
+    if (!select) return;
+    var field = select.closest('[data-due-field]');
+    var picked = field.querySelector('.q-cal__d[aria-pressed="true"]');
+    if (picked) setDue(field, +picked.getAttribute('data-cal-day'));
+  });
+
+  doc.addEventListener('input', function (e) {
+    var field = e.target.closest && e.target.closest('[data-due-field]');
+    if (field && e.target.classList.contains('q-date__in')) readBack(field);
+  });
+
+  doc.addEventListener('keydown', function (e) {
+    var field = e.target.closest && e.target.closest('[data-due-field]');
+    if (!field) return;
+    var pop = field.querySelector('[data-due-pop]');
+    if (e.key === 'Escape' && !pop.hidden) {
+      e.preventDefault();
+      closeDue(field, true);
+      return;
+    }
+    var day = e.target.closest('[data-cal-day]');
+    if (!day) return;
+    var moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    if (!(e.key in moves)) return;
+    e.preventDefault();
+    var target = +day.getAttribute('data-cal-day') + moves[e.key] * 86400000;
+    var next = pop.querySelector('[data-cal-day="' + target + '"]');
+    if (!next) {
+      buildCalendar(field, new Date(target));
+      next = pop.querySelector('[data-cal-day="' + target + '"]');
+    }
+    if (next && !next.disabled) {
+      pop.querySelectorAll('.q-cal__d[tabindex="0"]').forEach(function (b) { b.tabIndex = -1; });
+      next.tabIndex = 0;
+      next.focus();
+    }
+  });
+
+  /* ------------------------------------------------------------------ the file drop zone
+   * [data-drop] (ui/forms.html, file_drop): the real file input stays in the page; this adds
+   * dropping a file on the zone and naming the chosen file. */
+
+  function showFile(drop) {
+    var input = drop.querySelector('input[type=file]');
+    var name = drop.querySelector('[data-drop-name]');
+    var act = drop.querySelector('.q-drop__act');
+    var file = input.files && input.files[0];
+    drop.classList.toggle('is-filled', !!file);
+    if (name) {
+      name.textContent = file ? file.name + ', ' + (file.size < 1024 ? file.size + ' bytes'
+        : file.size < 1048576 ? Math.round(file.size / 1024) + ' KB'
+        : (file.size / 1048576).toFixed(1) + ' MB') : '';
+    }
+    if (act) act.textContent = file ? 'Choose another file' : 'Choose a file';
+  }
+
+  doc.addEventListener('change', function (e) {
+    var drop = e.target.closest && e.target.closest('[data-drop]');
+    if (drop) showFile(drop);
+  });
+
+  ['dragenter', 'dragover'].forEach(function (type) {
+    doc.addEventListener(type, function (e) {
+      var drop = e.target.closest && e.target.closest('[data-drop]');
+      if (!drop) return;
+      e.preventDefault();
+      drop.classList.add('is-over');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (type) {
+    doc.addEventListener(type, function (e) {
+      var drop = e.target.closest && e.target.closest('[data-drop]');
+      if (!drop) return;
+      e.preventDefault();
+      drop.classList.remove('is-over');
+      if (type === 'drop' && e.dataTransfer && e.dataTransfer.files.length) {
+        var input = drop.querySelector('input[type=file]');
+        input.files = e.dataTransfer.files;
+        showFile(drop);
+      }
+    });
+  });
+
   /* ------------------------------------------------------------------ start */
 
   function start() {
@@ -346,6 +631,7 @@
     toasts.forEach(armToast);
     refreshTimes();
     window.setInterval(refreshTimes, 60000);
+    doc.querySelectorAll('[data-due-field]').forEach(readBack);
   }
 
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', start);
