@@ -195,6 +195,17 @@ def test_a_page_drawn_by_a_post_does_not_name_itself_as_next(client):
     assert 'name="next" value="/login"' in client.get("/login").get_data(as_text=True)
 
 
+def test_an_error_page_does_not_echo_its_url_into_the_theme_choice(client):
+    """The public record's 404s must be byte-identical whatever UUID was asked for."""
+    page = client.get(f"/d/{uuid.uuid4()}").get_data(as_text=True)
+    form = re.search(r'<form class="themepick".*?</form>', page, re.S).group(0)
+    assert 'name="next"' not in form
+    resp = client.post(
+        "/theme", data={"theme": "dark"}, headers={"Referer": "http://localhost/d/abc"}
+    )
+    assert resp.headers["Location"] == "/d/abc"
+
+
 @pytest.mark.parametrize(
     "referrer, expected",
     [
