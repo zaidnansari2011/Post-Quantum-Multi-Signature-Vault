@@ -15,7 +15,7 @@
 // The keyboard: the footer (the sign button) rides above it, and the sheet's height shrinks by it.
 // Fields in a sheet are never autofocused, so the content is read before the keyboard arrives.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   AccessibilityInfo,
   Keyboard,
@@ -42,6 +42,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { IconButton } from './Button.tsx';
 import { Text } from './Text.tsx';
+import { RaisedSurface } from './surface.ts';
 import { Touchable } from './Touchable.tsx';
 
 const bezier = (p: readonly number[]) => Easing.bezier(p[0]!, p[1]!, p[2]!, p[3]!);
@@ -74,9 +75,31 @@ export type SheetProps = {
   dismissible?: boolean;
   /** A sheet showing a second page of itself (the code explanation) offers Back in its header. */
   onBack?: () => void;
+  /** The control that opened the sheet: a screen reader's focus returns to it on close (§5.9). */
+  returnFocusTo?: RefObject<View | null>;
 };
 
-export function Sheet({ visible, onClose, title, children, footer, dismissible = true, onBack }: SheetProps) {
+/** Move a screen reader's focus to a view. Native only; a courtesy that must never throw. */
+function focus(node: View | Text | null | undefined) {
+  if (Platform.OS === 'web' || !node) return;
+  try {
+    const tag = findNodeHandle(node as View);
+    if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+  } catch {
+    // Nothing to do: the sheet works without it.
+  }
+}
+
+export function Sheet({
+  visible,
+  onClose,
+  title,
+  children,
+  footer,
+  dismissible = true,
+  onBack,
+  returnFocusTo,
+}: SheetProps) {
   const t = useTheme();
   const s = useStyles();
   const reduced = useReducedMotion();
@@ -93,6 +116,12 @@ export function Sheet({ visible, onClose, title, children, footer, dismissible =
   const progress = useSharedValue(0);
   const drag = useSharedValue(0);
 
+  // Unmounted after the exit animation; focus goes back to whatever opened the sheet.
+  const closed = useCallback(() => {
+    setMounted(false);
+    focus(returnFocusTo?.current);
+  }, [returnFocusTo]);
+
   // Mount, animate in; animate out, then unmount.
   useEffect(() => {
     if (visible) {
@@ -103,26 +132,18 @@ export function Sheet({ visible, onClose, title, children, footer, dismissible =
         easing: bezier(t.motion.easeEnter),
       });
       // Focus moves to the title, so a screen reader starts at the top of the sheet (§5.9).
-      const at = setTimeout(() => {
-        if (Platform.OS === 'web' || !titleRef.current) return;
-        try {
-          const node = findNodeHandle(titleRef.current);
-          if (node) AccessibilityInfo.setAccessibilityFocus(node);
-        } catch {
-          // Focus is a courtesy to a screen reader; failing to move it must not break the sheet.
-        }
-      }, t.motion.dialog);
+      const at = setTimeout(() => focus(titleRef.current as unknown as View), t.motion.dialog);
       return () => clearTimeout(at);
     }
     progress.value = withTiming(
       0,
       { duration: t.motion.dialogExit, easing: bezier(t.motion.easeExit) },
       (finished) => {
-        if (finished) runOnJS(setMounted)(false);
+        if (finished) runOnJS(closed)();
       },
     );
     return undefined;
-  }, [visible, reduced, progress, drag, t.motion]);
+  }, [visible, reduced, progress, drag, t.motion, closed]);
 
   const pan = Gesture.Pan()
     .onUpdate((e) => {
@@ -180,7 +201,13 @@ export function Sheet({ visible, onClose, title, children, footer, dismissible =
               <View style={s.grabber} />
               {title || onBack ? (
                 <View style={s.titleRow}>
-                  {onBack ? <IconButton icon="chevron-left" label="Back" onPress={onBack} /> : null}
+                  {onBack ? (
+                    <IconButton
+                      icon={Platform.OS === 'android' ? 'arrow-left' : 'chevron-left'}
+                      label="Back"
+                      onPress={onBack}
+                    />
+                  ) : null}
                   {title ? (
                     <Text ref={titleRef} role="titleSm" accessibilityRole="header" style={s.title}>
                       {title}
@@ -190,6 +217,7 @@ export function Sheet({ visible, onClose, title, children, footer, dismissible =
               ) : null}
             </View>
           </GestureDetector>
+          <RaisedSurface.Provider value>
           <ScrollView
             style={s.body}
             contentContainerStyle={s.bodyContent}
@@ -203,6 +231,7 @@ export function Sheet({ visible, onClose, title, children, footer, dismissible =
           {footer ? (
             <View style={[s.footer, overflowing && s.footerRuled, { paddingBottom: bottom }]}>{footer}</View>
           ) : null}
+          </RaisedSurface.Provider>
         </Animated.View>
       </GestureHandlerRootView>
     </Modal>

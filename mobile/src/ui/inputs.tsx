@@ -9,6 +9,7 @@
 
 import { useState, type ReactNode } from 'react';
 import {
+  Platform,
   ScrollView,
   Switch as RNSwitch,
   TextInput,
@@ -20,6 +21,8 @@ import { fontFamily, makeStyles, useTheme, type Theme } from '../theme/index.ts'
 import { IconButton } from './Button.tsx';
 import { feedback } from './feedback.ts';
 import { Icon } from './Icon.tsx';
+import { useAnnounce } from './messages.tsx';
+import { pressedFill, useRaised } from './surface.ts';
 import { roleStyle, Text } from './Text.tsx';
 import { Touchable } from './Touchable.tsx';
 
@@ -41,7 +44,15 @@ export type FieldProps = Omit<TextInputProps, 'style'> & {
   labelTrailing?: ReactNode;
   /** An icon button inside the field's right edge. */
   trailing?: ReactNode;
+  /**
+   * Reserve the error line's height even while there is no error, so a field that validates as
+   * you type never shifts under the thumb (§5.8). Fields that only report on submit leave it off.
+   */
+  validates?: boolean;
 };
+
+/** react-native-web draws a square browser outline inside the 2pt ring; the ring replaces it. */
+const NO_WEB_OUTLINE = (Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as object;
 
 export function Field({
   label,
@@ -53,22 +64,24 @@ export function Field({
   onFocus,
   onBlur,
   multiline,
+  validates = false,
   ...props
 }: FieldProps) {
   const t = useTheme();
   const s = useStyles();
   const [focused, setFocused] = useState(false);
+  useAnnounce(error);
   const border = inputBorder(t, focused, !!error);
   // The edge thickens by 1pt on focus; the padding gives the point back so the text never moves.
   const pad = t.space[12] - (border.borderWidth - 1);
   return (
     <View style={s.field}>
-      <View style={s.labelRow}>
+      <View style={[s.labelRow, labelTrailing ? s.labelRowWithLink : null]}>
         <Text role="caption" tone="muted" nativeID={`${label}-label`}>
           {label}
         </Text>
-        {/* Its 44pt target overlaps the label row instead of pushing the input down. */}
-        {labelTrailing ? <View style={s.labelTrailing}>{labelTrailing}</View> : null}
+        {/* The row grows to the link's height: its target must not overlap the input (§4.6). */}
+        {labelTrailing}
       </View>
       <View style={[s.inputBox, border, { paddingLeft: pad, paddingRight: trailing ? 0 : pad }]}>
         <TextInput
@@ -94,10 +107,12 @@ export function Field({
             mono ? { fontFamily: fontFamily.mono } : null,
             s.input,
             { color: t.color.text },
+            NO_WEB_OUTLINE,
           ]}
         />
         {trailing}
       </View>
+      {error || caption || validates ? (
       <View style={s.under}>
         {error ? (
           <View style={s.errorRow} accessibilityLiveRegion="polite">
@@ -112,6 +127,7 @@ export function Field({
           </Text>
         ) : null}
       </View>
+      ) : null}
     </View>
   );
 }
@@ -155,6 +171,7 @@ export function TextArea({
   const t = useTheme();
   const s = useStyles();
   const [focused, setFocused] = useState(false);
+  useAnnounce(error);
   const border = inputBorder(t, focused, !!error);
   const pad = t.space[12] - (border.borderWidth - 1);
   const line = roleStyle(t, 'decision').lineHeight as number;
@@ -188,6 +205,7 @@ export function TextArea({
           roleStyle(t, 'decision'),
           s.textarea,
           border,
+          NO_WEB_OUTLINE,
           {
             color: t.color.text,
             paddingHorizontal: pad,
@@ -198,7 +216,7 @@ export function TextArea({
       />
       <View style={[s.under, s.underRow]}>
         {error ? (
-          <View style={[s.errorRow, s.flex]}>
+          <View style={[s.errorRow, s.flex]} accessibilityLiveRegion="polite">
             <Icon name="alert" size={16} color={t.color.status.critical.fg} style={s.errorIcon} />
             <Text role="caption" tone="critical" style={s.flex}>
               {error}
@@ -310,7 +328,11 @@ export function Segmented<T extends string>({
   const s = useStyles();
   if (t.stacked) {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[s.chips, s.chipScroller]}
+      >
         {options.map((o) => (
           <Chip key={o.value} label={o.label} selected={o.value === value} onPress={() => onChange(o.value)} />
         ))}
@@ -378,6 +400,8 @@ export function CheckboxRow({
   onToggle: () => void;
 }) {
   const s = useStyles();
+  const t = useTheme();
+  const raised = useRaised();
   return (
     <Touchable
       onPress={onToggle}
@@ -385,7 +409,7 @@ export function CheckboxRow({
       accessibilityState={{ checked }}
       accessibilityLabel={caption ? `${label}, ${caption}` : label}
       ringRadius={0}
-      style={({ pressed }) => [s.checkRow, pressed && s.checkRowPressed]}
+      style={({ pressed }) => [s.checkRow, pressed && { backgroundColor: pressedFill(t, raised) }]}
     >
       <View style={s.flex}>
         <Text role="body">{label}</Text>
@@ -430,8 +454,9 @@ export function Switch({
 
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
-  field: { gap: t.space[8], paddingBottom: t.space[8] },
-  labelTrailing: { marginVertical: -13 },
+  // One field-to-field rhythm everywhere: 16 below each field, whatever it carries.
+  field: { gap: t.space[8], paddingBottom: t.space[16] },
+  labelRowWithLink: { minHeight: 44, marginVertical: -t.space[8] },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 18 },
   inputBox: {
     minHeight: 48,
@@ -468,8 +493,11 @@ const useStyles = makeStyles((t) => ({
     gap: 2,
     minHeight: 40,
   },
+  chipScroller: { flexWrap: 'nowrap', paddingRight: t.layout.gutter },
   segment: {
-    flex: 1,
+    // Sized to their labels and sharing the rest, so "Approved" is never cut to "Approv…".
+    flexGrow: 1,
+    flexBasis: 'auto',
     minHeight: 36,
     borderRadius: 8,
     alignItems: 'center',
@@ -477,7 +505,9 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: t.space[8],
   },
   segmentActive: {
-    backgroundColor: t.color.surface,
+    // In dark, `surface` is darker than the `fill` track and the selection would look sunken;
+    // dark surfaces step lighter (§4.5), so the selected segment takes `fillActive` there.
+    backgroundColor: t.scheme === 'dark' ? t.color.fillActive : t.color.surface,
     borderWidth: 1,
     borderColor: t.color.border,
   },
@@ -497,5 +527,4 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: t.layout.gutter,
     paddingVertical: t.space[8],
   },
-  checkRowPressed: { backgroundColor: t.color.fillRaisedPressed },
 }));

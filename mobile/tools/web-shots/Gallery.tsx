@@ -19,6 +19,7 @@ import {
   Banner,
   Button,
   CheckboxRow,
+  CollapsedBar,
   ChipGroup,
   CodeBlock,
   CodeLine,
@@ -441,6 +442,11 @@ function Structure() {
       <Story title="SectionTitle with a count and a link">
         <SectionTitle title="Open" count={7} trailing={<TextLink label="See all" onPress={noop} />} />
       </Story>
+      <Story title="CollapsedBar: the headline once it has scrolled away" pad={false}>
+        <View style={s.collapsedFrame}>
+          <CollapsedBar title="3 need your signature" visible action={{ icon: 'plus', label: 'New decision', onPress: noop }} />
+        </View>
+      </Story>
       <Story title="OfflineBar" pad={false}>
         <OfflineBar since="09:40" />
       </Story>
@@ -569,5 +575,6 @@ const useStyles = makeStyles((t) => ({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: t.space[8] },
   top: { marginTop: t.space[12] },
   tabbar: { flexDirection: 'row', backgroundColor: t.color.chrome.bg, paddingVertical: t.space[4] },
+  collapsedFrame: { height: 48 },
   icon: { width: 80, alignItems: 'center', gap: t.space[4], paddingVertical: t.space[4] },
 }));

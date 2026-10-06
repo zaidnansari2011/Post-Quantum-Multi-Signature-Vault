@@ -10,6 +10,7 @@ import { ActivityIndicator, View, type ViewStyle } from 'react-native';
 import { makeStyles, scaleCap, useTheme, type Theme } from '../theme/index.ts';
 import { Icon, type IconName } from './Icon.tsx';
 import { Text, type TextTone } from './Text.tsx';
+import { pressedFill, useRaised } from './surface.ts';
 import { Touchable } from './Touchable.tsx';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'dangerSecondary' | 'quiet';
@@ -29,8 +30,9 @@ export type ButtonProps = {
   style?: ViewStyle;
 };
 
-function paint(t: Theme, variant: ButtonVariant, pressed: boolean, disabled: boolean) {
+function paint(t: Theme, variant: ButtonVariant, pressed: boolean, disabled: boolean, raised = false) {
   const c = t.color;
+  const press = pressedFill(t, raised);
   if (disabled) {
     return {
       bg: variant === 'quiet' ? 'transparent' : c.fillDisabled,
@@ -44,14 +46,14 @@ function paint(t: Theme, variant: ButtonVariant, pressed: boolean, disabled: boo
     case 'danger':
       return { bg: pressed ? c.dangerPressed : c.danger, border: 'transparent', fg: 'onDanger' as TextTone };
     case 'secondary':
-      return { bg: pressed ? c.fill : c.surface, border: c.borderStrong, fg: 'text' as TextTone };
+      return { bg: pressed ? press : c.surface, border: c.borderStrong, fg: 'text' as TextTone };
     case 'dangerSecondary':
       // The label is the critical status foreground, not --danger: dark --danger on a dark surface
       // is 3.4:1, under the 4.5 a 16pt label needs. In light the two are the same colour.
-      return { bg: pressed ? c.fill : c.surface, border: c.borderStrong, fg: 'critical' as TextTone };
+      return { bg: pressed ? press : c.surface, border: c.borderStrong, fg: 'critical' as TextTone };
     case 'quiet':
     default:
-      return { bg: pressed ? c.fill : 'transparent', border: 'transparent', fg: 'muted' as TextTone };
+      return { bg: pressed ? press : 'transparent', border: 'transparent', fg: 'muted' as TextTone };
   }
 }
 
@@ -69,6 +71,7 @@ export function Button({
 }: ButtonProps) {
   const t = useTheme();
   const s = useStyles();
+  const raised = useRaised();
   return (
     <Touchable
       onPress={onPress}
@@ -80,12 +83,12 @@ export function Button({
       accessibilityState={{ disabled, busy }}
       ringRadius={t.radius.control}
       style={({ pressed }) => {
-        const p = paint(t, variant, pressed, disabled);
+        const p = paint(t, variant, pressed, disabled, raised);
         return [s.button, full && s.full, { backgroundColor: p.bg, borderColor: p.border }, style];
       }}
     >
       {({ pressed }) => {
-        const p = paint(t, variant, pressed, disabled);
+        const p = paint(t, variant, pressed, disabled, raised);
         const fg = p.fg;
         return (
           <View style={s.inner}>
@@ -134,6 +137,7 @@ export function IconButton({
   size = 24,
   disabled,
   tone = 'plain',
+  compact = false,
   hint,
 }: {
   icon: IconName;
@@ -142,13 +146,17 @@ export function IconButton({
   color?: string;
   size?: number;
   disabled?: boolean;
-  /** `filled` draws the round accent-filled header action. */
-  tone?: 'plain' | 'filled';
+  /** `tinted` is the header's create action: findable without being the loudest thing there. */
+  tone?: 'plain' | 'filled' | 'tinted';
   hint?: string;
+  /** 32pt visual (slop makes the target 48): beside a value, where 44 would set the row height. */
+  compact?: boolean;
 }) {
   const t = useTheme();
   const s = useStyles();
+  const raised = useRaised();
   const filled = tone === 'filled';
+  const tinted = tone === 'tinted';
   return (
     <Touchable
       onPress={onPress}
@@ -157,18 +165,22 @@ export function IconButton({
       accessibilityLabel={label}
       accessibilityHint={hint}
       accessibilityState={{ disabled: !!disabled }}
-      ringRadius={22}
+      ringRadius={compact ? 16 : 22}
       style={({ pressed }) => [
         s.iconButton,
+        compact && s.iconButtonCompact,
         filled && { backgroundColor: pressed ? t.color.accentPressed : t.color.accent },
-        !filled && pressed && { backgroundColor: t.color.fill },
+        tinted && { backgroundColor: pressed ? t.color.fillHover : t.color.accentSubtle },
+        !filled && !tinted && pressed && { backgroundColor: pressedFill(t, raised) },
       ]}
     >
       <Icon
         name={icon}
         size={size}
         color={
-          disabled ? t.color.textDisabled : (color ?? (filled ? t.color.accentText : t.color.textMuted))
+          disabled
+            ? t.color.textDisabled
+            : (color ?? (filled ? t.color.accentText : tinted ? t.color.accentFg : t.color.textMuted))
         }
       />
     </Touchable>
@@ -183,6 +195,7 @@ export function TextLink({
   tone = 'link',
   disabled,
   role = 'body',
+  compact = false,
 }: {
   label: string;
   onPress: () => void;
@@ -190,6 +203,8 @@ export function TextLink({
   tone?: TextTone;
   disabled?: boolean;
   role?: 'body' | 'bodyStrong' | 'caption';
+  /** 32pt tall, the slop making up the 48: on the same line as a value. */
+  compact?: boolean;
 }) {
   const s = useStyles();
   return (
@@ -198,7 +213,7 @@ export function TextLink({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      style={({ pressed }) => [s.link, pressed && s.linkPressed]}
+      style={({ pressed }) => [s.link, compact && s.linkCompact, pressed && s.linkPressed]}
       ringRadius={6}
     >
       <Text role={role} tone={disabled ? 'disabled' : tone}>
@@ -229,6 +244,8 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconButtonCompact: { width: 32, height: 32, borderRadius: 16 },
   link: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', borderRadius: 6 },
+  linkCompact: { minHeight: 32, paddingHorizontal: t.space[4] },
   linkPressed: { backgroundColor: t.color.fill },
 }));

@@ -91,6 +91,7 @@ export function Tab({
         <Icon
           name={focused ? icons[1] : icons[0]}
           size={24}
+          scales={false}
           color={focused ? t.color.chrome.text : t.color.chrome.textMuted}
         />
         {count ? (
@@ -123,11 +124,11 @@ const useStyles = makeStyles((t) => ({
     borderTopWidth: 1,
     borderTopColor: t.color.chrome.border,
   },
-  tab: { flex: 1, minHeight: 49, alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: 4 },
+  tab: { flex: 1, minHeight: 49, alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: 6, paddingBottom: 4 },
   labelActive: { fontFamily: t.type.bodyStrong.fontFamily },
   badge: {
     position: 'absolute',
-    top: -6,
+    top: -4,
     left: 14,
     minWidth: 18,
     minHeight: 18,

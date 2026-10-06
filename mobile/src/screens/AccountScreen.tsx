@@ -168,9 +168,8 @@ function OtherDevice({ device }: { device: Device }) {
   return (
     <ListRow
       title={device.name}
-      caption={`${device.fingerprint ?? '—'}\n${
-        revoked ? whenAfter('Revoked', device.revoked_at) : whenAfter('Last used', device.last_seen_at)
-      }`}
+      code={device.fingerprint}
+      caption={revoked ? whenAfter('Revoked', device.revoked_at) : whenAfter('Last used', device.last_seen_at)}
       value={revoked ? 'Revoked' : 'Active'}
       valueTone={revoked ? 'subtle' : 'success'}
     />

@@ -9,6 +9,7 @@ import { View, type ViewStyle } from 'react-native';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { Icon, type IconName } from './Icon.tsx';
 import { Text, type TextTone } from './Text.tsx';
+import { pressedFill, useRaised } from './surface.ts';
 import { Touchable } from './Touchable.tsx';
 
 /** A grouped list: rows on `surface`, hairlines between them, inset 16. */
@@ -81,6 +82,8 @@ export type ListRowProps = {
   /** A sibling control on the right (never inside the row's own target, §4.6). */
   trailing?: ReactNode;
   disabled?: boolean;
+  /** A key, fingerprint or hash under the title, in mono: 0/O and 1/l must never be ambiguous. */
+  code?: string | null;
 };
 
 export function ListRow({
@@ -97,15 +100,22 @@ export function ListRow({
   captionLines = 2,
   trailing,
   disabled,
+  code,
 }: ListRowProps) {
   const t = useTheme();
   const s = useStyles();
+  const raised = useRaised();
   const stacked = t.stacked && !!value;
   const body = (
     <>
       {leading ?? (icon ? <Icon name={icon} size={24} color={t.color.textMuted} /> : null)}
       <View style={s.rowText}>
         <Text role="body">{title}</Text>
+        {code ? (
+          <Text role="code" tone="muted" selectable>
+            {code}
+          </Text>
+        ) : null}
         {caption ? (
           <Text role="caption" tone={captionTone} numberOfLines={captionLines}>
             {caption}
@@ -126,6 +136,7 @@ export function ListRow({
     </>
   );
   const label = accessibilityLabel ?? [title, caption, value].filter(Boolean).join('. ');
+  const pressedStyle = { backgroundColor: pressedFill(t, raised) };
   if (!onPress) {
     return (
       <View style={s.rowOuter}>
@@ -145,7 +156,7 @@ export function ListRow({
         accessibilityLabel={label}
         accessibilityHint={accessibilityHint}
         ringRadius={0}
-        style={({ pressed }) => [s.row, s.rowFlex, pressed && s.pressed]}
+        style={({ pressed }) => [s.row, s.rowFlex, pressed && pressedStyle]}
       >
         {body}
       </Touchable>
@@ -291,7 +302,6 @@ const useStyles = makeStyles((t) => ({
     paddingVertical: t.space[12],
   },
   rowFlex: { flex: 1 },
-  pressed: { backgroundColor: t.color.fill },
   rowText: { flex: 1, gap: t.space[2] },
   value: { flexShrink: 1, maxWidth: '62%', textAlign: 'right' },
   kv: { gap: t.space[2], paddingVertical: t.space[4] },

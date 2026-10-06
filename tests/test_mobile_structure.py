@@ -112,6 +112,15 @@ def test_text_and_tappables_come_only_from_ui():
     assert not offenders, "\n".join(offenders)
 
 
+def test_react_native_is_never_imported_whole():
+    """``import * as RN`` or a default import would reach ``RN.Text`` past the check above."""
+    pattern = re.compile(
+        r"import\s+(?:\*\s+as\s+\w+|\w+)\s*(?:,\s*\{[^}]*\})?\s*from\s*['\"]react-native['\"]"
+    )
+    for path in _sources():
+        assert not pattern.search(path.read_text(encoding="utf-8")), path
+
+
 def test_no_text_is_made_tappable_on_its_own():
     """A ``<Text onPress>`` is a target with no 48-point area and no audit attributes."""
     pattern = re.compile(r"<Text\b[^>]*\bonPress=", re.S)

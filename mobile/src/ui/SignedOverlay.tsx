@@ -189,7 +189,7 @@ const useStyles = makeStyles((t) => ({
     borderTopRightRadius: t.radius.sheet,
     borderTopWidth: t.scheme === 'dark' ? 1 : 0,
     borderColor: t.color.border,
-    paddingHorizontal: t.space[24],
+    paddingHorizontal: t.layout.gutter,
     paddingTop: t.space[24],
     alignItems: 'center',
     gap: t.space[16],

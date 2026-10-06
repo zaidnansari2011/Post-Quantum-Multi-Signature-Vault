@@ -115,7 +115,8 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
           }}
           ListHeaderComponent={
             <View style={s.head}>
-              <RootHeader title="Activity" />
+              <RootHeader
+                onLayout={header.onHeaderLayout} title="Activity" />
               <Segmented label="Show" options={FILTERS} value={filter} onChange={setFilter} />
               {transportFailure ? (
                 <Banner

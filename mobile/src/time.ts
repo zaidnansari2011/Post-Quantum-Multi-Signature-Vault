@@ -128,13 +128,12 @@ export function exactly(iso: string | null | undefined): string {
   if (!iso) return '—';
   const at = parseInstant(iso);
   if (Number.isNaN(at)) return String(iso);
-  return new Date(at).toLocaleString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  // One shape everywhere, matching the rest of the app's dates ("6 Oct 2026, 22:44"): the
+  // device locale wrote "Oct 6, 2026, 10:44 PM" beside "Tue 6 Oct, 17:00".
+  const d = new Date(at);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function relative(iso: string | null | undefined, now: number): string {
