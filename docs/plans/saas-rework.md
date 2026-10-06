@@ -166,7 +166,7 @@ the owner's to make; the recommendation is given.
 | S3 | **One accent colour, used for identity and interaction only** (primary action, focus ring, links, selection, active nav), never for a data value or a status. Status keeps its closed semantic set. **Supersedes ADR-0013 rule 2**, recorded as ADR-0024. | The absence of any accent is the single largest cause of the "not yet styled" read (01 §8.3). Polaris and Radix both separate brand roles from status roles. | Keeping "colour only means status" (the austerity that failed three reviews); a gradient brand (a listed tell). |
 | S4 | **"The interface states consequences, not concepts."** Status lines and consequence lines are allowed ("Rejecting ends this decision for everyone"); concept explanation stays in `/docs`. **Revises ADR-0014's "explains nothing"**, in the same ADR-0024. | Research 02's copy examples are all status and consequence lines, and fit the spirit of 0014. "Explains nothing" over-corrected into screens with no guidance at the moments that matter. | Restoring teaching copy (rejection #1, August). |
 | S5 | **Evidence in three layers on every evidence-bearing screen:** (1) outcome sentence and status, (2) a checks summary in plain words, (3) technical detail (hashes, algorithms, proofs, raw JSON) in a tab or drawer. | The dominant pattern across Safe, Rekor, AWS KMS and Cloudflare KT (03 §5). It keeps every cryptographic fact one click away instead of deleting it. | Hiding crypto behind `<details>` everywhere (rejection #2) or leading with it (today). |
-| S6 | **A closed status vocabulary,** single words, past tense where possible, personalised: *Needs your signature · Waiting on 2 · Approved · Rejected · Expired · Withdrawn · Queued · Paid · Failed*. Five tones: neutral, info, success, warning, critical. | Polaris and Stripe both mandate closed vocabularies; Safe personalises "Needs your confirmation". Fixes the "Expired" vs "Open" disagreement. | Free-form chips per screen. |
+| S6 | **A closed status vocabulary,** single words, past tense where possible, personalised: *Needs your signature · Waiting on 2 · Approved · Rejected · Expired · Withdrawn · Queued · Paid · Failed*. Five tones: neutral, info, success, warning, critical. **Tone map (R1.1 critique):** Needs your signature → warning; Waiting on N → neutral (pending, but nothing for the viewer to do); Queued, and later Scheduled → info; Approved, Paid → success; Rejected, Failed → critical; Expired, Withdrawn → neutral. "Waiting on N" counts approvals still needed, not people. | Polaris and Stripe both mandate closed vocabularies; Safe personalises "Needs your confirmation". Fixes the "Expired" vs "Open" disagreement. | Free-form chips per screen. |
 
 ### Architecture
 
@@ -187,7 +187,7 @@ the owner's to make; the recommendation is given.
 | S14 | **A "who approves" preview before submitting:** "Any 2 of Ada, Brij, Chen · Due 6 Oct · You can't approve your own decision" (when S15 applies). | Ramp, Zip (02 §1.6). Turns the quorum into something the requester sees before it bites. | — |
 | S15 ✓ owner accepted the recommendation 2026-10-04 | **Separation of duties as a vault setting**: "The person who raises a decision can also approve it": **off by default for new vaults**, on for existing vaults so nothing changes underneath them. Shown on the vault and in the preview. | Default in Fireblocks, Ramp, Wise, Opal (02 §8, 03 §1). Mercury's subtle variant confuses people, so the setting is explicit. | Changing existing vaults silently. |
 | S16 | **Reject takes a reason (required), and a decision can be withdrawn and raised again.** "Request changes" is withdraw-and-re-raise with a link to the original, because signatures bind the content: an edited decision *is* a new decision. Comments are a separate, unsigned discussion thread, labelled as not part of what is signed. | DocuSign, Wise, Spendesk (reason required); Ramp, Zip (request changes). Making "edits invalidate signatures" visible is one of Q-Vault's differentiators. | Editing a decision in place (impossible to do honestly with content-bound signatures). |
-| S17 | **A decision code**: the first 8 hex characters of the payload hash, grouped `7F3A-91C2`, shown on the web decision page, in the phone's approve sheet (computed on the phone) and in exports. Copy: "Check this code matches your phone." | Finding #9; costs nothing, needs no format change (it is a display of a hash both sides already compute). | Word-list fingerprints (later, for keys). |
+| S17 | **A decision code**: the first 8 hex characters of the payload hash, grouped `7F3A-91C2`, shown on the web decision page, in the phone's approve sheet (computed on the phone) and in exports. Copy: "Check this code matches your phone." On the web it is the last fact in the page header's meta line, labelled "Decision code" everywhere, with that sentence as its copy button's tooltip. | Finding #9; costs nothing, needs no format change (it is a display of a hash both sides already compute). | Word-list fingerprints (later, for keys). |
 | S18 ✓ owner accepted the recommendation 2026-10-04 (the R9 design is still reviewed before code) | **Recovery, stated honestly first, built in R9.** A "Forgot password?" page that says what cannot be done and what can: (a) approve from your paired phone, which holds its own key; (b) ask your vault's approvers to approve a **key replacement** (a quorum decision); (c) a **Recovery Kit**: a high-entropy code issued at sign-up that wraps a second copy of the signing key, printable, "not a backup code". (c) is new cryptography and gets a written design and an adversarial review before it is built. | Table stake #7 (04). 1Password, Bitwarden, Proton, Safe, Fireblocks (04 §8). Today the answer is "there is no reset", which is true but is not a design. | An email password reset that silently loses the signing key. |
 | S19 ✓ fixed on `onchain-execution` `d0cae74` (owner OK 2026-10-04), carried into `saas-rework`; the adversarial review widened it to the threshold | **Fix the phone's display-only text.** The phone renders the decision text only from `signing_inputs` (the checked field), and refuses to offer signing if `detail.action_text` and `signing_inputs.action_text` differ. Tested with a probe like the existing payment guard. Also show the recomputed hash in the integrity-failure panel. | The security defect in §3. In the rework regardless; **in the working project only with the owner's OK** (§0, §10). | — |
 | S20 | **Expiry made visible and consistent:** an "Expiring soon" queue, a 24-hour warning notification, expired decisions leave every "needs you" queue, and expired shows the same everywhere with "Raise again". | Anchorage calls silent expiry "easy to miss"; the baseline shows it happening. | — |
@@ -195,7 +195,7 @@ the owner's to make; the recommendation is given.
 | S22 | **The public face:** a landing page that names the job ("No single person can move the money."), shows the real product, replaces the four crypto statistics with a **live, verifiable log strip** ("Log head #12,481 · witnessed 9 s ago · Verify offline →"), and links a **Security page** built on Apple PQ3's levels-ladder idea. Plus: pricing placeholder (honest), changelog, a status page driven by `/healthz` and witness freshness, a real footer. | 04 §1 and Stage 1. The live log strip is something no template has. | Customer logos and badges we do not have. |
 | S23 | **The phone stays a first-class signer** (phone parity, the standing rule) and gains: the shared tokens, an in-app notification inbox (R7), push (R8), decision types, the decision code, workspace awareness. Rework builds use the `rework` EAS channel only (§0). | The custody-tool model (Fireblocks, Safe) puts Q-Vault in the "phone is never inferior" group, a selling point (02 §9). | — |
 | S24 | **Accessibility to WCAG 2.2 AA as a test, not a hope:** token contrast pairs checked by a unit test; 24px minimum targets (44px on touch); visible 2px focus; every control labelled; `aria-live` for async updates; reduced motion honoured. | 01 §7. Several current failures (input borders, missing labels) are invisible until measured. | — |
-| S25 ✓ owner 2026-10-04: *"incorporate dark mode gracefully"* | **Dark mode is part of the design system from the first token, not a late theme.** Every colour token has a light and a dark value (Radix-style functional steps, re-measured for contrast in both); every component is built and screenshotted in both; the web follows `prefers-color-scheme` with a manual override (System / Light / Dark) in the avatar menu, stored per user, applied before first paint (no flash); dark surfaces step lighter instead of using shadows (Carbon layering); status colours keep their meaning in both. The offline verifier already has a dark theme to match. **Phone:** `app.json` forces `userInterfaceStyle: "light"`; switching it to `automatic` is a native config change, so it needs a `runtimeVersion` bump and a new APK (R7), not an OTA. | Every system studied supports it (01 §2.6). Built in from the start it costs little; bolted on later it doubles the review and misses edge states. | Shipping dark mode last as an optional extra (the draft's recommendation, overridden by the owner). |
+| S25 ✓ owner 2026-10-04: *"incorporate dark mode gracefully"* | **Dark mode is part of the design system from the first token, not a late theme.** Every colour token has a light and a dark value (Radix-style functional steps, re-measured for contrast in both); every component is built and screenshotted in both; the web follows `prefers-color-scheme` with a manual override (System / Light / Dark) in the avatar menu, stored per user, applied before first paint (no flash: the product renders `data-theme` on `<html>` server-side from the stored preference, and uses System only when there is none; the style tile applies it from its closing script, which flashes, and must not be copied into R1); dark surfaces step lighter instead of using shadows (Carbon layering); status colours keep their meaning in both. The offline verifier already has a dark theme to match. **Phone:** `app.json` forces `userInterfaceStyle: "light"`; switching it to `automatic` is a native config change, so it needs a `runtimeVersion` bump and a new APK (R7), not an OTA. | Every system studied supports it (01 §2.6). Built in from the start it costs little; bolted on later it doubles the review and misses edge states. | Shipping dark mode last as an optional extra (the draft's recommendation, overridden by the owner). |
 | S26 ✓ owner 2026-10-05: *"be careful with the mobile UI/UX especially, I'll probably make it my main app"* | **The phone is the primary product surface.** It is designed with the same rigour as the web, not ported after it: its own UX specification (`docs/plans/saas-rework/phone-ux.md`, with research 06 on mobile approval, custody and fintech apps and the platform guidelines), reviewed adversarially before code; every screen redesigned, in light and dark, checked in the web harness against the baseline; every R3–R5 feature reaches the phone in the same phase as the web (phone parity), never later. **Same brand, not the same design** (owner, same night: *"it's a smaller screen, compact and supposed to be fast and easy to use; I wouldn't want to dump them with info they don't need"*): the phone shares the tokens, faces, seal and status vocabulary, but not the web's layouts or information load. Each screen leads with the one thing that matters; evidence, hashes and history sit one tap away; admin and analysis tasks stay minimal or link to the web. Parity means the approver's jobs, not every field. | The owner expects to use the app as the main way into Q-Vault. The app is already the stronger half (section 3), so it leads the design language (S1) and now leads the priorities too. | Treating the phone as a follower of the web (the draft's R7, a single late phase). |
 
 ---
@@ -241,7 +241,7 @@ the owner's to make; the recommendation is given.
 | Approvals inbox | Tabs: Needs your signature · Waiting on others · Expiring soon · Done. Columns: decision (title + code), vault, amount, signatures (2/3 + avatars), status, raised, expires | R2 |
 | Vaults list | Cards or rows with quorum chip, open count, needs-you count, treasury balance | R2 |
 | Vault detail tabs | Overview header with "Any 2 of 3" chip and separation-of-duties line; Decisions (type, amount); Members (custody, last signed); Files; Treasury; Settings (rule changes) | R2, R5 |
-| Decision page | Two columns: header with personalised status and decision code; signer timeline; discussion; Evidence tab (layers 2 and 3); right Details panel (vault, type, amount, policy at creation, expires) | R2, R5 |
+| Decision page | Header with personalised status and a meta line of labelled facts (raised by, due, decision code); **header tabs Overview, Evidence (layer 2), Technical (layer 3)**, settled in the R1.1 critique. Overview, top to bottom: the decision text, Signatures (the seal at 20px, one sentence, the signer timeline), Payment; discussion follows (R5). A right Details aside, unboxed, holds only what the page does not already say (vault, type, rule when raised, raised, decision ID, signing key, public record) | R2, R5 |
 | New decision (`?kind=payment`) | Type picker (General, Payment, Access, Contract), typed fields, styled date and file controls, "who approves" preview | R2, R5 |
 | Audit + Transparency | Sentences with absolute timestamps; integrity column (logged and witnessed / awaiting witness / failed) with a proof drawer; filters in the URL; the Merkle root as the screen's figure; witness status card | R2 |
 | Verify | Paste box plus file; CloudTrail-style coverage line ("Checked: 3 signatures, log entry, witness checkpoint") | R2 |
@@ -260,22 +260,31 @@ Values are the starting point for the R1.1 style tile and change only through th
 
 | Token | Size / line | Weight | Use |
 | --- | --- | --- | --- |
-| `text-caption` | 12/16 | 450 | helper text, badge labels, table meta |
+| `text-caption` | 12/16 | 450; badge labels 500 (`--text-badge-weight`) | helper text, badge labels, table meta |
 | `text-body` | 14/20 | 400 | default interface text, tables, forms, nav |
-| `text-body-strong` | 14/20 | 600 | row titles, buttons, nav items |
+| `text-body-strong` | 14/20 | 560 | row titles, buttons, names in sentences (600 is a solid stripe at 14px) |
 | `text-title-sm` | 16/24 | 600 | section and dialog titles |
-| `text-title` | 20/28 | 600, −0.01em | page titles |
-| `text-figure` | 24/32 | 600, tabular, −0.015em | the one moment of scale per screen |
-| `text-decision` | 18/28 (detail), 22/32 (hero) | 400 serif | the decision text itself |
+| `text-title` | 20/28 | 600, −0.015em | page titles |
+| `text-figure` | 24/32 | 600, tabular, −0.015em | balances and totals on vault and treasury pages; never on a page that shows decision text |
+| `text-decision` | 18/28 | 400 serif | the decision text in dialogs, sheets and the app |
+| `text-decision-hero` | 22/32 | 400 serif | the decision text as the page's subject (the largest text on that screen) |
+| `text-code` | 13/20 | 400 mono | hashes, keys, addresses and IDs; drops to 12 inside a caption |
 
 Rules: sentence case everywhere, no uppercase eyebrows; `tabular-nums` on every amount, count and
-time; mono only for hashes, keys, addresses and IDs, middle-truncated with a copy button; inputs at
-16px below 768px.
+time; mono only for hashes, keys, addresses and IDs, middle-truncated with a copy button (protocol
+literals such as the domain tag or `eth_transfer` are quoted in Public Sans); **addresses inside the
+decision text are set in mono** at 0.86em with the first and last 4 bytes in medium weight, whole on
+wide screens and breaking only every 10 characters on phones (`<wbr>`, so the copied text is
+unchanged); the zone on every absolute time in timelines, dialogs and due dates, none in scanning
+feeds; inputs at 16px below 768px.
 
 **Colour:** a 12-step cool neutral ramp tuned to the app's navy ink (`#16233A`); one accent ramp
 (a blue in the same hue family as the ink, chosen in R1.1 with measured contrast); the status triplets
 kept as they are (they already measure 5.3–6.0:1, better than off-the-shelf ramps), plus neutral and
-info tones. Input and checkbox borders ≥ 3:1. Every pair is checked by `tests/test_design_tokens.py`.
+info tones (info is kept for Queued, so blue stays rare). Input and checkbox borders ≥ 3:1. Hover inside
+raised surfaces (menus, popovers, dialogs) has its own token, `--fill-raised-hover`, because in dark
+the raised surface is already the step `--fill` uses. Every pair is checked by
+`tests/test_design_tokens.py`.
 
 **Space:** 2, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64. Page gutters 16 (mobile) / 24 (desktop).
 
@@ -285,19 +294,25 @@ and sheets · full avatars. Child radius ≤ parent.
 **Elevation:** e0 flat with a hairline border (cards, tables); e1 sticky header once scrolled; e2
 menus and popovers (ring + two soft layers); e3 dialogs and sheets. No shadow under ordinary cards.
 
-**Density:** controls 32px (28 in toolbars, 40 on auth screens); table rows 40px (32 compact for
-audit); targets 44px on touch.
+**Density:** controls 32px (28 in toolbars, 40 on auth screens); table rows 40px and single-line,
+with the decision code in its own column and the relative time in a tooltip (32 compact for audit);
+Home's work lists use two-line rows, 56px minimum, all three on one column template; targets 44px on
+touch (a hit area may extend past a smaller visible control).
 
 **Motion:** 0ms for the command palette and keyboard actions; 100ms hover and press; 150ms menus and
 popovers; 200–240ms dialogs, sheets and toasts; ease-out in, faster out; one element at a time, no
-page-load cascades; `prefers-reduced-motion` keeps opacity only.
+page-load cascades; `prefers-reduced-motion` keeps opacity only. Loading is three quorum marks filling
+in turn, never a rotating ring: the logo is a ring.
 
 **Components** (each a Jinja macro with a documented contract, and a mirror in the app's `ui/`):
 button (primary, secondary, ghost, danger; loading keeps its label), field (label, caption, error),
 select, date picker, file drop zone, checkbox, radio, switch, badge/status, avatar and avatar stack,
 tabs, page header, data table (sort, filters in URL, empty vs no-results, skeleton), key-value panel,
 signer timeline, quorum marks, hash with copy, dialog, sheet, menu, popover, toast, banner, empty
-state, error page, stepper, checklist, command palette, notification item.
+state, error page, stepper, checklist, command palette, notification item. Check rows say Passed,
+Failed or Unavailable; inside technical panels the only result words are Valid and Same as signed.
+These are check results, never decision statuses. The signer timeline has one marker per row: the
+avatar, with its state as a small badge. Avatars never sit beside the quorum marks.
 
 **Brand:** keep the name. Develop the app's quorum "seal" (marks filling to a threshold) into the
 logo mark, so the brand asset is the product's own idea. ⚑ owner approves the mark in R1.1.
@@ -327,7 +342,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] **R1.1 Style tile ⚑:** **the owner approved the direction on the draft, 2026-10-05** ("I like it, continue with this"); the critique's revision follows, and the recommended logo mark (the closing mark) stands unless the owner picks another. One HTML page showing the type scale, colours, components and two real screens (Home and a decision) in the new language, for the owner to approve before anything is converted. Includes the logo mark.
 - [ ] Vendor Public Sans and Source Serif 4 (woff2, OFL, update `static/vendor/README.md`); drop Archivo; dedupe the five identical Inter files
 - [ ] Token CSS (`tokens.css`, `base.css`, `components.css`, `utilities.css`) replacing `qvault.css`, with **light and dark values for every token** (S25), contrast-tested in both
-- [ ] Theme switching: `prefers-color-scheme` by default, a System / Light / Dark choice in the avatar menu stored per user, applied before first paint
+- [ ] Theme switching: `prefers-color-scheme` by default, a System / Light / Dark choice in the avatar menu stored per user, applied before first paint by rendering `data-theme` on `<html>` in the Jinja base template (no script; the style tile's script-applied theme is not the pattern)
 - [ ] Jinja component macros (`templates/ui/`) and `static/qvault.js` behaviours (S7)
 - [ ] The shell: sidebar, top bar (search and bell present; the bell is wired in R4), avatar menu, help menu, mobile drawer
 - [ ] Error pages for 400/403/404/405/413/500 and CSRF failure, signed in or out, with a next step
@@ -505,3 +520,4 @@ integration (P2 if time allows), i18n, a public API for third parties, mainnet.
 | 2026-10-04 | R0 | **Owner decisions recorded** (S1 app-led, S25 dark mode built in, S15/S18 as recommended). **S19 fixed on the working branch** (`d0cae74`): the phone renders and prompts with the signed text only, refuses a response whose two copies differ, and its integrity drawer shows the hash it derived. A three-lens adversarial review (20 agents) confirmed 6 of 16 findings, all fixed in the same commit: the threshold gap (high), the prompt's 81-character edge, a payment prompt cut inside the treasury address, a stand-in that could hide an early prompt, and missing tests (forged hash, cut boundaries, server copies agree). 12 hand mutations killed; full suite green. Deferred to R7: the confirm sheet does not scroll (pre-existing). Found: no OTA has ever been published and the only APK is runtime 1, so the fix reaches phones with the next build | — |
 | 2026-10-04 | R0 | **Tooling:** `scripts/ui_shots.py` (both themes) and the Alembic baseline `0001_baseline` (6 tests; five hand-broken baselines all caught; checked against a copy of the laptop database, which will stamp cleanly; autogenerate misses partial-index predicate changes, so those are written by hand). Fixed on the way: `/vaults/<id>?tab=treasury` raised a 500 for an owner when treasuries are off (the live site has them on, so it was never affected) | — |
 | 2026-10-05 | R1, R7 | **The owner approved the style tile's direction** on the draft (S1 confirmed in detail). **New decision S26: the phone is the primary surface** (owner: "I'll probably make it my main app"); R7 grows into a full phone track with its own UX specification. To pick up pace (owner, same night) the work now runs as parallel streams, each in its own worktree and branch, merged here after review: R1 foundation, R3 workspaces, R4 notifications, R7 phone fixes, plus the phone UX specification. Owner decided the viewer-role fix stays in the rework only (no viewers on the live site) | — |
+| 2026-10-05 | R1.1 | **Style tile revised after a three-lens critique** (craft, spec, truth): Home's three lists share one column template; the decision page gets header tabs (Overview, Evidence, Technical) with the seal and signer timeline straight under the decision text; addresses in the decision text in mono; Waiting on N moved to neutral; strong text at 560; loading is quorum marks, not a ring; the technical layer now names what each signature actually covers (the `QVAULT-SIG-v1:VOTE` message, plus the treasury digest for payment approvals) and keeps log numbering honest after you sign. Fixed: clipped tab underline, invisible dark menu hover, copy fallback selecting shortened text, phone targets under 44px. §5 and §6 amended to match | — |
