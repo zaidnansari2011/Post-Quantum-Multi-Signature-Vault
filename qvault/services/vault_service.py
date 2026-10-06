@@ -8,8 +8,9 @@ so the operations here refuse that rather than allow a deadlocked vault.
 
 Who can be added is scoped to the vault's workspace (``workspace_service``): an address that belongs
 to nobody there, or to someone in another workspace, is refused with the same message, so this
-cannot be used to learn who is registered elsewhere. Only someone with an enrolled signing key can
-be made an approver (plan S11); existing members keep their standing.
+cannot be used to learn who is registered elsewhere. Only an active member of the vault's
+workspace who is not an auditor (read-only, plan S10) and holds an enrolled signing key (plan S11)
+can be made an approver; existing members keep their standing. Auditors can't create vaults either.
 
 Not supported: transferring ownership. ``Vault.owner_id`` is a column other code reads as always
 valid, and a transfer would have to move it, re-check the signer count, and decide what happens to
@@ -48,6 +49,11 @@ def create_vault(
     The vault's KEM private key is wrapped under the server master key (not a user password) so
     any authorised member can decrypt files server-side.
     """
+    if not workspace_service.can_create_vaults(owner):
+        raise MembershipError(
+            "Auditors are read-only, so they can't create vaults. Ask a workspace owner or admin "
+            "to change your role."
+        )
     if threshold_m < 1:
         raise PolicyError("The approval threshold M must be at least 1.")
 
@@ -105,6 +111,29 @@ def create_vault(
     return vault
 
 
+def _require_can_approve(vault: Vault, user: User) -> None:
+    """Who may be made an approver of ``vault``: an active member of its workspace, not an auditor,
+    with an enrolled signing key.
+
+    A suspended or removed member is refused here as well as when they are first added, so making
+    a viewer an approver cannot route around a suspension. Auditors are read-only (plan S10): they
+    can be a viewer, never part of a quorum.
+    """
+    workspace = workspace_service.workspace_of_vault(vault)
+    member = workspace_service.membership(workspace, user) if workspace is not None else None
+    if member is None or not member.is_active:
+        raise MembershipError(
+            f"{user.display_name} isn't an active member of this workspace, so they can't "
+            "approve. Ask a workspace admin to reinstate them first."
+        )
+    if member.role == "auditor":
+        raise MembershipError(
+            f"{user.display_name} is an auditor, and auditors are read-only, so they can't "
+            "approve. Add them as a viewer, or ask a workspace admin to change their role."
+        )
+    _require_enrolled_key(user)
+
+
 def _require_enrolled_key(user: User) -> None:
     """An approver is someone who can sign: no enrolled key, no place in the quorum (plan S11)."""
     if not workspace_service.has_enrolled_key(user):
@@ -140,7 +169,7 @@ def add_member(
     if vault.is_member(user.id):
         raise MembershipError("That user is already a member of this vault.")
     if role == "signer":
-        _require_enrolled_key(user)
+        _require_can_approve(vault, user)
 
     member = VaultMember(vault_id=vault.id, user_id=user.id, member_role=role)
     db.session.add(member)
@@ -214,7 +243,7 @@ def change_member_role(
     if role == "viewer":
         _guard_signer_count(vault, losing_user_id=user_id)
     else:
-        _require_enrolled_key(member.user)
+        _require_can_approve(vault, member.user)
 
     previous = member.member_role
     member.member_role = role

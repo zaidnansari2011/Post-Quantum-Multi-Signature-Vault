@@ -43,6 +43,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload, selectinload
 
 from qvault.extensions import db
 from qvault.models.key import Key
@@ -132,8 +133,11 @@ def workspace_of_vault(vault: Vault) -> Workspace | None:
 
 
 def members(workspace: Workspace, *, status: str | None = None) -> list[WorkspaceMember]:
-    """Members in the order they joined, optionally only those with ``status``."""
-    query = WorkspaceMember.query.filter_by(workspace_id=workspace.id)
+    """Members in the order they joined, optionally only those with ``status``. Each one's user is
+    loaded with them, since every page that lists members names them."""
+    query = WorkspaceMember.query.options(joinedload(WorkspaceMember.user)).filter_by(
+        workspace_id=workspace.id
+    )
     if status is not None:
         query = query.filter_by(status=status)
     return query.order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc()).all()
@@ -177,22 +181,34 @@ def colleagues(user: User, *, limit: int = 500) -> list[User]:
     )
 
 
+def _enrolled_key() -> tuple:
+    """An active signing key, on this server or on a device: what "key enrolled" means."""
+    return (
+        Key.role == "sig",
+        Key.status == "active",
+        Key.can_sign.is_(True),
+        Key.wrap_domain.in_(("password", "device")),
+    )
+
+
 def has_enrolled_key(user: User | int) -> bool:
     """Whether this person holds an active signing key, on this server or on a device."""
     user_id = user if isinstance(user, int) else user.id
     return (
-        db.session.scalar(
-            select(Key.id)
-            .where(
-                Key.owner_id == user_id,
-                Key.role == "sig",
-                Key.status == "active",
-                Key.can_sign.is_(True),
-                Key.wrap_domain.in_(("password", "device")),
-            )
-            .limit(1)
-        )
+        db.session.scalar(select(Key.id).where(Key.owner_id == user_id, *_enrolled_key()).limit(1))
         is not None
+    )
+
+
+def enrolled_user_ids(user_ids: Iterable[int]) -> set[int]:
+    """Which of these people hold an enrolled key, in one query (a page lists many at once)."""
+    user_ids = set(user_ids)
+    if not user_ids:
+        return set()
+    return set(
+        db.session.scalars(
+            select(Key.owner_id).where(Key.owner_id.in_(user_ids), *_enrolled_key()).distinct()
+        )
     )
 
 
@@ -206,6 +222,16 @@ def can_manage(member: WorkspaceMember | None) -> bool:
     return member is not None and member.is_active and member.role in MANAGER_ROLES
 
 
+def can_create_vaults(user: User | int) -> bool:
+    """Whether this person may create a vault. Auditors are read-only (plan S10), so they can't.
+
+    Decided by the workspace the product shows them, which is also the workspace a vault they
+    created would belong to (``workspace_of_vault``).
+    """
+    member = current_membership(user)
+    return member is None or member.role != "auditor"
+
+
 def invitations(workspace: Workspace, *, state: str | None = None) -> list[Invitation]:
     """The workspace's invitations, newest first, optionally only those in ``state``."""
     rows = (
@@ -217,6 +243,21 @@ def invitations(workspace: Workspace, *, state: str | None = None) -> list[Invit
         return rows
     now = _now()
     return [i for i in rows if i.state(now) == state]
+
+
+def open_invitations(workspace: Workspace) -> list[Invitation]:
+    """Invitations not yet accepted or withdrawn (pending or expired), newest first, each with its
+    inviter loaded. What the members page lists."""
+    return (
+        Invitation.query.options(selectinload(Invitation.inviter))
+        .filter(
+            Invitation.workspace_id == workspace.id,
+            Invitation.accepted_at.is_(None),
+            Invitation.revoked_at.is_(None),
+        )
+        .order_by(Invitation.created_at.desc(), Invitation.id.desc())
+        .all()
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -360,9 +401,18 @@ def _normalise_grants(vault_grants: Iterable) -> list[dict]:
     return [{"vault_id": vid, "role": grants[vid]} for vid in sorted(grants)]
 
 
-def _check_grants(workspace: Workspace, inviter_id: int, grants: list[dict]) -> list[Vault]:
+def _check_grants(
+    workspace: Workspace, inviter_id: int, grants: list[dict], role: str
+) -> list[Vault]:
     """Each vault must be one the inviter owns in this workspace: who can approve in a vault is
-    the vault owner's decision, never a workspace admin's."""
+    the vault owner's decision, never a workspace admin's. An auditor is read-only (plan S10), so
+    an invitation with that role can make them a viewer of a vault but never an approver."""
+    if role == "auditor" and any(g["role"] == "signer" for g in grants):
+        raise InvitationError(
+            "auditor_approver",
+            "Auditors are read-only, so they can't approve in a vault. Add them as a viewer, or "
+            "invite them with another role.",
+        )
     vaults = []
     for grant in grants:
         vault = db.session.get(Vault, grant["vault_id"])
@@ -422,7 +472,7 @@ def create_invitation(
             )
 
     grants = _normalise_grants(vault_grants)
-    _check_grants(workspace, inviter.id, grants)
+    _check_grants(workspace, inviter.id, grants, role)
 
     token, digest = _new_token()
     invitation = Invitation(
@@ -495,12 +545,18 @@ def check_usable(invitation: Invitation) -> Invitation:
     # The inviter's authority is checked again now, not only when they sent it: an admin who has
     # since been removed or demoted can no longer bring people in.
     inviter_member = membership(invitation.workspace_id, invitation.inviter_id)
-    if not can_manage(inviter_member) or _RANK[inviter_member.role] < _RANK[invitation.role]:
+    if not inviter_still_entitled(invitation, inviter_member):
         raise InvitationError(
             "inviter_lost_access",
             "This invitation is no longer valid. Ask a workspace admin to invite you again.",
         )
     return invitation
+
+
+def inviter_still_entitled(invitation: Invitation, inviter_member: WorkspaceMember | None) -> bool:
+    """Whether the person who sent this invitation could still send it. Taking their membership
+    as an argument lets a page that already holds every member ask about many invitations."""
+    return can_manage(inviter_member) and _RANK[inviter_member.role] >= _RANK[invitation.role]
 
 
 def _accept(invitation: Invitation, user: User) -> WorkspaceMember:
@@ -537,7 +593,7 @@ def _accept(invitation: Invitation, user: User) -> WorkspaceMember:
     )
 
     grants = invitation.grants()
-    for vault in _check_grants(workspace, invitation.inviter_id, grants):
+    for vault in _check_grants(workspace, invitation.inviter_id, grants, invitation.role):
         if vault.is_member(user.id):
             continue
         role = next(g["role"] for g in grants if g["vault_id"] == vault.id)
@@ -638,8 +694,23 @@ def revoke_invitation(invitation: Invitation, actor: User, *, commit: bool = Tru
 def resend_invitation(
     invitation: Invitation, actor: User, *, commit: bool = True
 ) -> tuple[Invitation, str]:
-    """Issue a new link, valid for another 7 days. The old link stops working."""
+    """Issue a new link, valid for another 7 days. The old link stops working.
+
+    Whoever resends it becomes its inviter. Acceptance checks the inviter's authority and their
+    ownership of each vault the invitation grants, so a link left in the name of someone who has
+    since lost the right to invite would be refused the moment it was used. The vaults are checked
+    against the resender now instead, and a resend they could not have sent is refused.
+    """
     workspace = _require_open(invitation, actor)
+    try:
+        _check_grants(workspace, actor.id, invitation.grants(), invitation.role)
+    except InvitationError as exc:
+        raise InvitationError(
+            exc.code,
+            f"{exc.message} Ask the vault's owner to send the new link, or withdraw this "
+            "invitation and invite them again.",
+        ) from exc
+    invitation.inviter = actor
     token, digest = _new_token()
     invitation.token_hash = digest
     invitation.expires_at = _now() + INVITATION_TTL
@@ -670,7 +741,9 @@ def _require_member(workspace: Workspace, user_id: int) -> WorkspaceMember:
 
 
 def _guard_last_owner(workspace: Workspace, member: WorkspaceMember, what: str) -> None:
-    if member.role != "owner":
+    # Only active owners are counted, so only an active owner is guarded: a suspended owner can be
+    # given another role or removed while an active owner remains.
+    if member.role != "owner" or not member.is_active:
         return
     owners = db.session.scalar(
         select(func.count(WorkspaceMember.id)).where(
@@ -725,7 +798,7 @@ def remove_member(workspace: Workspace, user_id: int, *, actor: User, commit: bo
     _require_rank(actor_member, member.role, "remove an owner")
     _guard_last_owner(workspace, member, "removed")
 
-    vaults = vaults_of(user_id)
+    vaults = vaults_of(user_id, workspace)
     if vaults:
         names = ", ".join(v.name for v in vaults)
         who = member.user.display_name if member.user else "They"
@@ -807,14 +880,21 @@ def reinstate_member(
     return member
 
 
-def vaults_of(user_id: int) -> list[Vault]:
-    """The vaults this person belongs to, by name."""
-    return (
-        Vault.query.join(VaultMember, VaultMember.vault_id == Vault.id)
-        .filter(VaultMember.user_id == user_id)
-        .order_by(Vault.name.asc())
-        .all()
+def vaults_of(user_id: int, workspace: Workspace | None = None) -> list[Vault]:
+    """The vaults this person belongs to, by name; with ``workspace``, only that workspace's.
+
+    Removing someone or leaving checks one workspace's vaults only: a vault in another workspace
+    neither blocks it nor has its name shown to this one.
+    """
+    query = Vault.query.join(VaultMember, VaultMember.vault_id == Vault.id).filter(
+        VaultMember.user_id == user_id
     )
+    if workspace is not None:
+        ids = vault_ids_of(workspace)
+        if not ids:
+            return []
+        query = query.filter(Vault.id.in_(ids))
+    return query.order_by(Vault.name.asc()).all()
 
 
 def leave_workspace(workspace: Workspace, user: User, *, commit: bool = True) -> None:
@@ -826,7 +906,7 @@ def leave_workspace(workspace: Workspace, user: User, *, commit: bool = True) ->
             "owner_cannot_leave",
             "Owners can't leave a workspace. Ask another owner to change your role first.",
         )
-    vaults = vaults_of(user.id)
+    vaults = vaults_of(user.id, workspace)
     if vaults:
         names = ", ".join(v.name for v in vaults)
         raise WorkspaceError(
@@ -912,7 +992,7 @@ def getting_started(workspace: Workspace) -> list[dict]:
     vault_ids = vault_ids_of(workspace)
     everyone = members(workspace)
     active = [m for m in everyone if m.is_active]
-    enrolled = sum(1 for m in active if has_enrolled_key(m.user_id))
+    enrolled = len(enrolled_user_ids(m.user_id for m in active))
     invited = (
         len(everyone) > 1
         or Invitation.query.filter_by(workspace_id=workspace.id).first() is not None

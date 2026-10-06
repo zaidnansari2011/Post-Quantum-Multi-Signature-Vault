@@ -35,7 +35,10 @@ ROLE_HELP = {
     "owner": "Everything an admin can do, and manages other owners.",
     "admin": "Invites people, changes roles and removes members.",
     "member": "Creates vaults and works in the vaults they are added to.",
-    "auditor": "Sees the workspace's membership and invitation history in Audit.",
+    "auditor": (
+        "Read-only: sees the workspace's membership and invitation history in Audit, and views "
+        "the vaults they're added to. Can't create a vault or approve."
+    ),
 }
 VAULT_ROLE_NAMES = {"signer": "Approver", "viewer": "Viewer"}
 
@@ -63,17 +66,36 @@ def _require_manager(member):
         abort(403)
 
 
-def _grant_rows(invitation: Invitation) -> list[dict]:
-    rows = []
-    for grant in invitation.grants():
-        vault = db.session.get(Vault, grant["vault_id"])
-        rows.append(
-            {
-                "name": vault.name if vault else "A vault that no longer exists",
-                "role": VAULT_ROLE_NAMES.get(grant["role"], grant["role"]),
-            }
-        )
-    return rows
+def _vault_names(invitations: list[Invitation]) -> dict[int, str]:
+    """The names of every vault these invitations grant, in one query."""
+    ids = {grant["vault_id"] for invitation in invitations for grant in invitation.grants()}
+    if not ids:
+        return {}
+    return {v.id: v.name for v in Vault.query.filter(Vault.id.in_(ids))}
+
+
+def _grant_rows(invitation: Invitation, names: dict[int, str] | None = None) -> list[dict]:
+    if names is None:
+        names = _vault_names([invitation])
+    return [
+        {
+            "name": names.get(grant["vault_id"], "A vault that no longer exists"),
+            "role": VAULT_ROLE_NAMES.get(grant["role"], grant["role"]),
+        }
+        for grant in invitation.grants()
+    ]
+
+
+def _invitation_state(invitation: Invitation, by_user: dict) -> str:
+    """``pending`` or ``expired``, or ``void`` for a pending link its inviter could no longer send:
+    acceptance would refuse it, so the page says it needs a new link rather than calling it
+    pending. Resending makes the resender its inviter."""
+    state = invitation.state()
+    if state == "pending" and not ws.inviter_still_entitled(
+        invitation, by_user.get(invitation.inviter_id)
+    ):
+        return "void"
+    return state
 
 
 # --------------------------------------------------------------------------------------------
@@ -89,16 +111,21 @@ def members():
     if tab not in TABS or (tab == "invited" and not manager):
         tab = "active"
 
+    # A fixed number of queries however many people and invitations there are: members come with
+    # their users, keys are checked in one query, and invitations come with their inviters.
     everyone = ws.members(workspace)
     active = [m for m in everyone if m.is_active]
     suspended = [m for m in everyone if not m.is_active]
-    open_invitations = [i for i in ws.invitations(workspace) if i.state() in ("pending", "expired")]
+    open_invitations = ws.open_invitations(workspace)
     counts = {
         "active": len(active),
         "invited": len(open_invitations),
         "suspended": len(suspended),
     }
     rows = active if tab == "active" else suspended
+    enrolled = ws.enrolled_user_ids(m.user_id for m in rows)
+    by_user = {m.user_id: m for m in everyone}
+    names = _vault_names(open_invitations)
     # The last active owner's role is shown, not offered: the service would refuse any change.
     sole_owner = sum(1 for m in active if m.role == "owner") == 1
     return render_template(
@@ -111,14 +138,18 @@ def members():
         rows=[
             {
                 "member": m,
-                "enrolled": ws.has_enrolled_key(m.user_id),
+                "enrolled": m.user_id in enrolled,
                 "can_act": manager and ws.outranks_or_equals(me.role, m.role),
                 "last_owner": sole_owner and m.is_active and m.role == "owner",
             }
             for m in rows
         ],
         invitations=[
-            {"invitation": i, "state": i.state(), "grants": _grant_rows(i)}
+            {
+                "invitation": i,
+                "state": _invitation_state(i, by_user),
+                "grants": _grant_rows(i, names),
+            }
             for i in open_invitations
         ],
         roles=_assignable_roles(me),
@@ -186,7 +217,7 @@ def remove(uid: int):
     member = ws.membership(workspace, uid)
     if member is None:
         abort(404)
-    vaults = ws.vaults_of(uid)
+    vaults = ws.vaults_of(uid, workspace)
     if request.method == "POST":
         typed = (request.form.get("confirm") or "").strip().lower()
         if typed != member.user.email:
@@ -324,7 +355,7 @@ def settings():
         me=me,
         manager=ws.can_manage(me),
         vault_count=len(ws.vault_ids_of(workspace)),
-        my_vaults=ws.vaults_of(current_user.id),
+        my_vaults=ws.vaults_of(current_user.id, workspace),
         role_name=ws.role_name,
     )
 

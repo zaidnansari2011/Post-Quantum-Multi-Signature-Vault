@@ -350,6 +350,13 @@ def create_vault():
     """
     user = g.api_user
     body = _body()
+    if not workspace_service.can_create_vaults(user):
+        return _error(
+            "not_allowed",
+            "Auditors are read-only, so they can't create vaults. Ask a workspace owner or admin "
+            "to change your role.",
+            403,
+        )
 
     name = (body.get("name") or "").strip()
     if not name:
