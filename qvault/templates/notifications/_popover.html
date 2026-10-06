@@ -1,0 +1,39 @@
+{#- The bell's popover: a fragment, fetched when the bell opens. -#}
+{% from "notifications/_item.html" import item %}
+<div class="npop__head">
+  <span class="npop__title">Notifications</span>
+  {% if unread.total %}
+  <form method="post" action="{{ url_for('notifications.read_all') }}" class="push">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ back }}">
+    <button class="btn btn--quiet btn--sm" type="submit">Mark all read</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="npop__section">
+  <div class="npop__label">Needs you{% if needs_you.total %} <span class="npop__n">{{ needs_you.total }}</span>{% endif %}</div>
+  {% if needs_you.items %}
+  <ul class="nlist nlist--compact">
+    {% for n in needs_you.items %}{{ item(n, stamp, back) }}{% endfor %}
+  </ul>
+  {% else %}
+  <p class="npop__empty">Nothing waits on your approval.</p>
+  {% endif %}
+</div>
+
+<div class="npop__section">
+  <div class="npop__label">Updates</div>
+  {% if updates.items %}
+  <ul class="nlist nlist--compact">
+    {% for n in updates.items %}{{ item(n, stamp, back) }}{% endfor %}
+  </ul>
+  {% else %}
+  <p class="npop__empty">No updates yet.</p>
+  {% endif %}
+</div>
+
+<div class="npop__foot">
+  <a href="{{ url_for('notifications.inbox') }}">Open the inbox</a>
+  <a href="{{ url_for('notifications.preferences') }}">Preferences</a>
+</div>

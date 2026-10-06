@@ -1,0 +1,29 @@
+{#- The bell (plan R4). Self-contained: its stylesheet and script come with it, so the shell carries
+    one include line and can move it (R1 puts it in the top bar) without touching anything else.
+
+    Without JavaScript it is a plain link to the inbox. With it, a click opens a popover of the
+    newest few, fetched when opened rather than built on every page. The badge is loud only when
+    something unread waits on you; unread updates alone get a quiet count, because they block
+    nothing. -#}
+{%- set nb = notification_unread() %}
+<link rel="stylesheet" href="{{ url_for('static', filename='notifications.css') }}">
+<div class="nbell" data-nbell
+     data-popover="{{ url_for('notifications.popover', next=request.full_path.rstrip('?')) }}">
+  <a class="nbell__button" href="{{ url_for('notifications.inbox') }}"
+     aria-haspopup="dialog" aria-expanded="false"
+     {% if request.endpoint in ('notifications.inbox',) %}aria-current="page"{% endif %}>
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1.2 1.3H2.8z"/><path d="M6.6 14a1.5 1.5 0 0 0 2.8 0"/>
+    </svg>
+    <span class="nbell__label">Notifications</span>
+    {%- if nb.total %}
+    <span class="nbell__badge{% if nb.needs_you %} nbell__badge--needs{% endif %}">
+      {{- nb.total if nb.total < 100 else '99+' -}}
+      <span class="nvh"> unread{% if nb.needs_you %}, {{ nb.needs_you }} waiting on you{% endif %}</span>
+    </span>
+    {%- endif %}
+  </a>
+  <div class="nbell__pop" role="dialog" aria-label="Notifications" hidden></div>
+</div>
+<script src="{{ url_for('static', filename='notifications.js') }}" defer></script>

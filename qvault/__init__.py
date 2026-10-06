@@ -113,6 +113,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from .blueprints.docs import bp as docs_bp
     from .blueprints.glassbox import bp as glassbox_bp
     from .blueprints.ledger import bp as ledger_bp
+    from .blueprints.notifications import bp as notifications_bp
     from .blueprints.record import bp as record_bp
     from .blueprints.vaults import bp as vaults_bp
     from .blueprints.verify import bp as verify_bp
@@ -124,6 +125,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(vaults_bp)
     app.register_blueprint(ledger_bp)
     app.register_blueprint(account_bp)
+    app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(docs_bp)
     app.register_blueprint(verify_bp)

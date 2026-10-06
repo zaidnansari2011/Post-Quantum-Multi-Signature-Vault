@@ -6,7 +6,8 @@ proposal, file (Phase 3); signature (Phase 4); ledger_anchor (Phase 5); log_chec
 witness_cosignature (transparency log, ADR-0015); device (device-held signing keys, ADR-0016);
 treasury, treasury_signer, proposal_action, execution_signature, treasury_job and
 signer_preference (on-chain execution, docs/plans/onchain-execution.md); workspace,
-workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md S10, S11).
+workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md S10, S11);
+notification and notification_preference (in-app notifications, plan R4).
 Added in later phases: rotation_event.
 """
 
@@ -20,6 +21,7 @@ from .execution import Execution, ExecutionTransaction
 from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
+from .notification import Notification, NotificationPreference
 from .proposal import Proposal
 from .reconfiguration import (
     Reconfiguration,
@@ -64,4 +66,6 @@ __all__ = [
     "Workspace",
     "WorkspaceMember",
     "Invitation",
+    "Notification",
+    "NotificationPreference",
 ]

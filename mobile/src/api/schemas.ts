@@ -406,3 +406,73 @@ export const createTreasuryResponse = z.object({
   ok: z.literal(true),
   job: z.object({ id: z.number().int(), state: z.string(), reason: z.string().nullable() }),
 });
+
+// --- Notifications (plan R4): the inbox the phone reads. ---------------------------------------
+//
+// A notification is a pointer, never an action: it names a decision (`proposal_uuid`), which the
+// app opens on its own decision screen, where signing happens after the person has read what they
+// sign. `path` is the web page for the same thing. `kind` is a plain string so a newer server's
+// kinds still list; `title` and `body` are written by the server and shown as they are.
+
+export const notificationSection = z.enum(['needs_you', 'updates', 'archived']);
+export type NotificationSection = z.infer<typeof notificationSection>;
+
+export const notificationSchema = z.object({
+  id: z.number().int(),
+  kind: z.string(),
+  // null: a request already answered, or overtaken, which is in no list any more.
+  section: notificationSection.nullable(),
+  title: z.string(),
+  body: z.string(),
+  path: z.string(),
+  actionable: z.boolean(),
+  security: z.boolean(),
+  unread: z.boolean(),
+  created_at: z.string(),
+  read_at: z.string().nullable(),
+  archived_at: z.string().nullable(),
+  actor: z.object({ id: z.number().int(), display_name: z.string() }).nullable(),
+  vault: z.object({ id: z.number().int(), name: z.string() }).nullable(),
+  proposal_uuid: z.string().nullable(),
+});
+export type AppNotification = z.infer<typeof notificationSchema>;
+
+export const unreadCounts = z.object({
+  needs_you: z.number().int(),
+  updates: z.number().int(),
+  total: z.number().int(),
+});
+export type UnreadCounts = z.infer<typeof unreadCounts>;
+
+export const notificationsResponse = z.object({
+  ok: z.literal(true),
+  section: notificationSection,
+  page: z.number().int(),
+  per_page: z.number().int(),
+  total: z.number().int(),
+  has_more: z.boolean(),
+  notifications: z.array(notificationSchema),
+  unread: unreadCounts,
+});
+
+export const unreadResponse = z.object({
+  ok: z.literal(true),
+  unread: unreadCounts,
+});
+
+export const notificationResponse = z.object({
+  ok: z.literal(true),
+  notification: notificationSchema,
+  unread: unreadCounts,
+});
+
+export const readAllResponse = z.object({
+  ok: z.literal(true),
+  marked: z.number().int(),
+  unread: unreadCounts,
+});
+
+export const remindResponse = z.object({
+  ok: z.literal(true),
+  reminded: z.number().int(),
+});

@@ -55,15 +55,46 @@ def test_registration_logs_ledger_event_and_chain_stays_valid(app):
 
 
 def test_safe_next_rejects_offsite_and_backslash():
-    from qvault.blueprints.auth import _safe_next
+    from qvault.security.redirects import safe_next
 
-    assert _safe_next("/vaults/1") == "/vaults/1"  # legitimate same-site path
-    assert _safe_next(None) is None
-    assert _safe_next("https://evil.com") is None  # absolute URL
-    assert _safe_next("//evil.com") is None  # protocol-relative
-    assert _safe_next("/\\evil.com") is None  # backslash → normalises to //evil.com
-    assert _safe_next("\\\\evil.com") is None
-    assert _safe_next("http:/evil") is None
+    assert safe_next("/vaults/1") == "/vaults/1"  # legitimate same-site path
+    assert safe_next("/notifications/?section=updates") == "/notifications/?section=updates"
+    assert safe_next(None) is None
+    assert safe_next("https://evil.com") is None  # absolute URL
+    assert safe_next("//evil.com") is None  # protocol-relative
+    assert safe_next("/\\evil.com") is None  # backslash → normalises to //evil.com
+    assert safe_next("\\\\evil.com") is None
+    assert safe_next("http:/evil") is None
+
+
+@pytest.mark.parametrize(
+    "target", ["/\t/evil.com", "/\n/evil.com", "/\r\n/evil.com", "/\x0b/evil.com", "/\x7f/evil.com"]
+)
+def test_safe_next_rejects_control_characters(target):
+    # Browsers and Werkzeug drop a tab or newline from a URL, so "/<tab>/evil.com" would be
+    # followed as "//evil.com"; any control character is refused rather than reasoned about.
+    from qvault.security.redirects import safe_next
+
+    assert safe_next(target) is None
+
+
+def test_safe_next_keeps_percent_encoding_on_this_site():
+    # Nobody decodes a Location header before following it, so this is a path here.
+    from qvault.security.redirects import safe_next
+
+    assert safe_next("/%09/evil.com") == "/%09/evil.com"
+
+
+@pytest.mark.parametrize("target", ["/\t/evil.com", "//evil.com", "https://evil.com"])
+def test_login_ignores_a_next_off_this_site(client, target):
+    auth_service.register_user("next@auth-e.com", "Next Person", "password-123")
+    resp = client.post(
+        "/login",
+        query_string={"next": target},
+        data={"email": "next@auth-e.com", "password": "password-123"},
+    )
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/dashboard"
 
 
 def test_login_unknown_email_returns_none(app):

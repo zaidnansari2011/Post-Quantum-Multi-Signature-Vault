@@ -19,7 +19,7 @@ from qvault.models.file import VaultFile
 from qvault.models.proposal import Proposal
 from qvault.models.treasury import ProposalAction, Treasury
 from qvault.models.vault import SIGNER_ROLES, Vault
-from qvault.services import file_crypto_service, ledger_service
+from qvault.services import file_crypto_service, ledger_service, notification_service
 from qvault.services.signing import proposal_signing_bytes
 
 
@@ -262,6 +262,8 @@ def create_proposal(
     )
 
     try:
+        # Every eligible approver but the requester is asked, in this transaction (plan R4).
+        notification_service.decision_raised(proposal, now=now)
         if commit:
             db.session.commit()
     except Exception:

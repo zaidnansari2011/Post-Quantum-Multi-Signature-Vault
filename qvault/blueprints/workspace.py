@@ -10,7 +10,8 @@ a flash: either of those would put the token in the session cookie.
 **The acceptance page is the link.** ``/invite/<token>`` is reachable signed out, so it answers
 with ``Referrer-Policy: no-referrer`` and ``Cache-Control: no-store``: the token must not leak to
 another site through a Referer header, or stay in a shared browser's cache. Signing in or creating
-an account returns to it through ``auth._safe_next``, which accepts same-site paths only.
+an account returns to it through ``safe_next`` (``qvault/security/redirects.py``), which accepts
+same-site paths only.
 """
 
 from __future__ import annotations

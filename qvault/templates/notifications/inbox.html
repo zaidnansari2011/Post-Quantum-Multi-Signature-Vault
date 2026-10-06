@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "notifications/_item.html" import item %}
+{% block title %}Notifications — Q-Vault{% endblock %}
+{% block bodyclass %}body body--flush{% endblock %}
+
+{% set back = request.full_path.rstrip('?') %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Notifications</div>
+    <div class="head__sub">Requests stay in Needs you until you vote or the decision closes.</div>
+  </div>
+  <div class="head__actions">
+    {% if section != 'archived' and unread[section] %}
+    <form method="post" action="{{ url_for('notifications.read_all') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="section" value="{{ section }}">
+      <input type="hidden" name="next" value="{{ back }}">
+      <button class="btn btn--ghost btn--sm" type="submit">Mark all read</button>
+    </form>
+    {% endif %}
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('notifications.preferences') }}">Preferences</a>
+  </div>
+</div>
+
+<div class="tabs">
+  {% for key, label in sections.items() %}
+    <a class="tab" href="{{ url_for('notifications.inbox', section=key) }}"
+       {% if section == key %}aria-current="page"{% endif %}>
+      {{ label }}
+      {%- if key != 'archived' and unread[key] %}<span class="tab__n">{{ unread[key] }}<span class="nvh"> unread</span></span>{% endif %}
+    </a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block content %}
+{% if result.items %}
+<ul class="nlist">
+  {% for n in result.items %}{{ item(n, stamp, back, actions=true) }}{% endfor %}
+</ul>
+{% if result.page > 1 or result.has_more %}
+<div class="pager">
+  <span>{{ result.total }} in {{ sections[section] }}</span>
+  {% if result.page > 1 %}
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('notifications.inbox', section=section, page=result.page - 1) }}">Newer</a>
+  {% endif %}
+  {% if result.has_more %}
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('notifications.inbox', section=section, page=result.page + 1) }}">Older</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty">
+  {% if result.page > 1 %}
+    <div class="empty__title">No more notifications</div>
+    <p class="empty__sub">This page is past the end of {{ sections[section] }}.</p>
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('notifications.inbox', section=section) }}">Back to the newest</a>
+  {% elif section == 'needs_you' %}
+    <div class="empty__title">Nothing waits on your approval</div>
+    <p class="empty__sub">When someone asks you to approve a decision, it appears here until you
+      vote or the decision closes.</p>
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('approvals.index', tab='open') }}">See open decisions</a>
+  {% elif section == 'updates' %}
+    <div class="empty__title">No updates yet</div>
+    <p class="empty__sub">Outcomes of decisions you raised or voted on, payments, and changes to
+      your vaults appear here.</p>
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.list_vaults') }}">Go to your vaults</a>
+  {% else %}
+    <div class="empty__title">Nothing archived</div>
+    <p class="empty__sub">Archive a notification to clear it from your inbox. Archiving a request
+      does not approve or reject it.</p>
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('notifications.inbox') }}">Back to Needs you</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

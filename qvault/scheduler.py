@@ -1,7 +1,8 @@
 """APScheduler integration (Phase 7).
 
-Registers three background jobs — automated key rotation, the proposal-expiry sweep, and the
-witness sync — each running inside an application context. The job bodies live in services as
+Registers the background jobs — automated key rotation, the proposal-expiry sweep, decision
+reminders (plan R4), the witness sync and, when a relayer is configured, the chain work — each
+running inside an application context. The job bodies live in services as
 plain functions, so they are equally callable from a test or an admin "run now" button; the
 scheduler only decides *when* they run.
 
@@ -37,6 +38,7 @@ def init_scheduler(app):
 
     from qvault.services import (
         checkpoint_service,
+        notification_service,
         payout_service,
         reconfiguration_service,
         rotation_service,
@@ -65,6 +67,14 @@ def init_scheduler(app):
         _in_context(rotation_service.expire_stale_proposals),
         CronTrigger.from_crontab(app.config["PROPOSAL_EXPIRY_CRON"], timezone="UTC"),
         id="proposal_expiry",
+        replace_existing=True,
+    )
+    # Reminders at 1, 3 and 6 business days and "due within 24 hours". Idempotent by each
+    # notification's dedupe key, so a second scheduler (see the NOTE above) tells nobody twice.
+    scheduler.add_job(
+        _in_context(notification_service.send_reminders),
+        CronTrigger.from_crontab(app.config["NOTIFICATION_REMINDER_CRON"], timezone="UTC"),
+        id="notification_reminders",
         replace_existing=True,
     )
     if app.extensions.get("relayer") is not None:
