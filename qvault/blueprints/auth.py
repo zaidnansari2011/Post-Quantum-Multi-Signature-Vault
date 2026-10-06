@@ -72,7 +72,7 @@ def reissue_key():
     form = ReissueKeyForm()
     if not form.validate_on_submit():
         flash("Enter your password to re-issue your signing key.", "danger")
-        return redirect(url_for("auth.dashboard"))
+        return redirect(url_for("account.security"))
     try:
         key = key_service.reissue_signing_key(current_user, form.password.data)
     except KeyUnlockError:
@@ -85,4 +85,4 @@ def reissue_key():
             "verifies every signature it made.",
             "persist",
         )
-    return redirect(url_for("auth.dashboard"))
+    return redirect(url_for("account.security"))

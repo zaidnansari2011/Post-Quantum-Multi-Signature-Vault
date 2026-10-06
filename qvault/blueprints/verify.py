@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, render_template, request
 
+from qvault import evidence
 from qvault.verify import BundleFormatError, load_bundle, verify_bundle
 
 bp = Blueprint("verify", __name__, url_prefix="/verify")
@@ -55,6 +56,16 @@ def _read_submission() -> tuple[object | None, str | None]:
         return None, message[:1].upper() + message[1:].rstrip(".") + "."
 
 
+def _code(report) -> str | None:
+    """The decision code (plan S17) of the payload hash the verifier recomputed, not the one the
+    file claims, so it can be compared with the code a phone or the decision page shows."""
+    digest = report.facts.get("payload_hash") if report else None
+    try:
+        return evidence.decision_code(digest) if digest else None
+    except ValueError:
+        return None
+
+
 def _wants_json() -> bool:
     return (
         request.args.get("format") == "json" or request.accept_mimetypes.best == "application/json"
@@ -65,6 +76,7 @@ def _wants_json() -> bool:
 def index():
     report = None
     error = None
+    bundle = None
 
     if request.method == "POST":
         bundle, error = _read_submission()
@@ -88,6 +100,14 @@ def index():
     return render_template(
         "verify/index.html",
         report=report,
+        # "Checked: 3 signatures, 7 log entries, ..." from the checks that actually ran (R2).
+        coverage=evidence.coverage_line(report.checks, bundle) if report else None,
+        code=_code(report),
+        checks_summary=(
+            evidence.checks_summary([evidence.check_state(c.ok, c.skipped) for c in report.checks])
+            if report
+            else None
+        ),
         error=error,
         expect_log=request.form.get("expect_log", ""),
         expect_witness=request.form.get("expect_witness", ""),
