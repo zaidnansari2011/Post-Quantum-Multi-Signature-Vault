@@ -58,6 +58,15 @@ VAULT_TABS = [
     ("17_vault_settings", "?tab=settings"),
 ]
 STATUSES = ("open", "approved", "rejected", "expired", "paid")
+#: How a row says each status. Since rework R2 an open decision reads "Needs your signature" or
+#: "Waiting on N" (plan S6), never "Open", so each status is matched by its own words.
+STATUS_WORDS = {
+    "open": r"\bopen\b|needs your signature|waiting on \d",
+    "approved": r"\bapproved\b",
+    "rejected": r"\brejected\b",
+    "expired": r"\bexpired\b",
+    "paid": r"\bpaid\b",
+}
 #: The screens worth checking at phone width; the rest are admin pages used at a desk.
 PHONE = ("01", "02", "05", "10", "11", "13", "18", "26", "34")
 
@@ -99,14 +108,22 @@ def discover(page: Page, base: str) -> tuple[int, dict[str, str]]:
     return vaults[0], found
 
 
-def take(page: Page, base: str, out: Path, shot: str, path: str) -> None:
-    """One full-page screenshot, named ``<width>_<screen><theme>.png``."""
+def take(page: Page, base: str, out: Path, shot: str, path: str, full_page: bool = True) -> None:
+    """One screenshot, named ``<width>_<screen><theme>.png``: the full page, or the first screen."""
     resp = page.goto(base + path, wait_until="networkidle")
-    page.screenshot(path=str(out / f"{shot}.png"), full_page=True)
+    page.screenshot(path=str(out / f"{shot}.png"), full_page=full_page)
     print(shot, resp.status if resp else "-")
 
 
-def shoot(base: str, out: Path, email: str, password: str, themes: list[str]) -> None:
+def shoot(
+    base: str,
+    out: Path,
+    email: str,
+    password: str,
+    themes: list[str],
+    only: tuple[str, ...] = (),
+    full_page: bool = True,
+) -> None:
     out.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -119,8 +136,8 @@ def shoot(base: str, out: Path, email: str, password: str, themes: list[str]) ->
                 page = ctx.new_page()
                 screens = list(ANON)
                 for name, path in screens:
-                    if label == "desk" or name.startswith(PHONE):
-                        take(page, base, out, f"{label}_{name}{suffix}", path)
+                    if (label == "desk" or name.startswith(PHONE)) and _wanted(name, only):
+                        take(page, base, out, f"{label}_{name}{suffix}", path, full_page)
                 page.goto(base + "/login", wait_until="networkidle")
                 page.fill('input[name="email"]', email)
                 page.fill('input[name="password"]', password)
@@ -136,10 +153,14 @@ def shoot(base: str, out: Path, email: str, password: str, themes: list[str]) ->
                     else:
                         print(f"{label}{suffix}: no {status} decision found; skipped")
                 for name, path in screens:
-                    if label == "desk" or name.startswith(PHONE):
-                        take(page, base, out, f"{label}_{name}{suffix}", path)
+                    if (label == "desk" or name.startswith(PHONE)) and _wanted(name, only):
+                        take(page, base, out, f"{label}_{name}{suffix}", path, full_page)
                 ctx.close()
         browser.close()
+
+
+def _wanted(name: str, only: tuple[str, ...]) -> bool:
+    return not only or name.startswith(only)
 
 
 def main() -> int:
@@ -154,9 +175,29 @@ def main() -> int:
         default="light",
         help="emulated colour scheme; 'both' adds a _dark copy of every shot",
     )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        default=(),
+        metavar="PREFIX",
+        help="shoot only the screens whose names start with these, e.g. --only 10 11 13",
+    )
+    parser.add_argument(
+        "--first-screen",
+        action="store_true",
+        help="capture the viewport only, not the full page (smaller files for a review set)",
+    )
     args = parser.parse_args()
     themes = ["light", "dark"] if args.theme == "both" else [args.theme]
-    shoot(args.base.rstrip("/"), args.out, args.email, args.password, themes)
+    shoot(
+        args.base.rstrip("/"),
+        args.out,
+        args.email,
+        args.password,
+        themes,
+        only=tuple(args.only),
+        full_page=not args.first_screen,
+    )
     return 0
 
 
