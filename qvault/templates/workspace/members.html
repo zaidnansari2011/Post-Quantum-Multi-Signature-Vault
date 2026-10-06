@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Members — Q-Vault{% endblock %}
+{% block bodyclass %}body body--flush{% endblock %}
+
+{% block chrome %}
+<div class="head">
+  <div>
+    <div class="head__title">Members</div>
+    <div class="head__sub">{{ workspace.name }} · you're {{ role_name(me.role) }}</div>
+  </div>
+  <div class="head__actions">
+    <a class="btn btn--ghost btn--sm" href="{{ url_for('workspace.settings') }}">Workspace settings</a>
+    {% if manager %}
+    <a class="btn btn--primary btn--sm" href="{{ url_for('workspace.invite') }}">Invite people</a>
+    {% endif %}
+  </div>
+</div>
+
+<nav class="tabs" aria-label="Members">
+  {% for key, label in [('active', 'Active'), ('invited', 'Invited'), ('suspended', 'Suspended')] %}
+    {% if key != 'invited' or manager %}
+    <a class="tab" href="{{ url_for('workspace.members', tab=key) }}"
+       {% if tab == key %}aria-current="page"{% endif %}>
+      {{ label }}<span class="tab__n">{{ counts[key] }}</span>
+    </a>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endblock %}
+
+{% block content %}
+{% if tab == 'invited' %}
+  {% if invitations %}
+  <div class="scroll-x">
+    <table class="dt">
+      <thead>
+        <tr><th style="width:30%">Invited</th><th>Role</th><th>Vaults</th><th>Link expires</th>
+          <th class="num">Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for row in invitations %}
+        {% set i = row.invitation %}
+        <tr>
+          <td>
+            <span class="dt__link truncate">{{ i.email }}</span>
+            <span class="dt__sub truncate">Sent by {{ i.inviter.display_name }} on {{ i.created_at | ws_when }}</span>
+          </td>
+          <td><span class="chip">{{ role_name(i.role) }}</span></td>
+          <td class="small">
+            {% for g in row.grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}
+            {% else %}<span class="muted">None</span>{% endfor %}
+          </td>
+          <td class="small nowrap">
+            {% if row.state == 'expired' %}<span class="chip chip--broken">Expired</span>{% endif %}
+            {% if row.state == 'void' %}<span class="chip chip--broken">Needs a new link</span>
+            <span class="dt__sub">{{ i.inviter.display_name }} can no longer send this invitation, so its link won't work</span>
+            {% else %}{{ i.expires_at | ws_when }}{% endif %}
+          </td>
+          <td class="num">
+            <div class="hstack hstack--tight" style="justify-content:flex-end">
+              <form method="post" action="{{ url_for('workspace.resend', iid=i.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn--ghost btn--sm" type="submit">New link</button>
+              </form>
+              <form method="post" action="{{ url_for('workspace.revoke', iid=i.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn--quiet btn--sm" type="submit">Withdraw</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted" style="padding:.75rem 1.25rem">
+    A new link replaces the old one, which stops working, and lasts another 7 days.
+    Links aren't stored, so a lost link can only be replaced.
+  </p>
+  {% else %}
+  <div class="empty">
+    <div class="empty__title">No open invitations</div>
+    <p class="empty__sub">Invitations waiting to be accepted, and those that expired, are listed here.</p>
+    <a class="btn btn--primary btn--sm" href="{{ url_for('workspace.invite') }}">Invite people</a>
+  </div>
+  {% endif %}
+
+{% else %}
+  {% if rows %}
+  <div class="scroll-x">
+    <table class="dt">
+      <thead>
+        <tr><th style="width:32%">Member</th><th>Role</th><th>Signing key</th><th>Joined</th>
+          {% if manager %}<th class="num">Actions</th>{% endif %}</tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        {% set m = row.member %}
+        <tr>
+          <td>
+            <span class="dt__link truncate">{{ m.user.display_name }}{% if m.user_id == me.user_id %} <span class="muted">(you)</span>{% endif %}</span>
+            {% if manager or m.user_id == me.user_id %}<span class="dt__sub truncate">{{ m.user.email }}</span>{% endif %}
+          </td>
+          <td>
+            {% if row.can_act and m.is_active and not row.last_owner %}
+            <form method="post" action="{{ url_for('workspace.change_role', uid=m.user_id) }}" class="hstack hstack--tight">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select class="input input--auto" name="role" aria-label="Role for {{ m.user.display_name }}" style="height:26px;font-size:.74rem">
+                {% for r in roles %}
+                <option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ role_name(r) }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+            </form>
+            {% else %}
+            <span class="chip">{{ role_name(m.role) }}</span>
+            {% if row.last_owner and manager %}<span class="dt__sub">The only owner, so the role can't change</span>{% endif %}
+            {% endif %}
+          </td>
+          <td>
+            {% if row.enrolled %}<span class="chip chip--sealed">Enrolled</span>
+            {% else %}<span class="chip chip--waiting">No key yet</span>{% endif %}
+          </td>
+          <td class="tiny muted nowrap">{{ m.joined_at.strftime('%d %b %Y') }}</td>
+          {% if manager %}
+          <td class="num">
+            {% if row.can_act and m.user_id != me.user_id %}
+            <div class="hstack hstack--tight" style="justify-content:flex-end">
+              {% if m.is_active %}
+              <form method="post" action="{{ url_for('workspace.suspend', uid=m.user_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn--quiet btn--sm" type="submit">Suspend</button>
+              </form>
+              {% else %}
+              <form method="post" action="{{ url_for('workspace.reinstate', uid=m.user_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn--ghost btn--sm" type="submit">Reinstate</button>
+              </form>
+              {% endif %}
+              <a class="btn btn--quiet btn--sm" href="{{ url_for('workspace.remove', uid=m.user_id) }}">Remove</a>
+            </div>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if tab == 'active' %}
+  <p class="small muted" style="padding:.75rem 1.25rem">
+    Workspace roles decide who can invite and manage people. They don't change who can approve
+    in a vault: each vault's owner decides that on the vault's Members tab.
+    {% if manager %}Suspending someone stops them being added to vaults or managing the
+    workspace; it leaves the vaults they're already in unchanged.{% endif %}
+  </p>
+  {% endif %}
+  {% else %}
+  <div class="empty">
+    <div class="empty__title">{{ 'No suspended members' if tab == 'suspended' else 'No members' }}</div>
+    <p class="empty__sub">
+      {% if tab == 'suspended' %}Suspended members are listed here until they're reinstated or removed.{% endif %}
+    </p>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

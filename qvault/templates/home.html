@@ -22,13 +22,48 @@
   {# No .head__figure here: the figures strip below IS this screen's moment of scale, and a big
      "6 AWAITING YOU" would only restate the subtitle two inches to its left. #}
   <div class="head__actions">
+    {% if can_create_vaults %}
     <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.new_vault') }}">New vault</a>
+    {% endif %}
     <a class="btn btn--primary btn--sm" href="{{ url_for('approvals.index') }}">Approvals</a>
   </div>
 </div>
 {% endblock %}
 
 {% block content %}
+
+{% if checklist %}
+{% set ws_items = checklist[1] %}
+{% set ws_done = ws_items | selectattr('done') | list | length %}
+{% set ws_links = {
+    'vault': url_for('vaults.new_vault'),
+    'invite': url_for('workspace.invite'),
+    'key': url_for('workspace.members', tab='invited'),
+    'decision': url_for('vaults.list_vaults'),
+    'approve': url_for('approvals.index'),
+} %}
+<div class="panel" style="margin-bottom:1rem" aria-labelledby="getting-started">
+  <div class="panel__head">
+    <span class="label" id="getting-started">Get {{ checklist[0].name }} started</span>
+    <span class="tiny muted">{{ ws_done }} of {{ ws_items | length }} done</span>
+    <form class="push" method="post" action="{{ url_for('workspace.dismiss_checklist') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn--quiet btn--sm" type="submit">Hide</button>
+    </form>
+  </div>
+  <div class="panel__body">
+    <ol class="small" style="margin:0;padding-left:1.2rem">
+      {% for item in ws_items %}
+      <li style="margin:.2rem 0">
+        {% if item.done %}<span class="muted"><s>{{ item.label }}</s> · done</span>
+        {% else %}<a href="{{ ws_links[item.key] }}">{{ item.label }}</a>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    <p class="field__help" style="margin-bottom:0">Each step ticks itself when it happens. Hiding this hides it for everyone who manages the workspace.</p>
+  </div>
+</div>
+{% endif %}
 
 {# The first signed-in screen used to contain no cryptographic fact at all. These four are the
    state of the log this product's whole argument rests on, and every one of them is checkable by
@@ -157,7 +192,9 @@
       {% else %}
       <div class="panel__body">
         <p class="small muted">You are not in a vault yet.</p>
+        {% if can_create_vaults %}
         <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">Create one</a>
+        {% endif %}
       </div>
       {% endif %}
     </div>

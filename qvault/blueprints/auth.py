@@ -66,7 +66,8 @@ def login():
 def logout():
     logout_user()
     flash("You have been logged out.", "info")
-    return redirect(url_for("core.index"))
+    # An invitation for another address offers to sign out and come back to it.
+    return redirect(_safe_next(request.form.get("next")) or url_for("core.index"))
 
 
 @bp.get("/dashboard")
