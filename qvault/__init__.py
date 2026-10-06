@@ -108,6 +108,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     ui.register(app)
 
+    # The evidence screens' rules: decision code, check words, precise times (rework R2).
+    from . import evidence
+
+    evidence.register(app)
+
     # --- Blueprints -------------------------------------------------------
     from .blueprints.account import bp as account_bp
     from .blueprints.admin import bp as admin_bp

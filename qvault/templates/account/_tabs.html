@@ -1,0 +1,9 @@
+{#- The account's three sections (rework R2): Profile and Security here, Notifications on the R4
+    preferences page. Each is its own URL, so a shared link or a reload lands on the same one.
+    Include with account_tab set to 'profile', 'notifications' or 'security'. -#}
+{% from "ui/navigation.html" import tabs %}
+{{ tabs([
+  {'key': 'profile', 'label': 'Profile', 'href': url_for('account.index')},
+  {'key': 'notifications', 'label': 'Notifications', 'href': url_for('notifications.preferences')},
+  {'key': 'security', 'label': 'Security', 'href': url_for('account.security')},
+], account_tab, 'Account sections') }}

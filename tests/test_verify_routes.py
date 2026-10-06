@@ -127,11 +127,13 @@ def test_exporting_requires_a_session(app, client, decision):
 
 def test_the_decision_page_shows_its_transparency_state(app, client, decision):
     login(client)
-    page = client.get(f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}").get_data(
-        as_text=True
-    )
+    url = f"/vaults/{decision.vault_id}/proposals/{decision.proposal_uuid}"
+    page = client.get(url).get_data(as_text=True)
+    # Rework R2 (plan S5): the checks live on the decision's Evidence tab, layer 2, and the
+    # Overview links to them; the export stays one click away on every tab.
+    evidence_tab = client.get(url + "?tab=evidence").get_data(as_text=True)
 
-    assert "Witnessed" in page
+    assert "Witnessed" in evidence_tab
     assert "Export for verification" in page
 
 

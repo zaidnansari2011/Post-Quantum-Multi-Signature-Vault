@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from base64 import b64decode
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from flask import (
     Blueprint,
@@ -21,6 +21,7 @@ from flask_wtf import FlaskForm
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
+from qvault import evidence
 from qvault.chain.action import MAX_DEADLINE as PAYMENT_MAX_DEADLINE
 from qvault.chain.action import ActionError, parse_eth_value
 from qvault.chain.relayer import RelayerError
@@ -49,9 +50,11 @@ from qvault.security.decorators import get_membership_or_403
 from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
+    evidence_service,
     export_service,
     file_crypto_service,
     inbox_service,
+    key_service,
     payout_service,
     proposal_service,
     publication_service,
@@ -71,6 +74,9 @@ from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
 
 bp = Blueprint("vaults", __name__, url_prefix="/vaults")
+
+#: A due time this close takes the warning tone on the decision page (style tile, time rules).
+DUE_SOON = timedelta(hours=24)
 
 
 @bp.get("/")
@@ -488,7 +494,12 @@ def proposal_detail(vid: int, pid: str):
     device_signed = sum(1 for s in proposal.signatures if s.custody == "device")
 
     my_vote = approval_service.vote_of(proposal, current_user.id)
-    is_signer = current_user.id in {m.user_id for m in vault.signer_members()}
+    # An approver of THIS decision: in its frozen signer set (what the service authorises
+    # against) and still a signer of the vault. Someone added after it was raised is neither
+    # offered a vote nor told it needs them (rework R2, the personal status).
+    is_signer = current_user.id in {m.user_id for m in vault.signer_members()} and (
+        current_user.id in evidence_service.approver_ids(proposal)
+    )
     can_vote = proposal.status == "open" and is_signer and my_vote is None
     binding = approval_service.verify_proposal_binding(proposal)
     # Approving a payment signs what the treasury will pay, built from the stored payment; when
@@ -496,11 +507,46 @@ def proposal_detail(vid: int, pid: str):
     # payment nobody proposed. The service refuses it too; this keeps the button from lying.
     # Reject stays: objecting authorises nothing.
     can_approve = can_vote and (proposal.action is None or binding.ok)
+    payout = payout_service.view(proposal) if _treasuries_on() else None
+
+    # Presentation only (rework R2): which tab, the viewer's status word, what signing would do,
+    # and the evidence layers, each built from the checks above or run fresh in evidence_service.
+    tab = request.args.get("tab")
+    tab = tab if tab in ("evidence", "technical") else "overview"
+    status_key, status_n = evidence.personal_status(
+        # Effective, not stored: a passed deadline reads Expired before the sweep runs (S20).
+        inbox_service.effective_status(proposal),
+        can_vote=can_vote,
+        approvals=approvals,
+        required_m=proposal.required_m,
+        payout_state=payout["state"] if payout else None,
+    )
+    proof = evidence_service.decision_evidence(
+        proposal, binding=binding, votes=votes, viewer_id=current_user.id, payout=payout
+    )
+    amount = proof.payment["amount"] if proof.payment else None
+    due = evidence.parse_stamp(proposal.expires_at)
+    now = datetime.now(UTC)
 
     return render_template(
         "vaults/proposal_detail.html",
         vault=vault,
         proposal=proposal,
+        tab=tab,
+        status_key=status_key,
+        status_n=status_n,
+        ev=proof,
+        approver_ids=evidence_service.approver_ids(proposal),
+        due_soon=proposal.status == "open" and due is not None and due - now <= DUE_SOON,
+        approve_lines=evidence.approve_consequence(
+            approvals=approvals, required_m=proposal.required_m, payment=amount
+        ),
+        reject_lines=evidence.reject_consequence(
+            rejections=rejections,
+            required_m=proposal.required_m,
+            required_n=proposal.required_n,
+        ),
+        my_key=key_service.active_signing_key(current_user) if is_signer else None,
         votes=votes,
         device_signed=device_signed,
         approvals=approvals,
@@ -511,7 +557,7 @@ def proposal_detail(vid: int, pid: str):
         is_signer=is_signer,
         can_vote=can_vote,
         can_approve=can_approve,
-        payout=payout_service.view(proposal) if _treasuries_on() else None,
+        payout=payout,
         vote_form=VoteForm(),
         # Present only immediately after this member signed (or when someone follows a receipt
         # link). Scoped to this proposal inside the service, which is the authorisation check.

@@ -17,6 +17,7 @@
 {% endblock %}
 
 {% block content %}
+{% set account_tab = 'notifications' %}{% include "account/_tabs.html" %}
 <form method="post" action="{{ url_for('notifications.preferences') }}" class="measure npref">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="panel">
