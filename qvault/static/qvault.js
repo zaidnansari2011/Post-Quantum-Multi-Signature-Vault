@@ -286,6 +286,8 @@
     window.setTimeout(function () { toast.remove(); }, 200);
   }
 
+  // Only a short confirmation is ever a toast (_flash.html keeps anything longer, or marked
+  // persist, inline), so eight seconds is enough to read it; hover or focus pauses the timer.
   function armToast(toast) {
     var timer = null;
     var start = function () { timer = window.setTimeout(function () { dismissToast(toast); }, 8000); };
@@ -334,7 +336,14 @@
   /* ------------------------------------------------------------------ start */
 
   function start() {
-    doc.querySelectorAll('[data-toast]').forEach(armToast);
+    // Toasts are drawn by the server, so they are already in the page at load, when a live region
+    // would not announce them. Read them out through #q-live, which is empty until now.
+    var toasts = doc.querySelectorAll('[data-toast]');
+    var said = Array.prototype.map.call(toasts, function (t) {
+      return t.querySelector('.q-toast__m').textContent.trim();
+    });
+    if (said.length) announce(said.join('. '));
+    toasts.forEach(armToast);
     refreshTimes();
     window.setInterval(refreshTimes, 60000);
   }
