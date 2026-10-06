@@ -80,7 +80,7 @@
 
 .q-dpage .q-ph { margin-bottom: var(--space-16); }
 .q-dpage .q-tabs { margin-bottom: var(--space-24); }
-.q-dpage .q-ph__act .q-menu > summary { padding-inline: var(--space-8); }
+.q-dpage .q-ph__act .q-menu > summary.q-ib { box-shadow: inset 0 0 0 var(--border-width) var(--border-hover); background: var(--surface); color: var(--text); }
 .q-vote { display: inline-flex; gap: var(--space-8); }
 .q-due { display: inline-flex; align-items: center; gap: var(--space-4); }
 .q-due--soon { color: var(--status-warning-fg); font-weight: var(--weight-medium); }
