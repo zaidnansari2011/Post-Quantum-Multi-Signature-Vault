@@ -85,9 +85,11 @@ def test_the_help_menu_offers_only_destinations_that_exist(app, client):
 
 def test_there_is_no_search_box_and_no_bell_until_they_work(app, client):
     _sign_in(client, "first@e.com")
-    page = client.get("/").get_data(as_text=True).lower()
-    assert 'type="search"' not in page
-    assert "notifications" not in page and "bell" not in page
+    page = client.get("/").get_data(as_text=True)
+    # Markers of the controls themselves. A bare "bell" would match aria-labelledby.
+    assert 'type="search"' not in page and 'role="search"' not in page
+    assert "data-nbell" not in page and "nbell__button" not in page
+    assert 'aria-label="Notifications"' not in page
 
 
 def test_the_top_bar_names_where_you_are(app, client):
@@ -156,6 +158,13 @@ def test_behaviour_is_one_deferred_local_script_and_no_inline_handlers(client):
     assert not offenders
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
     assert "<script>" not in base
+
+
+def test_the_public_link_selects_itself_through_qvault_js_not_an_inline_handler():
+    detail = (TEMPLATES / "vaults" / "proposal_detail.html").read_text(encoding="utf-8")
+    assert "data-select-on-focus" in detail and "this.select()" not in detail
+    script = (STATIC / "qvault.js").read_text(encoding="utf-8")
+    assert "input[data-select-on-focus]" in script and "el.select()" in script
 
 
 def test_a_confirmation_is_a_toast_and_an_error_stays_inline(app, client):

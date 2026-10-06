@@ -349,7 +349,7 @@
           {% set public_url = url_for('record.public_record', uuid=proposal.proposal_uuid, _external=True) %}
           <div class="field">
             <input class="input mono tiny" value="{{ public_url }}" readonly
-                   onfocus="this.select()" aria-label="Public link">
+                   data-select-on-focus aria-label="Public link">
           </div>
           <div class="hstack">
             <a class="btn btn--ghost btn--sm" href="{{ public_url }}" target="_blank" rel="noopener">Open</a>
