@@ -1,42 +1,61 @@
 // Everything that has been decided, not just what is waiting.
 //
-// The old app had no answer at all to "what did I approve last quarter", even though the server
-// has supported `GET /proposals?state=all` since the API was written. For someone who signs things
-// on behalf of an organisation that is not a nice-to-have: the question arrives from an auditor,
-// from a colleague, or from their own memory failing them in a meeting, and an approval client
-// that cannot answer it is a notification tray rather than a record.
+// The question arrives from an auditor, a colleague or the person's own memory in a meeting ("what
+// did I approve last quarter"), and an approval client that cannot answer it is a notification
+// tray rather than a record. The filter is a segmented control rather than a search field, because
+// people arrive with a category ("what got rejected?") far more often than a keyword.
 //
-// The filter is a plain segmented control rather than a search field, because the question people
-// actually arrive with is a category ("what got rejected?") far more often than a keyword. Search
-// belongs here eventually; it needs server-side support to be honest about matching, since this
-// list is capped at 200 rows and filtering a truncated list would quietly lie about the result.
+// (Phone-ux §6.12 reshapes this in P3: your own decisions over 90 days, three chips, date sections.)
 
 import { useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
-import { Banner, Empty, PageTitle, Screen, Skeleton } from '../ui/index.tsx';
-import { DecisionCard } from '../ui/DecisionCard.tsx';
-import { color, radius, space, type } from '../theme.ts';
+import {
+  Banner,
+  CollapsedBar,
+  DecisionRow,
+  DecisionRowSkeleton,
+  EmptyState,
+  GroupedItem,
+  GroupedSeparator,
+  List,
+  RootHeader,
+  Screen,
+  Segmented,
+  ThemedRefresh,
+  useCollapsingHeader,
+  type TextTone,
+} from '../ui/index.tsx';
+import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
-import { decisionStatus } from '../status.ts';
-import { parseInstant } from '../time.ts';
+import { decisionStatus, statusWord } from '../status.ts';
+import { deadlineWhen, parseInstant } from '../time.ts';
 
 type Filter = 'all' | 'open' | 'approved' | 'rejected';
 
-const FILTERS: Array<{ key: Filter; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'open', label: 'Open' },
-  { key: 'approved', label: 'Approved' },
-  { key: 'rejected', label: 'Declined' },
+const FILTERS: Array<{ value: Filter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'open', label: 'Open' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Declined' },
 ];
 
+const OUTCOME_TONE: Record<string, TextTone> = {
+  approved: 'success',
+  rejected: 'critical',
+  expired: 'muted',
+  open: 'muted',
+};
+
 export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
+  const s = useStyles();
   const { token, handleUnauthorized } = useEnrolledSession();
   const [filter, setFilter] = useState<Filter>('all');
+  const header = useCollapsingHeader();
 
   const query = useQuery({
     queryKey: ['proposals', 'all'],
@@ -48,8 +67,8 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
     void handleUnauthorized();
   }
 
-  // Not memoised on the data, for the same reason as the queue on Home: a decision that passes its
-  // deadline while the list is cached moves from Open to Declined the next time the screen draws.
+  // Not memoised on the data: a decision that passes its deadline while the list is cached moves
+  // from Open to Declined the next time the screen draws.
   const all = query.data?.proposals ?? [];
   const rows = (filter === 'all' ? [...all] : all.filter((p) => matches(p, filter))).sort(newestFirst);
 
@@ -60,84 +79,74 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
 
   return (
     <Screen>
-      <FlatList
-        style={s.list}
-        contentContainerStyle={s.listContent}
-        data={rows}
-        keyExtractor={(p) => p.proposal_uuid}
-        refreshControl={
-          <RefreshControl
-            refreshing={query.isRefetching}
-            onRefresh={() => void query.refetch()}
-            tintColor={color.ink3}
-          />
-        }
-        ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
-        renderItem={({ item }) => (
-          <DecisionCard proposal={item} onPress={() => onOpen(item.proposal_uuid)} showOutcome />
-        )}
-        ListHeaderComponent={
-          <View>
-            <PageTitle title="Activity" />
-            <Segmented value={filter} onChange={setFilter} />
-            {transportFailure ? (
-              <View style={{ marginBottom: space.md }}>
+      <View style={s.flex}>
+        <CollapsedBar title="Activity" visible={header.collapsed} />
+        <FlatList
+          style={s.list}
+          contentContainerStyle={s.listContent}
+          data={rows}
+          keyExtractor={(p) => p.proposal_uuid}
+          onScroll={header.onScroll}
+          scrollEventThrottle={header.scrollEventThrottle}
+          refreshControl={
+            <ThemedRefresh refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
+          }
+          ItemSeparatorComponent={GroupedSeparator}
+          renderItem={({ item, index }) => {
+            const status = decisionStatus(item);
+            return (
+              <GroupedItem index={index} total={rows.length}>
+                <DecisionRow
+                  title={item.title}
+                  vault={item.vault_name ?? `Vault ${item.vault_id}`}
+                  approvals={item.approvals}
+                  required={item.required_m}
+                  expiresAt={item.expires_at}
+                  variant="outcome"
+                  outcome={{
+                    word: statusWord(status),
+                    tone: OUTCOME_TONE[status] ?? 'muted',
+                    when: deadlineWhen(item.expires_at),
+                  }}
+                  onPress={() => onOpen(item.proposal_uuid)}
+                />
+              </GroupedItem>
+            );
+          }}
+          ListHeaderComponent={
+            <View style={s.head}>
+              <RootHeader title="Activity" />
+              <Segmented label="Show" options={FILTERS} value={filter} onChange={setFilter} />
+              {transportFailure ? (
                 <Banner
-                  tone="broken"
+                  tone="warning"
                   title="Could not load the record."
                   detail={transportFailure instanceof Error ? transportFailure.message : undefined}
                 />
-              </View>
-            ) : null}
-          </View>
-        }
-        ListEmptyComponent={
-          query.isLoading ? (
-            <View style={{ gap: space.sm }}>
-              {[0, 1, 2, 3].map((i) => (
-                <View key={i} style={s.skeletonCard}>
-                  <Skeleton height={11} width={64} />
-                  <Skeleton height={17} width="85%" />
-                  <Skeleton height={13} width={120} />
-                </View>
-              ))}
+              ) : null}
             </View>
-          ) : transportFailure ? null : (
-            <Empty title={emptyFor(filter)} />
-          )
-        }
-      />
+          }
+          ListEmptyComponent={
+            query.isLoading ? (
+              <List>
+                <DecisionRowSkeleton />
+                <DecisionRowSkeleton />
+                <DecisionRowSkeleton />
+                <DecisionRowSkeleton />
+              </List>
+            ) : transportFailure ? null : (
+              <EmptyState title={emptyFor(filter)} />
+            )
+          }
+        />
+      </View>
     </Screen>
   );
 }
 
-function Segmented({ value, onChange }: { value: Filter; onChange: (f: Filter) => void }) {
-  return (
-    <View style={s.segmented}>
-      {FILTERS.map((f) => {
-        const active = f.key === value;
-        return (
-          <Pressable
-            key={f.key}
-            onPress={() => onChange(f.key)}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            style={({ pressed }) => [s.segment, active && s.segmentActive, pressed && { opacity: 0.7 }]}
-          >
-            <Text style={[s.segmentText, active && s.segmentTextActive]}>{f.label}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
 /**
- * "Declined" covers rejected and expired.
- *
- * A decision that ran out of time did not get the consent it needed, which is the same outcome
- * from the reader's point of view; the difference between "someone said no" and "nobody said yes
- * in time" is on the decision itself, where there is room to state it.
+ * "Declined" covers rejected and expired: a decision that ran out of time did not get the consent
+ * it needed, which is the same outcome from the reader's point of view.
  */
 function matches(p: ProposalSummary, filter: Filter): boolean {
   const status = decisionStatus(p);
@@ -164,34 +173,9 @@ function emptyFor(filter: Filter): string {
   }
 }
 
-const s = StyleSheet.create({
-  list: { flex: 1, backgroundColor: color.paper },
-  listContent: { paddingHorizontal: space.lg, paddingBottom: space.xxl },
-
-  segmented: {
-    flexDirection: 'row',
-    backgroundColor: color.sunk,
-    borderRadius: radius.control,
-    padding: 3,
-    marginBottom: space.lg,
-    gap: 2,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: space.sm,
-    borderRadius: radius.chip + 4,
-    alignItems: 'center',
-  },
-  segmentActive: { backgroundColor: color.surface },
-  segmentText: { ...type.micro, fontSize: 12.5, color: color.ink3 },
-  segmentTextActive: { color: color.ink },
-
-  skeletonCard: {
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.rule,
-    borderRadius: radius.card,
-    padding: space.lg,
-    gap: space.md,
-  },
-});
+const useStyles = makeStyles((t) => ({
+  flex: { flex: 1 },
+  list: { flex: 1, backgroundColor: t.color.bg },
+  listContent: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32] },
+  head: { gap: t.space[16], marginBottom: t.space[16] },
+}));

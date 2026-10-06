@@ -1,6 +1,6 @@
 // A single decision, and the only screen in the app that can produce a signature.
 //
-// The order of operations is load-bearing and is unchanged from the previous version:
+// The order of operations is load-bearing and unchanged:
 //
 //   1. Fetch the proposal, including the complete `signing_inputs`.
 //   2. Recompute `payload_hash` from those inputs, locally, and compare.
@@ -9,47 +9,44 @@
 //      handset lock, sign the hash WE derived, verify our own signature, then submit.
 //
 // Step 2 is what makes device custody more than decoration: if this screen signed the hash the
-// server sent, a compromised server could show one action and collect consent for another, and
-// keeping the private key off that server would prove nothing at all.
+// server sent, a compromised server could show one action and collect consent for another.
+// Step 4's sheet restates the action in the words it will be recorded in, so the thing being
+// confirmed is the thing, not the OS prompt's "Q-Vault wants to authenticate you".
 //
-// Step 4 is new. The old screen went from tap to biometric prompt with nothing in between, which
-// meant the last thing a person read before committing was an OS dialog that says "Q-Vault wants
-// to authenticate you" -- a sentence about identity, not about the decision. The sheet restates
-// the action in the words it will be recorded in, so the thing being confirmed is the thing.
-//
-// WHAT MOVED, presentationally. The decision used to be one paragraph in a panel called "Action",
-// with a six-row "Payload" panel of equal weight beneath it. Now the decision is the largest thing
-// on the screen and the cryptography is a single line that opens on demand -- see Assurance.tsx
-// for the full argument. No check was weakened to do this; `verifyProposalIntegrity` runs on every
-// render exactly as before, and its failure still takes over the screen and withdraws the buttons.
+// The signed text is the largest thing on the screen and the only serif; the title above it is a
+// label, set small in sans, because it is not under the hash (S19). The cryptography is one quiet
+// row that opens on demand, and its failure takes the screen and withdraws the buttons.
+// (P2 rebuilds this frame per phone-ux §6.5: status line first, the evidence sheet, the quorum
+// sentence. P1 keeps its content and moves it onto the new components.)
 
-import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   ActionBar,
+  Assurance,
   Banner,
   Button,
-  Card,
-  Chip,
-  Divider,
-  Hash,
+  Identifier,
+  InlineMessage,
   KeyValue,
-  StatusLine,
-  Loading,
+  List,
+  ListRow,
   NavBar,
-  Row,
+  PaymentCard,
   Screen,
   Scroll,
   Seal,
   Section,
+  Sheet,
+  SignedOverlay,
+  SignedText,
+  Skeleton,
+  Text,
   feedback,
 } from '../ui/index.tsx';
-import { Assurance } from '../ui/Assurance.tsx';
-import { Sheet } from '../ui/Sheet.tsx';
-import { SignedOverlay } from '../ui/SignedOverlay.tsx';
-import { color, font, space, statusTone, type } from '../theme.ts';
+import { makeStyles } from '../theme/index.ts';
 import { decisionStatus } from '../status.ts';
 import { expiryPhrase, exactly, urgencyOf, whenAfter, whenPhrase } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
@@ -64,20 +61,20 @@ import {
   voteOnProposal,
   type VoteOutcome,
 } from '../flows.ts';
-import { NETWORKS, formatEth, type Decision, type PaymentAction } from '../crypto/signing.ts';
+import { type Decision, type PaymentAction } from '../crypto/signing.ts';
 import type { PayoutView, ProposalDetail, VoteRecord } from '../api/schemas.ts';
+import type { Tone } from '../theme/index.ts';
 
 export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack: () => void }) {
+  const s = useStyles();
   const { token, identity, custody } = useEnrolledSession();
   const queryClient = useQueryClient();
 
   const [pending, setPending] = useState<Decision | null>(null);
   const [outcome, setOutcome] = useState<VoteOutcome | null>(null);
-  // What THIS person just did, kept separately from the proposal's resulting status. Deriving the
-  // acknowledgement from `outcome.status` would be wrong: a rejection does not necessarily close a
-  // proposal -- with a 3-of-4 policy it takes two refusals before approval is arithmetically out of
-  // reach -- so the first rejection leaves the status "open" and the overlay would answer a refusal
-  // with a green tick.
+  // What THIS person just did, kept apart from the resulting status: a rejection does not
+  // necessarily close a proposal (3 of 4 takes two refusals), so deriving the acknowledgement from
+  // `outcome.status` would answer a first refusal with a green tick.
   const [voted, setVoted] = useState<Decision | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
@@ -112,9 +109,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
       setVoted(decision);
       setError(null);
       setPending(null);
-      // The confirmation owns the haptic, not this handler. It fires as the tick finishes drawing
-      // rather than as the response arrives, so what the hand feels and what the eye sees are the
-      // same event. Firing here as well would buzz twice for one signature.
+      // The acknowledgement owns the haptic, timed to its tick: firing here too would buzz twice.
       setConfirming(true);
       void queryClient.invalidateQueries({ queryKey: ['proposals'] });
       void queryClient.invalidateQueries({ queryKey: ['proposal', uuid] });
@@ -133,12 +128,12 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
         <Scroll>
           {query.error ? (
             <Banner
-              tone="broken"
+              tone="warning"
               title="Could not load this decision."
               detail={query.error instanceof Error ? query.error.message : undefined}
             />
           ) : (
-            <Loading label="Loading decision" />
+            <DecisionSkeleton />
           )}
         </Scroll>
       </Screen>
@@ -149,96 +144,81 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
   // refuses a response whose two copies differ), so nothing on this screen reads it.
   const { M: requiredM, N: requiredN } = detail.signing_inputs.policy;
 
-  // The state every other screen shows for this decision (`status.ts`): the server's, unless it
-  // still says open past the deadline, which happens when this page has been open a while.
+  // The state every other screen shows (`status.ts`): the server's, unless it still says open past
+  // the deadline, which happens when this page has been open a while.
   const settled = decisionStatus({ ...detail, required_m: requiredM, required_n: requiredN });
   const tampered = integrity !== null && !integrity.ok;
   const alreadySigned = detail.signed_by_me || outcome !== null;
   const closed = settled !== 'open';
   const canSign = !tampered && !alreadySigned && !closed && detail.can_sign;
 
-  // Counts after this device's own vote, so the marks reflect what just happened without waiting
-  // for the refetch to land.
+  // Counts after this device's own vote, so the marks reflect it before the refetch lands.
   const approvals = outcome?.approvals ?? detail.approvals;
   const status = outcome?.status ?? settled;
   const expiry = expiryPhrase(detail.expires_at);
   const urgency = urgencyOf(detail.expires_at);
+  const payment = detail.signing_inputs.action;
 
   return (
     <Screen edges={['top']}>
       <NavBar onBack={onBack} title={detail.vault_name ?? `Vault ${detail.vault_id}`} />
 
-      <Scroll footerSpace={canSign ? 128 : 0}>
-        {tampered ? (
-          <View style={{ marginBottom: space.lg }}>
+      <Scroll footerSpace={canSign ? 72 : 0}>
+        <View style={s.stack}>
+          {tampered ? (
             <Banner
-              tone="broken"
+              tone="critical"
               title="This decision does not match its own signature payload."
               detail="Nothing has been signed. Report this before acting on it."
             />
-          </View>
-        ) : null}
-
-        {error ? (
-          <View style={{ marginBottom: space.lg }}>
-            <Banner tone="broken" title={error.title} detail={error.detail} />
-          </View>
-        ) : null}
-
-        {/* The decision. The only serif on the screen, and sized to its own length.
-            A real decision in this system is not the one-line sentence the first draft assumed --
-            it is a structured authorisation with a beneficiary, an instrument, a window and a
-            scope note, running to several paragraphs. At the display size that suits "Release the
-            escrow payment", that content fills the screen twice over and pushes the quorum, the
-            deadline and the buttons below the fold, so the reader has to scroll to find out what
-            they are even being asked. Long decisions step down to a reading size and hand the
-            screen's moment of scale to the quorum instead, which is where it belongs once the text
-            is a document rather than a sentence. */}
-        {/* The title, so a reader knows they opened the decision they meant: the name it goes by
-            in every list. A label for the decision, not the decision. It is not under the hash, so
-            it is set small in the interface face, and the signed text beneath it stays the largest
-            thing on the screen and the only words the sheet and the prompt repeat (plan S19). */}
-        <Text style={s.title} accessibilityRole="header">
-          {detail.title}
-        </Text>
-        {/* Always the signed copy of the text: `detail.action_text` is not under the hash, and
-            verifyProposalIntegrity refuses a response whose two copies disagree. */}
-        <Text
-          style={
-            detail.signing_inputs.action_text.length > LONG_DECISION ? s.decisionLong : s.decision
-          }
-        >
-          {detail.signing_inputs.action_text}
-        </Text>
-        {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
-        {detail.payout ? <Payout payout={detail.payout} /> : null}
-
-        {/* The quorum, immediately under it. `celebrate` is true only when this person's own
-            signature is what completed it -- animating a decision that was already complete when
-            they arrived would claim it happened in front of them. */}
-        <View style={s.quorum}>
-          <Seal
-            filled={approvals}
-            required={requiredM}
-            size={13}
-            celebrate={outcome !== null && approvals >= requiredM}
-          />
-          <Text style={s.quorumText}>{quorumPhrase(approvals, requiredM, status)}</Text>
-        </View>
-
-        <Row gap={space.md} style={{ marginTop: space.sm, flexWrap: 'wrap' }}>
-          {expiry && status === 'open' ? (
-            <Text style={[s.timing, urgency === 'critical' || urgency === 'expired' ? { color: color.broken } : null]}>
-              {expiry}
-            </Text>
           ) : null}
-          <Text style={s.timing}>{whenAfter('Raised', detail.signing_inputs.created_at)}</Text>
-        </Row>
 
-        {outcome ? (
-          <View style={{ marginTop: space.lg }}>
+          {error ? <Banner tone="critical" title={error.title} detail={error.detail} /> : null}
+
+          {/* The title: the name it goes by in every list. Unsigned, so small and in sans; the
+              signed text beneath it is the largest thing here and the only words the sheet and the
+              prompt repeat (S19). */}
+          <Text role="titleSm" tone="muted" accessibilityRole="header">
+            {detail.title}
+          </Text>
+          {/* Always the signed copy: verifyProposalIntegrity refuses a response whose two copies of
+              the text disagree. */}
+          <SignedText text={detail.signing_inputs.action_text} />
+          {payment ? <PaymentCard action={payment} /> : null}
+          {payment ? <PaymentFacts action={payment} /> : null}
+          {detail.payout ? <Payout payout={detail.payout} /> : null}
+
+          {/* The quorum, under it. `celebrate` only when this person's own signature completed it. */}
+          <View style={s.quorum}>
+            <Seal
+              filled={approvals}
+              required={requiredM}
+              size={14}
+              showCount={false}
+              celebrate={outcome !== null && approvals >= requiredM}
+            />
+            <Text role="body" tone="muted" style={s.flex}>
+              {quorumPhrase(approvals, requiredM, status)}
+            </Text>
+          </View>
+
+          <View style={s.timing}>
+            {expiry && status === 'open' ? (
+              <Text
+                role="caption"
+                tone={urgency === 'critical' || urgency === 'expired' ? 'critical' : 'muted'}
+              >
+                {expiry}
+              </Text>
+            ) : null}
+            <Text role="caption" tone="muted">
+              {whenAfter('Raised', detail.signing_inputs.created_at)}
+            </Text>
+          </View>
+
+          {outcome ? (
             <Banner
-              tone={outcome.status === 'rejected' ? 'broken' : 'sealed'}
+              tone={outcome.status === 'rejected' ? 'critical' : 'success'}
               title={
                 outcome.status === 'rejected'
                   ? 'You rejected this decision.'
@@ -248,16 +228,13 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
               }
               detail={`Signature ${outcome.signatureSha256.slice(0, 16)}`}
             />
-          </View>
-        ) : null}
+          ) : null}
 
-        {/* The cryptography: one line when it holds, the whole screen when it does not. */}
-        <View style={{ marginTop: space.xl }}>
+          {/* The cryptography: one row when it holds, the whole screen when it does not. */}
           <Assurance ok={!!integrity?.ok}>
             {integrity && !integrity.ok ? (
               <>
-                {/* What this phone derived, then what the server claimed: two different values
-                    when the hash itself disagrees, the same value when the text did. */}
+                {/* What this phone derived, then what the server claimed. */}
                 <KeyValue label="Derived on this phone" mono value={integrity.actual} />
                 <KeyValue label="Server stated" mono value={integrity.expected} />
                 <KeyValue label="Failed check" value={MISMATCH_REASON[integrity.reason]} />
@@ -277,49 +254,45 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
             />
             <KeyValue label="Signing key" value={identity.algId} />
             <KeyValue label="This device" mono value={identity.fingerprint} />
-            <KeyValue
-              label="Policy"
-              value={`${requiredM} of ${requiredN} authorised signers`}
-            />
+            <KeyValue label="Policy" value={`${requiredM} of ${requiredN} authorised signers`} />
             <KeyValue label="Raised" value={exactly(detail.signing_inputs.created_at)} />
           </Assurance>
         </View>
 
         <Section title={detail.votes.length === 1 ? 'One signature' : `${detail.votes.length} signatures`}>
           {detail.votes.length === 0 ? (
-            <Text style={s.none}>No one has signed this yet.</Text>
+            <Text role="body" tone="muted">
+              No one has signed this yet.
+            </Text>
           ) : (
-            <Card>
+            <List>
               {detail.votes.map((v, i) => (
-                <View key={`${v.signer_id}-${i}`}>
-                  {i > 0 ? <Divider /> : null}
-                  <VoteRow vote={v} />
-                </View>
+                <VoteRow key={`${v.signer_id}-${i}`} vote={v} />
               ))}
-            </Card>
+            </List>
           )}
         </Section>
 
         {!canSign && !tampered ? (
-          <View style={{ marginTop: space.lg, alignItems: 'flex-start' }}>
-            <Chip
-              label={standingLabel({ alreadySigned, closed, status, canSignPolicy: detail.can_sign })}
-              tone={alreadySigned ? 'sealed' : statusTone(status)}
+          <View style={s.standing}>
+            <InlineMessage
+              tone={standingTone(alreadySigned, status)}
+              text={standingLabel({ alreadySigned, closed, status, canSignPolicy: detail.can_sign })}
             />
           </View>
         ) : null}
       </Scroll>
 
       {canSign ? (
-        <ActionBar>
-          <Button label="Approve" onPress={() => setPending('approve')} disabled={vote.isPending} />
-          <Button
-            label="Reject"
-            variant="danger"
-            onPress={() => setPending('reject')}
-            disabled={vote.isPending}
-          />
-        </ActionBar>
+        <ActionBar
+          secondary={{
+            label: 'Reject',
+            variant: 'dangerSecondary',
+            onPress: () => setPending('reject'),
+            disabled: vote.isPending,
+          }}
+          primary={{ label: 'Approve', onPress: () => setPending('approve'), disabled: vote.isPending }}
+        />
       ) : null}
 
       <ConfirmSheet
@@ -330,9 +303,8 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
         onConfirm={() => pending && vote.mutate(pending)}
       />
 
-      {/* The acknowledgement. Stays until dismissed rather than timing out: someone who signed and
-          immediately put the phone down should still be told what happened when they look at it
-          again. The banner left behind on the page underneath is the durable record of it. */}
+      {/* The acknowledgement. Stays until dismissed: someone who signed and put the phone down
+          should still be told what happened when they look at it again. */}
       <SignedOverlay
         visible={confirming && outcome !== null}
         approved={voted === 'approve'}
@@ -345,12 +317,9 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
 }
 
 /**
- * The restatement.
- *
- * It repeats the action text verbatim rather than summarising it. A summary would be a second,
- * unsigned description of the decision sitting next to the signed one, and the moment those two
- * disagree -- through a truncation, a rewording, anything -- the confirmation is confirming the
- * wrong sentence.
+ * The restatement: the action text verbatim, never a summary. A summary would be a second,
+ * unsigned description sitting beside the signed one, and the moment the two disagree the
+ * confirmation is confirming the wrong sentence.
  */
 function ConfirmSheet({
   decision,
@@ -367,81 +336,90 @@ function ConfirmSheet({
 }) {
   const approving = decision === 'approve';
   const completes = approving && detail.approvals + 1 >= detail.signing_inputs.policy.M;
+  const payment = detail.signing_inputs.action;
+  // Kept while the sheet animates out, so it does not flash to the other title on its way down.
+  const last = useRef<Decision>('approve');
+  if (decision) last.current = decision;
+  const showing = decision ?? last.current;
+  const isApprove = showing === 'approve';
 
-  // The text and the payment scroll; the consequence and the two buttons stay pinned under them,
-  // so however long the decision is, its title, its opening words and the choice are all on screen.
   return (
     <Sheet
       visible={decision !== null}
       onClose={onCancel}
       dismissible={!busy}
-      title={approving ? 'Approve this decision' : 'Reject this decision'}
+      title={isApprove ? 'Approve this decision' : 'Reject this decision'}
       footer={
         <>
-          <Text style={s.confirmNote}>
-            {approving && detail.signing_inputs.action
+          <Text role="caption" tone="muted">
+            {isApprove && payment
               ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
-              : approving
-              ? completes
-                ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
-                : 'Your signature is recorded against this decision and cannot be withdrawn.'
-              : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
+              : isApprove
+                ? completes
+                  ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
+                  : 'Your signature is recorded against this decision and cannot be withdrawn.'
+                : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
           </Text>
-          <View style={{ gap: space.sm, marginTop: space.xs }}>
-            <Button
-              label={approving ? 'Sign approval' : 'Sign rejection'}
-              variant={approving ? 'primary' : 'danger'}
-              onPress={onConfirm}
-              busy={busy}
-            />
-            <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} />
-          </View>
+          <Button
+            label={isApprove ? 'Sign approval' : 'Sign rejection'}
+            variant={isApprove ? 'primary' : 'danger'}
+            onPress={onConfirm}
+            busy={busy}
+            full
+          />
+          <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} full />
         </>
       }
     >
-      <Text style={s.confirmAction}>{detail.signing_inputs.action_text}</Text>
-      {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
+      <SignedText text={detail.signing_inputs.action_text} size="decision" />
+      {payment ? <PaymentCard action={payment} place="sheet" /> : null}
+      {payment ? <PaymentFacts action={payment} /> : null}
     </Sheet>
   );
 }
 
 /**
- * The payment, read from the signed fields (`signing_inputs.action`, the ones hashed and signed),
- * never from the server's display copy: what this card shows is what an approval authorises.
+ * The payment's other signed fields, read from `signing_inputs.action`, never the server's display
+ * copy. (P2 moves the treasury and the time limit into the evidence sheet, §5.12.)
  */
-function Payment({ action }: { action: PaymentAction }) {
+function PaymentFacts({ action }: { action: PaymentAction }) {
+  const s = useStyles();
   return (
-    <View style={{ marginTop: space.md }}>
-      <KeyValue label="Amount" value={formatEth(action.value_wei)} />
-      <KeyValue label="To" mono value={action.to} />
-      <KeyValue label="Network" value={NETWORKS[action.chain_id] ?? `Chain ${action.chain_id}`} />
-      <KeyValue label="From treasury" mono value={action.treasury} />
+    <View style={s.facts}>
+      <Identifier label="From treasury" value={action.treasury} />
       <KeyValue label="Approvals valid until" value={exactly(new Date(action.valid_until * 1000).toISOString())} />
     </View>
   );
 }
 
-const PAYOUT_LABEL: Record<string, [string, 'sealed' | 'waiting' | 'broken' | 'neutral']> = {
+const PAYOUT_LABEL: Record<string, [string, Tone]> = {
   awaiting_approvals: ['Paid once approved', 'neutral'],
-  queued: ['Payout queued', 'waiting'],
-  submitting: ['Payout being sent', 'waiting'],
-  confirmed: ['Paid', 'sealed'],
-  expired: ['Not paid: its approvals expired', 'broken'],
-  voided: ['Not paid: the treasury changed', 'broken'],
-  failed: ['Payout failed', 'broken'],
+  queued: ['Payout queued', 'info'],
+  submitting: ['Payout being sent', 'info'],
+  confirmed: ['Paid', 'success'],
+  expired: ['Not paid: its approvals expired', 'critical'],
+  voided: ['Not paid: the treasury changed', 'critical'],
+  failed: ['Payout failed', 'critical'],
   not_paid: ['Not paid', 'neutral'],
 };
 
 /** How the payout stands (plan Phase 8): the server's account, shown and never signed. */
 function Payout({ payout }: { payout: PayoutView }) {
-  const [label, tone] = PAYOUT_LABEL[payout.state] ?? [payout.state, 'neutral'];
+  const s = useStyles();
+  const [label, tone] = PAYOUT_LABEL[payout.state] ?? ['Payout state unknown', 'neutral'];
   return (
-    <View style={{ marginTop: space.md, gap: space.xs }}>
-      <StatusLine label={label} tone={tone} />
-      {payout.state !== 'confirmed' && payout.reason ? <Text style={s.timing}>{payout.reason}</Text> : null}
+    <View style={s.facts}>
+      <InlineMessage tone={tone} text={label} />
+      {payout.state !== 'confirmed' && payout.reason ? (
+        <Text role="caption" tone="muted">
+          {payout.reason}
+        </Text>
+      ) : null}
       <KeyValue label="Payment authorisations" value={`${payout.execution_signatures} of ${payout.needed}`} />
-      {payout.tx_hash ? <KeyValue label="Transaction" mono value={payout.tx_hash} /> : null}
-      {payout.block_number !== null ? <KeyValue label="Block" value={payout.block_number.toLocaleString('en-GB')} /> : null}
+      {payout.tx_hash ? <Identifier label="Transaction" value={payout.tx_hash} /> : null}
+      {payout.block_number !== null ? (
+        <KeyValue label="Block" value={payout.block_number.toLocaleString('en-GB')} />
+      ) : null}
       {payout.gas_used !== null ? <KeyValue label="Gas" value={payout.gas_used.toLocaleString('en-GB')} /> : null}
     </View>
   );
@@ -449,25 +427,28 @@ function Payout({ payout }: { payout: PayoutView }) {
 
 function VoteRow({ vote }: { vote: VoteRecord }) {
   const approved = vote.decision === 'approve';
+  // Both custody models are named: OWNER-ACTIONS §3.3 has one person approve from the app and one
+  // from the web, so a single record shows a device-held key and a server-held key side by side.
   return (
-    <View style={s.vote}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={s.voteName} numberOfLines={1}>
-          {vote.signer_name ?? `Signer ${vote.signer_id}`}
-        </Text>
-        {/* Both custody models are named, not just the device one. OWNER-ACTIONS §3.3 turns on
-            this line: the demo has one person approve from the app and another from the web UI, so
-            that a single record shows a device-held key and a server-held key side by side. If
-            only `device` were labelled, the server case would read as missing data rather than as
-            the other half of the comparison. */}
-        <Text style={s.voteMeta} numberOfLines={1}>
-          {whenPhrase(vote.signed_at)}
-          {vote.custody === 'device' ? ', key held on their device' : ', key held on the server'}
-        </Text>
-      </View>
-      <Text style={[s.voteDecision, { color: approved ? color.sealed : color.broken }]}>
-        {approved ? 'Approved' : 'Rejected'}
-      </Text>
+    <ListRow
+      title={vote.signer_name ?? `Signer ${vote.signer_id}`}
+      caption={`${whenPhrase(vote.signed_at)}, ${vote.custody === 'device' ? 'key held on their device' : 'key held on the server'}`}
+      value={approved ? 'Approved' : 'Rejected'}
+      valueTone={approved ? 'success' : 'critical'}
+    />
+  );
+}
+
+/** The decision's shape while it loads: a title, five lines of text, the quorum (§6.6). */
+function DecisionSkeleton() {
+  const s = useStyles();
+  return (
+    <View style={s.stack}>
+      <Skeleton width="45%" height={16} />
+      <Skeleton width="95%" height={22} />
+      <Skeleton width="90%" height={22} />
+      <Skeleton width="70%" height={22} />
+      <Skeleton width={140} height={14} />
     </View>
   );
 }
@@ -478,6 +459,13 @@ function quorumPhrase(filled: number, required: number, status: string): string 
   if (status === 'expired') return 'Expired before the threshold was met';
   const left = required - filled;
   return left === 1 ? 'One more signature needed' : `${left} more signatures needed`;
+}
+
+function standingTone(alreadySigned: boolean, status: string): Tone {
+  if (alreadySigned) return 'success';
+  if (status === 'approved') return 'success';
+  if (status === 'rejected') return 'critical';
+  return 'neutral';
 }
 
 function standingLabel({
@@ -499,10 +487,7 @@ function standingLabel({
 
 function describe(err: unknown): { title: string; detail?: string } {
   if (err instanceof PayloadMismatchError) {
-    return {
-      title: 'Refused to sign.',
-      detail: 'This decision does not match its own signature payload.',
-    };
+    return { title: 'Refused to sign.', detail: 'This decision does not match its own signature payload.' };
   }
   if (err instanceof SelfVerificationError) {
     return { title: err.message, detail: 'Enrol this device again to replace the key.' };
@@ -511,17 +496,13 @@ function describe(err: unknown): { title: string; detail?: string } {
     return { title: 'Not signed on this phone.', detail: err.message };
   }
   if (err instanceof NoScreenLockError) {
-    return {
-      title: err.message,
-      detail: 'Q-Vault asks for it before every signature. Nothing was signed.',
-    };
+    return { title: err.message, detail: 'Q-Vault asks for it before every signature. Nothing was signed.' };
   }
   if (err instanceof Error && err.name === 'AuthenticationCancelled') {
     return { title: 'Nothing was signed.' };
   }
-  // Deliberately NOT folded into the line above: a device that cannot ask is a different problem
-  // from a person who declined, and telling someone "nothing was signed" when their sensor is
-  // locked out sends them round the same loop forever.
+  // Not folded into the line above: a device that cannot ask is a different problem from a person
+  // who declined, and "nothing was signed" to a locked-out sensor sends them round the same loop.
   if (err instanceof Error && err.name === 'AuthenticationUnavailable') {
     const reason = (err as { reason?: string }).reason;
     return {
@@ -546,10 +527,7 @@ function describe(err: unknown): { title: string; detail?: string } {
       case 'device_key_not_active':
         return { title: 'This device key is no longer active.', detail: 'Enrol this device again.' };
       case 'signature_invalid':
-        return {
-          title: 'The server rejected the signature.',
-          detail: 'Enrol this device again if this keeps happening.',
-        };
+        return { title: 'The server rejected the signature.', detail: 'Enrol this device again if this keeps happening.' };
       default:
         return { title: err.message };
     }
@@ -557,14 +535,6 @@ function describe(err: unknown): { title: string; detail?: string } {
   if (err instanceof TransportError) return { title: err.message };
   return { title: err instanceof Error ? err.message : 'Something went wrong.' };
 }
-
-/**
- * Where a decision stops being a sentence and starts being a document.
- *
- * ~180 characters is about three lines at the display size on a narrow handset. Past that, the
- * large setting stops feeling emphatic and starts feeling like a wall.
- */
-const LONG_DECISION = 180;
 
 /** Which integrity check refused the decision, in the words the Assurance drawer shows. */
 const MISMATCH_REASON: Record<PayloadMismatchError['reason'], string> = {
@@ -574,26 +544,11 @@ const MISMATCH_REASON: Record<PayloadMismatchError['reason'], string> = {
   display_policy: 'The approval threshold sent for display is not the one that would be signed',
 };
 
-const s = StyleSheet.create({
-  title: { fontFamily: font.sansSemi, fontSize: 14, lineHeight: 20, color: color.ink2, marginTop: space.sm },
-  decision: { ...type.decision, marginTop: space.sm },
-  decisionLong: { ...type.decisionSm, fontSize: 16.5, lineHeight: 26, marginTop: space.sm },
-  quorum: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xl },
-  quorumText: { ...type.body, color: color.ink2 },
-  timing: { ...type.meta },
-  none: { ...type.meta },
-
-  vote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space.md,
-    paddingVertical: space.md,
-  },
-  voteName: { ...type.body },
-  voteMeta: { ...type.micro },
-  voteDecision: { ...type.micro, fontSize: 12.5 },
-
-  confirmAction: { ...type.decisionSm, fontSize: 18, lineHeight: 27 },
-  confirmNote: { ...type.meta, lineHeight: 19 },
-});
+const useStyles = makeStyles((t) => ({
+  flex: { flex: 1 },
+  stack: { gap: t.space[16], paddingTop: t.space[8] },
+  quorum: { flexDirection: 'row', alignItems: 'center', gap: t.space[12], marginTop: t.space[8] },
+  timing: { flexDirection: 'row', flexWrap: 'wrap', columnGap: t.space[16], marginTop: -t.space[8] },
+  facts: { gap: t.space[4] },
+  standing: { marginTop: t.space[24] },
+}));

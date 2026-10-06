@@ -1,48 +1,39 @@
 // Raising a decision from the handset.
 //
-// Until this screen existed the app could only respond to work other people originated, which made
-// it a remote control rather than a client. An executive who can approve a payment on their phone
-// but has to open a laptop to ask for one is being handed half a product.
+// An executive who can approve a payment on their phone but has to open a laptop to ask for one is
+// being handed half a product.
 //
-// THE DEADLINE IS PRESET CHIPS, NOT A DATE PICKER. A picker asks someone to choose a calendar date
-// and a clock time, which is two decisions and a modal, when the thing in their head is "this
-// needs answering today". The presets are the phrasings people actually use. "No deadline" stays
-// available and unselected by default, because a decision that cannot expire is a real choice and
-// should be made deliberately rather than by leaving a field alone.
+// THE DEADLINE IS PRESET CHIPS, NOT A DATE PICKER: the thing in someone's head is "this needs
+// answering today", not a calendar date and a clock time. "No deadline" is a real choice, so it is
+// offered but never preselected.
 //
-// THE TEXT FIELD IS SET IN THE SERIF THE DECISION WILL BE READ IN. What someone types here becomes
-// the sentence other people are asked to put their name to, and it is bound verbatim into the
-// canonical signing payload -- so it is worth seeing it, while writing, in the face it will be read
-// in. It also quietly discourages treating the field like a chat message.
+// THE TEXT IS SET IN THE SERIF IT WILL BE SIGNED IN. What someone types here becomes the sentence
+// other people put their name to, bound verbatim into the signing payload, so they see it in that
+// face while writing it. (Phone-ux §6.16 reshapes this form in P3: type first, honest deadlines,
+// the who-approves preview, a review sheet for payments.)
 
 import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   ActionBar,
   Banner,
-  Button,
-  Card,
-  Divider,
-  Empty,
+  ChipGroup,
+  ContentWidth,
+  EmptyState,
   Field,
-  Loading,
+  List,
+  ListRow,
   NavBar,
-  Row,
   Screen,
+  Skeleton,
+  Text,
+  TextArea,
+  TextLink,
   feedback,
 } from '../ui/index.tsx';
-import { color, radius, space, type } from '../theme.ts';
+import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { formatEth, parseEth } from '../crypto/signing.ts';
@@ -50,12 +41,12 @@ import { describeRaiseRefusal, vaultsToRaiseIn } from '../proposing.ts';
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
-const DEADLINES: Array<{ label: string; hours: number | null }> = [
-  { label: 'Today', hours: 8 },
-  { label: 'Tomorrow', hours: 24 },
-  { label: 'In 3 days', hours: 72 },
-  { label: 'In a week', hours: 168 },
-  { label: 'No deadline', hours: null },
+const DEADLINES: Array<{ label: string; value: number | null }> = [
+  { label: 'Today', value: 8 },
+  { label: 'Tomorrow', value: 24 },
+  { label: 'In 3 days', value: 72 },
+  { label: 'In a week', value: 168 },
+  { label: 'No deadline', value: null },
 ];
 
 export default function NewDecisionScreen({
@@ -64,14 +55,14 @@ export default function NewDecisionScreen({
   onBack,
   onRaised,
 }: {
-  // Both optional: this screen is reached from inside a vault, where the vault is known, and from
-  // the approvals queue, where it is not. Requiring a vault up front would mean the only route to
-  // raising a decision runs through two taps of navigation that exist for a different purpose.
+  // Both optional: reached from inside a vault, where the vault is known, and from the queue,
+  // where it is not.
   vaultId?: number | null;
   vaultName?: string | null;
   onBack: () => void;
   onRaised: (uuid: string) => void;
 }) {
+  const s = useStyles();
   const { token } = useEnrolledSession();
   const queryClient = useQueryClient();
 
@@ -82,7 +73,7 @@ export default function NewDecisionScreen({
   const [title, setTitle] = useState('');
   const [actionText, setActionText] = useState('');
   // A payment (plan Phase 8): recipient and amount only; the server writes the signed action and
-  // the text (D24), and the phone shows and checks both before anyone signs.
+  // its text (D24), and the phone shows and checks both before anyone signs.
   const [kind, setKind] = useState<'decision' | 'payment'>('decision');
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
@@ -100,9 +91,7 @@ export default function NewDecisionScreen({
 
   const ready =
     title.trim().length > 0 &&
-    (paying
-      ? ADDRESS.test(to.trim()) && valueWei !== null && valueWei !== '0'
-      : actionText.trim().length > 0);
+    (paying ? ADDRESS.test(to.trim()) && valueWei !== null && valueWei !== '0' : actionText.trim().length > 0);
 
   const raise = useMutation({
     mutationFn: () =>
@@ -142,44 +131,43 @@ export default function NewDecisionScreen({
       <Screen>
         <NavBar onBack={onBack} title="New decision" />
         <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-          <Text style={s.label}>Which vault is this decision for?</Text>
-          {vaultsQuery.isLoading ? (
-            <Loading />
-          ) : onAny.length === 0 ? (
-            <Empty
-              title="You are not on any vaults yet."
-              detail="A decision has to belong to one. Create a vault first."
-            />
-          ) : vaults.length === 0 ? (
-            <Empty
-              title="You can only view the vaults you are on."
-              detail="Their owners and signers raise decisions. Create a vault to raise your own."
-            />
-          ) : (
-            <Card>
-              {vaults.map((v, i) => (
-                <View key={v.vault_id}>
-                  {i > 0 ? <Divider /> : null}
-                  <Pressable
-                    onPress={() => setChosen({ id: v.vault_id, name: v.name })}
-                    accessibilityRole="button"
+          <ContentWidth style={s.stack}>
+            <Text role="titleSm" accessibilityRole="header">
+              Which vault is this decision for?
+            </Text>
+            {vaultsQuery.isLoading ? (
+              <List>
+                {[0, 1, 2].map((i) => (
+                  <View key={i} style={s.skeleton}>
+                    <Skeleton width="50%" height={16} />
+                    <Skeleton width={170} height={12} />
+                  </View>
+                ))}
+              </List>
+            ) : onAny.length === 0 ? (
+              <EmptyState
+                title="You are not on any vaults yet."
+                detail="A decision has to belong to one. Create a vault first."
+              />
+            ) : vaults.length === 0 ? (
+              <EmptyState
+                title="You can only view the vaults you are on."
+                detail="Their owners and signers raise decisions. Create a vault to raise your own."
+              />
+            ) : (
+              <List>
+                {vaults.map((v) => (
+                  <ListRow
+                    key={v.vault_id}
+                    title={v.name}
+                    caption={`${v.threshold_m ?? '?'} of ${v.signer_count} signers must approve`}
                     accessibilityLabel={v.name}
-                    style={({ pressed }) => [s.pick, pressed && { opacity: 0.6 }]}
-                  >
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={s.pickName} numberOfLines={1}>
-                        {v.name}
-                      </Text>
-                      <Text style={s.pickPolicy}>
-                        {v.threshold_m ?? '?'} of {v.signer_count} signers must approve
-                      </Text>
-                    </View>
-                    <Text style={s.chevron}>›</Text>
-                  </Pressable>
-                </View>
-              ))}
-            </Card>
-          )}
+                    onPress={() => setChosen({ id: v.vault_id, name: v.name })}
+                  />
+                ))}
+              </List>
+            )}
+          </ContentWidth>
         </ScrollView>
       </Screen>
     );
@@ -189,193 +177,135 @@ export default function NewDecisionScreen({
     <Screen>
       <NavBar onBack={onBack} title="New decision" />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          style={{ flex: 1 }}
+          style={s.flex}
           contentContainerStyle={s.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Row style={{ justifyContent: 'space-between' }} gap={space.md}>
-            <Text style={s.context}>in {chosen?.name}</Text>
-            {initialVaultId == null ? (
-              <Pressable
-                onPress={() => setChosen(null)}
-                accessibilityRole="button"
-                hitSlop={8}
-                disabled={raise.isPending}
-              >
-                <Text style={s.change}>Change</Text>
-              </Pressable>
-            ) : null}
-          </Row>
-
-          {error ? <Banner tone="broken" title={error.title} detail={error.detail} /> : null}
-
-          <Field
-            label="Title"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Authorise the Q4 drawdown"
-            autoCapitalize="sentences"
-            maxLength={255}
-            editable={!raise.isPending}
-          />
-
-          {payments ? (
-            <Row gap={space.sm}>
-              {(['decision', 'payment'] as const).map((k) => {
-                const active = k === kind;
-                return (
-                  <Pressable
-                    key={k}
-                    onPress={() => setKind(k)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: active }}
-                    disabled={raise.isPending}
-                    style={({ pressed }) => [s.preset, active && s.presetActive, pressed && { opacity: 0.7 }]}
-                  >
-                    <Text style={[s.presetText, active && s.presetTextActive]}>
-                      {k === 'decision' ? 'Decision' : 'Payment'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </Row>
-          ) : null}
-
-          {paying ? (
-            <View style={{ gap: space.md }}>
-              <Field
-                label="Recipient"
-                value={to}
-                onChangeText={setTo}
-                placeholder="0x…"
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={42}
-                editable={!raise.isPending}
-              />
-              <Field
-                label="Amount (ETH)"
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="0.0001"
-                keyboardType="decimal-pad"
-                maxLength={40}
-                editable={!raise.isPending}
-              />
-              <Text style={s.hint}>
-                {valueWei && valueWei !== '0'
-                  ? `Pays ${formatEth(valueWei)} from the vault's treasury on Sepolia once approved.`
-                  : "Paid from the vault's treasury on Sepolia once approved. The wording is written from the payment."}
+          <ContentWidth style={s.stack}>
+            <View style={s.context}>
+              <Text role="body" tone="muted" style={s.flex}>
+                {`in ${chosen.name}`}
               </Text>
+              {initialVaultId == null ? (
+                <TextLink
+                  label="Change"
+                  accessibilityLabel="Change the vault"
+                  onPress={() => setChosen(null)}
+                  disabled={raise.isPending}
+                />
+              ) : null}
             </View>
-          ) : (
-          <View style={{ gap: space.xs }}>
-            <Text style={s.label}>What is being decided</Text>
-            <TextInput
-              style={s.textarea}
-              value={actionText}
-              onChangeText={setActionText}
-              placeholder="Describe exactly what approval authorises. This wording is what everyone signs."
-              placeholderTextColor={color.ink4}
-              multiline
-              textAlignVertical="top"
-              autoCapitalize="sentences"
-              editable={!raise.isPending}
-            />
-            {/* Not a character counter. The thing worth warning about is that the words are final,
-                because they are bound into the payload every signature covers. */}
-            <Text style={s.hint}>
-              Signed verbatim. It cannot be edited once anyone has signed.
-            </Text>
-          </View>
-          )}
 
-          <View style={{ gap: space.sm }}>
-            <Text style={s.label}>Needs an answer by</Text>
-            <Row gap={space.sm} style={{ flexWrap: 'wrap' }}>
-              {DEADLINES.map((d) => {
-                const active = d.hours === hours;
-                return (
-                  <Pressable
-                    key={d.label}
-                    onPress={() => setHours(d.hours)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: active }}
+            {error ? <Banner tone="critical" title={error.title} detail={error.detail} /> : null}
+
+            <View>
+              <Field
+                label="Title"
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Authorise the Q4 drawdown"
+                autoCapitalize="sentences"
+                maxLength={255}
+                editable={!raise.isPending}
+              />
+
+              {payments ? (
+                <View style={s.group}>
+                  <ChipGroup
+                    label="Kind of decision"
+                    value={kind}
+                    onChange={setKind}
                     disabled={raise.isPending}
-                    style={({ pressed }) => [
-                      s.preset,
-                      active && s.presetActive,
-                      pressed && { opacity: 0.7 },
+                    options={[
+                      { value: 'decision', label: 'Decision' },
+                      { value: 'payment', label: 'Payment' },
                     ]}
-                  >
-                    <Text style={[s.presetText, active && s.presetTextActive]}>{d.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </Row>
-          </View>
+                  />
+                </View>
+              ) : null}
+
+              {paying ? (
+                <View>
+                  <Field
+                    label="Recipient"
+                    value={to}
+                    onChangeText={setTo}
+                    placeholder="0x…"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={42}
+                    mono
+                    editable={!raise.isPending}
+                  />
+                  <Field
+                    label="Amount (ETH)"
+                    value={amount}
+                    onChangeText={setAmount}
+                    placeholder="0.0001"
+                    keyboardType="decimal-pad"
+                    maxLength={40}
+                    editable={!raise.isPending}
+                    caption={
+                      valueWei && valueWei !== '0'
+                        ? `Pays ${formatEth(valueWei)} from the vault's treasury on Sepolia once approved.`
+                        : "Paid from the vault's treasury on Sepolia once approved. The wording is written from the payment."
+                    }
+                  />
+                </View>
+              ) : (
+                <TextArea
+                  label="What is being decided"
+                  value={actionText}
+                  onChangeText={setActionText}
+                  placeholder="Describe exactly what approval authorises. This wording is what everyone signs."
+                  autoCapitalize="sentences"
+                  editable={!raise.isPending}
+                  // Not a counter until it nears the limit: what is worth saying is that the words
+                  // are final, because they are bound into the payload every signature covers.
+                  caption="Signed verbatim. It cannot be edited once anyone has signed."
+                />
+              )}
+            </View>
+
+            <View style={s.group}>
+              <Text role="caption" tone="muted">
+                Needs an answer by
+              </Text>
+              <ChipGroup
+                label="Needs an answer by"
+                value={hours}
+                onChange={setHours}
+                disabled={raise.isPending}
+                options={DEADLINES}
+              />
+            </View>
+          </ContentWidth>
         </ScrollView>
 
-        <ActionBar>
-          <Button
-            label="Raise decision"
-            onPress={() => {
+        <ActionBar
+          primary={{
+            label: 'Raise decision',
+            onPress: () => {
               setError(null);
               raise.mutate();
-            }}
-            disabled={!ready}
-            busy={raise.isPending}
-          />
-        </ActionBar>
+            },
+            disabled: !ready,
+            busy: raise.isPending,
+          }}
+        />
       </KeyboardAvoidingView>
     </Screen>
   );
 }
 
-const s = StyleSheet.create({
-  content: { paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.lg },
-  context: { ...type.meta, marginTop: space.xs },
-
-  label: { ...type.micro, color: color.ink2 },
-  textarea: {
-    ...type.decisionSm,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.rule,
-    borderRadius: radius.control,
-    paddingHorizontal: space.md,
-    paddingVertical: space.md,
-    minHeight: 160,
-  },
-  hint: { ...type.micro },
-
-  change: { ...type.meta, color: color.ink2 },
-
-  pick: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    paddingVertical: space.md,
-  },
-  pickName: { ...type.body },
-  pickPolicy: { ...type.micro },
-  chevron: { fontSize: 22, lineHeight: 24, color: color.ink4 },
-
-  preset: {
-    borderWidth: 1,
-    borderColor: color.rule,
-    borderRadius: radius.control,
-    backgroundColor: color.surface,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  presetActive: { borderColor: color.chrome, backgroundColor: color.chrome },
-  presetText: { ...type.meta, color: color.ink2 },
-  presetTextActive: { color: color.chromeInk },
-});
+const useStyles = makeStyles((t) => ({
+  flex: { flex: 1 },
+  content: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32], paddingTop: t.space[8] },
+  stack: { gap: t.space[16] },
+  context: { flexDirection: 'row', alignItems: 'center', gap: t.space[12] },
+  group: { gap: t.space[8], marginBottom: t.space[16] },
+  skeleton: { padding: t.layout.gutter, gap: t.space[8] },
+}));

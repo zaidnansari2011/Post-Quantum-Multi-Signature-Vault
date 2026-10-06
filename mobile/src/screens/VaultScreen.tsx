@@ -1,42 +1,40 @@
-// One vault: who is on it, what it requires, and everything it has decided.
+// One vault: what it requires, who is on it, and everything it has decided.
 //
-// The governance sits at the top because it is the thing a person is actually checking when they
-// open a vault. "Three of four signers must approve" is the arrangement; the member list is who
-// those signers are; the decisions are the consequence. That order is the answer to "can this
-// vault do what I think it can", which is the question that brings anyone here.
+// The governance sits at the top because it is the thing a person is checking when they open a
+// vault. Members are listed with their role, not their key material: a signer and a viewer differ
+// in a way that matters (one of them can stop a decision), and that is governance, not
+// cryptography. The role is plain text, not a coloured chip: colour reports a state someone must
+// act on or trust, and a role is neither.
 //
-// Members are listed with their role rather than their key material. A signer and a viewer are
-// different in a way that matters to the person reading -- one of them can stop a decision -- and
-// that difference is governance, not cryptography. Fingerprints live on the account screen, where
-// someone comparing them has a reason to. The role is a neutral chip: colour in this app reports a
-// state someone must act on or trust, and a role is neither.
+// (Phone-ux §6.14 reshapes this in P3: the rule, three open decisions, then Members, Treasury and
+// History as rows.)
 
-import { StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import {
   Banner,
   Button,
-  Card,
-  Chip,
-  Divider,
-  Empty,
-  Loading,
+  DecisionRow,
+  EmptyState,
+  List,
+  ListRow,
   NavBar,
-  Row,
   Screen,
   Scroll,
   Section,
+  Skeleton,
+  Text,
+  TreasuryCard,
 } from '../ui/index.tsx';
-import { DecisionCard } from '../ui/DecisionCard.tsx';
-import { TreasuryCard } from '../ui/TreasuryCard.tsx';
-import { color, space, type } from '../theme.ts';
+import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { VaultMember } from '../api/schemas.ts';
 import { mayPropose } from '../proposing.ts';
-import { decisionStatus } from '../status.ts';
+import { decisionStatus, statusWord } from '../status.ts';
+import { deadlineWhen } from '../time.ts';
 
 export default function VaultScreen({
   vaultId,
@@ -49,6 +47,7 @@ export default function VaultScreen({
   onOpenDecision: (uuid: string) => void;
   onRaise: (vaultId: number, vaultName: string) => void;
 }) {
+  const s = useStyles();
   const { token } = useEnrolledSession();
 
   const query = useQuery({
@@ -70,7 +69,7 @@ export default function VaultScreen({
         <Scroll>
           {query.error ? (
             <Banner
-              tone="broken"
+              tone={query.error instanceof ApiError && query.error.status === 404 ? 'neutral' : 'warning'}
               title={
                 query.error instanceof ApiError && query.error.status === 404
                   ? 'This vault is not available to you.'
@@ -79,7 +78,11 @@ export default function VaultScreen({
               detail={query.error instanceof Error ? query.error.message : undefined}
             />
           ) : (
-            <Loading label="Loading vault" />
+            <View style={s.skeleton}>
+              <Skeleton width="60%" height={22} />
+              <Skeleton width="80%" height={14} />
+              <Skeleton width="100%" height={120} radius={12} />
+            </View>
           )}
         </Scroll>
       </Screen>
@@ -89,59 +92,79 @@ export default function VaultScreen({
   return (
     <Screen>
       <NavBar onBack={onBack} title={vault.name} />
-
-      <Scroll>
-        <Text style={s.policy}>{policySentence(vault.threshold_m, vault.signer_count)}</Text>
-        {vault.description ? <Text style={s.description}>{vault.description}</Text> : null}
+      <Scroll refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
+        <View style={s.top}>
+          <Text role="titleSm">{policySentence(vault.threshold_m, vault.signer_count)}</Text>
+          {vault.description ? (
+            <Text role="body" tone="muted">
+              {vault.description}
+            </Text>
+          ) : null}
+        </View>
 
         {/* Not for a viewer: the server refuses them, and the web draws no such link either. */}
         {mayPropose(vault.role) ? (
-          <View style={{ marginTop: space.lg }}>
-            <Button label="Raise a decision" onPress={() => onRaise(vault.vault_id, vault.name)} />
+          <View style={s.raise}>
+            <Button label="Raise a decision" onPress={() => onRaise(vault.vault_id, vault.name)} full />
           </View>
         ) : null}
 
         <TreasuryCard vaultId={vault.vault_id} />
 
-        <Section title={vault.members.length === 1 ? 'One member' : `${vault.members.length} members`}>
-          <Card>
-            {vault.members.map((m, i) => (
-              <View key={m.user_id}>
-                {i > 0 ? <Divider /> : null}
-                <MemberRow member={m} />
-              </View>
+        <Section
+          title={vault.members.length === 1 ? 'One member' : `${vault.members.length} members`}
+        >
+          <List>
+            {vault.members.map((m) => (
+              <MemberRow key={m.user_id} member={m} />
             ))}
-          </Card>
+          </List>
         </Section>
 
         <Section title={open.length === 1 ? 'One open decision' : `${open.length} open decisions`}>
           {open.length === 0 ? (
-            <Empty title="Nothing is open in this vault." />
+            <EmptyState title="Nothing is open in this vault." />
           ) : (
-            <View style={{ gap: space.sm }}>
+            <List>
               {open.map((p) => (
-                <DecisionCard
+                <DecisionRow
                   key={p.proposal_uuid}
-                  proposal={p}
+                  title={p.title}
+                  vault={p.vault_name ?? vault.name}
+                  approvals={p.approvals}
+                  required={p.required_m}
+                  expiresAt={p.expires_at}
                   onPress={() => onOpenDecision(p.proposal_uuid)}
                 />
               ))}
-            </View>
+            </List>
           )}
         </Section>
 
         {decided.length > 0 ? (
           <Section title="Already decided">
-            <View style={{ gap: space.sm }}>
-              {decided.slice(0, 20).map((p) => (
-                <DecisionCard
-                  key={p.proposal_uuid}
-                  proposal={p}
-                  onPress={() => onOpenDecision(p.proposal_uuid)}
-                  showOutcome
-                />
-              ))}
-            </View>
+            <List>
+              {decided.slice(0, 20).map((p) => {
+                const status = decisionStatus(p);
+                return (
+                  <DecisionRow
+                    key={p.proposal_uuid}
+                    title={p.title}
+                    vault={p.vault_name ?? vault.name}
+                    approvals={p.approvals}
+                    required={p.required_m}
+                    expiresAt={p.expires_at}
+                    variant="outcome"
+                    outcome={{
+                      word: statusWord(status),
+                      tone: status === 'approved' ? 'success' : status === 'rejected' ? 'critical' : 'muted',
+                      when: deadlineWhen(p.expires_at),
+                    }}
+                    onPress={() => onOpenDecision(p.proposal_uuid)}
+                  />
+                );
+              })}
+            </List>
           </Section>
         ) : null}
       </Scroll>
@@ -150,23 +173,13 @@ export default function VaultScreen({
 }
 
 function MemberRow({ member }: { member: VaultMember }) {
+  const name = member.name ?? `User ${member.user_id}`;
   return (
-    <View style={s.member}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Row gap={space.sm}>
-          <Text style={s.memberName} numberOfLines={1}>
-            {member.name ?? `User ${member.user_id}`}
-          </Text>
-          {member.is_me ? <Text style={s.you}>you</Text> : null}
-        </Row>
-        {member.email ? (
-          <Text style={s.memberEmail} numberOfLines={1}>
-            {member.email}
-          </Text>
-        ) : null}
-      </View>
-      <Chip label={roleWord(member.role)} />
-    </View>
+    <ListRow
+      title={member.is_me ? `${name} (you)` : name}
+      caption={member.email}
+      value={roleWord(member.role)}
+    />
   );
 }
 
@@ -179,7 +192,7 @@ function roleWord(role: string): string {
     case 'viewer':
       return 'Viewer';
     default:
-      return role;
+      return 'Member';
   }
 }
 
@@ -190,18 +203,8 @@ function policySentence(m: number | null, signers: number): string {
   return `${m} of the ${signers} signers must approve`;
 }
 
-const s = StyleSheet.create({
-  policy: { ...type.decisionSm, marginTop: space.sm },
-  description: { ...type.meta, marginTop: space.sm, lineHeight: 19 },
-
-  member: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space.md,
-    paddingVertical: space.md,
-  },
-  memberName: { ...type.body },
-  memberEmail: { ...type.micro },
-  you: { ...type.micro, color: color.ink4 },
-});
+const useStyles = makeStyles((t) => ({
+  top: { gap: t.space[4], paddingTop: t.space[8] },
+  raise: { marginTop: t.space[16] },
+  skeleton: { gap: t.space[12], paddingTop: t.space[8] },
+}));

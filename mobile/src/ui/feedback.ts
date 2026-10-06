@@ -1,32 +1,51 @@
-// Tactile feedback.
+// Tactile feedback, rationed (phone-ux §7.2).
 //
-// Haptics are rationed on the same principle as colour and elevation: if everything buzzes, the
-// buzz stops carrying information. Three events earn one, and they are the three where something
-// became true in the world rather than merely on screen.
+// If everything buzzes, the buzz stops carrying information. Four events earn one: a signature
+// that met the rule (`sealed`), a signature recorded (`signed`), a refusal (`refused`, an integrity
+// failure or a server refusal; a network failure while signing too), and a chip or segment changing
+// (`selection`). Navigation, scrolling, opening a sheet, changing tabs, raising a decision and
+// creating a vault get nothing. A cancelled biometric gets nothing: the person chose it.
 //
-//   sealed   -- a signature was accepted and the quorum is now met. The heaviest feedback the
-//               product gives, because it is the only irreversible thing a person can do here.
-//   signed   -- a signature was accepted. Something real happened, but the decision is still open.
-//   refused  -- the app declined to sign, or the server rejected what we sent.
-//
-// Scrolling, navigating, opening a sheet and changing a tab get nothing. A phone that responds
-// physically to navigation feels eager; this product should feel composed.
+// Android goes through the device haptics engine (`performAndroidHapticsAsync`), which needs no
+// VIBRATE permission; iOS honours the system switch, so there is no in-app setting.
 
+import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
-/** Fire and forget. A device without a taptic engine, or one in silent-with-haptics-off, throws. */
+/** Fire and forget. A device without a haptic engine, or with haptics off, throws. */
 function safely(run: () => Promise<void>) {
   void run().catch(() => {});
 }
 
+const android = Platform.OS === 'android';
+
 export const feedback = {
   sealed() {
-    safely(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
+    safely(() =>
+      android
+        ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Confirm)
+        : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+    );
   },
   signed() {
-    safely(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+    safely(() =>
+      android
+        ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Confirm)
+        : Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium),
+    );
   },
   refused() {
-    safely(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
+    safely(() =>
+      android
+        ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Reject)
+        : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error),
+    );
+  },
+  selection() {
+    safely(() =>
+      android
+        ? Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Segment_Tick)
+        : Haptics.selectionAsync(),
+    );
   },
 };

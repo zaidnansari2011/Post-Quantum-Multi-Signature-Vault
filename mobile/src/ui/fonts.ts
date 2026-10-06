@@ -1,35 +1,33 @@
-// Font loading.
+// Font loading (phone-ux §4.2).
 //
-// Two families, five faces. That is more bytes than a system-font app would ship, and it is the
-// right trade here: the serif/sans split is not decoration, it is how a reader tells the decision
-// apart from the apparatus describing it, and a system stack cannot express that distinction on
-// both platforms.
+// Three faces, a job each: Public Sans for the interface, Source Serif 4 for the signed text only,
+// JetBrains Mono for hashes, keys and addresses only; plus the icon font outlined from the style
+// tile. Source Serif 600 is gone: nothing is bold serif.
 //
-// The app renders nothing until these resolve. A flash of the fallback face would reflow every
-// screen, and on the decision screen that means the sentence someone is reading jumps under their
-// eyes at the moment they are deciding whether to sign it.
+// Imported per weight, not from the package roots: a root barrel re-exports every face its family
+// ships, and Metro bundles every asset it can see a require for. All of these load at runtime
+// through expo-font, so they ship over the air.
+//
+// The app renders nothing until they resolve, since a fallback face would reflow the decision
+// under the reader's eyes; a font that fails to load does not hold the app hostage either.
 
-// Imported per weight, not from the package root. The root barrel re-exports every face the family
-// ships -- nine weights in roman and italic -- and Metro bundles an asset it can see a require for,
-// so the barrel form put 34 .ttf files into the build when this app uses five. That is around 2MB,
-// and it is 2MB in every over-the-air update as well as in the APK.
 import { useFonts } from 'expo-font';
-import { SourceSerif4_400Regular } from '@expo-google-fonts/source-serif-4/400Regular';
-import { SourceSerif4_600SemiBold } from '@expo-google-fonts/source-serif-4/600SemiBold';
+import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono/400Regular';
+import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono/500Medium';
 import { PublicSans_400Regular } from '@expo-google-fonts/public-sans/400Regular';
 import { PublicSans_500Medium } from '@expo-google-fonts/public-sans/500Medium';
 import { PublicSans_600SemiBold } from '@expo-google-fonts/public-sans/600SemiBold';
+import { SourceSerif4_400Regular } from '@expo-google-fonts/source-serif-4/400Regular';
 
 export function useAppFonts(): boolean {
   const [loaded, error] = useFonts({
-    SourceSerif4_400Regular,
-    SourceSerif4_600SemiBold,
     PublicSans_400Regular,
     PublicSans_500Medium,
     PublicSans_600SemiBold,
+    SourceSerif4_400Regular,
+    JetBrainsMono_400Regular,
+    JetBrainsMono_500Medium,
+    QVaultIcons: require('../../assets/fonts/QVaultIcons.ttf'),
   });
-
-  // A font that fails to load must not hold the app hostage -- an approver stuck behind a spinner
-  // because a typeface did not decode is a worse failure than one looking at a fallback face.
   return loaded || error != null;
 }
