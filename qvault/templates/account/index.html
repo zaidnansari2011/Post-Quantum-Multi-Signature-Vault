@@ -12,7 +12,7 @@
 
 <div class="q-acct">
   <section class="q-panel" aria-labelledby="pf-t">
-    <div class="q-panel__hd"><h2 class="q-panel__t" id="pf-t">Profile</h2>{{ avatar(current_user.display_name or current_user.email, 32, decorative=True) }}</div>
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="pf-t">Profile</h2></div>
     <div class="q-panel__bd">
       <form method="post" action="{{ url_for('account.update_profile') }}">
         {{ profile_form.hidden_tag() }}
@@ -20,14 +20,6 @@
         {{ field('email', 'Email', value=current_user.email, id='f-email-ro', caption='Your email identifies this account and can’t be changed.', attrs={'disabled': True}) }}
         {{ button('Save', 'primary', type='submit', name='submit', value='Save') }}
       </form>
-    </div>
-  </section>
-
-  <section class="q-panel" aria-labelledby="nt-t">
-    <div class="q-panel__hd"><h2 class="q-panel__t" id="nt-t">Notifications</h2></div>
-    <div class="q-panel__bd">
-      <p>Choose which events reach your bell and inbox. Security events are always on.</p>
-      {{ button('Notification preferences', 'secondary', href=url_for('notifications.preferences')) }}
     </div>
   </section>
 </div>

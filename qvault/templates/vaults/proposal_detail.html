@@ -61,7 +61,7 @@
 
 {#- ------------------------------------------------------------------ header -#}
 {% set raised %}{{ avatar(names.get(proposal.creator_id, 'Someone'), 20, decorative=True) }}<span>{{ names.get(proposal.creator_id, 'Someone') }}, {{ reltime(proposal.created_at) }}</span>{% endset %}
-{% set code %}<code class="q-code">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button>{% endset %}
+{% set code %}<code class="q-code">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches the start of the payload hash on your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button>{% endset %}
 {% set facts = [('Raised by', raised)] %}
 {% if proposal.status == 'open' and proposal.expires_at %}
   {% set due %}<span class="{{ 'q-due q-due--soon' if due_soon else 'q-due' }}">{% if due_soon %}{{ icon('warning') }}{% endif %}{{ ui_absolute(proposal.expires_at) }}</span>{% endset %}
@@ -100,7 +100,7 @@
 
 {% if not binding.ok %}
 <div class="q-dbanner">
-{{ banner('critical', 'Content altered since signing', binding.detail ~ ' The signatures below are each valid but don’t authorise this text, so they aren’t counted.' ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else '')) }}
+{{ banner('critical', ev.outcome[0][:-1], binding.detail ~ ' ' ~ ev.outcome[1] ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else '')) }}
 </div>
 {% endif %}
 
@@ -159,7 +159,7 @@
     {%- else %}
       Expired with {{ approvals }} of the {{ proposal.required_m }} approvals it needed.
     {%- endif %}
-    {%- if device_signed_n %} {{ device_signed_n }} of these signatures {{ 'was' if device_signed_n == 1 else 'were' }} made with a phone key, which never leaves the phone that holds it.{% endif -%}
+    {%- if device_signed_n %} {{ device_signed_n }} of the signatures below {{ 'was' if device_signed_n == 1 else 'were' }} made with a phone key, which never leaves the phone that holds it.{% endif -%}
   </p>
 
   <ol class="q-tl">
@@ -179,7 +179,7 @@
         <p class="q-tl__sub">
           {{- key_word(s.custody) }}.
           {%- if not v.verified %} The signature didn’t verify, so it isn’t counted.
-          {%- elif s.decision == 'approve' and binding.ok %} Signed {{ counted.n }} of {{ proposal.required_m }}.{% endif -%}
+          {%- elif s.decision == 'approve' and binding.ok and counted.n <= proposal.required_m %} Signed {{ counted.n }} of {{ proposal.required_m }}.{% endif -%}
         </p>
         {% if s.reason %}<p class="q-tl__q">“{{ s.reason }}”</p>{% endif %}
       </div>
@@ -250,14 +250,14 @@
         {%- elif payout.state == 'not_paid' %}Not paid<span class="q-cap">{{ payout.reason[:1]|upper }}{{ payout.reason[1:] }}.</span>
         {%- else %}
           <span class="q-line">{{ status(ev_payout_status(payout.state) or 'queued') }}
-          {%- if payout.tx_hash %}<a class="q-ext q-mono" href="https://sepolia.etherscan.io/tx/{{ payout.tx_hash }}" target="_blank" rel="noreferrer noopener">{{ payout.tx_hash[:18] }}…</a>{% endif %}</span>
+          {%- if payout.tx_hash %}{{ hash(payout.tx_hash, 'transaction hash', 10, 8) }}<a class="q-ext" href="https://sepolia.etherscan.io/tx/{{ payout.tx_hash }}" target="_blank" rel="noreferrer noopener">View on Etherscan</a>{% endif %}</span>
           {%- if payout.state == 'submitting' %}<span class="q-cap">Sent to {{ p.network }}, waiting for a block.</span>
           {%- elif payout.state == 'queued' %}<span class="q-cap">The treasury pays at its next check.</span>
           {%- elif payout.state == 'confirmed' %}<span class="q-cap">{% if payout.block_number %}Block {{ '{:,}'.format(payout.block_number) }}{% endif %}{% if payout.gas_used %}, gas {{ '{:,}'.format(payout.gas_used) }}{% endif %}.</span>
           {%- elif payout.reason %}<span class="q-cap">{{ payout.reason[:1]|upper }}{{ payout.reason[1:] }}.</span>{% endif %}
         {%- endif -%}
       </dd></div>
-      <div><dt>Treasury authorisations</dt><dd>{{ payout.execution_signatures }} of {{ payout.needed }}<span class="q-cap">Each approval of a payment also signs the digest the treasury contract checks.</span></dd></div>
+      <div><dt>Treasury authorisations</dt><dd>{{ payout.execution_signatures }} of {{ payout.needed }} recorded<span class="q-cap">Each approval of a payment also signs the digest the treasury contract checks; the contract checks them again before it pays.</span></dd></div>
       {% endif %}
       <div><dt>Approvals valid until</dt><dd>{{ ui_absolute(ev_unix(p.valid_until)) }}<span class="q-cap">After this the treasury refuses the payment, even if it is approved.</span></dd></div>
     </dl>
@@ -268,18 +268,15 @@
 
 {#- ------------------------------------------------------------------ 4. checks, in brief -#}
 <section class="q-dblk" aria-labelledby="chk-t">
-  <h2 class="q-dblk__t" id="chk-t">Checks</h2>
-  {% set sigs_ok = ev.checks | selectattr('short', 'equalto', '') | selectattr('state', 'equalto', 'passed') | list | length %}
-  {% set sigs_bad = ev.checks | selectattr('short', 'equalto', '') | selectattr('state', 'equalto', 'failed') | list | length %}
+  <h2 class="visually-hidden" id="chk-t">Checks</h2>
   <div class="q-brief{% if ev.failed %} is-bad{% endif %}">
     {{ check_icon('failed' if ev.failed else 'passed') }}
     <div class="q-brief__b">
       <p class="q-brief__t">{{ ev.summary }}</p>
-      <p class="q-brief__l">
-        {%- for c in ev.checks if c.short and c.state == 'failed' %}<span class="q-brief__bad">{{ c.short }}.</span> {% endfor -%}
-        {%- if sigs_bad %}<span class="q-brief__bad">{{ sigs_bad }} signature{{ '' if sigs_bad == 1 else 's' }} didn’t verify.</span> {% endif -%}
-        {%- for c in ev.checks if c.short and c.state != 'failed' %}{{ c.short }}. {% if c.key == 'log' and sigs_ok %}{{ sigs_ok }} signature{{ '' if sigs_ok == 1 else 's' }} valid. {% endif %}{% endfor -%}
-      </p>
+      {%- set failing = ev.checks | selectattr('state', 'equalto', 'failed') | list %}
+      {%- if failing %}
+      <p class="q-brief__l">{% for c in failing %}<span class="q-brief__bad">{{ c.short or c.title }}.</span> {% endfor %}</p>
+      {%- endif %}
     </div>
     <a class="q-brief__a" href="{{ here }}?tab=evidence">See the evidence</a>
   </div>
@@ -354,7 +351,7 @@
         <div><dt>Signature SHA-256</dt><dd>{{ hash(r.sha256, 'signature SHA-256') }}</dd></div>
       </dl>
       <dl class="q-kv">
-        <div><dt>Signed message</dt><dd>“{{ ev.payload.vote_domain }}” with payload hash {{ hash(s.signed_payload_hash, 'signed payload hash') }}, decision “{{ s.decision }}”, signer {{ s.signer_id }}</dd></div>
+        <div><dt>Signed message</dt><dd>“{{ ev.payload.vote_domain }}”, decision “{{ s.decision }}”, signer {{ s.signer_id }}<span class="q-line">Payload hash {{ hash(s.signed_payload_hash, 'signed payload hash') }}</span></dd></div>
         {% if r.execution_sha256 %}
         <div><dt>Also signed</dt><dd>Treasury digest {{ hash(r.execution_digest, 'treasury digest', 10, 8) }}<span class="q-cap">Payment approvals sign the digest the treasury contract checks.</span></dd></div>
         <div><dt>Treasury signature SHA-256</dt><dd>{{ hash(r.execution_sha256, 'treasury signature SHA-256') }}</dd></div>
@@ -390,8 +387,11 @@
         <div><dt>Checkpoint</dt><dd>No signed checkpoint covers this decision’s newest entry yet.</dd></div>
         {% endif %}
         {% if ev.log.entries is not none %}
+        {% set wc = ev.witness_check %}
         <div><dt>Log status</dt><dd>{{ '{:,}'.format(ev.log.entries) }} entries.
-          {%- if ev.log.witnessed is not none %} The witness has co-signed up to {{ '{:,}'.format(ev.log.witnessed) }}, {{ ev.log.lag }} {{ 'entry' if ev.log.lag == 1 else 'entries' }} behind the newest checkpoint.{% else %} No witness has co-signed a checkpoint yet.{% endif %}</dd></div>
+          {%- if wc.size and wc.ok %} The witness has co-signed up to entry #{{ '{:,}'.format(wc.size - 1) }}{% if ev.log.lag %}, {{ ev.log.lag }} {{ 'entry' if ev.log.lag == 1 else 'entries' }} behind the newest checkpoint{% endif %}.
+          {%- elif wc.size %} The log no longer holds the tree the witness co-signed.
+          {%- else %} No witness has co-signed a checkpoint yet.{% endif %}</dd></div>
         {% endif %}
       </dl>
     </div>
@@ -448,6 +448,8 @@
           {{ button('Create public link', 'secondary', type='submit', size='sm', name='submit', value='Create public link') }}
         </form>
         <span class="q-cap">Publishing is recorded in the audit log with your name against it.</span>
+      {%- elif proposal.status in ('expired', 'withdrawn') %}
+        Not shared<span class="q-cap">Only an approved or rejected decision can have a public link.</span>
       {%- else %}
         Not yet decided<span class="q-cap">It can be shared once it is approved or rejected.</span>
       {%- endif -%}
@@ -497,7 +499,7 @@
       <span class="q-codeblock__l">Decision code</span>
       <span class="q-line"><code class="q-codeblock__v">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button></span>
       <p class="q-codeblock__s">Check this code matches your phone.</p>
-      <p class="q-cap">Your phone works out this code on its own from the text it shows. If the code or the text differs, don’t sign.</p>
+      <p class="q-cap">It is the first 8 characters of the payload hash, which your phone works out on its own from the text it shows. If they differ, or the text does, don’t sign.</p>
     </div>
     {% for line in approve_lines %}<p class="q-conseq">{{ line }}</p>{% endfor %}
     {{ field('password', 'Password', type='password', id='f-password-approve', required=True, caption='Unlocks your signing key for this signature only. It isn’t stored.', attrs={'autocomplete': 'current-password', 'autofocus': True}) }}

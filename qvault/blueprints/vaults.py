@@ -464,7 +464,12 @@ def proposal_detail(vid: int, pid: str):
     device_signed = sum(1 for s in proposal.signatures if s.custody == "device")
 
     my_vote = approval_service.vote_of(proposal, current_user.id)
-    is_signer = current_user.id in {m.user_id for m in vault.signer_members()}
+    # An approver of THIS decision: in its frozen signer set (what the service authorises
+    # against) and still a signer of the vault. Someone added after it was raised is neither
+    # offered a vote nor told it needs them (rework R2, the personal status).
+    is_signer = current_user.id in {m.user_id for m in vault.signer_members()} and (
+        current_user.id in evidence_service.approver_ids(proposal)
+    )
     can_vote = proposal.status == "open" and is_signer and my_vote is None
     binding = approval_service.verify_proposal_binding(proposal)
     # Approving a payment signs what the treasury will pay, built from the stored payment; when

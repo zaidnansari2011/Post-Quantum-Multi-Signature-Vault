@@ -153,4 +153,4 @@ def test_the_decision_page_distinguishes_device_from_server_custody(client):
     # sentence states the split, so the count is legible without reading the timeline.
     assert "Phone key" in body
     assert "Password key" in body
-    assert "1 of these signatures was made with a phone key" in body
+    assert "1 of the signatures below was made with a phone key" in body

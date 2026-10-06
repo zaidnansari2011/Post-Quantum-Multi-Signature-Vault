@@ -82,9 +82,9 @@ def test_one_rejection_in_a_2_of_4_vault_does_not_end_the_decision():
     # Rejected only when rejections exceed N - M = 2 (style tile finding 1).
     lines = evidence.reject_consequence(rejections=0, required_m=2, required_n=4)
     assert "doesn’t end this decision on its own" in lines[0]
-    assert "2 more approvers reject it too" in lines[0]
+    assert "2 more rejections would end it." in lines[0]
     lines = evidence.reject_consequence(rejections=1, required_m=2, required_n=4)
-    assert "1 more approver rejects it too" in lines[0]
+    assert "1 more rejection would end it." in lines[0]
 
 
 @pytest.mark.parametrize("m, n, rejections", [(2, 2, 0), (2, 4, 2), (3, 5, 2)])
@@ -193,7 +193,7 @@ def test_the_header_carries_the_decision_code_from_the_stored_hash(client, decis
     page = _page(client, decision)
     code = evidence.decision_code(decision.payload_hash)
     assert "Decision code" in page and code in page
-    assert 'title="Check this code matches your phone."' in page
+    assert 'title="Check this code matches the start of the payload hash on your phone."' in page
     assert 'data-status="approved"' in page
 
 
@@ -320,3 +320,37 @@ def test_the_account_is_split_into_three_sections(client, decision):
     security = client.get("/account/security").get_data(as_text=True)
     assert "Change password" in security and "Signing key" in security
     assert "There is no password reset." in security
+
+
+def test_rewriting_the_hash_with_the_text_fails_the_content_check(app, client, decision):
+    """Truth review H1: the text and its own hash column edited together. The row agrees with
+    itself, so only the log's record and the signatures can say it isn't what was signed."""
+    from qvault.crypto import sha256_hex
+    from qvault.extensions import db
+    from qvault.services.signing import signing_bytes_for
+
+    signed_code = evidence.decision_code(decision.payload_hash)
+    decision.action_text = "Wire 250,000 EUR to account GB29-ATTACKER-0001."
+    decision.payload_hash = sha256_hex(signing_bytes_for(decision))
+    db.session.commit()
+    _login(client)
+    page = _page(client, decision, "evidence")
+    content = re.search(r"Contents match what was signed.*?</li>", page, re.S).group(0)
+    assert ">Failed<" in content and f"what was signed has code {signed_code}" in content
+    assert "every signature covers" not in page
+    overview = _page(client, decision)
+    assert "Content verified" not in overview
+
+
+def test_an_approver_added_after_the_decision_is_not_asked_to_sign_it(app, client):
+    """Truth review H3: the service authorises against the frozen signer set, so the page must
+    too. Someone made an approver later sees the decision, but it doesn't need them."""
+    owner = auth_service.register_user("ev-own2@e.com", "Owner", PASSWORD)
+    vault = vault_service.create_vault(owner, "Ops", "", 1)
+    proposal = proposal_service.create_proposal(vault, owner, "Ship", "Ship release 4.3.")
+    late = auth_service.register_user("ev-late@e.com", "Late", PASSWORD)
+    vault_service.add_member(vault, late.email, "signer", actor_id=owner.id)
+    _login(client, "ev-late@e.com")
+    page = _page(client, proposal)
+    assert 'data-status="waiting"' in page and 'data-status="needs_you"' not in page
+    assert 'name="approve"' not in page and "View only" in page

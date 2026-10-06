@@ -27,6 +27,7 @@ from qvault.models.ledger import LedgerEntry
 from qvault.models.treasury import ExecutionSignature
 from qvault.models.user import User
 from qvault.services import approval_service, checkpoint_service, receipt_service
+from qvault.services.ledger_service import compute_entry_hash
 from qvault.services.signing import (
     DS_PROPOSAL,
     DS_VOTE,
@@ -70,6 +71,7 @@ class DecisionEvidence:
     payload: dict = field(default_factory=dict)
     payment: dict | None = None
     log: dict = field(default_factory=dict)
+    witness_check: dict = field(default_factory=dict)
 
     @property
     def failed(self) -> bool:
@@ -124,7 +126,10 @@ def verify_cosignature(cosignature: WitnessCosignature) -> bool:
     """Verify a stored witness co-signature again, now, over its checkpoint's statement.
 
     It was verified before it was stored (``checkpoint_service.sync_witness``); this repeats the
-    check so a row edited since cannot be shown as Valid.
+    check so an edited signature or statement cannot be shown as Valid. It is checked against the
+    key stored with the row, which the server does not pin: a row whose key and signature were
+    both replaced would still verify, which is why every screen shows the witness's key
+    fingerprint beside the result, for comparison with the witness's own.
     """
     registry = current_app.extensions["crypto"]
     if not registry.has_signature(cosignature.alg_id):
@@ -155,6 +160,35 @@ def _inclusion(seq: int, checkpoint: LogCheckpoint) -> dict:
     except (checkpoint_service.LogError, IndexError, ValueError):
         return {"seq": seq, "length": None, "valid": False}
     return {"seq": seq, "length": len(proof), "valid": valid}
+
+
+def entry_intact(entry: LedgerEntry) -> bool:
+    """Recompute one log entry's hash and its payload's hash, as ``verify_chain`` does for each.
+
+    The decision page cites its own entries ("entry #12 recorded this decision"); this is what
+    lets it say so only of an entry whose contents still match the hash the Merkle tree holds.
+    """
+    if sha256_hex(entry.payload_json.encode("utf-8")) != entry.payload_hash:
+        return False
+    return (
+        compute_entry_hash(
+            seq=entry.seq,
+            timestamp=entry.timestamp,
+            actor=entry.actor,
+            event_type=entry.event_type,
+            payload_hash=entry.payload_hash,
+            prev_hash=entry.prev_hash,
+            actor_id=entry.actor_id,
+            vault_id=entry.vault_id,
+            ref_type=entry.ref_type,
+            ref_id=entry.ref_id,
+        )
+        == entry.entry_hash
+    )
+
+
+def _plural(n: int, one: str, many: str | None = None) -> str:
+    return f"{n} {one if n == 1 else (many or one + 's')}"
 
 
 def _alg_meta(alg_id: str):
@@ -213,20 +247,40 @@ def decision_evidence(
             for c in checkpoint.cosignatures
         ]
     ev.log = checkpoint_service.log_summary()
+    ev.witness_check = witness_check()
+    # Every entry the page cites, recomputed: an edited entry must not be quoted as a record.
+    cited = list(entries) + [e for e in sig_entry.values() if e is not None]
+    broken = sorted({e.seq for e in cited if not entry_intact(e)})
 
     # ---- layer 2: the checks
     checks: list[Check] = []
     recomputed_code = evidence.decision_code(binding.recomputed_hash)
     hash_ok = binding.recomputed_hash == binding.recorded_hash
+    # "Every signature covers it" is checked, not assumed: the stored hash must be the one the
+    # log recorded when the decision was raised, and the one each signature committed to. A row
+    # edited together with its own hash column passes the first comparison and fails these.
+    covered = all(v["sig"].signed_payload_hash == binding.recorded_hash for v in votes)
     what = "text, payment and approval rule" if is_payment else "text and approval rule"
-    if hash_ok:
+    if hash_ok and binding.ledger_matches and covered and created is not None:
+        line = f"The {what} still produce code {ev.code}, the code the log recorded"
+        line += " and every signature covers." if votes else " when this decision was raised."
+        checks.append(
+            Check("content", "Contents match what was signed", line, "passed", "Content verified")
+        )
+    elif hash_ok:
+        signed = binding.ledger_hash or next((v["sig"].signed_payload_hash for v in votes), None)
         checks.append(
             Check(
                 "content",
                 "Contents match what was signed",
-                f"The {what} still produce code {ev.code}, which every signature covers.",
-                "passed",
-                "Content verified",
+                f"What is stored now produces code {ev.code}, but "
+                + (
+                    f"what was signed has code {evidence.decision_code(signed)}."
+                    if signed
+                    else "no record of what was signed survives."
+                ),
+                "failed",
+                "Content altered",
             )
         )
     else:
@@ -255,7 +309,15 @@ def decision_evidence(
                     else problem
                 ),
                 "passed" if problem is None else "failed",
-                "Text matches the payment" if problem is None else "Text doesn’t match the payment",
+                (
+                    "Text matches the payment"
+                    if problem is None
+                    else (
+                        "Treasury doesn’t match the payment"
+                        if "treasury" in problem
+                        else "Text doesn’t match the payment"
+                    )
+                ),
             )
         )
 
@@ -269,6 +331,14 @@ def decision_evidence(
             "failed",
             f"The log recorded code {evidence.decision_code(binding.ledger_hash)} for this "
             f"decision, not {ev.code}.",
+        )
+    elif broken:
+        numbers = ", ".join(f"#{n:,}" for n in broken)
+        log_check = (
+            "failed",
+            f"Log {'entry' if len(broken) == 1 else 'entries'} {numbers} no longer "
+            f"{'matches' if len(broken) == 1 else 'match'} the hash the log holds, so "
+            f"{'it' if len(broken) == 1 else 'they'} can’t be relied on.",
         )
     elif unlogged:
         log_check = (
@@ -317,7 +387,7 @@ def decision_evidence(
                     "It didn’t verify against the key registered to "
                     f"{whose}, so it isn’t counted.",
                     "failed",
-                    "",
+                    f"{_possessive(who)} signature didn’t verify",
                 )
             )
 
@@ -333,12 +403,15 @@ def decision_evidence(
         )
     else:
         cp = ev.checkpoint["row"]
-        ok = ev.checkpoint["valid"] and ev.inclusion["valid"]
+        ok = ev.checkpoint["valid"] and ev.inclusion["valid"] and highest not in broken
         if ok:
             line = (
                 f"The log signed a checkpoint of {cp.tree_size:,} entries, and an inclusion proof "
-                f"of {ev.inclusion['length']} hashes places entry #{highest:,} in it."
+                f"of {_plural(ev.inclusion['length'], 'hash', 'hashes')} places entry "
+                f"#{highest:,} in it."
             )
+        elif highest in broken:
+            line = f"Entry #{highest:,} no longer matches the hash the checkpoint includes."
         elif not ev.checkpoint["valid"]:
             line = "The checkpoint’s signature didn’t verify against the log key."
         else:
@@ -361,7 +434,8 @@ def decision_evidence(
                 "witness",
                 "Witnessed",
                 f"{first.witness_name}, an independent witness, co-signed that checkpoint on "
-                f"{evidence.precise_time(first.created_at)}.",
+                f"{evidence.precise_time(first.created_at)}, with the key whose fingerprint is "
+                f"{good[0]['fingerprint']}.",
                 "passed",
                 "Witnessed",
             )
@@ -466,9 +540,16 @@ def decision_evidence(
 def outcome_sentence(proposal, *, binding, payout: dict | None, ev: DecisionEvidence):
     """Layer 1: what is true about this decision, in one bold clause and one plain one."""
     if not binding.ok:
-        return (
-            "Content altered since signing.",
-            "The signatures are each valid but don’t authorise this text, so they aren’t counted.",
+        if binding.content_matches and binding.ledger_hash is None:
+            first = "The log’s record of this decision is missing."
+        elif binding.content_matches:
+            first = "The stored code disagrees with the log."
+        else:
+            first = "Content altered since signing."
+        valid = sum(1 for c in ev.checks if c.key.startswith("signature:") and c.state == "passed")
+        return first, (
+            f"{_plural(valid, 'signature')} still verif{'ies' if valid == 1 else 'y'}, but none "
+            "is counted, because what they cover isn’t provably this text."
         )
     approvals, _ = approval_service.tally(proposal)
     m = proposal.required_m
@@ -487,7 +568,7 @@ def outcome_sentence(proposal, *, binding, payout: dict | None, ev: DecisionEvid
             if state == "confirmed":
                 block = payout.get("block_number")
                 return "Paid.", (
-                    f"The treasury sent {payment}"
+                    f"The treasury sent {payment or 'the payment'}"
                     + (f", confirmed in block {block:,}." if block else ".")
                 )
             if state in ("failed", "voided", "expired"):
@@ -500,7 +581,7 @@ def outcome_sentence(proposal, *, binding, payout: dict | None, ev: DecisionEvid
         return "Rejected.", f"Enough approvers rejected it on {when} that it can’t be approved."
     if proposal.status == "expired":
         due = evidence.precise_time(proposal.expires_at) if proposal.expires_at else "its due time"
-        return "Expired.", f"Its due time, {due}, passed before it had {m} approvals."
+        return "Expired.", f"Its due time, {due}, passed before it had {_plural(m, 'approval')}."
     return "", ""
 
 
@@ -649,8 +730,8 @@ def describe(rows: list[dict], viewer) -> None:
             sentence = f"{title[:1].upper()}{title[1:]} in {vault} was rejected."
         elif e.event_type == "proposal_expired":
             sentence = (
-                f"{title[:1].upper()}{title[1:]} in {vault} expired before enough people "
-                "signed it."
+                f"{title[:1].upper()}{title[1:]} in {vault} expired before it had enough "
+                "approvals."
             )
         elif e.event_type in ("member_added", "member_removed", "member_role_changed"):
             member = people.get(data.get("user_id"))
