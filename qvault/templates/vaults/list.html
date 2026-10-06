@@ -1,65 +1,44 @@
 {% extends "base.html" %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/data.html" import data_table %}
+{% from "ui/avatars.html" import avatar_stack %}
+{% from "ui/work.html" import rule %}
 {% block title %}Vaults — Q-Vault{% endblock %}
-{% block bodyclass %}body body--flush{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Vaults</div>
-    <div class="head__sub">{{ rows|length }} vault{{ '' if rows|length == 1 else 's' }}</div>
-  </div>
-  {% if can_create_vaults %}
-  <div class="head__actions">
-    <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">New vault</a>
-  </div>
-  {% endif %}
-</div>
-{% endblock %}
-
+{#- Vaults (rework R2, plan section 5): each vault's rule, who approves, and what in it is open or
+    waits on you. A treasury's balance is read from the chain, one call per vault, so it stays on
+    the vault's own Treasury tab rather than slowing this list. -#}
 {% block content %}
-{% if rows %}
-<div class="scroll-x">
-  <table class="dt">
-    <thead>
-      <tr>
-        <th style="width:34%">Vault</th>
-        <th>Policy</th>
-        <th class="num">Members</th>
-        <th class="num">Open</th>
-        <th>Waiting on you</th>
-        <th>File encryption</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      <tr {% if r.needs_me %}class="is-unread"{% endif %}>
-        <td>
-          <a class="dt__link truncate" href="{{ url_for('vaults.vault_detail', vid=r.vault.id) }}">{{ r.vault.name }}</a>
-          {% if r.vault.description %}<span class="dt__sub truncate">{{ r.vault.description }}</span>{% endif %}
-        </td>
-        <td class="mono nowrap">{{ r.vault.policy.threshold_m }} of {{ r.signers }}</td>
-        <td class="num">{{ r.vault.members|length }}</td>
-        <td class="num">{{ r.open }}</td>
-        <td>
-          {% if r.needs_me %}
-            <span class="chip chip--waiting">{{ r.needs_me }}</span>
-          {% else %}
-            <span class="tiny muted">—</span>
-          {% endif %}
-        </td>
-        <td><span class="tag">{{ r.vault.kem_alg_id }}</span></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% else %}
-<div class="empty">
-  <div class="empty__title">No vaults</div>
-  <p class="empty__sub">A vault holds a group of people and the number of them who must agree.</p>
-  {% if can_create_vaults %}
-  <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">Create a vault</a>
-  {% endif %}
-</div>
-{% endif %}
+{% call page_header('Vaults', 'A vault is a group of people and how many of them must agree.') %}
+  {%- if can_create_vaults %}{{ button('New vault', 'primary', href=url_for('vaults.new_vault'), icon='plus') }}{% endif -%}
+{% endcall %}
+
+{% call data_table([
+    {'key': 'vault', 'label': 'Vault'},
+    {'key': 'rule', 'label': 'Rule'},
+    {'key': 'approvers', 'label': 'Approvers'},
+    {'key': 'open', 'label': 'Open', 'numeric': True},
+    {'key': 'you', 'label': 'Waiting on you', 'numeric': True}],
+    rows|length > 0, label='Your vaults', stack=True,
+    empty_title='No vaults yet',
+    empty_caption='A vault holds a group of people and the number of them who must agree.',
+    empty_action={'label': 'Create a vault', 'href': url_for('vaults.new_vault')} if can_create_vaults else None) %}
+  {%- for r in rows %}
+  {%- set v = r.vault %}
+  {%- set people = v.signer_members() | map(attribute='user') | list %}
+  <tr class="q-drow">
+    <td class="q-c-main">
+      <span class="q-dec">
+        <a class="q-dec__link" href="{{ url_for('vaults.vault_detail', vid=v.id) }}">{{ v.name }}</a>
+        {%- if v.description %}<span class="q-dec__d">{{ v.description }}</span>{% endif %}
+      </span>
+    </td>
+    <td class="q-c-meta">{{ rule(v.policy.threshold_m, r.signers) }}</td>
+    <td class="q-c-wide-only">{{ avatar_stack(people | map(attribute='display_name') | list, 4, 20) }}</td>
+    <td class="is-num q-c-status"><span class="q-c-label">Open </span>{{ r.open }}</td>
+    <td class="is-num q-c-end">{% if r.needs_me %}<span class="q-badge q-badge--warning">{{ r.needs_me }} need{{ 's' if r.needs_me == 1 }} you</span>{% else %}<span class="q-muted">None</span>{% endif %}</td>
+  </tr>
+  {%- endfor %}
+{% endcall %}
 {% endblock %}
