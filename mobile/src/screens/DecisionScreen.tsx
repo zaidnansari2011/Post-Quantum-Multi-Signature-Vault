@@ -55,6 +55,7 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
 import {
+  NoScreenLockError,
   NotThisPhonesSeatError,
   PayloadMismatchError,
   SelfVerificationError,
@@ -492,6 +493,12 @@ function describe(err: unknown): { title: string; detail?: string } {
   }
   if (err instanceof NotThisPhonesSeatError) {
     return { title: 'Not signed on this phone.', detail: err.message };
+  }
+  if (err instanceof NoScreenLockError) {
+    return {
+      title: err.message,
+      detail: 'Q-Vault asks for it before every signature. Nothing was signed.',
+    };
   }
   if (err instanceof Error && err.name === 'AuthenticationCancelled') {
     return { title: 'Nothing was signed.' };

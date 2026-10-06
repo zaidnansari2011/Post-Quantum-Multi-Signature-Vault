@@ -19,6 +19,7 @@ import { useSession } from '../session.tsx';
 import { detectProtection } from '../keystore.ts';
 import type { ProtectionLevel } from '../custody.ts';
 import { ApiError, TransportError } from '../api/client.ts';
+import { NoScreenLockError } from '../flows.ts';
 import { ELIGIBLE_ALGORITHM_IDS } from '../crypto/algorithms.ts';
 
 const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
@@ -130,6 +131,12 @@ export default function EnrolScreen() {
 
 /** Turn a thrown value into something worth reading. Errors say what to do, not what broke. */
 function describe(err: unknown): { title: string; detail?: string } {
+  if (err instanceof NoScreenLockError) {
+    return {
+      title: err.message,
+      detail: 'Q-Vault asks for your PIN, pattern or fingerprint before every signature.',
+    };
+  }
   if (err instanceof ApiError) {
     switch (err.code) {
       case 'invalid_credentials':
