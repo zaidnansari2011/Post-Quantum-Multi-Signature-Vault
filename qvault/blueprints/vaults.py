@@ -394,6 +394,11 @@ def new_proposal(vid: int):
         deadline = form.deadline.data
         if deadline is not None and deadline.tzinfo is None:
             deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
+        if deadline is not None and deadline <= datetime.now(UTC):
+            # It would be expired the moment it was raised. Payments are refused the same way by
+            # the D23 policy; a general decision had no check.
+            flash("Choose a due time in the future.", "danger")
+            return _new_decision_page(form, vault, "general")
         try:
             proposal = proposal_service.create_proposal(
                 vault,

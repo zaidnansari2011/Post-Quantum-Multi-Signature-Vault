@@ -408,7 +408,7 @@ def test_the_new_decision_page_shows_the_preview_and_styled_controls(app, team, 
     page = client.get(f"/vaults/{vault.id}/proposals/new").get_data(as_text=True)
     assert "Who approves" in page and "Any 2 of Brij, Chen and you" in page
     assert "You’re one of the approvers" in page
-    assert "Brij and Chen are asked to approve" in page
+    assert "Brij and Chen are notified in Q-Vault" in page
     assert 'type="date' not in page, "no native date control (plan section 3)"
     assert "data-due-field" in page and "data-drop" in page
     assert 'name="title"' in page and 'name="action_text"' in page
@@ -518,3 +518,39 @@ def test_the_api_says_the_web_word_and_drops_expired_work_from_awaiting(app, tea
     vaults = client.get("/api/v1/vaults", headers=auth).get_json()["vaults"]
     assert vaults[0]["awaiting_me"] == 1
     assert live.status == "open"
+
+
+def test_a_due_time_in_the_past_is_refused_rather_than_born_expired(app, team, client):
+    vault, ada, *_ = team
+    _login(client, "ada@e.com")
+    past = (datetime.now(UTC) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
+    page = client.post(
+        f"/vaults/{vault.id}/proposals/new",
+        data={"title": "Too late", "action_text": "Do it.", "deadline": past},
+    ).get_data(as_text=True)
+    assert "Choose a due time in the future." in page
+    assert inbox_service.search(ada, Filters(tab="all")).total == 0
+
+
+def test_the_feed_badge_for_an_approved_payment_is_the_lists_word(app, team):
+    vault, ada, *_ = team
+    app.config["ONCHAIN_EXECUTION_ENABLED"] = True
+    _link_placeholder_treasury(vault)
+    p = proposal_service.create_proposal(
+        vault, ada, "Pay", "", payment=PaymentRequest(to=RECIPIENT, value_wei=10**17)
+    )
+    from qvault.services import ledger_service
+
+    p.status = "approved"
+    ledger_service.append(
+        "proposal_approved",
+        {"proposal_uuid": p.proposal_uuid, "vault_id": vault.id, "approvals": 2, "M": 2, "N": 3},
+        actor=f"user:{ada.id}",
+        actor_id=ada.id,
+        vault_id=vault.id,
+        ref_type="proposal",
+        ref_id=p.proposal_uuid,
+    )
+    feed = audit_service.decision_feed(ada)
+    row = inbox_service.decorate([p], ada, inbox_service.signer_vault_ids(ada))[0]
+    assert feed[0]["status"] == row["status_key"] == "queued"

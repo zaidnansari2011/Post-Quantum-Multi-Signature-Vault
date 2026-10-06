@@ -35,7 +35,7 @@ from qvault.extensions import db
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.treasury import TreasurySigner
-from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember
+from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
     approval_service,
@@ -802,13 +802,11 @@ def _summary_facts(proposal, user, approvals: int, rejections: int) -> dict:
     lists and the inbox use. Additive: ``status`` stays the stored value the app already reads,
     and the app may show this word instead of working one out."""
     status = inbox_service.effective_status(proposal)
-    authorised = user.id in _authorized_ids(proposal)
-    member = proposal.vault.member_for(user.id) if proposal.vault else None
+    # The same test as this API's awaiting list (the frozen signer set, not yet voted), so a row
+    # in it never says Waiting on N; the vote route checks no more than that either.
     needs_me = (
         status == "open"
-        and authorised
-        and member is not None
-        and member.member_role in SIGNER_ROLES
+        and user.id in _authorized_ids(proposal)
         and approval_service.vote_of(proposal, user.id) is None
     )
     payout = payout_service.payout_of(proposal) if proposal.action is not None else None

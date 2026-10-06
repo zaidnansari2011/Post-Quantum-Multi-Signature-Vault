@@ -28,7 +28,7 @@
     {{ icon('payment') }}<span class="q-typecard__t">Payment</span>
     <span class="q-typecard__c">Paid from the vault’s treasury once approved</span>
   </a>
-  {%- else %}
+  {%- elif config.ONCHAIN_EXECUTION_ENABLED %}
   <span class="q-typecard is-off" aria-disabled="true">
     {{ icon('payment') }}<span class="q-typecard__t">Payment</span>
     <span class="q-typecard__c">Needs a treasury linked to this vault</span>
@@ -52,7 +52,7 @@
     {{ due_field('deadline', 'Due', deadline_value, error=form.deadline.errors, min=due_min, max=due_max,
                  empty='7 days after you raise it.',
                  caption='Type it as 2026-10-13 17:00, in UTC, or pick it from the calendar. At most 30 days away.') }}
-    <p class="q-compose__note">Q-Vault writes the decision text from the payment, so approvers sign exactly what the treasury will pay.</p>
+    <p class="q-compose__note">The decision text is written from the payment, so it says exactly what the treasury will pay.</p>
     {%- else %}
     {{ field('action_text', 'Decision text', type='textarea', value=form.action_text.data, error=form.action_text.errors, required=True,
              caption='The exact words every approver signs. Include amounts, names and references.',
@@ -82,10 +82,10 @@
       <div><dt>You</dt><dd>You’re one of the approvers, so your own approval counts towards the {{ preview.m }}.</dd></div>
       {%- endif %}
       {%- if preview.asked %}
-      <div><dt>Asked</dt><dd>{{ ui_names(preview.asked) }} {{ 'is' if preview.asked|length == 1 else 'are' }} asked to approve in Q-Vault when you raise it.</dd></div>
+      <div><dt>Asked</dt><dd>{{ ui_names(preview.asked) }} {{ 'is' if preview.asked|length == 1 else 'are' }} notified in Q-Vault when you raise it, unless they’ve turned that off.</dd></div>
       {%- endif %}
       {%- if is_payment and treasury %}
-      <div><dt>Then</dt><dd>Once {{ preview.m }} approve, the {{ vault.name }} treasury pays it on Sepolia, usually within a few minutes.</dd></div>
+      <div><dt>Then</dt><dd>Once {{ preview.m }} approve, the vault’s treasury pays it on Sepolia.</dd></div>
       {%- endif %}
     </dl>
     <p class="q-preview__cap">Approvers are fixed when you raise it. People added to {{ vault.name }} later can’t approve it.</p>

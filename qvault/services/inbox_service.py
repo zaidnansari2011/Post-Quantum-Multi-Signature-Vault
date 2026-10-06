@@ -297,10 +297,12 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     Kept out of the template because "does this need me?" is four conditions, and a template that
     computes it inline will drift from the SQL in ``_tab_condition`` that produced the counts.
 
-    ``needs_me`` matches what ``cast_vote`` will actually accept: open, this reader is a current
-    signer in the vault (the route requires it), this reader is in the proposal's frozen signer
-    set (the service requires it), and they have not already signed. Anything looser promises a
-    vote the server would refuse.
+    ``needs_me``: open, this reader is in the proposal's frozen signer set (``cast_vote``
+    requires it), they are an approver of the vault today, and they have not voted. The current
+    role is the same test the notifications use (``notification_service._eligible_approvers``);
+    the vote path itself checks only the frozen set and membership, so someone demoted to viewer
+    after a decision was raised is not asked for it here but could still sign it (recorded for
+    the owner in the R2 report).
 
     The rest is what a row shows since rework R2: approvals and rejections as stored votes (a list
     does not re-verify every signature; the decision page does), the status as a key of the closed

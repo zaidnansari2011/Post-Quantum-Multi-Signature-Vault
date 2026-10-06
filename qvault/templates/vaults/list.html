@@ -10,7 +10,7 @@
     waits on you. A treasury's balance is read from the chain, one call per vault, so it stays on
     the vault's own Treasury tab rather than slowing this list. -#}
 {% block content %}
-{% call page_header('Vaults', 'A vault is a group of people and how many of them must agree.') %}
+{% call page_header('Vaults') %}
   {%- if can_create_vaults %}{{ button('New vault', 'primary', href=url_for('vaults.new_vault'), icon='plus') }}{% endif -%}
 {% endcall %}
 
@@ -35,7 +35,7 @@
       </span>
     </td>
     <td class="q-c-meta">{{ rule(v.policy.threshold_m, r.signers) }}</td>
-    <td class="q-c-wide-only">{{ avatar_stack(people | map(attribute='display_name') | list, 4, 20) }}</td>
+    <td class="q-c-wide-only">{%- set people_names = [] %}{% for u in people %}{% set _ = people_names.append(u.display_name or u.email) %}{% endfor %}{{ avatar_stack(people_names, 4, 20) }}</td>
     <td class="is-num q-c-status"><span class="q-c-label">Open </span>{{ r.open }}</td>
     <td class="is-num q-c-end">{% if r.needs_me %}<span class="q-badge q-badge--warning">{{ r.needs_me }} need{{ 's' if r.needs_me == 1 }} you</span>{% else %}<span class="q-muted">None</span>{% endif %}</td>
   </tr>

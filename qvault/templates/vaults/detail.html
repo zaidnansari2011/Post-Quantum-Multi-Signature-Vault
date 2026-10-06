@@ -19,7 +19,7 @@
 {% for u in approvers %}{% set _ = approver_names.append('You' if u.id == current_user.id else ui_first_name(u.display_name or u.email)) %}{% endfor %}
 {% set role_word = {'owner': 'Owner', 'signer': 'Approver', 'viewer': 'Viewer, read only'}[me.member_role] %}
 {% set facts = [] %}
-{% set approvers_fact %}{{ avatar_stack(approvers | map(attribute='display_name') | list, 4, 20) }}<span>{{ ui_names(approver_names) }}</span>{% endset %}
+{% set approvers_fact %}{%- set approver_full = [] %}{% for u in approvers %}{% set _ = approver_full.append(u.display_name or u.email) %}{% endfor %}{{ avatar_stack(approver_full, 4, 20) }}<span>{{ ui_names(approver_names) }}</span>{% endset %}
 {% set _ = facts.append(('Approvers', approvers_fact)) %}
 {% set _ = facts.append(('Your role', role_word)) %}
 {% if linked %}
@@ -87,7 +87,7 @@
       {{ select('role', 'Role', [('signer', 'Approver'), ('viewer', 'Viewer')], 'signer', id='f-member-role') }}
       {{ button('Add member', 'secondary', type='submit') }}
     </div>
-    <p class="q-addrow__cap">They must already be in this workspace. An approver counts towards the rule and joins decisions raised after they’re added; open decisions keep the approvers they were raised with. A viewer reads and signs nothing.</p>
+    <p class="q-addrow__cap">Someone already in this workspace. A new approver joins decisions raised after today.</p>
   </form>
   {% endif %}
     {% set mcols = [
@@ -119,7 +119,7 @@
           {%- else %}{{ row.role }}{% endif -%}
         </td>
         <td class="q-c-aside q-nowrap">{% if row.custody %}{{ row.custody | join(', ') }}{% else %}<span class="q-muted">No signing key</span>{% endif %}</td>
-        <td class="q-c-end">{% if row.last_signed %}{{ reltime(row.last_signed) }}{% elif m.member_role == 'viewer' %}<span class="q-muted">Doesn’t sign</span>{% else %}<span class="q-muted">Never</span>{% endif %}</td>
+        <td class="q-c-end">{% if row.last_signed %}{{ reltime(row.last_signed) }}{% else %}<span class="q-muted">Never</span>{% endif %}</td>
         {%- if is_owner %}
         <td class="q-c-status q-c-actions">
           {%- if m.member_role != 'owner' %}

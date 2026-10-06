@@ -22,7 +22,8 @@
      a person can type "2026-10-13 17:00" into (the form reads that format and the native one),
      with a calendar button: qvault.js opens a month grid and a time list and writes the input,
      and reads the chosen moment back in words under the field ("Tue 13 Oct 2026, 17:00 UTC, in
-     7 days"). min and max (datetimes) bound the calendar; the server still checks them. empty is
+     7 days"). min and max (datetimes) bound the calendar; the route refuses a past due time and
+     a payment's longer than 30 days. empty is
      what the read-back says while the field is blank. Elements anywhere on the page marked
      data-due-echo="<id>" show the same words (the "who approves" preview).
 
