@@ -971,3 +971,12 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
   .q-compose__act .q-btn { --btn-h: var(--target-touch); }
   .q-typecard { max-width: none; }
 }
+
+/* ---------------------------------------------------------------- the vaults list (vaults/list.html) */
+
+.q-dec__d { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 56ch; }
+.q-c-label { display: none; }
+@media (max-width: 767px) {
+  .q-c-label { display: inline; color: var(--text-muted); }
+  .q-table--stack .q-c-status.is-num { text-align: left; }
+}
