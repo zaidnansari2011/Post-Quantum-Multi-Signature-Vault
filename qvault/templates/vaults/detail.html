@@ -16,9 +16,12 @@
       {{ vault.policy.threshold_m }} of {{ n_signers }} to approve · {{ vault.members|length }} members
     </div>
   </div>
+  {# A viewer is read-only: the route refuses them, so the button is not drawn. #}
+  {% if can_propose %}
   <div class="head__actions">
     <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">New decision</a>
   </div>
+  {% endif %}
 </div>
 
 <div class="tabs">
@@ -74,7 +77,9 @@
   <div class="empty">
     <div class="empty__title">No decisions</div>
     <p class="empty__sub">Nothing has been proposed in this vault.</p>
+    {% if can_propose %}
     <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}">Propose one</a>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -195,7 +200,9 @@
             <dd class="mono">{{ treasury_status.payouts_left_today }} of {{ treasury_status.payouts_per_day }} left</dd>
             {% endif %}
           </dl>
+          {% if can_propose %}
           <p><a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.new_proposal', vid=vault.id, kind='payment') }}">New payment</a></p>
+          {% endif %}
           {% elif treasury.job and treasury.job.state not in ('done', 'failed') %}
           <p class="small">{{ treasury.job.reason or treasury.job.state }}</p>
           {% if is_owner %}
