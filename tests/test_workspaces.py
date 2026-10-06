@@ -503,3 +503,145 @@ def test_creating_a_workspace_gives_it_a_unique_slug_and_an_owner(app):
     assert (one.slug, two.slug) == ("other-co", "other-co-2")
     assert workspace_service.membership(two, second).role == "owner"
     assert LedgerEntry.query.filter_by(event_type="workspace_created").count() == 2
+
+
+# --------------------------------------------------------------------------------------------
+# Who can be made an approver: an active member who is not an auditor
+
+
+def test_a_suspended_member_cannot_be_promoted_to_approver(app, team):
+    """Making a viewer an approver must not route around a suspension."""
+    workspace, ada, _, chen, _ = team
+    vault = vault_service.create_vault(ada, "Treasury", "", 1)
+    vault_service.add_member(vault, chen.email, "viewer", actor_id=ada.id)
+    workspace_service.suspend_member(workspace, chen.id, actor=ada)
+
+    with pytest.raises(MembershipError, match="isn't an active member"):
+        vault_service.change_member_role(vault, chen.id, "signer", actor_id=ada.id)
+
+    assert vault.member_for(chen.id).member_role == "viewer"
+    workspace_service.reinstate_member(workspace, chen.id, actor=ada)
+    vault_service.change_member_role(vault, chen.id, "signer", actor_id=ada.id)
+    assert chen.id in vault.signer_ids()
+
+
+def test_an_auditor_can_be_a_viewer_but_never_an_approver(app, team):
+    """Auditors are read-only (plan S10)."""
+    workspace, ada, _, chen, _ = team
+    workspace_service.change_role(workspace, chen.id, "auditor", actor=ada)
+    vault = vault_service.create_vault(ada, "Treasury", "", 1)
+
+    with pytest.raises(MembershipError, match="auditors are read-only"):
+        vault_service.add_member(vault, chen.email, "signer", actor_id=ada.id)
+    vault_service.add_member(vault, chen.email, "viewer", actor_id=ada.id)
+    with pytest.raises(MembershipError, match="auditors are read-only"):
+        vault_service.change_member_role(vault, chen.id, "signer", actor_id=ada.id)
+
+    assert vault.member_for(chen.id).member_role == "viewer"
+
+
+def test_an_auditor_cannot_create_a_vault(app, team):
+    workspace, ada, _, chen, _ = team
+    workspace_service.change_role(workspace, chen.id, "auditor", actor=ada)
+    before = LedgerEntry.query.count()
+
+    with pytest.raises(MembershipError, match="Auditors are read-only"):
+        vault_service.create_vault(chen, "Chen's vault", "", 1)
+
+    assert not workspace_service.can_create_vaults(chen)
+    assert workspace_service.vaults_of(chen.id) == []
+    assert LedgerEntry.query.count() == before
+
+
+def test_an_auditor_cannot_create_a_vault_on_the_api(app, client, team):
+    workspace, ada, _, chen, _ = team
+    headers = _enrol(client, chen)
+    workspace_service.change_role(workspace, chen.id, "auditor", actor=ada)
+
+    r = client.post("/api/v1/vaults", json={"name": "Reach", "threshold_m": 1}, headers=headers)
+
+    assert r.status_code == 403
+    assert r.get_json()["code"] == "not_allowed"
+    assert workspace_service.vaults_of(chen.id) == []
+
+
+# --------------------------------------------------------------------------------------------
+# Suspended owners, and vaults in another workspace
+
+
+def test_a_suspended_owner_can_be_demoted_or_removed_while_an_active_owner_remains(app, team):
+    """Only active owners count towards "the last owner", so only an active owner is guarded."""
+    workspace, ada, _, chen, dara = team
+    for person in (chen, dara):
+        workspace_service.change_role(workspace, person.id, "owner", actor=ada)
+        workspace_service.suspend_member(workspace, person.id, actor=ada)
+
+    workspace_service.change_role(workspace, chen.id, "member", actor=ada)
+    workspace_service.remove_member(workspace, dara.id, actor=ada)
+
+    assert workspace_service.membership(workspace, chen).role == "member"
+    assert workspace_service.membership(workspace, dara) is None
+    with pytest.raises(WorkspaceError) as refused:
+        workspace_service.change_role(workspace, ada.id, "admin", actor=ada)
+    assert refused.value.code == "last_owner"
+
+
+@pytest.fixture()
+def in_two_workspaces(app, team):
+    """Chen belongs to this workspace and to Other Co, and is in a vault in each."""
+    workspace, ada, _, chen, _ = team
+    zed, other = _other_workspace()
+    _, token = workspace_service.create_invitation(other, zed, chen.email)
+    workspace_service.accept_invitation(token, chen)
+    theirs = vault_service.create_vault(zed, "Zed's vault", "", 1)
+    vault_service.add_member(theirs, chen.email, "viewer", actor_id=zed.id)
+    ours = vault_service.create_vault(ada, "Treasury", "", 1)
+    vault_service.add_member(ours, chen.email, "viewer", actor_id=ada.id)
+    return workspace, other, ada, chen, ours, theirs
+
+
+def test_removal_is_blocked_only_by_this_workspaces_vaults(app, in_two_workspaces):
+    workspace, other, ada, chen, ours, theirs = in_two_workspaces
+    assert workspace_service.vaults_of(chen.id, workspace) == [ours]
+    assert workspace_service.vaults_of(chen.id, other) == [theirs]
+
+    with pytest.raises(WorkspaceError) as refused:
+        workspace_service.remove_member(workspace, chen.id, actor=ada)
+    assert "Treasury" in refused.value.message and "Zed's vault" not in refused.value.message
+
+    vault_service.remove_member(ours, chen.id, actor_id=ada.id)
+    workspace_service.remove_member(workspace, chen.id, actor=ada)
+
+    assert workspace_service.membership(workspace, chen) is None
+    assert theirs.is_member(chen.id)
+
+
+def test_leaving_is_blocked_only_by_that_workspaces_vaults(app, in_two_workspaces):
+    workspace, other, ada, chen, ours, theirs = in_two_workspaces
+    zed = db.session.get(User, theirs.owner_id)
+    vault_service.remove_member(theirs, chen.id, actor_id=zed.id)
+
+    workspace_service.leave_workspace(other, chen)
+
+    assert workspace_service.membership(other, chen) is None
+    assert ours.is_member(chen.id)
+
+
+# --------------------------------------------------------------------------------------------
+# History reads as it happened
+
+
+def test_a_rename_is_narrated_with_the_name_it_gave(app, team):
+    workspace, ada, *_ = team
+    workspace_service.rename_workspace(workspace, "Northwind", actor=ada)
+    workspace_service.rename_workspace(workspace, "Southwind", actor=ada)
+
+    entries = LedgerEntry.query.filter_by(event_type="workspace_renamed").order_by(LedgerEntry.seq)
+    sentences = [item["sentence"] for item in audit_service.narrate(entries.all())]
+
+    assert sentences == [
+        "Ada renamed the workspace to Northwind.",
+        "Ada renamed the workspace to Southwind.",
+    ]
+    exported = [row[3] for row in audit_service.export(ada, Filters(event="workspace_renamed"))]
+    assert exported[1:] == sentences

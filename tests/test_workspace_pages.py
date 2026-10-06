@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import contextmanager
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import event
 from test_device_vaults import _enrol
 
 from qvault.extensions import db
@@ -353,6 +355,24 @@ def test_the_removal_page_names_the_vaults_that_block_it(app, client, team):
     assert "Treasury" in page and "Type" not in page
 
 
+def test_the_removal_page_names_only_this_workspaces_vaults(app, client, team):
+    """A vault in another workspace is neither shown here nor in the way."""
+    workspace, ada, _, cleo = team
+    zed = _register("zed@other.com", "Zed", place=False)
+    other = workspace_service.create_workspace("Other Co", zed)
+    _, token = workspace_service.create_invitation(other, zed, cleo.email)
+    workspace_service.accept_invitation(token, cleo)
+    theirs = vault_service.create_vault(zed, "Zed's vault", "", 1)
+    vault_service.add_member(theirs, cleo.email, "viewer", actor_id=zed.id)
+    _login(client, "ada@e.com")
+
+    page = _text(client.get(f"/workspace/members/{cleo.id}/remove"))
+    client.post(f"/workspace/members/{cleo.id}/remove", data={"confirm": cleo.email})
+
+    assert "Zed's vault" not in page and "Type" in page
+    assert workspace_service.membership(workspace, cleo) is None
+
+
 def test_a_plain_member_cannot_open_the_removal_page(app, client, team):
     _, _, brij, _ = team
     _login(client, "cleo@e.com")
@@ -436,6 +456,20 @@ def test_a_new_link_replaces_the_old_one(app, client, team):
     assert second and second.group(1) != first.group(1)
     assert "previous link no longer works" in _text(r)
     assert workspace_service.invitation_for_token(first.group(1)) is None
+
+
+def test_a_link_its_inviter_can_no_longer_send_is_listed_as_needing_a_new_one(app, client, team):
+    workspace, ada, brij, _ = team
+    workspace_service.create_invitation(workspace, brij, "sam@e.com")
+    workspace_service.create_invitation(workspace, ada, "tom@e.com")
+    workspace_service.change_role(workspace, brij.id, "member", actor=ada)
+    _login(client, "ada@e.com")
+
+    page = _text(client.get("/workspace/members?tab=invited"))
+
+    assert page.count("Needs a new link") == 1
+    assert "Brij can no longer send this invitation" in page
+    assert "sam@e.com" in page and "tom@e.com" in page
 
 
 def test_withdrawing_an_invitation_from_the_page(app, client, team):
@@ -729,3 +763,75 @@ def test_the_people_list_names_its_workspace(app, client, team):
 
     assert body["workspace"] == {"id": team[0].id, "name": "Q-Vault"}
     assert [p["name"] for p in body["people"]] == ["Brij", "Cleo"]
+
+
+# --------------------------------------------------------------------------------------------
+# Auditors are read-only: no vault creation
+
+
+def test_an_auditor_is_not_offered_or_allowed_a_new_vault(app, client, team):
+    workspace, ada, _, cleo = team
+    _login(client, "cleo@e.com")
+    assert "/vaults/new" in _text(client.get("/vaults/"))
+    workspace_service.change_role(workspace, cleo.id, "auditor", actor=ada)
+
+    assert "/vaults/new" not in _text(client.get("/vaults/"))
+    assert "/vaults/new" not in _text(client.get("/"))
+    assert client.get("/vaults/new").status_code == 403
+    r = client.post("/vaults/new", data={"name": "Reach", "description": "", "threshold_m": 1})
+    assert r.status_code == 403
+    assert workspace_service.vaults_of(cleo.id) == []
+
+
+# --------------------------------------------------------------------------------------------
+# The members page costs the same however many people it lists
+
+
+@contextmanager
+def _counting_queries():
+    statements = []
+
+    def count(*_args):
+        statements.append(1)
+
+    engine = db.engine
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+
+def _members_page_queries(client, tab):
+    # Once first, uncounted: after any request the ledger's anchor catches up with the events the
+    # setup wrote, which is work for the request after them, not for this page.
+    client.get(f"/workspace/members?tab={tab}")
+    # The suite shares one session with the app; start each count with nothing already loaded.
+    db.session.expire_all()
+    with _counting_queries() as statements:
+        r = client.get(f"/workspace/members?tab={tab}")
+    assert r.status_code == 200
+    return len(statements)
+
+
+@pytest.mark.parametrize("tab", ["active", "invited", "suspended"])
+def test_the_members_page_runs_the_same_queries_for_more_people(app, client, team, tab):
+    workspace, ada, _, cleo = team
+    vault = vault_service.create_vault(ada, "Treasury", "", 1)
+    workspace_service.create_invitation(
+        workspace, ada, "sam@e.com", "member", [(vault.id, "signer")]
+    )
+    workspace_service.suspend_member(workspace, cleo.id, actor=ada)
+    _login(client, "ada@e.com")
+    before = _members_page_queries(client, tab)
+
+    for n in range(4):
+        person = _register(f"p{n}@e.com", f"Person {n}")
+        if n % 2:
+            workspace_service.suspend_member(workspace, person.id, actor=ada)
+        extra = vault_service.create_vault(ada, f"Vault {n}", "", 1)
+        workspace_service.create_invitation(
+            workspace, ada, f"q{n}@e.com", "member", [(extra.id, "viewer"), (vault.id, "signer")]
+        )
+
+    assert _members_page_queries(client, tab) == before

@@ -52,7 +52,9 @@
           </td>
           <td class="small nowrap">
             {% if row.state == 'expired' %}<span class="chip chip--broken">Expired</span>{% endif %}
-            {{ i.expires_at | ws_when }}
+            {% if row.state == 'void' %}<span class="chip chip--broken">Needs a new link</span>
+            <span class="dt__sub">{{ i.inviter.display_name }} can no longer send this invitation, so its link won't work</span>
+            {% else %}{{ i.expires_at | ws_when }}{% endif %}
           </td>
           <td class="num">
             <div class="hstack hstack--tight" style="justify-content:flex-end">

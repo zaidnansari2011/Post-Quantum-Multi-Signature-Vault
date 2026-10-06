@@ -151,6 +151,21 @@ def test_a_bad_invitation_is_refused_with_a_reason(app, world, email, role, gran
     assert Invitation.query.count() == 0
 
 
+def test_an_auditor_invitation_can_grant_viewing_but_not_approving(app, world):
+    """Auditors are read-only (plan S10)."""
+    _, _, _, treasury, contracts = world
+
+    with pytest.raises(InvitationError) as refused:
+        _invite(world, role="auditor", grants=[(treasury.id, "signer")])
+    assert refused.value.code == "auditor_approver"
+    assert Invitation.query.count() == 0
+
+    _, token = _invite(world, role="auditor", grants=[(contracts.id, "viewer")])
+    sam = auth_service.register_user("sam@e.com", "Sam", PW, place=False)
+    workspace_service.accept_invitation(token, sam)
+    assert contracts.member_for(sam.id).member_role == "viewer"
+
+
 def test_one_pending_invitation_per_address(app, world):
     workspace, ada, *_ = world
     invitation, _ = _invite(world)
@@ -169,13 +184,13 @@ def test_one_pending_invitation_per_address(app, world):
 def test_accepting_joins_the_workspace_and_each_vault(app, world):
     workspace, ada, _, treasury, contracts = world
     _, token = _invite(
-        world, role="auditor", grants=[(treasury.id, "signer"), (contracts.id, "viewer")]
+        world, role="admin", grants=[(treasury.id, "signer"), (contracts.id, "viewer")]
     )
     sam = auth_service.register_user("sam@e.com", "Sam", PW, place=False)
 
     member = workspace_service.accept_invitation(token, sam)
 
-    assert (member.workspace_id, member.role, member.status) == (workspace.id, "auditor", "active")
+    assert (member.workspace_id, member.role, member.status) == (workspace.id, "admin", "active")
     assert treasury.member_for(sam.id).member_role == "signer"
     assert contracts.member_for(sam.id).member_role == "viewer"
     assert workspace_service.stage(member) == "key_enrolled"
@@ -405,6 +420,41 @@ def test_an_accepted_or_withdrawn_invitation_cannot_be_resent(app, world):
     with pytest.raises(InvitationError) as refused:
         workspace_service.revoke_invitation(accepted, ada)
     assert refused.value.code == "already_accepted"
+
+
+def test_resending_makes_the_resender_the_inviter(app, world):
+    """A link resent after its inviter lost the right to invite must still be accepted."""
+    workspace, ada, brij, *_ = world
+    workspace_service.change_role(workspace, brij.id, "admin", actor=ada)
+    invitation, _ = workspace_service.create_invitation(workspace, brij, "sam@e.com")
+    workspace_service.change_role(workspace, brij.id, "member", actor=ada)
+    with pytest.raises(InvitationError) as void:
+        workspace_service.check_usable(invitation)
+    assert void.value.code == "inviter_lost_access"
+
+    _, token = workspace_service.resend_invitation(invitation, ada)
+
+    assert invitation.inviter_id == ada.id
+    sam = auth_service.register_user("sam@e.com", "Sam", PW, place=False)
+    member = workspace_service.accept_invitation(token, sam)
+    assert member.workspace_id == workspace.id
+
+
+def test_a_resend_is_refused_for_vaults_the_resender_does_not_own(app, world):
+    """The vaults are the inviter's to grant; a resend would make the resender the inviter."""
+    workspace, ada, brij, treasury, _ = world
+    workspace_service.change_role(workspace, brij.id, "admin", actor=ada)
+    invitation, token = _invite(world, grants=[(treasury.id, "viewer")])
+
+    with pytest.raises(InvitationError) as refused:
+        workspace_service.resend_invitation(invitation, brij)
+
+    assert refused.value.code == "not_vault_owner"
+    assert "Ask the vault's owner" in refused.value.message
+    db.session.refresh(invitation)
+    assert invitation.inviter_id == ada.id
+    assert workspace_service.invitation_for_token(token) == invitation
+    assert _events("invitation_resent") == []
 
 
 def test_a_member_cannot_withdraw_an_invitation(app, world):

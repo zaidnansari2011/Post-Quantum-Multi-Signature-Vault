@@ -22,6 +22,7 @@ you whether the record is intact.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 
 from sqlalchemy import String, and_, cast, distinct, or_, select
@@ -242,6 +243,10 @@ def narrate(entries) -> list[dict]:
             if e.ref_type == "workspace" and e.ref_id and e.ref_id.isdigit()
             else "the workspace"
         )
+        if e.event_type == "workspace_renamed":
+            # Named as the event renamed it, not as the workspace is called today: after a second
+            # rename, the first one must still read "renamed the workspace to <its name then>".
+            workspace = _renamed_to(e) or workspace
         template = SENTENCES.get(e.event_type)
         # An event this table has not been taught yet must still render as a readable line. An
         # audit view that silently drops rows it does not recognise is worse than an ugly one.
@@ -252,6 +257,15 @@ def narrate(entries) -> list[dict]:
         )
         out.append({"entry": e, "sentence": sentence, "who": who, "vault": vault})
     return out
+
+
+def _renamed_to(entry: LedgerEntry) -> str | None:
+    """The name a ``workspace_renamed`` event gave the workspace, from its payload."""
+    try:
+        name = json.loads(entry.payload_json).get("to")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return name if isinstance(name, str) and name else None
 
 
 def export(user: User, filters: Filters):

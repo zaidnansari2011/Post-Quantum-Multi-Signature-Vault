@@ -60,6 +60,7 @@ def index():
         log=checkpoint_service.log_summary(),
         # A new workspace's first steps, for its owners and admins, until done or hidden.
         checklist=workspace_service.checklist_for(current_user),
+        can_create_vaults=workspace_service.can_create_vaults(current_user),
     )
 
 

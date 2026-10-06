@@ -22,7 +22,9 @@
   {# No .head__figure here: the figures strip below IS this screen's moment of scale, and a big
      "6 AWAITING YOU" would only restate the subtitle two inches to its left. #}
   <div class="head__actions">
+    {% if can_create_vaults %}
     <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.new_vault') }}">New vault</a>
+    {% endif %}
     <a class="btn btn--primary btn--sm" href="{{ url_for('approvals.index') }}">Approvals</a>
   </div>
 </div>
@@ -190,7 +192,9 @@
       {% else %}
       <div class="panel__body">
         <p class="small muted">You are not in a vault yet.</p>
+        {% if can_create_vaults %}
         <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">Create one</a>
+        {% endif %}
       </div>
       {% endif %}
     </div>
