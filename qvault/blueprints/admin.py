@@ -319,13 +319,15 @@ def run_maintenance():
             "Maintenance is already running (scheduled job) — please try again shortly.", "warning"
         )
         return redirect(url_for("admin.rotation"))
+    # "persist": the counts are the result, and the user keys due need someone to act, so this
+    # stays on the page instead of fading as a toast.
     flash(
         "Maintenance complete — "
         f"system key rotated: {summary['system_rotated']}, "
         f"vault keys rotated: {len(summary['vaults_rotated'])}, "
         f"user keys due (need interactive re-key): {len(summary['user_keys_due'])}, "
         f"proposals expired: {expired}.",
-        "success",
+        "persist",
     )
     return redirect(url_for("admin.rotation"))
 
@@ -400,9 +402,10 @@ def run_attack_lab():
             "danger",
         )
     else:
+        # "persist": this is the run's verdict, read against the detail below; it must not fade.
         flash(
             f"{live['summary']['as_expected']} of {live['summary']['total']} attacks behaved as "
             "expected, each confirmed by its control.",
-            "success",
+            "persist",
         )
     return redirect(url_for("admin.attack_lab", run=_hold_live_run("attack", live)))

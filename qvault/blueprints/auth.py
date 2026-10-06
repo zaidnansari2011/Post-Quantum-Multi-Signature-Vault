@@ -78,9 +78,11 @@ def reissue_key():
     except KeyUnlockError:
         flash("Incorrect password — your signing key was not re-issued.", "danger")
     else:
+        # "persist": which algorithm the new key uses, and what became of the old one, are worth
+        # more than the few seconds a toast stays up.
         flash(
             f"Signing key re-issued under {key.alg_id}. Your previous key is retired but still "
             "verifies every signature it made.",
-            "success",
+            "persist",
         )
     return redirect(url_for("auth.dashboard"))

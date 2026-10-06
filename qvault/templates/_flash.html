@@ -1,8 +1,32 @@
+{# Flashed messages. Only a short confirmation (success, info) is a toast: it is in the page and
+   fades on its own (ui/feedback.html). Anything a reader may need time for stays inline until it is
+   dismissed (WCAG 2.2.1, timing adjustable): a warning or an error, because a message about
+   something that went wrong must not disappear; a confirmation longer than TOAST_MAX characters,
+   which takes longer to read than a toast stays up; and the "persist" category, for a short
+   confirmation that carries a result the reader acts on. A persist message reads as a success.
+
+   The toast container is not a live region. Content already in a live region when the page loads
+   is not announced by most screen readers, so qvault.js reads each toast out through #q-live
+   (base.html), which is empty at load, once the page is ready. Without JavaScript the toast is
+   simply part of the page. #}
+{% from "ui/feedback.html" import toast %}
+{% set TOAST_MAX = 90 %}
 {% with messages = get_flashed_messages(with_categories=true) %}
+  {% set toasts = [] %}
   {% for category, message in messages %}
-    <div class="alert alert-{{ 'danger' if category == 'error' else category }}" role="alert">
+    {% if category in ('success', 'info', 'message') and message | length <= TOAST_MAX %}
+      {% set _ = toasts.append((category, message)) %}
+    {% else %}
+    {% set tone = {'error': 'danger', 'persist': 'success', 'message': 'info'}.get(category, category) %}
+    <div class="alert alert-{{ tone }}" role="{{ 'alert' if tone in ('danger', 'warning') else 'status' }}">
       <span>{{ message }}</span>
       <button type="button" class="btn-close" data-dismiss aria-label="Dismiss">&times;</button>
     </div>
+    {% endif %}
   {% endfor %}
+  {% if toasts %}
+  <div class="q-toasts">
+    {% for category, message in toasts %}{{ toast(message, 'success' if category == 'success' else 'info') }}{% endfor %}
+  </div>
+  {% endif %}
 {% endwith %}

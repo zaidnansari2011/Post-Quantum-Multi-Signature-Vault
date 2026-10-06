@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/navigation.html" import breadcrumbs %}
 {% from "_macros.html" import status_chip, tally %}
 {% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
 
@@ -6,13 +7,11 @@
 {% set unsigned = proposal.required_n - votes|length %}
 {% set still_needed = [proposal.required_m - approvals, 0] | max %}
 
+{% block crumbs %}{{ breadcrumbs([('Vaults', url_for('vaults.list_vaults')), (vault.name, url_for('vaults.vault_detail', vid=vault.id)), (proposal.title, None)]) }}{% endblock %}
+
 {% block chrome %}
 <div class="head">
   <div style="min-width:0">
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('vaults.list_vaults') }}">Vaults</a><span>/</span>
-      <a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a>
-    </nav>
     <div class="head__title truncate">{{ proposal.title }}</div>
     <div class="head__sub">
       {{ proposal.creator.display_name or proposal.creator.email }} ·
@@ -352,7 +351,7 @@
           {% set public_url = url_for('record.public_record', uuid=proposal.proposal_uuid, _external=True) %}
           <div class="field">
             <input class="input mono tiny" value="{{ public_url }}" readonly
-                   onfocus="this.select()" aria-label="Public link">
+                   data-select-on-focus aria-label="Public link">
           </div>
           <div class="hstack">
             <a class="btn btn--ghost btn--sm" href="{{ public_url }}" target="_blank" rel="noopener">Open</a>

@@ -103,6 +103,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
         return db.session.get(User, int(user_id))
 
+    # The component macros' helpers: the status vocabulary, times, hashes (templates/ui/).
+    from . import ui
+
+    ui.register(app)
+
     # --- Blueprints -------------------------------------------------------
     from .blueprints.account import bp as account_bp
     from .blueprints.admin import bp as admin_bp
@@ -115,6 +120,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from .blueprints.ledger import bp as ledger_bp
     from .blueprints.notifications import bp as notifications_bp
     from .blueprints.record import bp as record_bp
+    from .blueprints.theme import bp as theme_bp
     from .blueprints.vaults import bp as vaults_bp
     from .blueprints.verify import bp as verify_bp
     from .blueprints.workspace import bp as workspace_bp
@@ -136,6 +142,9 @@ def create_app(config_name: str | None = None) -> Flask:
     # The public record of a shared decision. GET-only and session-free, so it needs neither
     # login_required nor a CSRF exemption -- there is no form here to forge.
     app.register_blueprint(record_bp)
+    # The reader's colour theme: a cookie, read on every page so <html> is themed before first
+    # paint (rework S25).
+    app.register_blueprint(theme_bp)
     # Public verification takes no session and writes nothing, so there is no state for a CSRF
     # token to protect — and requiring one would break `curl -F bundle=@decision.json /verify/`,
     # which is how anyone would actually script a check.
@@ -150,17 +159,19 @@ def create_app(config_name: str | None = None) -> Flask:
     csrf.exempt(api_bp)
 
     @app.errorhandler(HTTPException)
-    def _json_errors_under_api(exc):
-        """Return JSON for /api/ failures; leave the HTML surface byte-for-byte unchanged.
+    def _errors(exc):
+        """JSON for /api/ failures; everywhere else, an error page with a next step.
 
         Registered app-wide rather than on the blueprint because a 404 or 405 raised during URL
         *matching* has no blueprint to attribute it to — ``request.blueprint`` is None — so a
         blueprint-scoped handler would never fire for an unknown /api/ path, and a mobile client
-        would get an HTML error page where it expected JSON. Returning ``exc`` unchanged for
-        everything else reproduces Werkzeug's default page exactly.
+        would get an HTML error page where it expected JSON. An unhandled exception reaches here
+        too, as a 500.
         """
         if not request.path.startswith("/api/"):
-            return exc
+            from .errors import render_error_page
+
+            return render_error_page(exc)
         return (
             jsonify(
                 ok=False,
