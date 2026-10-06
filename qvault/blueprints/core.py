@@ -15,15 +15,12 @@ from qvault.services import (
     audit_service,
     checkpoint_service,
     inbox_service,
+    proposal_service,
     treasury_service,
     workspace_service,
 )
-from qvault.services.audit_service import Filters as AuditFilters
-from qvault.services.inbox_service import Filters as InboxFilters
 
 bp = Blueprint("core", __name__)
-
-RECENT_LIMIT = 8
 
 
 @bp.get("/")
@@ -42,25 +39,21 @@ def index():
             demo_enabled=demo_enabled(),
         )
 
-    signer_vaults = inbox_service.signer_vault_ids(current_user)
-    waiting = inbox_service.search(
-        current_user, InboxFilters(tab="needs_you", per_page=RECENT_LIMIT)
-    )
-    open_now = inbox_service.search(current_user, InboxFilters(tab="open", per_page=RECENT_LIMIT))
-    activity = audit_service.search(current_user, AuditFilters(per_page=RECENT_LIMIT))
-
+    # Work first (rework R2): what needs this person, what is due, what waits on others, then what
+    # happened. The log's figures that used to lead this page live on Audit.
     return render_template(
         "home.html",
-        waiting=inbox_service.decorate(waiting.items, current_user, signer_vaults),
-        waiting_total=waiting.total,
-        open_rows=inbox_service.decorate(open_now.items, current_user, signer_vaults),
-        counts=inbox_service.counts(current_user),
-        activity=audit_service.narrate(activity.items),
-        vaults=inbox_service.vaults_for_filter(current_user),
-        log=checkpoint_service.log_summary(),
+        work=inbox_service.home(current_user),
+        activity=audit_service.decision_feed(current_user),
+        # Where "New decision" can go: Home belongs to no vault, so it offers the ones this person
+        # may raise a decision in, and nothing at all to someone who may raise none.
+        proposable=[
+            v
+            for v in inbox_service.vaults_for_filter(current_user)
+            if proposal_service.may_propose(v, current_user)
+        ],
         # A new workspace's first steps, for its owners and admins, until done or hidden.
         checklist=workspace_service.checklist_for(current_user),
-        can_create_vaults=workspace_service.can_create_vaults(current_user),
     )
 
 

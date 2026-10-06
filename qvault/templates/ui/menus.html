@@ -6,14 +6,17 @@
      caller() holds the items.
      label     the button's visible text, or, with icon_name and no visible text, its
                accessible name.
-     trigger   'ghost' for a text button, 'icon' for a square icon button.
+     trigger   'ghost' for a text button, 'icon' for a square icon button, 'primary' for the
+               screen's one main action when it needs a choice first (New decision on Home asks
+               which vault); icon_name then leads its label.
      align     'end' (the panel's right edge under the button) or 'start'.
      up        open upwards, for a menu at the bottom of the screen.
      trigger_content  markup to show in the button instead of the label (the avatar); the label
                is then its accessible name.
 
-   menu_item(label, href, icon_name=None, current=False)
-     A link. current marks the page you are on.
+   menu_item(label, href, icon_name=None, current=False, caption=None)
+     A link. current marks the page you are on; caption is a second, quieter line under the
+     label (a vault's rule, "Any 2 of 3").
 
    menu_post(label, action, icon_name=None, danger=False)
      A button that posts a CSRF-protected form (Sign out). Never a link: a GET must not change
@@ -28,6 +31,8 @@
 <details class="q-menu{% if align == 'start' %} q-menu--start{% endif %}{% if up %} q-menu--up{% endif %}" data-menu>
   {%- if trigger_content %}
   <summary class="q-ib q-avbtn" aria-label="{{ label }}" title="{{ label }}">{{ trigger_content }}</summary>
+  {%- elif trigger == 'primary' %}
+  <summary class="q-btn q-btn--primary">{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span>{{ icon('chevron-down') }}</summary>
   {%- elif trigger == 'icon' %}
   <summary class="q-ib" aria-label="{{ label }}" title="{{ label }}">{{ icon(icon_name) }}</summary>
   {%- else %}
@@ -37,8 +42,9 @@
 </details>
 {%- endmacro %}
 
-{% macro menu_item(label, href, icon_name=None, current=False) -%}
-<a class="q-menu__i" href="{{ href }}"{% if current %} aria-current="page"{% endif %}>{% if icon_name %}{{ icon(icon_name) }}{% endif %}<span>{{ label }}</span></a>
+{% macro menu_item(label, href, icon_name=None, current=False, caption=None) -%}
+<a class="q-menu__i{% if caption %} q-menu__i--2{% endif %}" href="{{ href }}"{% if current %} aria-current="page"{% endif %}>{% if icon_name %}{{ icon(icon_name) }}{% endif %}
+  {%- if caption %}<span class="q-menu__il"><span>{{ label }}</span><span class="q-menu__ic">{{ caption }}</span></span>{% else %}<span>{{ label }}</span>{% endif %}</a>
 {%- endmacro %}
 
 {% macro menu_post(label, action, icon_name=None, danger=False) -%}

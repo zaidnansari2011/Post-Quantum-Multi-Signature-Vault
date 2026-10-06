@@ -1,119 +1,98 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_chip, tally, pager, sort_link %}
+{% from "ui/navigation.html" import page_header, tabs %}
+{% from "ui/forms.html" import select, search %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/status.html" import status %}
+{% from "ui/data.html" import data_table, pager, reltime %}
+{% from "ui/work.html" import due, signatures, type_tag %}
 {% block title %}Approvals — Q-Vault{% endblock %}
-{% block bodyclass %}body body--flush{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Approvals</div>
-    <div class="head__sub">Every decision across your vaults</div>
-  </div>
-  <div class="head__actions">
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.list_vaults') }}">Vaults</a>
-  </div>
-</div>
-
-<div class="tabs">
-  {% for key, label in [('needs_you','Needs you'), ('open','Open'), ('settled','Settled'), ('all','All')] %}
-    <a class="tab" href="{{ url_for('approvals.index', **filters.to_query(tab=key, page=1)) }}"
-       {% if filters.tab == key %}aria-current="page"{% endif %}>
-      {{ label }}<span class="tab__n">{{ counts[key] }}</span>
-    </a>
-  {% endfor %}
-</div>
-
-<form class="toolbar" method="get" action="{{ url_for('approvals.index') }}" data-autosubmit>
-  <input type="hidden" name="tab" value="{{ filters.tab }}">
-  <label class="toolbar__search">
-    <span class="visually-hidden" hidden>Search</span>
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/>
-    </svg>
-    <input class="input" type="search" name="q" value="{{ filters.query }}" placeholder="Search decisions">
-  </label>
-
-  <select class="input input--auto" name="vault" aria-label="Vault">
-    <option value="">All vaults</option>
-    {% for v in vaults %}
-      <option value="{{ v.id }}" {% if filters.vault_id == v.id %}selected{% endif %}>{{ v.name }}</option>
-    {% endfor %}
-  </select>
-
-  <select class="input input--auto" name="sort" aria-label="Sort">
-    {% for key, label in [('recent','Newest first'), ('oldest','Oldest first'), ('deadline','By deadline'), ('title','By title')] %}
-      <option value="{{ key }}" {% if filters.sort == key %}selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
-
-  {% if filters.is_filtered %}
-    <a class="btn btn--quiet btn--sm" href="{{ url_for('approvals.index', tab=filters.tab) }}">Clear</a>
-  {% endif %}
-  <span class="toolbar__count">{{ page.total }} decision{{ '' if page.total == 1 else 's' }}</span>
-</form>
-{% endblock %}
-
+{#- The Approvals inbox (rework R2, plan section 5): four tabs, filters in the URL, one row per
+    decision. The tabs before R2 (open, settled, all) still answer: settled is Done, the other two
+    are shown without a tab selected. -#}
 {% block content %}
-{% if rows %}
-<div class="scroll-x scroll-x--tall">
-  <table class="dt">
-    <thead>
-      <tr>
-        <th style="width:40%">{{ sort_link('approvals.index', filters, 'title', 'Decision') }}</th>
-        <th>Vault</th>
-        <th>Status</th>
-        <th style="width:130px">Progress</th>
-        <th>{{ sort_link('approvals.index', filters, 'deadline', 'Deadline') }}</th>
-        <th class="num">{{ sort_link('approvals.index', filters, 'recent', 'Opened') }}</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      {% set p = r.proposal %}
-      <tr {% if r.needs_me %}class="is-unread"{% endif %}>
-        <td>
-          <a class="dt__link truncate" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
-          <span class="dt__sub truncate">
-            {{ p.creator.display_name or p.creator.email }}
-            {%- if p.file %} · attachment{% endif %}
-          </span>
-        </td>
-        <td class="truncate">
-          <a href="{{ url_for('vaults.vault_detail', vid=p.vault_id) }}">{{ p.vault.name }}</a>
-        </td>
-        <td>
-          {{ status_chip(r.status) }}
-          {% if r.needs_me %}<span class="chip chip--waiting">Needs you</span>{% endif %}
-        </td>
-        <td>
-          {{ tally(r.signed, p.required_m, p.required_n) }}
-        </td>
-        <td class="tiny muted nowrap">
-          {{ p.expires_at.strftime('%d %b %H:%M') if p.expires_at else '—' }}
-        </td>
-        <td class="num tiny muted nowrap">{{ p.created_at.strftime('%d %b') }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{{ pager('approvals.index', page, filters) }}
+{% set current = 'done' if filters.tab == 'settled' else filters.tab %}
+{% set tab_items = [
+  {'key': 'needs_you', 'label': 'Needs your signature', 'href': url_for('approvals.index', **filters.tab_query('needs_you')), 'count': counts.needs_you},
+  {'key': 'waiting', 'label': 'Waiting on others', 'href': url_for('approvals.index', **filters.tab_query('waiting')), 'count': counts.waiting},
+  {'key': 'expiring', 'label': 'Expiring soon', 'href': url_for('approvals.index', **filters.tab_query('expiring')), 'count': counts.expiring},
+  {'key': 'done', 'label': 'Done', 'href': url_for('approvals.index', **filters.tab_query('done'))},
+] %}
+{% set clear_href = url_for('approvals.index', tab=filters.tab if filters.tab != 'needs_you' else None) %}
+{% set payments_shown = filters.kind == 'payment' or (rows | selectattr('is_payment') | list) %}
 
+{{ page_header('Approvals', 'Every decision in the vaults you belong to.') }}
+{{ tabs(tab_items, current, 'Approvals views') }}
+
+<form class="q-toolbar" method="get" action="{{ url_for('approvals.index') }}" data-autosubmit role="search" aria-label="Filter decisions">
+  <input type="hidden" name="tab" value="{{ filters.tab }}">
+  {{ search('q', 'Search decisions by title', filters.query, 'Search by title') }}
+  {%- set vault_options = [('', 'All vaults')] %}
+  {%- for v in vaults %}{% set _ = vault_options.append((v.id, v.name)) %}{% endfor %}
+  {{ select('vault', 'Vault', vault_options, filters.vault_id or '', inline=True) }}
+  {{ select('type', 'Type', [('', 'All types'), ('general', 'General'), ('payment', 'Payment')], filters.kind, inline=True) }}
+  {{ select('sort', 'Order', [('recent', 'Newest first'), ('oldest', 'Oldest first'), ('deadline', 'Expires soonest'), ('title', 'Title, A to Z')], filters.sort, inline=True) }}
+  {%- if filters.is_filtered %}
+  {{ button('Clear filters', 'ghost', href=clear_href, size='sm') }}
+  {%- endif %}
+  <noscript>{{ button('Apply', 'secondary', type='submit', size='sm') }}</noscript>
+  <span class="q-toolbar__n" aria-live="polite">{{ page.total }} decision{{ '' if page.total == 1 else 's' }}</span>
+</form>
+
+{% set columns = [{'key': 'title', 'label': 'Decision', 'sortable': True}, {'key': 'vault', 'label': 'Vault'}] %}
+{% if payments_shown %}{% set _ = columns.append({'key': 'amount', 'label': 'Amount', 'numeric': True}) %}{% endif %}
+{% set _ = columns.extend([
+  {'key': 'signatures', 'label': 'Signatures'},
+  {'key': 'status', 'label': 'Status'},
+  {'key': 'recent', 'label': 'Raised', 'sortable': True},
+  {'key': 'deadline', 'label': 'Expires (UTC)', 'sortable': True},
+]) %}
+{% macro sort_href(key) -%}
+{%- if key == 'recent' %}{% set to = 'oldest' if filters.sort == 'recent' else 'recent' %}{% else %}{% set to = key %}{% endif -%}
+{{ url_for('approvals.index', **filters.to_query(sort=to, page=1)) }}
+{%- endmacro %}
+{% macro page_href(n) -%}{{ url_for('approvals.index', **filters.to_query(page=n)) }}{%- endmacro %}
+{% set sort_col = 'recent' if filters.sort in ('recent', 'oldest') else filters.sort %}
+
+{% if filters.tab == 'needs_you' %}
+  {% set empty = ('Nothing needs your signature', 'Everything you can approve has been signed.', {'label': 'See what’s waiting on others', 'href': url_for('approvals.index', tab='waiting')}) %}
+{% elif filters.tab == 'waiting' %}
+  {% set empty = ('Nothing is waiting on others', 'Every open decision in your vaults needs your signature, or there are none open.', None) %}
+{% elif filters.tab == 'expiring' %}
+  {% set empty = ('Nothing expires in the next 48 hours', 'Decisions due within two days appear here, soonest first.', None) %}
+{% elif filters.tab in ('done', 'settled') %}
+  {% set empty = ('Nothing has been decided yet', 'Approved, rejected and expired decisions appear here.', None) %}
 {% else %}
-<div class="empty">
-  {% if filters.is_filtered %}
-    <div class="empty__title">No matches</div>
-    <p class="empty__sub">Nothing in this view matches those filters.</p>
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('approvals.index', tab=filters.tab) }}">Clear filters</a>
-  {% elif filters.tab == 'needs_you' %}
-    <div class="empty__title">Nothing needs your signature</div>
-    <p class="empty__sub">Everything you can approve has been signed.</p>
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('approvals.index', tab='open') }}">See what's open</a>
-  {% else %}
-    <div class="empty__title">No decisions yet</div>
-    <p class="empty__sub">Decisions live in vaults. Open one to propose the first.</p>
-    <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.list_vaults') }}">Go to vaults</a>
-  {% endif %}
-</div>
+  {% set empty = ('No decisions yet', 'Decisions live in vaults. Open one to raise the first.', {'label': 'Go to vaults', 'href': url_for('vaults.list_vaults')}) %}
 {% endif %}
+
+{% call data_table(columns, rows|length > 0, filtered=filters.is_filtered, sort=sort_col,
+                   descending=filters.sort == 'recent', sort_href=sort_href,
+                   empty_title=empty[0], empty_caption=empty[1], empty_action=empty[2],
+                   clear_href=clear_href,
+                   label='Decisions',
+                   no_results_title=('No decisions match “' ~ filters.query ~ '”') if filters.query else 'No decisions match these filters',
+                   no_results_caption='Try another word, or clear the filters to see this whole tab.',
+                   stack=True) %}
+  {%- for r in rows %}
+  {%- set p = r.proposal %}
+  <tr class="q-drow">
+    <td class="q-c-main">
+      <span class="q-dec">
+        <a class="q-dec__link" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">{{ p.title }}</a>
+        <span class="q-dec__m"><code class="q-dec__code" title="Decision code">{{ r.code }}</code>{{ type_tag(r) }}</span>
+      </span>
+    </td>
+    <td class="q-c-meta"><span class="q-trunc">{{ p.vault.name }}</span></td>
+    {%- if payments_shown %}
+    <td class="is-num q-c-aside">{{ r.amount or '' }}</td>
+    {%- endif %}
+    <td class="q-c-wide-only">{{ signatures(r) }}</td>
+    <td class="q-c-status">{{ status(r.status_key, r.status_n) }}</td>
+    <td class="q-c-wide-only q-c-raised">{{ reltime(p.created_at) }}<span class="q-drow__by">by {{ r.raised_by }}</span></td>
+    <td class="q-c-end">{{ due(p.expires_at, zone=False) }}</td>
+  </tr>
+  {%- endfor %}
+{% endcall %}
+{{ pager(page, page_href) }}
 {% endblock %}

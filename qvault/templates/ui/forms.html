@@ -8,8 +8,14 @@
      error   a message or a list of messages (a WTForms field's .errors works as is).
      id      defaults to 'f-' ~ name.
 
-   select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={})
+   select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={},
+          inline=False)
      options  a list of (value, text) pairs; selected is compared as a string.
+     inline   for a toolbar filter: the label is read but not shown (the first option names the
+              filter, "All vaults"), and the field takes no bottom margin.
+
+   search(name, label, value=None, placeholder=None, id=None)
+     A search box for a toolbar, with its magnifier drawn inside. The label is read, not shown.
 
    checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={})
    switch(name, label, checked=False, value='1', caption=None, id=None, attrs={})
@@ -53,10 +59,11 @@
 </div>
 {%- endmacro %}
 
-{% macro select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={}) -%}
+{% macro select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={},
+                inline=False) -%}
 {%- set fid = id or 'f-' ~ name -%}
-<div class="q-field">
-  <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
+<div class="q-field{% if inline %} q-field--inline{% endif %}">
+  <label class="{{ 'visually-hidden' if inline else 'q-field__label' }}" for="{{ fid }}">{{ label }}</label>
   <span class="q-selwrap">
     <select class="q-select" id="{{ fid }}" name="{{ name }}"{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
       {%- for value, text in options %}
@@ -71,6 +78,15 @@
   {%- if error %}
   <div id="{{ fid }}-err">{{ _errors(error) }}</div>
   {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro search(name, label, value=None, placeholder=None, id=None) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-search">
+  <label class="visually-hidden" for="{{ fid }}">{{ label }}</label>
+  {{ icon('search') }}
+  <input class="q-input" id="{{ fid }}" name="{{ name }}" type="search"{% if value %} value="{{ value }}"{% endif %}{% if placeholder %} placeholder="{{ placeholder }}"{% endif %} autocomplete="off">
 </div>
 {%- endmacro %}
 
