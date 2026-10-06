@@ -18,9 +18,11 @@ from qvault.extensions import db
 from qvault.models.file import VaultFile
 from qvault.models.proposal import Proposal
 from qvault.models.treasury import ProposalAction, Treasury
+from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault
 from qvault.services import file_crypto_service, ledger_service, notification_service
 from qvault.services.signing import proposal_signing_bytes
+from qvault.ui import first_name
 
 
 class ProposalError(ValueError):
@@ -331,3 +333,37 @@ def _payment_action(vault, payment, required_m, required_n, action_text, now, de
     except chain_action.ActionError as exc:
         raise ProposalError(f"{str(exc)[:1].upper()}{str(exc)[1:]}.") from None
     return action, treasury, deadline
+
+
+def who_approves(vault: Vault, user) -> dict:
+    """The "who approves" preview on New decision (plan S14), from the facts raising will freeze.
+
+    The approvers are the vault's signer set as ``create_proposal`` snapshots it, so the preview
+    names exactly the people whose approvals will count. ``asked`` is who the R4 notification asks
+    when it is raised (every eligible approver but the requester). Nothing here claims separation
+    of duties: until S15 (R5) the person raising a decision who is an approver can approve it too,
+    and the preview says so.
+    """
+    ids = vault.signer_ids()
+    people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()} if ids else {}
+
+    def name(uid: int) -> str:
+        person = people.get(uid)
+        return first_name(person.display_name or person.email) if person else "Someone"
+
+    others = [uid for uid in ids if uid != user.id]
+    return {
+        "m": vault.policy.threshold_m,
+        "n": len(ids),
+        "people": [
+            {
+                "name": name(uid),
+                "full": people[uid].display_name if uid in people else "",
+                "you": uid == user.id,
+            }
+            for uid in sorted(ids, key=lambda i: (i == user.id, name(i)))
+        ],
+        "names": [name(uid) for uid in others] + (["you"] if user.id in ids else []),
+        "includes_you": user.id in ids,
+        "asked": [name(uid) for uid in others],
+    }

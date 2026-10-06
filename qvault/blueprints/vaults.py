@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from base64 import b64decode
-from datetime import UTC
+from datetime import UTC, datetime
 
 from flask import (
     Blueprint,
@@ -21,6 +21,7 @@ from flask_wtf import FlaskForm
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
+from qvault.chain.action import MAX_DEADLINE as PAYMENT_MAX_DEADLINE
 from qvault.chain.action import ActionError, parse_eth_value
 from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
@@ -139,11 +140,17 @@ def vault_detail(vid: int):
 
     proposals = (
         Proposal.query.filter_by(vault_id=vid)
-        .options(selectinload(Proposal.signatures), selectinload(Proposal.file))
+        .options(
+            selectinload(Proposal.signatures),
+            selectinload(Proposal.file),
+            selectinload(Proposal.action),
+            selectinload(Proposal.creator),
+        )
         .order_by(Proposal.created_at.desc())
         .all()
     )
-    is_owner = vault.member_for(current_user.id).member_role == "owner"
+    me = vault.member_for(current_user.id)
+    is_owner = me.member_role == "owner"
     signer_vaults = inbox_service.signer_vault_ids(current_user)
     treasury = treasury_jobs.view(vault) if _treasuries_on() else None
     if tab == "treasury" and treasury is None:
@@ -156,7 +163,11 @@ def vault_detail(vid: int):
         "vaults/detail.html",
         vault=vault,
         tab=tab,
+        me=me,
         rows=inbox_service.decorate(proposals, current_user, signer_vaults),
+        # Who is in the vault, how each signs and when they last did (rework R2).
+        members=vault_service.member_overview(vault) if tab == "members" else None,
+        linked=linked,
         files=[p for p in proposals if p.file is not None],
         is_owner=is_owner,
         # New decision and New payment are drawn only for someone the route will let through.
@@ -383,6 +394,11 @@ def new_proposal(vid: int):
         deadline = form.deadline.data
         if deadline is not None and deadline.tzinfo is None:
             deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
+        if deadline is not None and deadline <= datetime.now(UTC):
+            # It would be expired the moment it was raised. Payments are refused the same way by
+            # the D23 policy; a general decision had no check.
+            flash("Choose a due time in the future.", "danger")
+            return _new_decision_page(form, vault, "general")
         try:
             proposal = proposal_service.create_proposal(
                 vault,
@@ -395,11 +411,27 @@ def new_proposal(vid: int):
             )
         except ProposalError as exc:
             flash(str(exc), "danger")
-            return render_template("vaults/proposal_new.html", form=form, vault=vault)
+            return _new_decision_page(form, vault, "general")
         flash("Proposal created.", "success")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=proposal.proposal_uuid))
+    return _new_decision_page(form, vault, "general")
+
+
+def _new_decision_page(form, vault, kind: str):
+    """New decision, either type, with the "who approves" preview (plan S14) beside the form."""
+    payments = kind == "payment" or _payments_possible(vault)
+    now = datetime.now(UTC)
     return render_template(
-        "vaults/proposal_new.html", form=form, vault=vault, payments=_payments_possible(vault)
+        "vaults/proposal_new.html",
+        form=form,
+        vault=vault,
+        payments=payments,
+        kind=kind,
+        preview=proposal_service.who_approves(vault, current_user),
+        treasury=treasury_service.linked_treasury(vault) if kind == "payment" else None,
+        # The date field's range: from now, and for a payment at most 30 days out (D23).
+        due_min=now,
+        due_max=now + PAYMENT_MAX_DEADLINE if kind == "payment" else None,
     )
 
 
@@ -429,9 +461,7 @@ def _new_payment(vault):
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )
-    return render_template(
-        "vaults/proposal_new.html", form=form, vault=vault, payments=True, kind="payment"
-    )
+    return _new_decision_page(form, vault, "payment")
 
 
 @bp.get("/<int:vid>/proposals/<pid>")

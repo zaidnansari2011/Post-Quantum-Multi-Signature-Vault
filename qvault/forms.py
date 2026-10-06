@@ -107,13 +107,18 @@ class ChangePasswordForm(FlaskForm):
     submit = SubmitField("Change password")
 
 
+#: A due time as the browser's datetime-local control posts it, and as a person types it into the
+#: styled date field (rework R2), which shows "2026-10-13 17:00". Both are read as UTC.
+DEADLINE_FORMATS = ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"]
+
+
 class ProposalForm(FlaskForm):
     title = StringField("Title", validators=[DataRequired(), Length(max=255)])
     action_text = TextAreaField(
         "Action / description", validators=[DataRequired(), Length(max=4000)]
     )
     deadline = DateTimeLocalField(
-        "Deadline (optional)", format="%Y-%m-%dT%H:%M", validators=[Optional()]
+        "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
     )
     file = FileField("Attach a file (optional)")
     submit = SubmitField("Create proposal")
@@ -127,7 +132,7 @@ class PaymentProposalForm(FlaskForm):
     to = StringField("Recipient", validators=[DataRequired(), Length(max=42)])
     amount = StringField("Amount (ETH)", validators=[DataRequired(), Length(max=100)])
     deadline = DateTimeLocalField(
-        "Deadline (optional)", format="%Y-%m-%dT%H:%M", validators=[Optional()]
+        "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
     )
     submit = SubmitField("Create payment decision")
 
