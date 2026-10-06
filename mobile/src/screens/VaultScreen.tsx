@@ -8,9 +8,9 @@
 // Members are listed with their role rather than their key material. A signer and a viewer are
 // different in a way that matters to the person reading -- one of them can stop a decision -- and
 // that difference is governance, not cryptography. Fingerprints live on the account screen, where
-// someone comparing them has a reason to.
+// someone comparing them has a reason to. The role is a neutral chip: colour in this app reports a
+// state someone must act on or trust, and a role is neither.
 
-import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
@@ -36,6 +36,7 @@ import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { VaultMember } from '../api/schemas.ts';
 import { mayPropose } from '../proposing.ts';
+import { decisionStatus } from '../status.ts';
 
 export default function VaultScreen({
   vaultId,
@@ -56,13 +57,11 @@ export default function VaultScreen({
   });
   const vault = query.data?.vault;
 
-  const { open, decided } = useMemo(() => {
-    const all = vault?.proposals ?? [];
-    return {
-      open: all.filter((p) => p.status === 'open'),
-      decided: all.filter((p) => p.status !== 'open'),
-    };
-  }, [vault]);
+  // By the status every screen shows, worked out on each render: one whose deadline has passed
+  // moves to "Already decided" as Expired, even while the server's copy still says open.
+  const all = vault?.proposals ?? [];
+  const open = all.filter((p) => decisionStatus(p) === 'open');
+  const decided = all.filter((p) => decisionStatus(p) !== 'open');
 
   if (query.isLoading || !vault) {
     return (
@@ -166,7 +165,7 @@ function MemberRow({ member }: { member: VaultMember }) {
           </Text>
         ) : null}
       </View>
-      <Chip label={roleWord(member.role)} tone={member.role === 'viewer' ? 'neutral' : 'sealed'} />
+      <Chip label={roleWord(member.role)} />
     </View>
   );
 }

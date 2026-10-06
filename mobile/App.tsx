@@ -29,6 +29,7 @@ import { TabBar } from './src/ui/TabBar.tsx';
 import { useAppFonts } from './src/ui/fonts.ts';
 import { color } from './src/theme.ts';
 import * as api from './src/api/endpoints.ts';
+import { stillOpen } from './src/status.ts';
 import EnrolScreen from './src/screens/EnrolScreen.tsx';
 import HomeScreen from './src/screens/HomeScreen.tsx';
 import ActivityScreen from './src/screens/ActivityScreen.tsx';
@@ -70,9 +71,9 @@ const queryClient = new QueryClient({
 /**
  * The badge count.
  *
- * Read from the same query key the queue uses, so the number on the tab and the number of cards on
- * the screen cannot disagree -- a badge that outlives its list is how an approvals app trains
- * someone to ignore it.
+ * Read from the same query key the queue uses, and narrowed the same way (`stillOpen`), so the
+ * number on the tab and the number of cards on the screen cannot disagree -- a badge that outlives
+ * its list is how an approvals app trains someone to ignore it.
  */
 function useAwaitingCount(): number | undefined {
   const { token } = useEnrolledSession();
@@ -80,7 +81,7 @@ function useAwaitingCount(): number | undefined {
     queryKey: ['proposals', 'awaiting'],
     queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
   });
-  const n = data?.proposals.length ?? 0;
+  const n = stillOpen(data?.proposals ?? []).length;
   return n > 0 ? n : undefined;
 }
 
