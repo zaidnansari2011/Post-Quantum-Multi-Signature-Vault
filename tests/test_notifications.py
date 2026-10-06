@@ -233,7 +233,9 @@ def test_a_passed_deadline_leaves_needs_you_before_the_sweep_runs(team):
     assert _section(team.brij, "needs_you", now=later) == []
     # By kind, not position: "added to the vault" is stamped with the real clock, so which is
     # newer depends on the day the suite runs.
-    (item,) = [i for i in _section(team.brij, "updates", now=later) if i["kind"] == "decision_raised"]
+    (item,) = [
+        i for i in _section(team.brij, "updates", now=later) if i["kind"] == "decision_raised"
+    ]
     assert item["body"].endswith("Expired without your vote.")
 
 
