@@ -30,11 +30,13 @@
 {% from "ui/avatars.html" import avatar %}
 
 {# The theme choice, shared by the avatar menu and the public header. Each button posts its own
-   value, so the choice works without JavaScript; qvault.js only paints it before the reload. #}
+   value, so the choice works without JavaScript; qvault.js only paints it before the reload.
+   No CSRF token: asking for one would start a session on every signed-out page, so /theme
+   refuses cross-site posts instead (qvault/blueprints/theme.py). The page is named as next only
+   when it was a GET; a page drawn in answer to a POST cannot be fetched again. #}
 {% macro theme_choice() -%}
 <form class="themepick" method="post" action="{{ url_for('theme.set_theme') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+  {% if request.method == 'GET' %}<input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">{% endif %}
   <span class="themepick__label" id="themepick-label">Theme</span>
   <span class="seg" role="group" aria-labelledby="themepick-label">
     {% for value in theme_choices %}
