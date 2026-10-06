@@ -1,0 +1,37 @@
+{#- One notification, in the bell's popover (compact) or the inbox (with its actions).
+
+    The whole text is one link through notifications.open_notification, which marks it read and
+    goes to the page it is about. Nothing here approves or rejects: that happens on the page. -#}
+{% macro item(n, stamp, back, actions=false) -%}
+<li class="nitem{% if n.unread %} is-unread{% endif %}{% if n.actionable %} is-needs{% endif %}">
+  <a class="nitem__link" href="{{ url_for('notifications.open_notification', nid=n.id) }}">
+    <span class="nitem__dot" aria-hidden="true"></span>
+    <span class="nitem__text">
+      <span class="nitem__title">{% if n.unread %}<span class="nvh">Unread: </span>{% endif %}{{ n.title }}</span>
+      {%- if n.body %}<span class="nitem__body">{{ n.body }}</span>{% endif %}
+      <span class="nitem__meta">
+        {%- if n.vault %}{{ n.vault.name }} · {% endif %}{{ stamp(n.created_at) }}
+        {%- if n.security %} · <span class="nitem__lock">Security</span>{% endif -%}
+      </span>
+    </span>
+  </a>
+  {%- if actions %}
+  <div class="nitem__actions">
+    {% if n.unread %}
+    <form method="post" action="{{ url_for('notifications.read', nid=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ back }}">
+      <button class="btn btn--quiet btn--sm" type="submit">Mark read</button>
+    </form>
+    {% endif %}
+    {% if not n.archived_at %}
+    <form method="post" action="{{ url_for('notifications.archive', nid=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ back }}">
+      <button class="btn btn--quiet btn--sm" type="submit">Archive</button>
+    </form>
+    {% endif %}
+  </div>
+  {%- endif %}
+</li>
+{%- endmacro %}

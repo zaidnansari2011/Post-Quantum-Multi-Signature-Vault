@@ -230,3 +230,41 @@ def _outcome(notification, proposal, now: datetime) -> str:
     if status in ("approved", "rejected", "expired"):
         return f"{status.capitalize()} without your vote."
     return "You can no longer approve it."
+
+
+#: The preferences grid: each event in plain words, grouped as a person thinks of them. Every kind
+#: in ``notification_service.KINDS`` appears exactly once (a test holds that).
+PREFERENCE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "Decisions waiting on you",
+        (
+            ("decision_raised", "Someone asks for your approval"),
+            ("decision_reminder", "Reminders while you have not voted"),
+            ("decision_due_soon", "A decision you can approve is due within 24 hours"),
+        ),
+    ),
+    (
+        "Outcomes",
+        (
+            ("decision_approved", "A decision you raised or voted on is approved"),
+            ("decision_rejected", "A decision you raised or voted on is rejected"),
+            ("decision_expired", "A decision you raised or voted on expires"),
+            ("payout_paid", "A payment you are part of is made"),
+            ("payout_failed", "A payment you are part of is not made"),
+        ),
+    ),
+    (
+        "Vaults",
+        (
+            ("vault_member_added", "You are added to a vault"),
+            ("vault_rule_changed", "A vault's approval rule or treasury changes"),
+        ),
+    ),
+    (
+        "Security",
+        (
+            ("device_enrolled", "A new device can sign for you"),
+            ("password_changed", "Your password is changed"),
+        ),
+    ),
+)

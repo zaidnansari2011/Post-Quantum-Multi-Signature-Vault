@@ -1,0 +1,24 @@
+{#- Remind approvers, on the decision page of an open decision you raised (plan R4). Once a day;
+    after that the button stays, disabled, and says when it can next be used. -#}
+{%- set rs = remind_state(proposal) %}
+{%- if rs and rs.offered %}
+<div class="panel">
+  <div class="panel__head"><span class="label">Waiting on</span>
+    <span class="push tiny muted">{{ rs.waiting }} approver{{ '' if rs.waiting == 1 else 's' }}</span>
+  </div>
+  <div class="panel__body">
+    <form method="post" action="{{ url_for('notifications.remind', vid=proposal.vault_id, pid=proposal.proposal_uuid) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn--ghost btn--sm" type="submit"
+              {% if not rs.allowed %}disabled aria-describedby="remind-note"{% endif %}>Remind approvers</button>
+    </form>
+    <p class="field__help" id="remind-note">
+      {%- if rs.allowed %}
+      Sends the {{ rs.waiting }} approver{{ '' if rs.waiting == 1 else 's' }} who {{ 'has' if rs.waiting == 1 else 'have' }} not voted a reminder in Q-Vault. You can send one a day.
+      {%- else %}
+      {{ rs.refusal }}
+      {%- endif %}
+    </p>
+  </div>
+</div>
+{%- endif %}
