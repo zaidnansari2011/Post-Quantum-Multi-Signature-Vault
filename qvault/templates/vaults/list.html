@@ -8,9 +8,11 @@
     <div class="head__title">Vaults</div>
     <div class="head__sub">{{ rows|length }} vault{{ '' if rows|length == 1 else 's' }}</div>
   </div>
+  {% if can_create_vaults %}
   <div class="head__actions">
     <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">New vault</a>
   </div>
+  {% endif %}
 </div>
 {% endblock %}
 
@@ -55,7 +57,9 @@
 <div class="empty">
   <div class="empty__title">No vaults</div>
   <p class="empty__sub">A vault holds a group of people and the number of them who must agree.</p>
+  {% if can_create_vaults %}
   <a class="btn btn--primary btn--sm" href="{{ url_for('vaults.new_vault') }}">Create a vault</a>
+  {% endif %}
 </div>
 {% endif %}
 {% endblock %}

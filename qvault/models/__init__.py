@@ -5,7 +5,8 @@ Present: user, key, algorithm_config, ledger_entry (Phase 2); vault, vault_membe
 proposal, file (Phase 3); signature (Phase 4); ledger_anchor (Phase 5); log_checkpoint and
 witness_cosignature (transparency log, ADR-0015); device (device-held signing keys, ADR-0016);
 treasury, treasury_signer, proposal_action, execution_signature, treasury_job and
-signer_preference (on-chain execution, docs/plans/onchain-execution.md).
+signer_preference (on-chain execution, docs/plans/onchain-execution.md); workspace,
+workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md S10, S11).
 Added in later phases: rotation_event.
 """
 
@@ -31,6 +32,7 @@ from .treasury import ExecutionSignature, ProposalAction, Treasury, TreasurySign
 from .treasury_job import TreasuryJob, TreasuryJobTransaction
 from .user import User
 from .vault import Vault, VaultMember, VaultPolicy
+from .workspace import Invitation, Workspace, WorkspaceMember
 
 __all__ = [
     "User",
@@ -59,4 +61,7 @@ __all__ = [
     "ReconfigurationSignature",
     "ReconfigurationTransaction",
     "SignerPreference",
+    "Workspace",
+    "WorkspaceMember",
+    "Invitation",
 ]

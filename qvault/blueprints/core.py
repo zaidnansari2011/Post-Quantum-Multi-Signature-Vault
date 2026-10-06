@@ -11,7 +11,13 @@ from flask import Blueprint, current_app, jsonify, render_template
 from flask_login import current_user
 
 from qvault.security.demo_gate import demo_enabled
-from qvault.services import audit_service, checkpoint_service, inbox_service, treasury_service
+from qvault.services import (
+    audit_service,
+    checkpoint_service,
+    inbox_service,
+    treasury_service,
+    workspace_service,
+)
 from qvault.services.audit_service import Filters as AuditFilters
 from qvault.services.inbox_service import Filters as InboxFilters
 
@@ -52,6 +58,9 @@ def index():
         activity=audit_service.narrate(activity.items),
         vaults=inbox_service.vaults_for_filter(current_user),
         log=checkpoint_service.log_summary(),
+        # A new workspace's first steps, for its owners and admins, until done or hidden.
+        checklist=workspace_service.checklist_for(current_user),
+        can_create_vaults=workspace_service.can_create_vaults(current_user),
     )
 
 

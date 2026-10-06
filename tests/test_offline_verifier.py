@@ -972,3 +972,34 @@ def test_an_authorisation_made_with_another_key_than_the_vote_is_refused(app, pa
     forged["signatures"][0]["public_key_b64"] = forged["signatures"][1]["public_key_b64"]
     report = agree(app, page, forged)
     assert report["ok"] is False
+
+
+# --------------------------------------------------------------------------------------------
+# The workspace layer's events (rework plan S10, S11) in the same log
+# --------------------------------------------------------------------------------------------
+
+
+def test_the_browser_agrees_on_a_log_that_holds_workspace_events(app, page, witnessed):
+    """Invitations, role changes and removals are new event types in the log every decision is
+    proved against. Both verifiers must still verify the decision, and must handle the new types
+    as ordinary entries when an export carries them."""
+    from test_invitations import (
+        WORKSPACE_EVENTS,
+        decision_among_workspace_events,
+        with_workspace_entries,
+    )
+
+    bundle = export_service.build_decision_bundle(decision_among_workspace_events(PASSWORD))
+    report = agree(app, page, bundle)
+    assert report["ok"] is True, report["summary"]
+
+    carrying = with_workspace_entries(bundle)
+    assert WORKSPACE_EVENTS <= {raw["event_type"] for raw in carrying["log"]["entries"]}
+    report = agree(app, page, carrying)
+    assert report["ok"] is True, report["summary"]
+
+    tampered = copy.deepcopy(carrying)
+    raw = next(r for r in tampered["log"]["entries"] if r["event_type"] == "workspace_role_changed")
+    raw["payload_json"] = raw["payload_json"].replace('"to":"auditor"', '"to":"owner"')
+    report = agree(app, page, tampered)
+    assert report["ok"] is False and not _check(report, "log_entries")["ok"]

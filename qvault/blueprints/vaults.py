@@ -59,6 +59,7 @@ from qvault.services import (
     treasury_jobs,
     treasury_service,
     vault_service,
+    workspace_service,
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptError
@@ -94,13 +95,19 @@ def list_vaults():
             }
         )
     return render_template(
-        "vaults/list.html", rows=rows, awaiting_me=sum(r["needs_me"] for r in rows)
+        "vaults/list.html",
+        rows=rows,
+        awaiting_me=sum(r["needs_me"] for r in rows),
+        can_create_vaults=workspace_service.can_create_vaults(current_user),
     )
 
 
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 def new_vault():
+    # Auditors are read-only (plan S10). The service refuses too; this answers before the form.
+    if not workspace_service.can_create_vaults(current_user):
+        abort(403)
     form = VaultForm()
     if form.validate_on_submit():
         try:

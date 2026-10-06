@@ -367,13 +367,19 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R3: Workspace and people · Alembic migration
 
-- [ ] Workspace model, membership, roles (S10); migration of existing users into one workspace; `/api/v1/people` scoped to the workspace
-- [ ] Members page (Active / Invited / Suspended), role changes, removal
-- [ ] Invitations by link (S11): create, copy, expire, resend, revoke; acceptance page with all its states; audit events for each
-- [ ] Workspace settings (general, members, vault defaults, danger zone with typed confirmation)
-- [ ] Getting-started checklist for a new workspace (3–5 items, completes on real events)
-- [ ] Phone: workspace-aware API responses (no UI change beyond names)
+- [x] Workspace model, membership, roles (S10); migration of existing users into one workspace; `/api/v1/people` scoped to the workspace (2026-10-05, `rework/r3-workspaces`): `0002_workspaces` plus the same step at startup; the people list, picked ids and add-member-by-email resolve only inside the caller's workspace; only someone with an enrolled key can be made an approver; removal refused while the person is still in a vault. Until R6, registering without an invitation joins the first workspace, as before. Vaults have no workspace column yet: a vault belongs to its owner's workspace
+- [x] Members page (Active / Invited / Suspended), role changes, removal (2026-10-05): `/workspace/members`; the last owner's role is shown, not offered; suspend and reinstate (new ledger events; a suspension leaves the person's vaults alone); removal asks for their email typed and names any vault that blocks it
+- [x] Invitations by link (S11): create, copy, expire, resend, revoke; acceptance page with all its states; audit events for each (2026-10-05): the link is rendered once in the POST response (never a redirect or flash, which would put it in the cookie); `/invite/<token>` answers no-referrer and no-store and covers unknown, used, withdrawn, expired, inviter lost access, wrong account (sign out and return), already a member, sign in (returns through the same-site `next`) and create an account. Email delivery is R8, and the invite form says so
+- [x] Workspace settings (general, members, vault defaults, danger zone with typed confirmation) (2026-10-05): rename; the S15 default is stored on the workspace (off), enforced from R5; a non-owner can leave by typing the name; deleting is not offered (refused while the workspace has vaults)
+- [x] Getting-started checklist for a new workspace (3–5 items, completes on real events) (2026-10-05): five items on Home for owners and admins, gone when all are done or one of them hides it
+- [x] Phone: workspace-aware API responses (no UI change beyond names) (2026-10-05): `workspace` {id, name, role, role_name} on `/me` and the enrolment challenge, and the workspace named on `/people`; additive, and the phone's schemas parse all three
 - **Done when:** a new person can be invited by link, join, enrol a key, and approve, end to end on web and phone, with every step in the audit log.
+- **Known gaps (R3 review, 2026-10-06).** Accepted for now; where a later phase closes one, it is named:
+  - (a) Open `/register` joins the default workspace, so the scoped people list protects nothing until R6 closes or gates registration.
+  - (b) Suspending a vault's owner detaches their vaults from the workspace (a vault's workspace is its owner's active one) until vaults store `workspace_id` (R10).
+  - (c) Two owners demoting each other at the same moment can leave no owner: the last-owner guard needs row locks (Postgres, R10).
+  - (d) Any admin can reinstate someone an owner suspended; reinstatement follows the rank rules, not who suspended them.
+  - (e) Anyone registered by an older image after `0002_workspaces` ran is not placed in a workspace; the [runbook](../runbooks/database-migrations.md)'s rollback note says so.
 
 ### Phase R4: Notifications, in-app
 
@@ -431,7 +437,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [ ] Staging: a second container app off the rework image, with its **own** database (a new database on the existing Postgres server), seeded with the team's accounts; witness and relayer off unless the owner wants them
 - [ ] The team tests on staging; issues fixed
 - [ ] ⚑ The owner decides: switch, or stay on the tag
-- [ ] Switch procedure: back up the live database; stamp it `0001_baseline`, `alembic check`, then `alembic upgrade head`, all before the new image first starts ([runbook](../runbooks/database-migrations.md)); deploy; smoke test; keep the tagged image ready. Rollback: redeploy `ee70586` (or the tag's image) against the backup
+- [ ] Switch procedure: back up the live database; then, all before the new image first starts, `scripts/check_baseline.py` (exactly the baseline's tables), stamp it `0001_baseline`, `alembic upgrade head`, and `alembic check` (no new upgrade operations; it cannot run between the stamp and the upgrade once later revisions exist) ([runbook](../runbooks/database-migrations.md)); deploy; smoke test; keep the tagged image ready. Rollback: redeploy `ee70586` (or the tag's image) against the backup, never against the upgraded database (users it registers would join no workspace)
 
 ---
 

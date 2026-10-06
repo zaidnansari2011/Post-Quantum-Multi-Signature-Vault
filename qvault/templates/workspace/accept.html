@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Invitation — Q-Vault{% endblock %}
+
+{# One page for every state of an invitation link, signed in or out. ``state`` is one of:
+   unknown, accepted, revoked, expired, void (the inviter can no longer invite), wrong_account,
+   already_member, ready, sign_in, sign_up. #}
+{% macro details() %}
+<dl class="meta">
+  <dt>Workspace</dt><dd>{{ invitation.workspace.name }}</dd>
+  <dt>Invited by</dt><dd>{{ invitation.inviter.display_name }}</dd>
+  <dt>For</dt><dd>{{ invitation.email }}</dd>
+  <dt>Role</dt><dd>{{ role_name(invitation.role) }} <span class="muted small">{{ role_help[invitation.role] }}</span></dd>
+  <dt>Vaults</dt>
+  <dd>{% for g in grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}{% else %}None{% endfor %}</dd>
+  <dt>Expires</dt><dd>{{ invitation.expires_at | ws_when }}</dd>
+</dl>
+{% endmacro %}
+
+{% macro body() %}
+<div class="auth" style="max-width:30rem">
+  <div class="auth__mark">
+    <svg width="22" height="22" viewBox="0 0 18 18" aria-hidden="true">
+      <rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="6" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <rect x="6" y="6" width="6" height="6" fill="currentColor" opacity=".18"/>
+    </svg>
+    <span>Q-Vault</span>
+  </div>
+
+  {% if state == 'unknown' %}
+    <h1 class="auth__title">This link isn't valid</h1>
+    <p class="small">Check that you copied all of it. If it still doesn't work, ask the person who invited you for a new link.</p>
+
+  {% elif state == 'accepted' %}
+    <h1 class="auth__title">This invitation has been used</h1>
+    {% if current_user.is_authenticated and invitation.accepted_by_id == current_user.id %}
+      <p class="small">You joined {{ invitation.workspace.name }} on {{ invitation.accepted_at | ws_when }}.</p>
+      <a class="btn btn--primary btn--block" href="{{ url_for('core.index') }}">Go to Home</a>
+    {% else %}
+      <p class="small">Each link works once. If you need access, ask {{ invitation.inviter.display_name }} to invite you again.</p>
+    {% endif %}
+
+  {% elif state == 'revoked' %}
+    <h1 class="auth__title">This invitation was withdrawn</h1>
+    <p class="small">{{ invitation.inviter.display_name }} or another admin of {{ invitation.workspace.name }} withdrew it, so the link no longer works. Ask them to invite you again.</p>
+
+  {% elif state == 'expired' %}
+    <h1 class="auth__title">This invitation has expired</h1>
+    <p class="small">It expired on {{ invitation.expires_at | ws_when }}. Ask {{ invitation.inviter.display_name }} to send you a new link.</p>
+
+  {% elif state == 'void' %}
+    <h1 class="auth__title">This invitation is no longer valid</h1>
+    <p class="small">The person who sent it can no longer invite people to {{ invitation.workspace.name }}. Ask a workspace admin to invite you again.</p>
+
+  {% else %}
+    <h1 class="auth__title">Join {{ invitation.workspace.name }}</h1>
+    <p class="small">{{ invitation.inviter.display_name }} invited you to work with them in Q-Vault.</p>
+    {{ details() }}
+
+    {% if state == 'ready' %}
+      <form method="post" action="{{ url_for('workspace.accept', token=token) }}" style="margin-top:1rem">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn--primary btn--block" type="submit">Accept and join</button>
+      </form>
+
+    {% elif state == 'already_member' %}
+      <p class="small" style="margin-top:1rem">You're already a member of {{ invitation.workspace.name }}.</p>
+      <a class="btn btn--primary btn--block" href="{{ url_for('core.index') }}">Go to Home</a>
+
+    {% elif state == 'wrong_account' %}
+      <div class="alert alert-warning" role="status" style="margin-top:1rem">
+        <span>This invitation is for {{ invitation.email }}, and you're signed in as {{ current_user.email }}.
+        Sign out, then sign in or create an account with {{ invitation.email }}.</span>
+      </div>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ here }}">
+        <button class="btn btn--primary btn--block" type="submit">Sign out and continue</button>
+      </form>
+
+    {% elif state == 'sign_in' %}
+      <p class="small" style="margin-top:1rem">There's already an account for {{ invitation.email }}. Sign in with it to accept.</p>
+      <a class="btn btn--primary btn--block" href="{{ url_for('auth.login', next=here) }}">Sign in to accept</a>
+
+    {% elif state == 'sign_up' %}
+      <p class="small" style="margin-top:1rem">Create your account to accept. It uses {{ invitation.email }}, the address the invitation was sent to.</p>
+      <form method="post" action="{{ url_for('workspace.register', token=token) }}" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="field">
+          {{ form.display_name.label(class="field__label") }}
+          {{ form.display_name(class="input", autocomplete="name") }}
+          {% for e in form.display_name.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="field">
+          {{ form.password.label(class="field__label") }}
+          {{ form.password(class="input", autocomplete="new-password") }}
+          <p class="field__help">Unlocks your signing key, which is created with your account. It can't be reset for you.</p>
+          {% for e in form.password.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        <div class="field">
+          {{ form.confirm.label(class="field__label") }}
+          {{ form.confirm(class="input", autocomplete="new-password") }}
+          {% for e in form.confirm.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
+        </div>
+        {{ form.submit(class="btn btn--primary btn--block") }}
+      </form>
+      <p class="small muted auth__foot">
+        Have an account under another address? It can't accept this invitation; ask for one sent to that address.
+      </p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}{{ body() }}{% endblock %}
+{% block anon_content %}{{ body() }}{% endblock %}
