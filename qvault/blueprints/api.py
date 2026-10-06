@@ -43,6 +43,7 @@ from qvault.services import (
     device_service,
     execution_service,
     key_service,
+    notification_service,
     payout_service,
     proposal_service,
     reconfiguration_service,
@@ -1036,3 +1037,111 @@ def _vote_code(message: str) -> str:
     if "approve" in lowered and "reject" in lowered:
         return "decision_invalid"
     return "vote_rejected"
+
+
+# -- notifications (plan R4) ----------------------------------------------------------------------
+#
+# The phone's inbox. Every query is by recipient, so an id that belongs to someone else is a 404
+# like an id that does not exist. Nothing here approves anything: a notification is a link to a
+# decision, and the vote endpoint above is the only way to sign (S12).
+
+
+def _whole(name: str, default: int, low: int, high: int) -> int | None:
+    """A whole-number query parameter in [low, high], or None when it is not one."""
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if low <= value <= high else None
+
+
+@bp.get("/notifications")
+@device_token_required
+def list_notifications():
+    """One section of the inbox, newest first: ``needs_you``, ``updates`` or ``archived``."""
+    section = request.args.get("section", "needs_you")
+    if section not in notification_service.SECTIONS:
+        return _error(
+            "bad_request",
+            f"section must be one of {', '.join(notification_service.SECTIONS)}.",
+            400,
+        )
+    page = _whole("page", 1, 1, notification_service.MAX_PAGE)
+    per_page = _whole(
+        "per_page", notification_service.PER_PAGE, 1, notification_service.MAX_PER_PAGE
+    )
+    if page is None or per_page is None:
+        return _error(
+            "bad_request",
+            f"page must be 1 or more and per_page 1 to {notification_service.MAX_PER_PAGE}.",
+            400,
+        )
+    result = notification_service.inbox(g.api_user, section, page=page, per_page=per_page)
+    return jsonify(
+        ok=True,
+        section=result.section,
+        page=result.page,
+        per_page=result.per_page,
+        total=result.total,
+        has_more=result.has_more,
+        notifications=result.items,
+        unread=notification_service.unread_counts(g.api_user),
+    )
+
+
+@bp.get("/notifications/unread")
+@device_token_required
+def unread_notifications():
+    """The badge: unread in Needs you, in Updates, and both."""
+    return jsonify(ok=True, unread=notification_service.unread_counts(g.api_user))
+
+
+@bp.post("/notifications/<int:nid>/read")
+@device_token_required
+def read_notification(nid: int):
+    item = notification_service.mark_read(g.api_user, nid)
+    if item is None:
+        return _error("unknown_notification", "No such notification.", 404)
+    return jsonify(
+        ok=True, notification=item, unread=notification_service.unread_counts(g.api_user)
+    )
+
+
+@bp.post("/notifications/read-all")
+@device_token_required
+def read_all_notifications():
+    """Mark every unread notification read, or only one section's (``{"section": ...}``)."""
+    section = _body().get("section")
+    if section is not None and section not in ("needs_you", "updates"):
+        return _error("bad_request", "section must be needs_you or updates.", 400)
+    marked = notification_service.mark_all_read(g.api_user, section=section)
+    return jsonify(ok=True, marked=marked, unread=notification_service.unread_counts(g.api_user))
+
+
+@bp.post("/notifications/<int:nid>/archive")
+@device_token_required
+def archive_notification(nid: int):
+    item = notification_service.archive(g.api_user, nid)
+    if item is None:
+        return _error("unknown_notification", "No such notification.", 404)
+    return jsonify(
+        ok=True, notification=item, unread=notification_service.unread_counts(g.api_user)
+    )
+
+
+@bp.post("/proposals/<uuid>/remind")
+@device_token_required
+def remind_approvers(uuid: str):
+    """The requester reminds the approvers who have not voted; at most once a day per decision."""
+    user = g.api_user
+    proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
+    if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
+        return _error("unknown_proposal", "No such proposal.", 404)
+    try:
+        reminded = notification_service.remind(proposal, user)
+    except notification_service.RemindRefused as exc:
+        return _error("remind_refused", str(exc), 409)
+    return jsonify(ok=True, reminded=reminded)

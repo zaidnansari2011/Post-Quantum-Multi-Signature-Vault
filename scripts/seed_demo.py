@@ -58,6 +58,7 @@ from qvault.services import (  # noqa: E402
     auth_service,
     checkpoint_service,
     ledger_service,
+    notification_service,
     proposal_service,
     publication_service,
     rotation_service,
@@ -152,6 +153,8 @@ def _frozen_clock(clock: _Clock):
         (ledger_service, "_utcnow_iso", lambda: clock.t.isoformat()),
         (proposal_model, "_utcnow", lambda: clock.t),
         (signature_model, "_utcnow", lambda: clock.t),
+        # Notifications are dated when their event happened, not when the seed ran (plan R4).
+        (notification_service, "_utcnow", lambda: clock.t),
     ]
     saved = [(obj, name, getattr(obj, name)) for obj, name, _ in targets]
     try:
@@ -526,6 +529,22 @@ def _assert_monotonic() -> None:
             )
 
 
+#: Notifications older than this, at the seed's last instant, are marked read: the people in the
+#: story would have seen them. Newer ones stay unread so the bell has something true to show.
+READ_AFTER = timedelta(days=3)
+
+
+def _read_old_notifications(now: datetime) -> None:
+    """Mark the seeded notifications older than ``READ_AFTER`` read, each when it was made plus
+    an hour, so the demo opens on a believable unread count rather than months of backlog."""
+    from qvault.models import Notification
+
+    for note in Notification.query.filter(Notification.read_at.is_(None)).all():
+        made = note.created_at if note.created_at.tzinfo else note.created_at.replace(tzinfo=UTC)
+        if now - made > READ_AFTER:
+            note.read_at = made + timedelta(hours=1)
+
+
 def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dict:
     """Build the demonstration database. Drops and re-bootstraps first, deliberately.
 
@@ -709,6 +728,7 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
 
     ledger_service.maybe_anchor()
     checkpoint_service.maybe_checkpoint()
+    _read_old_notifications(clock.t)
     db.session.commit()
 
     _assert_monotonic()

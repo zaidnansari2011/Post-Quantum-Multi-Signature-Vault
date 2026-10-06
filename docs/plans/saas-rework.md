@@ -383,11 +383,14 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R4: Notifications, in-app
 
-- [ ] Notification model and triggers (S12); reminders on the scheduler (+1/+3/+6 business days); "due in 24h"; requester "Remind" (once a day)
-- [ ] Bell popover, inbox page (Needs you / Updates, read/unread, archive), unread badge
-- [ ] Preferences grid (events × in-app/email/push; email and push columns show "Not set up" until R8; security events locked on)
-- [ ] API for the phone's inbox (R7 consumes it)
+- [x] Notification model and triggers (S12); reminders on the scheduler (+1/+3/+6 business days); "due in 24h"; requester "Remind" (once a day). `0003_notifications` (new tables only). Triggers sit in the services, inside each event's transaction and a savepoint, so a failed notification never stops a vote. Needs you is decided by state: a request stays there while its decision still waits on the recipient (open, before its deadline, unsigned by them, still an approver); one they never answered then moves to Updates and says how it ended; one they answered, and every reminder, leaves the inbox. Reminders stop in a decision's last 24 hours, where one warning replaces them; a scheduler that was down sends only the latest reminder due
+- [x] Bell popover, inbox page (Needs you / Updates, read/unread, archive), unread badge. The bell is one self-contained include (`notifications/_bell.html`, with its own CSS and script) and a plain link to `/notifications/` without JavaScript; its badge is loud only when something unread waits on you. Opening a notification marks it read and goes to its page; nothing on these pages approves. Remind approvers is on the decision page of an open decision you raised, disabled for a day after use with the time it can next be sent. The seed marks notifications older than three days read
+- [x] Preferences grid (events × in-app/email/push; email and push columns show "Not set up" until R8; security events locked on), at `/account/notifications`, linked from the account page until R1's Account split
+- [x] API for the phone's inbox (R7 consumes it): `GET /api/v1/notifications?section=needs_you|updates|archived&page&per_page`, `GET .../unread`, `POST .../<id>/read`, `POST .../read-all` (optional section), `POST .../<id>/archive`, and `POST /api/v1/proposals/<uuid>/remind`; zod schemas added to `mobile/src/api/schemas.ts`, checked against real responses by a probe
 - **Done when:** raising a decision notifies every eligible approver in-app within one scheduler tick, reminders fire on schedule in a clock-moved test, and preferences are honoured.
+- **Known gaps (R4 review, 2026-10-06):** left on purpose, each small enough not to hold the phase.
+  - *Remind at the exact 24-hour boundary.* Once a day is held by a dedupe key naming the day of the decision's life. Two Remind requests arriving together right at a day boundary can compute different day indices and both send. It needs two concurrent clicks within the same instant, and the worst case is one extra reminder.
+  - *Retention.* Notifications are never pruned. Archived and read ones accumulate per user; the inbox pages them and its queries are by recipient, so this costs disk, not speed, for now. A retention job (e.g. drop archived after a year) belongs on the scheduler later.
 
 ### Phase R5: Decision depth
 

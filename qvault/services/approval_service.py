@@ -28,7 +28,7 @@ from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
-from qvault.services import execution_service, key_service, ledger_service
+from qvault.services import execution_service, key_service, ledger_service, notification_service
 from qvault.services.signing import payment_text, signing_bytes_for, vote_signing_bytes
 
 
@@ -267,6 +267,7 @@ def refresh_expiry(proposal, *, now: datetime | None = None, commit: bool = True
         ref_id=proposal.proposal_uuid,
         commit=False,
     )
+    notification_service.decision_closed(proposal, "expired", now=now)
     if commit:
         db.session.commit()
     return True
@@ -302,6 +303,9 @@ def _finalize_if_decided(proposal, *, actor_id: int | None) -> None:
             ref_id=proposal.proposal_uuid,
             commit=False,
         )
+        notification_service.decision_closed(
+            proposal, "approved", actor_id=actor_id, now=proposal.approved_at
+        )
     elif rejections > proposal.required_n - proposal.required_m:
         # Even if every remaining signer approved, approvals could not reach M → decide now.
         proposal.status = "rejected"
@@ -321,6 +325,9 @@ def _finalize_if_decided(proposal, *, actor_id: int | None) -> None:
             ref_type="proposal",
             ref_id=proposal.proposal_uuid,
             commit=False,
+        )
+        notification_service.decision_closed(
+            proposal, "rejected", actor_id=actor_id, now=proposal.rejected_at
         )
 
 

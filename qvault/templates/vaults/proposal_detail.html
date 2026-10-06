@@ -254,6 +254,8 @@
       </div>
     </div>
 
+    {% include "notifications/_remind.html" %}
+
     {% if payout %}
     {% set chip = {'confirmed': 'chip--sealed', 'failed': 'chip--broken', 'expired': 'chip--waiting',
                    'voided': 'chip--waiting', 'not_paid': 'chip--waiting'}.get(payout.state, 'chip--waiting') %}

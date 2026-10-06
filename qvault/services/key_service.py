@@ -25,7 +25,7 @@ from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.models.user import User
 from qvault.security.passwords import hash_password, verify_password
-from qvault.services import ledger_service
+from qvault.services import ledger_service, notification_service
 from qvault.services.rotation_policy import rotation_deadline
 
 # Additional authenticated data binding the wrap to its purpose (not secret, but tamper-bound).
@@ -341,7 +341,7 @@ def change_password(
     user.kek_salt = new_salt_bytes
     user.password_hash = hash_password(new_password)
 
-    ledger_service.append(
+    entry = ledger_service.append(
         "password_changed",
         {"user_id": user.id, "keys_rewrapped": len(keys)},
         actor=f"user:{user.id}",
@@ -350,6 +350,8 @@ def change_password(
         ref_id=str(user.id),
         commit=False,
     )
+    # A security notification, which cannot be switched off.
+    notification_service.password_changed(user, entry=entry)
     if commit:
         db.session.commit()
     return len(keys)
