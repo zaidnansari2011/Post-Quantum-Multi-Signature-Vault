@@ -285,9 +285,9 @@ def test_the_vaults_pull_to_refresh_refetches_the_list_its_counts_come_from():
     # The "N need you" chips are counted from the awaiting list, not the vault list; a pull that
     # refreshed only the vaults left the counts stale for up to the query's 60 s staleTime.
     source = (MOBILE_DIR / "src" / "screens" / "VaultsScreen.tsx").read_text(encoding="utf-8")
-    refresh = source[
-        source.index("<RefreshControl") : source.index("/>", source.index("<RefreshControl"))
-    ]
+    # The control is the theme's wrapper over RefreshControl since the phone's P1 theme (ui/).
+    tag = "<ThemedRefresh" if "<ThemedRefresh" in source else "<RefreshControl"
+    refresh = source[source.index(tag) : source.index("/>", source.index(tag))]
     assert "awaiting.refetch()" in refresh and "query.refetch()" in refresh
     assert "awaiting.isRefetching" in refresh
 

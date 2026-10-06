@@ -12,22 +12,23 @@
 // reachable from both the queue and the record and it is modal in intent -- someone on it is doing
 // one thing, and the tab bar would invite them to wander off mid-signature.
 import 'react-native-gesture-handler';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
+import * as SystemUI from 'expo-system-ui';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { setApiBaseUrl } from './src/config.ts';
 import { SessionProvider, useSession, useEnrolledSession } from './src/session.tsx';
-import { Loading, Screen } from './src/ui/index.tsx';
-import { TabBar } from './src/ui/TabBar.tsx';
+import { Screen, TabBar, Text, ToastProvider } from './src/ui/index.tsx';
 import { useAppFonts } from './src/ui/fonts.ts';
-import { color } from './src/theme.ts';
+import { ThemeProvider, useTheme, type Scheme } from './src/theme/index.ts';
 import * as api from './src/api/endpoints.ts';
 import { stillOpen } from './src/status.ts';
 import EnrolScreen from './src/screens/EnrolScreen.tsx';
@@ -97,13 +98,14 @@ function MainTabs({
   onCreateVault: () => void;
 }) {
   const awaiting = useAwaitingCount();
+  const t = useTheme();
 
   return (
     <Tabs.Navigator
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: color.paper },
+        sceneStyle: { backgroundColor: t.color.bg },
       }}
     >
       <Tabs.Screen name="Home" options={{ title: 'Approvals', tabBarBadge: awaiting }}>
@@ -124,12 +126,16 @@ function MainTabs({
 
 function Routes() {
   const { status } = useSession();
+  const t = useTheme();
 
   if (status === 'loading') {
     return (
       <Screen>
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Loading label="Unlocking" />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: t.space[12] }}>
+          <ActivityIndicator color={t.color.textMuted} />
+          <Text role="caption" tone="muted">
+            Unlocking
+          </Text>
         </View>
       </Screen>
     );
@@ -141,7 +147,7 @@ function Routes() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: color.paper },
+        contentStyle: { backgroundColor: t.color.bg },
       }}
     >
       <Stack.Screen name="Tabs">
@@ -197,23 +203,70 @@ function Routes() {
   );
 }
 
+/**
+ * Everything that is not a component but still has a colour (§3.5): the status bar's glyphs, the
+ * window behind the app, and React Navigation's own surfaces, so no white frame flashes in dark.
+ */
+function Chrome({ children }: { children: ReactNode }) {
+  const t = useTheme();
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(t.color.bg).catch(() => {});
+  }, [t.color.bg]);
+  const navTheme = useMemo<NavTheme>(() => {
+    const base = t.scheme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: t.color.accent,
+        background: t.color.bg,
+        card: t.color.bg,
+        text: t.color.text,
+        border: t.color.border,
+        notification: t.color.chrome.badgeBg,
+      },
+    };
+  }, [t]);
+  return (
+    <NavigationContainer theme={navTheme}>
+      {children}
+      <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
+  return <QVaultApp />;
+}
+
+/** The app with the harness's overrides: tools/web-shots/HarnessApp.tsx renders this directly. */
+export function QVaultApp({
+  scheme,
+  fontScale,
+}: {
+  /** The web screenshot harness only: the app itself follows the system (§3.6). */
+  scheme?: Scheme;
+  /** The web screenshot harness only: emulate a system text size (§8.1). */
+  fontScale?: number;
+}) {
   const fontsReady = useAppFonts();
-  // Ensures the light chrome assumption holds even if the OS is in dark mode: the app commits to
-  // one visual world, as the web client does.
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
 
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <SessionProvider>
-          <NavigationContainer>{ready && fontsReady ? <Routes /> : null}</NavigationContainer>
-        </SessionProvider>
-      </QueryClientProvider>
-      {/* Dark glyphs: every root screen is light paper. The tab bar is dark, but it sits at the
-          bottom of the screen and the status bar is not over it. */}
-      <StatusBar style="dark" />
-    </SafeAreaProvider>
+    // The gesture root the sheets' drag needs (§5.9). Modals carry their own, for Android.
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider scheme={scheme} fontScale={fontScale}>
+        <SafeAreaProvider>
+          <ToastProvider>
+            <QueryClientProvider client={queryClient}>
+              <SessionProvider>
+                <Chrome>{ready && fontsReady ? <Routes /> : null}</Chrome>
+              </SessionProvider>
+            </QueryClientProvider>
+          </ToastProvider>
+        </SafeAreaProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

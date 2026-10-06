@@ -1,172 +1,236 @@
-// The confirm sheet.
+// The sheet (phone-ux §5.9).
 //
-// The old app approved on a single tap: press Approve, satisfy the biometric prompt, done. That is
-// the correct number of taps for liking a post and the wrong number for committing an organisation
-// to something irreversible. The missing step is not friction for its own sake -- it is the
-// restatement. Before the signature, the person is shown the decision again, in the words it will
-// be recorded in, and asked to confirm that specific sentence rather than to confirm "the thing I
-// was just looking at".
+// Before the signature, the person is shown the decision again, in the words it will be recorded
+// in, and asked to confirm that sentence rather than "the thing I was just looking at". The OS
+// biometric prompt cannot do that job: it authorises a person, not a statement.
 //
-// The biometric prompt cannot do this job. It says "Q-Vault wants to authenticate you", which
-// authorises a *person*, not a *statement*. Everything about what is being agreed to has to be on
-// screen before that prompt appears.
+// Anatomy: a grabber; a fixed header with the title; a scrolling body (a decision can run to 4,000
+// characters, and the title, the start of the text and the button must all stay on screen); a
+// fixed footer with the buttons above the bottom inset. It stops 24pt short of the top inset.
 //
-// Motion: the sheet rises on a spring with no overshoot, and the page behind it dims and settles
-// back a little. That backward step is doing real work -- it says the page is still there and this
-// is a layer over it, which is what makes the cancel affordance obvious without labelling it.
+// Dragging the grabber or the header down more than 30% of the sheet, or faster than 800pt/s,
+// closes it, unless `dismissible` is false (a signature in flight), when it springs back. Android
+// back, a tap on the backdrop and Cancel close it too, under the same rule.
 //
-// Height: a decision can run to 4,000 characters, and a sheet that simply grew with its content
-// pushed its own title and the opening of the text off the top of the screen, so the first words
-// a person saw were somewhere in the middle of what they were signing. The sheet now stops short
-// of the top of the screen; its content scrolls between a fixed title and fixed actions
-// (`footer`), so the title, the start of the text and the Sign button are all on screen at once.
+// The keyboard: the footer (the sign button) rides above it, and the sheet's height shrinks by it.
+// Fields in a sheet are never autofocused, so the content is read before the keyboard arrives.
 
-import { type ReactNode, useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  BackHandler,
+  AccessibilityInfo,
+  Keyboard,
   Modal,
-  Pressable,
+  Platform,
   ScrollView,
-  StyleSheet,
-  Text,
   View,
+  findNodeHandle,
   useWindowDimensions,
+  type Text as RNText,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
+  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withTiming,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { color, elevation, motion, radius, space, type } from '../theme.ts';
+import { makeStyles, useTheme } from '../theme/index.ts';
+import { IconButton } from './Button.tsx';
+import { Text } from './Text.tsx';
+import { Touchable } from './Touchable.tsx';
 
-export function Sheet({
-  visible,
-  onClose,
-  title,
-  children,
-  footer,
-  dismissible = true,
-}: {
+const bezier = (p: readonly number[]) => Easing.bezier(p[0]!, p[1]!, p[2]!, p[3]!);
+
+/** The keyboard's height while it is up, from React Native's own events (§5.9). */
+export function useKeyboardHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const show = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hide = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const a = Keyboard.addListener(show, (e) => setHeight(e.endCoordinates.height));
+    const b = Keyboard.addListener(hide, () => setHeight(0));
+    return () => {
+      a.remove();
+      b.remove();
+    };
+  }, []);
+  return height;
+}
+
+export type SheetProps = {
   visible: boolean;
   onClose: () => void;
   title?: string;
   /** Scrolls when it is taller than the room the sheet has. */
   children: ReactNode;
-  /** The actions, pinned under the content: always on screen, however long the content is. */
+  /** The actions, pinned under the content. */
   footer?: ReactNode;
-  /** False while a signature is in flight: closing midway would leave the outcome ambiguous. */
+  /** False while a signature is in flight: closing midway would leave the outcome unclear. */
   dismissible?: boolean;
-}) {
+  /** A sheet showing a second page of itself (the code explanation) offers Back in its header. */
+  onBack?: () => void;
+};
+
+export function Sheet({ visible, onClose, title, children, footer, dismissible = true, onBack }: SheetProps) {
+  const t = useTheme();
+  const s = useStyles();
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  // Whether the content is longer than its room. A rule then separates it from the actions, so a
-  // reader can see the text carries on above the buttons rather than ending there.
+  const window = useWindowDimensions();
+  const keyboard = useKeyboardHeight();
+
+  const [mounted, setMounted] = useState(visible);
+  const [panelHeight, setPanelHeight] = useState(window.height * 0.6);
   const [room, setRoom] = useState(0);
   const [content, setContent] = useState(0);
-  const overflowing = content > room + 1;
+  const titleRef = useRef<RNText>(null);
 
   const progress = useSharedValue(0);
+  const drag = useSharedValue(0);
 
+  // Mount, animate in; animate out, then unmount.
   useEffect(() => {
-    if (reduced) {
-      progress.value = visible ? 1 : 0;
-      return;
+    if (visible) {
+      setMounted(true);
+      drag.value = 0;
+      progress.value = withTiming(1, {
+        duration: reduced ? t.motion.popover : t.motion.dialog,
+        easing: bezier(t.motion.easeEnter),
+      });
+      // Focus moves to the title, so a screen reader starts at the top of the sheet (§5.9).
+      const at = setTimeout(() => {
+        const node = titleRef.current ? findNodeHandle(titleRef.current) : null;
+        if (node) AccessibilityInfo.setAccessibilityFocus(node);
+      }, t.motion.dialog);
+      return () => clearTimeout(at);
     }
-    progress.value = visible
-      ? withSpring(1, motion.surface)
-      : withTiming(0, { duration: motion.quick });
-  }, [visible, reduced, progress]);
+    progress.value = withTiming(
+      0,
+      { duration: t.motion.dialogExit, easing: bezier(t.motion.easeExit) },
+      (finished) => {
+        if (finished) runOnJS(setMounted)(false);
+      },
+    );
+    return undefined;
+  }, [visible, reduced, progress, drag, t.motion]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (dismissible) onClose();
-      return true;
+  const pan = Gesture.Pan()
+    .onUpdate((e) => {
+      // Downwards only; while a signature is in flight it gives a little and springs back.
+      const y = Math.max(0, e.translationY);
+      drag.value = dismissible ? y : y * 0.2;
+    })
+    .onEnd((e) => {
+      const far = drag.value > panelHeight * 0.3 || e.velocityY > 800;
+      if (dismissible && far) {
+        runOnJS(onClose)();
+      } else {
+        drag.value = withSpring(0, t.motion.surface);
+      }
     });
-    return () => sub.remove();
-  }, [visible, dismissible, onClose]);
 
-  const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value * 0.45 }));
+  const backdrop = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const panel = useAnimatedStyle(() =>
+    reduced
+      ? { opacity: progress.value, transform: [{ translateY: drag.value }] }
+      : { transform: [{ translateY: (1 - progress.value) * panelHeight + drag.value }] },
+  );
 
-  const panelStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: (1 - progress.value) * height * 0.5 }],
-  }));
+  if (!mounted) return null;
+
+  const overflowing = content > room + 1;
+  const maxHeight = window.height - insets.top - t.space[24] - keyboard;
+  const bottom = keyboard > 0 ? keyboard + t.space[8] : Math.max(t.space[16], insets.bottom + t.space[8]);
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <View style={s.root}>
-        <Animated.View style={[s.backdrop, backdropStyle]} />
-        <Pressable
+    <Modal
+      visible
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={() => dismissible && onClose()}
+    >
+      <GestureHandlerRootView style={s.root}>
+        <Animated.View style={[s.backdrop, backdrop]} pointerEvents="none" />
+        <Touchable
           style={s.backdropTarget}
-          accessibilityLabel="Dismiss"
-          accessibilityRole="button"
           onPress={() => dismissible && onClose()}
+          accessible={false}
+          importantForAccessibility="no"
+          focusable={false}
         />
         <Animated.View
-          style={[
-            s.panel,
-            elevation.sheet,
-            {
-              // A strip of the page stays visible above the sheet, as a place to tap away and as
-              // the sign that this is a layer over the decision, not a new screen.
-              maxHeight: Math.min(height * 0.9, height - insets.top - space.xl),
-              paddingBottom: Math.max(space.lg, insets.bottom + space.sm),
-            },
-            panelStyle,
-          ]}
+          accessibilityViewIsModal
+          onLayout={(e) => setPanelHeight(e.nativeEvent.layout.height)}
+          style={[s.panel, t.elevation.sheet, { maxHeight, paddingBottom: footer ? 0 : bottom }, panel]}
         >
-          <View style={s.grip} />
-          {title ? (
-            <Text style={s.title} accessibilityRole="header">
-              {title}
-            </Text>
-          ) : null}
+          <GestureDetector gesture={pan}>
+            <View style={s.header}>
+              <View style={s.grabber} />
+              {title || onBack ? (
+                <View style={s.titleRow}>
+                  {onBack ? <IconButton icon="chevron-left" label="Back" onPress={onBack} /> : null}
+                  {title ? (
+                    <Text ref={titleRef} role="titleSm" accessibilityRole="header" style={s.title}>
+                      {title}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          </GestureDetector>
           <ScrollView
             style={s.body}
             contentContainerStyle={s.bodyContent}
             onLayout={(e) => setRoom(e.nativeEvent.layout.height)}
             onContentSizeChange={(_, h) => setContent(h)}
             keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={overflowing}
           >
             {children}
           </ScrollView>
-          {footer ? <View style={[s.footer, overflowing && s.footerRuled]}>{footer}</View> : null}
+          {footer ? (
+            <View style={[s.footer, overflowing && s.footerRuled, { paddingBottom: bottom }]}>{footer}</View>
+          ) : null}
         </Animated.View>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
-const s = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   root: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0E1729' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: t.color.backdrop },
   backdropTarget: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   panel: {
-    backgroundColor: color.surface,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    paddingHorizontal: space.lg,
-    paddingTop: space.sm,
-    gap: space.md,
-  },
-  grip: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: color.sunk2,
+    width: '100%',
+    maxWidth: t.layout.maxContent,
     alignSelf: 'center',
-    marginBottom: space.sm,
+    backgroundColor: t.color.surfaceRaised,
+    borderTopLeftRadius: t.radius.sheet,
+    borderTopRightRadius: t.radius.sheet,
+    borderTopWidth: t.scheme === 'dark' ? 1 : 0,
+    borderColor: t.color.border,
   },
-  title: { ...type.title, fontSize: 18, lineHeight: 24 },
-  // Its own height up to the room left between the title and the actions, and no more: `flexGrow`
-  // 0 keeps a short sheet short, `flexShrink` 1 lets a long one hand the overflow to the scroll.
+  header: { paddingTop: t.space[8], paddingHorizontal: t.layout.gutter, paddingBottom: t.space[12] },
+  grabber: {
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: t.color.borderStrong,
+    alignSelf: 'center',
+    marginBottom: t.space[12],
+  },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: t.space[4], minHeight: 24 },
+  title: { flex: 1 },
   body: { flexGrow: 0, flexShrink: 1 },
-  bodyContent: { gap: space.md },
-  footer: { gap: space.sm },
-  footerRuled: { borderTopWidth: 1, borderTopColor: color.rule, paddingTop: space.md },
-});
+  bodyContent: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[16], gap: t.space[16] },
+  footer: { paddingHorizontal: t.layout.gutter, paddingTop: t.space[4], gap: t.space[8] },
+  footerRuled: { borderTopWidth: 1, borderTopColor: t.color.border, paddingTop: t.space[12] },
+}));
