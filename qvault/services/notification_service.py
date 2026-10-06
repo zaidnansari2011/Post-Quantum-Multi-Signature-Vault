@@ -38,8 +38,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from flask import current_app
-from sqlalchemy import and_, func, not_, or_, select, update
+from flask import current_app, g, has_request_context, request
+from sqlalchemy import and_, case, func, not_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -180,6 +180,7 @@ def _send(
         except IntegrityError:
             continue
         created.append(row)
+        _forget_unread(recipient_id)
     return created
 
 
@@ -727,7 +728,13 @@ def inbox(
         select(Notification, _waits(now).label("waits"))
         .where(condition)
         .options(
-            selectinload(Notification.proposal).selectinload(Proposal.signatures),
+            # Everything the copy reads, loaded for the whole page at once rather than one
+            # query per notification.
+            selectinload(Notification.proposal).options(
+                selectinload(Proposal.signatures),
+                selectinload(Proposal.action),
+                selectinload(Proposal.creator),
+            ),
             selectinload(Notification.vault),
             selectinload(Notification.actor),
         )
@@ -745,24 +752,54 @@ def inbox(
 
 
 def unread_counts(user, *, now: datetime | None = None) -> dict[str, int]:
-    """Unread notifications in Needs you and in Updates, and both together: the bell's badge."""
+    """Unread notifications in Needs you and in Updates, and both together: the bell's badge.
+
+    The bell is on every page, and the inbox shows the same counts beside it, so they are worked
+    out once per request, in one query, and reused (see ``_unread_cache``). Asked about a given
+    ``now``, it always works them out afresh.
+    """
+    cache = _unread_cache() if now is None else None
+    if cache is not None and user.id in cache:
+        return dict(cache[user.id])
     now = now or _utcnow()
-    counts = {}
-    for section in ("needs_you", "updates"):
-        counts[section] = (
-            db.session.scalar(
-                select(func.count())
-                .select_from(Notification)
-                .where(
-                    Notification.recipient_id == user.id,
-                    Notification.read_at.is_(None),
-                    _in_section(section, now),
-                )
-            )
-            or 0
+    needs_you, updates = db.session.execute(
+        select(
+            func.coalesce(func.sum(case((_in_section("needs_you", now), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((_in_section("updates", now), 1), else_=0)), 0),
         )
+        .select_from(Notification)
+        .where(Notification.recipient_id == user.id, Notification.read_at.is_(None))
+    ).one()
+    counts = {"needs_you": int(needs_you), "updates": int(updates)}
     counts["total"] = counts["needs_you"] + counts["updates"]
+    if cache is not None:
+        cache[user.id] = dict(counts)
     return counts
+
+
+def _unread_cache() -> dict[int, dict[str, int]] | None:
+    """This request's unread counts, by user id; None outside a request.
+
+    Kept on ``g`` and tied to the request object as well: ``g`` lives as long as the app context,
+    which is one request in the app but can span several (the test suite holds one open for a
+    whole test), and counts from an earlier request must never be shown for a later one.
+    """
+    if not has_request_context():
+        return None
+    current = request._get_current_object()
+    held = g.get("_notification_unread")
+    if held is None or held[0] is not current:
+        held = (current, {})
+        g._notification_unread = held
+    return held[1]
+
+
+def _forget_unread(user_id: int) -> None:
+    """Drop ``user_id``'s counts for this request: a notification was written, read or archived,
+    and the counts shown after it must include that."""
+    cache = _unread_cache()
+    if cache is not None:
+        cache.pop(user_id, None)
 
 
 def _own(user, notification_id: int) -> Notification | None:
@@ -839,6 +876,7 @@ def mark_read(user, notification_id: int, *, now: datetime | None = None) -> dic
     if notification.read_at is None:
         notification.read_at = now
         db.session.commit()
+        _forget_unread(user.id)
     return view(notification, now=now)
 
 
@@ -858,6 +896,7 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
         )
         db.session.commit()
         db.session.expire_all()
+        _forget_unread(user.id)
     return len(ids)
 
 
@@ -872,4 +911,5 @@ def archive(user, notification_id: int, *, now: datetime | None = None) -> dict 
         notification.archived_at = now
         notification.read_at = notification.read_at or now
         db.session.commit()
+        _forget_unread(user.id)
     return view(notification, now=now)
