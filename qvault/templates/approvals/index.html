@@ -4,7 +4,7 @@
 {% from "ui/buttons.html" import button %}
 {% from "ui/status.html" import status %}
 {% from "ui/data.html" import data_table, pager, reltime %}
-{% from "ui/work.html" import due, signatures, type_tag %}
+{% from "ui/work.html" import due, deadline, signatures, type_tag %}
 {% block title %}Approvals — Q-Vault{% endblock %}
 
 {#- The Approvals inbox (rework R2, plan section 5): four tabs, filters in the URL, one row per
@@ -31,7 +31,7 @@
   {%- for v in vaults %}{% set _ = vault_options.append((v.id, v.name)) %}{% endfor %}
   {{ select('vault', 'Vault', vault_options, filters.vault_id or '', inline=True) }}
   {{ select('type', 'Type', [('', 'All types'), ('general', 'General'), ('payment', 'Payment')], filters.kind, inline=True) }}
-  {{ select('sort', 'Order', [('recent', 'Newest first'), ('oldest', 'Oldest first'), ('deadline', 'Expires soonest'), ('title', 'Title, A to Z')], filters.sort, inline=True) }}
+  {{ select('sort', 'Order', [('recent', 'Newest first'), ('oldest', 'Oldest first'), ('deadline', 'Due soonest'), ('title', 'Title, A to Z')], filters.sort, inline=True) }}
   {%- if filters.is_filtered %}
   {{ button('Clear filters', 'ghost', href=clear_href, size='sm') }}
   {%- endif %}
@@ -45,7 +45,7 @@
   {'key': 'signatures', 'label': 'Signatures'},
   {'key': 'status', 'label': 'Status'},
   {'key': 'recent', 'label': 'Raised', 'sortable': True},
-  {'key': 'deadline', 'label': 'Expires (UTC)', 'sortable': True},
+  {'key': 'deadline', 'label': 'Due (UTC)', 'sortable': True},
 ]) %}
 {% macro sort_href(key) -%}
 {%- if key == 'recent' %}{% set to = 'oldest' if filters.sort == 'recent' else 'recent' %}{% else %}{% set to = key %}{% endif -%}
@@ -90,7 +90,7 @@
     <td class="q-c-wide-only">{{ signatures(r) }}</td>
     <td class="q-c-status">{{ status(r.status_key, r.status_n) }}</td>
     <td class="q-c-wide-only q-c-raised">{{ reltime(p.created_at) }}<span class="q-drow__by">by {{ "you" if r.raised_by == "You" else r.raised_by }}</span></td>
-    <td class="q-c-end">{{ due(p.expires_at, zone=False) }}</td>
+    <td class="q-c-end">{{ deadline(r) }}</td>
   </tr>
   {%- endfor %}
 {% endcall %}

@@ -5,7 +5,7 @@
 {% from "ui/avatars.html" import avatar, avatar_stack %}
 {% from "ui/data.html" import data_table, hash, reltime %}
 {% from "ui/forms.html" import field, select %}
-{% from "ui/work.html" import due, signatures, rule %}
+{% from "ui/work.html" import due, deadline, signatures, rule %}
 {% from "ui/icons.html" import icon %}
 {% block title %}{{ vault.name }} — Q-Vault{% endblock %}
 {% block crumbs %}{{ breadcrumbs([('Vaults', url_for('vaults.list_vaults')), (vault.name, None)]) }}{% endblock %}
@@ -72,7 +72,7 @@
       <td class="q-c-wide-only">{{ signatures(r) }}</td>
       <td class="q-c-status">{{ status(r.status_key, r.status_n) }}</td>
       <td class="q-c-wide-only q-c-raised">{{ reltime(p.created_at) }}<span class="q-drow__by">by {{ "you" if r.raised_by == "You" else r.raised_by }}</span></td>
-      <td class="q-c-end">{{ due(p.expires_at, zone=False) }}</td>
+      <td class="q-c-end">{{ deadline(r) }}</td>
     </tr>
     {%- endfor %}
   {% endcall %}
