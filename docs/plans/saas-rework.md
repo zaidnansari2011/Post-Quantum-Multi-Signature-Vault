@@ -366,6 +366,9 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] Preferences grid (events × in-app/email/push; email and push columns show "Not set up" until R8; security events locked on), at `/account/notifications`, linked from the account page until R1's Account split
 - [x] API for the phone's inbox (R7 consumes it): `GET /api/v1/notifications?section=needs_you|updates|archived&page&per_page`, `GET .../unread`, `POST .../<id>/read`, `POST .../read-all` (optional section), `POST .../<id>/archive`, and `POST /api/v1/proposals/<uuid>/remind`; zod schemas added to `mobile/src/api/schemas.ts`, checked against real responses by a probe
 - **Done when:** raising a decision notifies every eligible approver in-app within one scheduler tick, reminders fire on schedule in a clock-moved test, and preferences are honoured.
+- **Known gaps (R4 review, 2026-10-06):** left on purpose, each small enough not to hold the phase.
+  - *Remind at the exact 24-hour boundary.* Once a day is held by a dedupe key naming the day of the decision's life. Two Remind requests arriving together right at a day boundary can compute different day indices and both send. It needs two concurrent clicks within the same instant, and the worst case is one extra reminder.
+  - *Retention.* Notifications are never pruned. Archived and read ones accumulate per user; the inbox pages them and its queries are by recipient, so this costs disk, not speed, for now. A retention job (e.g. drop archived after a year) belongs on the scheduler later.
 
 ### Phase R5: Decision depth
 
