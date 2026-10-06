@@ -61,6 +61,42 @@ export class SelfVerificationError extends Error {
   }
 }
 
+/**
+ * The phone has no screen lock, so nothing can confirm that its owner is the one holding it.
+ *
+ * Device custody rests on the prompt before every signature: without a lock there is no prompt,
+ * and anyone holding the unlocked phone could sign. So a phone without one is refused before it
+ * enrols and before it signs (phone UX spec, I-9), never quietly let through.
+ */
+export class NoScreenLockError extends Error {
+  readonly when: 'enrol' | 'sign';
+  constructor(when: 'enrol' | 'sign') {
+    super(
+      when === 'enrol'
+        ? 'Set a screen lock to use this phone with Q-Vault.'
+        : 'Set a screen lock to sign with this phone.',
+    );
+    this.name = 'NoScreenLockError';
+    this.when = when;
+  }
+}
+
+/** Refuse a phone with no screen lock. A check like the others: it runs before any prompt. */
+async function requireScreenLock(custody: Custody, when: 'enrol' | 'sign'): Promise<void> {
+  if ((await custody.detectProtection()) === 'none') throw new NoScreenLockError(when);
+}
+
+/**
+ * Ask the person to confirm, and refuse if the answer came without a prompt. `confirmPresence`
+ * returns 'none' without asking when the lock is gone, which can happen between the check and
+ * the prompt (the lock removed while the sheet was open).
+ */
+async function confirmedPresence(custody: Custody, promptMessage: string): Promise<ProtectionLevel> {
+  const protection = await custody.confirmPresence(promptMessage);
+  if (protection === 'none') throw new NoScreenLockError('sign');
+  return protection;
+}
+
 export interface EnrolResult {
   identity: StoredIdentity;
   token: string;
@@ -72,6 +108,9 @@ export async function enrolThisDevice(args: {
   password: string;
   deviceName: string;
 }): Promise<EnrolResult> {
+  // Before the password leaves the phone or a key is made: a phone that could never sign is not
+  // set up at all.
+  await requireScreenLock(args.custody, 'enrol');
   const challenge = await api.requestChallenge({
     email: args.email,
     password: args.password,
@@ -249,11 +288,13 @@ export async function voteOnProposal(args: {
   // thing they approved was not what they thought.
   const payloadHash = verifyProposalIntegrity(args.detail);
   const execution = paymentApproval(args.detail, payloadHash, args.decision, args.identity);
+  await requireScreenLock(args.custody, 'sign');
 
   const verb = args.decision === 'approve' ? 'Approve' : 'Reject';
   // The prompt names the decision by its signed text, never by its title: the title is not under
   // the hash, so a server could make it say anything (as approveTreasuryChange's prompt does).
-  const protection = await args.custody.confirmPresence(
+  const protection = await confirmedPresence(
+    args.custody,
     `${verb}: ${promptSubject(args.detail.signing_inputs)}`,
   );
 
@@ -370,8 +411,10 @@ export async function approveTreasuryChange(args: {
   // Every check before the prompt, as for a vote.
   const digest = treasuryChangeApproval(args.change, args.treasuryAddress, args.identity);
   const inputs = args.change.signing_inputs!;
+  await requireScreenLock(args.custody, 'sign');
   // The prompt states the signed facts: how many keys join and leave, and the new threshold.
-  const protection = await args.custody.confirmPresence(
+  const protection = await confirmedPresence(
+    args.custody,
     `Approve treasury change: add ${inputs.add.length}, remove ${inputs.remove.length}, ` +
       `then ${inputs.threshold} to approve`,
   );

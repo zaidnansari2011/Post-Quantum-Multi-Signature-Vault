@@ -16,6 +16,7 @@ import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
 import type { ReconfigurationView, TreasuryChange } from '../api/schemas.ts';
 import {
+  NoScreenLockError,
   NotThisPhonesSeatError,
   PayloadMismatchError,
   SelfVerificationError,
@@ -232,6 +233,7 @@ function describe(err: unknown): { title: string; detail?: string } {
     return { title: 'Refused to sign.', detail: 'This change does not match what the server says it is.' };
   }
   if (err instanceof NotThisPhonesSeatError) return { title: 'Not signed on this phone.', detail: err.message };
+  if (err instanceof NoScreenLockError) return { title: err.message, detail: 'Nothing was signed.' };
   if (err instanceof SelfVerificationError) {
     return { title: err.message, detail: 'Enrol this device again to replace the key.' };
   }

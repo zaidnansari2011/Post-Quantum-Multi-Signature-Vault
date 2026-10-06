@@ -178,6 +178,33 @@ def test_a_declined_biometric_prompt_casts_no_vote(http_server, seeded, tmp_path
     assert approval_service.tally(seeded["proposal"]) == (0, 0)
 
 
+def test_a_phone_with_no_screen_lock_is_not_set_up(http_server, seeded, tmp_path):
+    """No lock, no prompt, so nothing could confirm the owner is holding it: refused before the
+    password leaves the phone or a key is made (phone UX spec, I-9)."""
+    out = _run_client(http_server, tmp_path, no_screen_lock=True)
+    assert out["ok"] is False
+    assert out["error_name"] == "NoScreenLockError"
+    assert "enrolled" not in out
+
+    from qvault.models import Device
+
+    assert Device.query.filter_by(owner_id=seeded["signer"].id).count() == 0
+
+
+def test_a_phone_whose_lock_was_removed_signs_nothing(http_server, seeded, tmp_path):
+    """Set up with a lock, which was then turned off: the vote is refused, and refused before any
+    prompt (the check runs with the others)."""
+    out = _run_client(http_server, tmp_path, lock_removed_after_enrol=True)
+    assert out["ok"] is False
+    assert out["error_name"] == "NoScreenLockError"
+    assert out["enrolled"]["alg_id"] == "ML-DSA-65"
+    assert out["proposal"]["hashes_agree"] is True
+
+    from qvault.services import approval_service
+
+    assert approval_service.tally(seeded["proposal"]) == (0, 0)
+
+
 def test_a_tampered_proposal_is_refused(http_server, seeded, tmp_path, monkeypatch):
     """If the server's stated hash is not the hash of its stated contents, refuse to sign.
 
