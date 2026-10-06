@@ -980,3 +980,5 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
   .q-c-label { display: inline; color: var(--text-muted); }
   .q-table--stack .q-c-status.is-num { text-align: left; }
 }
+
+.q-table td.is-num { white-space: nowrap; }

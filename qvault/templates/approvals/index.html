@@ -89,7 +89,7 @@
     {%- endif %}
     <td class="q-c-wide-only">{{ signatures(r) }}</td>
     <td class="q-c-status">{{ status(r.status_key, r.status_n) }}</td>
-    <td class="q-c-wide-only q-c-raised">{{ reltime(p.created_at) }}<span class="q-drow__by">by {{ r.raised_by }}</span></td>
+    <td class="q-c-wide-only q-c-raised">{{ reltime(p.created_at) }}<span class="q-drow__by">by {{ "you" if r.raised_by == "You" else r.raised_by }}</span></td>
     <td class="q-c-end">{{ due(p.expires_at, zone=False) }}</td>
   </tr>
   {%- endfor %}
