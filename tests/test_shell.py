@@ -120,6 +120,19 @@ def test_below_tablet_width_the_sidebar_is_a_drawer_behind_a_menu_button(app, cl
     assert "@media (max-width: 767px)" in css and ".q-shell.is-drawer .q-side" in css
 
 
+def test_the_skip_link_is_hidden_until_a_keyboard_reaches_it(client):
+    """Unstyled, "Skip to content" showed on every page and pushed it down a line."""
+    assert '<a class="q-skip" href="#main">Skip to content</a>' in client.get("/login").get_data(
+        as_text=True
+    )
+    css = (STATIC / "components.css").read_text(encoding="utf-8")
+    hidden = re.search(r"\.q-skip:not\(:focus-visible\)\s*\{([^}]*)\}", css).group(1)
+    assert "clip-path: inset(50%)" in hidden and "width: 1px" in hidden
+    shown = re.search(r"\.q-skip\s*\{([^}]*)\}", css).group(1)
+    assert "position: fixed" in shown and "z-index" in shown
+    assert re.search(r"\.q-skip:focus-visible\s*\{[^}]*var\(--focus\)", css)
+
+
 def test_signed_out_pages_have_the_public_header_with_the_mark(client):
     for path in ("/login", "/register", "/verify/", "/docs/"):
         page = client.get(path).get_data(as_text=True)
