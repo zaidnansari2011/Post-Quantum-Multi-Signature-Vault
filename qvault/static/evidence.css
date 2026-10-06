@@ -266,7 +266,6 @@
     background: var(--bg); border-top: var(--border-width) solid var(--border); box-shadow: var(--shadow-e1);
   }
   .q-actbar .q-btn { --btn-h: var(--target-touch); }
-  .q-dtext { font-size: var(--text-decision-hero-size); }
 }
 
 /* ================================================================ the audit log and transparency */
@@ -428,3 +427,4 @@
 .q-acct .q-kv { --kv-label: 160px; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
 .q-acct .q-sigrec__note { padding: var(--space-8) 0 0; border-top: 0; }
 .q-acct form .q-btn { margin-top: var(--space-4); }
+.q-acct .q-acct__inline > .q-btn { margin-top: calc(var(--text-body-line) + var(--space-6)); }
