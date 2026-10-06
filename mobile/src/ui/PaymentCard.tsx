@@ -59,7 +59,7 @@ export function PaymentCard({
           </View>
         ) : (
           <View style={s.toRow}>
-            <Text role="body" tone="muted">
+            <Text role="body" tone="muted" style={s.toWord}>
               to
             </Text>
             <View style={s.flex}>
@@ -112,7 +112,8 @@ const useStyles = makeStyles((t) => ({
     gap: t.space[8],
   },
   to: { gap: t.space[4] },
-  toRow: { flexDirection: 'row', alignItems: 'center', gap: t.space[8] },
+  toRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[8] },
+  toWord: { paddingTop: t.space[12] - 2 },
   warn: { flexDirection: 'row', gap: t.space[8], alignItems: 'flex-start', marginTop: t.space[4] },
   disclosure: {
     minHeight: 44,
