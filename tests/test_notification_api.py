@@ -18,7 +18,7 @@ from test_mobile_canonical import MOBILE_DIR, _node_available
 
 from qvault.extensions import db
 from qvault.models import Notification
-from qvault.services import auth_service, proposal_service, vault_service
+from qvault.services import approval_service, auth_service, proposal_service, vault_service
 
 PASSWORD = "password-123"
 PROBE = MOBILE_DIR / "tools" / "notification_schema_probe.ts"
@@ -130,6 +130,35 @@ def test_someone_elses_notification_is_not_found(client, inbox):
     assert r.status_code == 404 and r.get_json()["code"] == "unknown_notification"
     db.session.refresh(chens)
     assert chens.read_at is None
+
+
+def test_a_removed_member_stops_seeing_the_vaults_notifications_on_the_phone(client, inbox):
+    voted_on = _raise(inbox, "Voted on")
+    _raise(inbox, "Never answered")
+    approval_service.cast_vote(voted_on, inbox["brij"], PASSWORD, "reject", reason="Over budget")
+    vault_service.remove_member(inbox["vault"], inbox["brij"].id, actor_id=inbox["ada"].id)
+    approval_service.cast_vote(voted_on, inbox["chen"], PASSWORD, "reject")
+    assert voted_on.status == "rejected"
+    phone = inbox["brij_phone"]
+
+    sections = {
+        section: [
+            n["kind"]
+            for n in client.get(
+                f"/api/v1/notifications?section={section}", headers=phone
+            ).get_json()["notifications"]
+        ]
+        for section in ("needs_you", "updates", "archived")
+    }
+    # Not told how it ended, and the vault's earlier ones are gone; the phone's own event stays.
+    assert sections == {"needs_you": [], "updates": ["device_enrolled"], "archived": []}
+    unread = client.get("/api/v1/notifications/unread", headers=phone).get_json()["unread"]
+    assert unread == {"needs_you": 0, "updates": 1, "total": 1}
+    raised = Notification.query.filter_by(
+        recipient_id=inbox["brij"].id, kind="decision_raised"
+    ).first()
+    r = client.post(f"/api/v1/notifications/{raised.id}/read", headers=phone)
+    assert r.status_code == 404 and r.get_json()["code"] == "unknown_notification"
 
 
 @pytest.mark.parametrize(
