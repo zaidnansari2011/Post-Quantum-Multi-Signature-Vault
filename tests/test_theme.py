@@ -258,3 +258,51 @@ def test_the_signed_in_rail_offers_the_three_choices_with_the_current_one_presse
     ).group(0)
     pressed = re.findall(r'value="(system|light|dark)"\s+aria-pressed="(true|false)"', form)
     assert pressed == [("system", "false"), ("light", "false"), ("dark", "true")]
+
+
+# --- stored per person (revision 0004) -------------------------------------------------------
+
+
+def _signed_in(app, email: str):
+    auth_service.register_user(email, "Theme", PASSWORD)
+    c = app.test_client()
+    c.post("/login", data={"email": email, "password": PASSWORD})
+    return c
+
+
+def test_a_choice_made_signed_in_follows_the_person_to_another_browser(app):
+    first = _signed_in(app, "travels@e.com")
+    first.post("/theme", data={"theme": "dark"})
+
+    other = app.test_client()  # no cookie of its own
+    assert not other.get_cookie(COOKIE)
+    other.post("/login", data={"email": "travels@e.com", "password": PASSWORD})
+    assert 'data-theme="dark"' in _html_tag(other.get("/"))
+
+
+def test_system_chosen_signed_in_overrides_this_browsers_old_cookie(app):
+    c = _signed_in(app, "system@e.com")
+    c.set_cookie(COOKIE, "light")
+    assert 'data-theme="light"' in _html_tag(c.get("/"))  # never chosen signed in: the cookie
+    c.post("/theme", data={"theme": "system"})
+    c.set_cookie(COOKIE, "light")  # another tab left the old cookie behind
+    assert "data-theme" not in _html_tag(c.get("/"))
+
+
+def test_the_browser_keeps_the_choice_after_signing_out(app):
+    c = _signed_in(app, "keeps@e.com")
+    c.post("/theme", data={"theme": "dark"})
+    c.post("/logout")
+    assert 'data-theme="dark"' in _html_tag(c.get("/login"))
+
+
+def test_the_choice_is_stored_on_the_person(app):
+    from qvault.extensions import db
+    from qvault.models import User, UserSetting
+
+    c = _signed_in(app, "stored@e.com")
+    c.post("/theme", data={"theme": "light"})
+    c.post("/theme", data={"theme": "dark"})  # a second choice updates the one row
+    user = User.query.filter_by(email="stored@e.com").one()
+    assert db.session.get(UserSetting, user.id).theme == "dark"
+    assert UserSetting.query.count() == 1
