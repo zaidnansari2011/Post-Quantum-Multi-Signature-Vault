@@ -112,6 +112,7 @@ export default function HomeScreen({
           ListHeaderComponent={
             <View>
               <RootHeader
+                onLayout={header.onHeaderLayout}
                 lead={greeting(identity.displayName)}
                 title={title}
                 action={raise ? { ...raise, filled: true } : undefined}

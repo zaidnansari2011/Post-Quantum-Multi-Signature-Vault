@@ -9,6 +9,7 @@ import {
   type RefreshControlProps,
   View,
   useWindowDimensions,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewStyle,
@@ -99,40 +100,47 @@ export function RootHeader({
   lead,
   supporting,
   action,
+  onLayout,
 }: {
   title: string;
   /** A short line above the headline. Kept for the screens that still have one. */
   lead?: string;
   supporting?: string;
+  /** `filled` draws it tinted: the create action is findable, not the loudest thing here. */
   action?: NavAction & { filled?: boolean };
+  /** From useCollapsingHeader, so the bar appears when the headline has gone under it. */
+  onLayout?: (e: LayoutChangeEvent) => void;
 }) {
+  const t = useTheme();
   const s = useStyles();
+  // Centred on the headline's FIRST line, however the headline wraps or scales.
+  const line = t.type.title.lineHeight * Math.min(Math.max(t.fontScale, 1), t.type.title.maxScale ?? 1);
   return (
-    <View style={s.rootHeader}>
-      <View style={s.rootHeaderText}>
-        {lead ? (
-          <Text role="caption" tone="muted">
-            {lead}
-          </Text>
-        ) : null}
-        <Text role="title" accessibilityRole="header">
+    <View style={s.rootHeader} onLayout={onLayout}>
+      {lead ? (
+        <Text role="caption" tone="muted">
+          {lead}
+        </Text>
+      ) : null}
+      <View style={s.rootHeadRow}>
+        <Text role="title" accessibilityRole="header" style={s.rootTitle}>
           {title}
         </Text>
-        {supporting ? (
-          <Text role="body" tone="muted">
-            {supporting}
-          </Text>
+        {action ? (
+          <View style={{ marginTop: (line - 44) / 2, marginBottom: -8 }}>
+            <IconButton
+              icon={action.icon}
+              label={action.label}
+              onPress={action.onPress}
+              tone={action.filled ? 'tinted' : 'plain'}
+            />
+          </View>
         ) : null}
       </View>
-      {action ? (
-        <View style={lead ? s.rootActionWithLead : null}>
-          <IconButton
-            icon={action.icon}
-            label={action.label}
-            onPress={action.onPress}
-            tone={action.filled ? 'filled' : 'plain'}
-          />
-        </View>
+      {supporting ? (
+        <Text role="body" tone="muted">
+          {supporting}
+        </Text>
       ) : null}
     </View>
   );
@@ -142,20 +150,23 @@ export function RootHeader({
  * Collapses a tab root's headline into a 48pt bar once it has scrolled under the top (§5.1, the
  * large-title pattern): `onScroll` goes on the list, `<CollapsedBar>` sits above it.
  */
-export function useCollapsingHeader(threshold = 56) {
+export function useCollapsingHeader() {
   const [collapsed, setCollapsed] = useState(false);
   const last = useRef(false);
-  const onScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const next = e.nativeEvent.contentOffset.y > threshold;
-      if (next !== last.current) {
-        last.current = next;
-        setCollapsed(next);
-      }
-    },
-    [threshold],
-  );
-  return { collapsed, onScroll, scrollEventThrottle: 16 };
+  // Where the headline's bottom edge passes under the 48pt bar: measured, so it holds at 2x text.
+  const threshold = useRef(56);
+  const onHeaderLayout = useCallback((e: LayoutChangeEvent) => {
+    const { y, height } = e.nativeEvent.layout;
+    threshold.current = Math.max(0, y + height - 48);
+  }, []);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = e.nativeEvent.contentOffset.y > threshold.current;
+    if (next !== last.current) {
+      last.current = next;
+      setCollapsed(next);
+    }
+  }, []);
+  return { collapsed, onScroll, onHeaderLayout, scrollEventThrottle: 16 };
 }
 
 export function CollapsedBar({
@@ -182,8 +193,13 @@ export function CollapsedBar({
       aria-hidden={!visible}
     >
       <View style={s.navSide} />
-      <View style={[s.navTitle, s.navTitleCentred]}>
-        <Text role="titleSm" maxScale={scaleCap.navTitle} numberOfLines={1} align="center">
+      <View style={[s.navTitle, Platform.OS === 'ios' ? s.navTitleCentred : null]}>
+        <Text
+          role="titleSm"
+          maxScale={scaleCap.navTitle}
+          numberOfLines={1}
+          align={Platform.OS === 'ios' ? 'center' : 'left'}
+        >
           {title}
         </Text>
       </View>
@@ -360,15 +376,9 @@ const useStyles = makeStyles((t) => ({
   navTitle: { flex: 1, paddingHorizontal: t.space[4] },
   navTitleCentred: { alignItems: 'center' },
 
-  rootHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: t.space[12],
-    paddingTop: t.space[16],
-    paddingBottom: t.space[16],
-  },
-  rootHeaderText: { flex: 1, gap: t.space[4] },
-  rootActionWithLead: { marginTop: t.space[12] },
+  rootHeader: { gap: t.space[4], paddingTop: t.space[16], paddingBottom: t.space[16] },
+  rootHeadRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[12] },
+  rootTitle: { flex: 1 },
 
   collapsed: {
     position: 'absolute',

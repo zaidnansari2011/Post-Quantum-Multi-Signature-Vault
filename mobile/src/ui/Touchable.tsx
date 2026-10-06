@@ -57,11 +57,11 @@ export const Touchable = forwardRef<View, TouchableProps>(function Touchable(
 
   // Web only: React Native ignores dataSet, and it is the harness that reads it.
   const audit =
-    Platform.OS === 'web' && size
+    Platform.OS === 'web'
       ? {
           dataSet: {
-            hitW: String(Math.round(size.w + slopX * 2)),
-            hitH: String(Math.round(size.h + slopY * 2)),
+            hitW: size ? String(Math.round(size.w + slopX * 2)) : '0',
+            hitH: size ? String(Math.round(size.h + slopY * 2)) : '0',
           },
         }
       : {};

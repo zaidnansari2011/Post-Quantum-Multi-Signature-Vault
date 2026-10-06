@@ -123,11 +123,12 @@ export function TreasuryCard({ vaultId }: { vaultId: number }) {
         {treasury ? (
           <View style={s.facts}>
             <Identifier label="Address" value={treasury.address} />
-            <KeyValue label="Network" value="Sepolia" />
-            <KeyValue label="Balance" value={status?.balance ?? 'Unavailable'} />
-            <KeyValue label="Approvals" value={`${treasury.threshold_m} of ${treasury.signer_count}`} />
+            {/* Short values sit on their label's line, as everywhere else in the app. */}
+            <InlineFact label="Network" value="Sepolia" />
+            <InlineFact label="Balance" value={status?.balance ?? 'Unavailable'} />
+            <InlineFact label="Approvals" value={`${treasury.threshold_m} of ${treasury.signer_count}`} />
             {status ? (
-              <KeyValue
+              <InlineFact
                 label="Payouts today"
                 value={`${status.payouts_left_today} of ${status.payouts_per_day} left`}
               />
@@ -171,6 +172,21 @@ export function TreasuryCard({ vaultId }: { vaultId: number }) {
         ) : null}
       </View>
     </Section>
+  );
+}
+
+/** A label and a short value on one line: one accessibility element, "Network, Sepolia". */
+function InlineFact({ label, value }: { label: string; value: string }) {
+  const s = useStyles();
+  return (
+    <View style={s.inline} accessible accessibilityLabel={`${label}, ${value}`}>
+      <Text role="body" tone="muted">
+        {label}
+      </Text>
+      <Text role="body" tabular style={s.inlineValue}>
+        {value}
+      </Text>
+    </View>
   );
 }
 
@@ -280,6 +296,14 @@ const useStyles = makeStyles((t) => ({
     gap: t.space[12],
   },
   facts: { gap: t.space[4] },
+  inline: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: t.space[12],
+    minHeight: 32,
+    alignItems: 'center',
+  },
+  inlineValue: { flexShrink: 1, textAlign: 'right' },
   change: {
     gap: t.space[8],
     paddingTop: t.space[12],

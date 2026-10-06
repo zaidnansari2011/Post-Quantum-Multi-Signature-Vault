@@ -47,6 +47,9 @@ export function Seal({
   rejections?: number;
 }) {
   const s = useStyles();
+  const t = useTheme();
+  // The marks grow with the text beside them, up to 1.5x, so "1 of 2" never dwarfs its dots.
+  size = Math.round(size * Math.min(Math.max(t.fontScale, 1), 1.5)) as SealSize;
   const complete = required > 0 && filled >= required;
   const label = `${filled} of ${required} ${required === 1 ? 'approval' : 'approvals'}${
     rejections > 0 ? `, ${rejections} ${rejections === 1 ? 'rejection' : 'rejections'}` : ''

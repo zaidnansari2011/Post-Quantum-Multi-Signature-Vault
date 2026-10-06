@@ -13,7 +13,7 @@
 // rework APK (N11): Share is part of React Native, so it adds no native module.
 
 import { useState } from 'react';
-import { Share, View } from 'react-native';
+import { AccessibilityInfo, Share, View } from 'react-native';
 
 import { middleOut } from '../format.ts';
 import { fontFamily, makeStyles, useTheme } from '../theme/index.ts';
@@ -115,10 +115,19 @@ export function Identifier({
         </Text>
       ) : null}
       <View style={s.row}>
+        {/* Always the grouped, short reading (§8.2): the whole value is read only when asked. */}
         <View
           style={s.value}
           accessible
-          accessibilityLabel={full ? `${label} ${value}` : spokenIdentifier(label, value)}
+          accessibilityLabel={spokenIdentifier(label, value)}
+          accessibilityHint="Double tap to hear in full"
+          accessibilityActions={[{ name: 'activate' }]}
+          onAccessibilityAction={() => {
+            const { prefix, groups } = groupsOfFour(value);
+            AccessibilityInfo.announceForAccessibility(
+              `${label} ${prefix ? '0x ' : ''}${groups.map((g) => g.split('').join(' ')).join(', ')}`,
+            );
+          }}
         >
           {full ? (
             <GroupedValue value={value} />
@@ -135,9 +144,16 @@ export function Identifier({
             accessibilityLabel={whole ? `Shorten the ${label.toLowerCase()}` : `Show the full ${label.toLowerCase()}`}
             onPress={() => setWhole((w) => !w)}
             role="caption"
+            compact
           />
         ) : null}
-        <IconButton icon="copy" label={`Copy the ${label.toLowerCase()}`} onPress={() => void share()} size={20} />
+        <IconButton
+          icon="copy"
+          label={`Copy the ${label.toLowerCase()}`}
+          onPress={() => void share()}
+          size={18}
+          compact
+        />
       </View>
     </View>
   );
@@ -146,5 +162,6 @@ export function Identifier({
 const useStyles = makeStyles((t) => ({
   wrap: { gap: t.space[2] },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[4] },
-  value: { flex: 1, minHeight: 44, justifyContent: 'center', paddingVertical: t.space[12] - 2 },
+  // The controls are 32pt, so the value's first line is centred on them and the row costs 32.
+  value: { flex: 1, minHeight: 32, justifyContent: 'center', paddingVertical: 6 },
 }));

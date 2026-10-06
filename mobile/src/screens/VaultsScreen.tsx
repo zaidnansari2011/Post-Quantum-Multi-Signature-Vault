@@ -97,7 +97,8 @@ export default function VaultsScreen({
           }}
           ListHeaderComponent={
             <View>
-              <RootHeader title="Vaults" action={{ ...create, filled: true }} />
+              <RootHeader
+                onLayout={header.onHeaderLayout} title="Vaults" action={{ ...create, filled: true }} />
               {transportFailure ? (
                 <View style={s.banner}>
                   <Banner

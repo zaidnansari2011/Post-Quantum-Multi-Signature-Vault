@@ -3,8 +3,9 @@
 // If everything buzzes, the buzz stops carrying information. Four events earn one: a signature
 // that met the rule (`sealed`), a signature recorded (`signed`), a refusal (`refused`, an integrity
 // failure or a server refusal; a network failure while signing too), and a chip or segment changing
-// (`selection`). Navigation, scrolling, opening a sheet, changing tabs, raising a decision and
-// creating a vault get nothing. A cancelled biometric gets nothing: the person chose it.
+// (`selection`). Navigation, scrolling, opening a sheet and changing tabs get nothing. Raising a
+// decision and creating a vault should get nothing either (§7.2); the two forms still call
+// `signed()` until P3 rebuilds them. A cancelled biometric gets nothing: the person chose it.
 //
 // Android goes through the device haptics engine (`performAndroidHapticsAsync`), which needs no
 // VIBRATE permission; iOS honours the system switch, so there is no in-app setting.

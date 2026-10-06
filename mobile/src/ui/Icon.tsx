@@ -16,14 +16,18 @@ export function Icon({
   size = 20,
   color,
   style,
+  scales = true,
 }: {
   name: IconName;
   size?: number;
+  /** Grows with the text size, up to 1.5x; off where the container is fixed (the tab bar). */
+  scales?: boolean;
   /** A theme colour; defaults to the muted text colour. */
   color?: string;
   style?: TextStyle;
 }) {
   const t = useTheme();
+  const px = Math.round(size * (scales ? Math.min(Math.max(t.fontScale, 1), 1.5) : 1));
   return (
     <RNText
       accessible={false}
@@ -34,10 +38,10 @@ export function Icon({
       style={[
         {
           fontFamily: fontFamily.icons,
-          fontSize: size,
-          lineHeight: size,
-          width: size,
-          height: size,
+          fontSize: px,
+          lineHeight: px,
+          width: px,
+          height: px,
           color: color ?? t.color.textMuted,
           textAlign: 'center',
           includeFontPadding: false,

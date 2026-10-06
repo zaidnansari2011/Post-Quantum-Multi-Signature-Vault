@@ -178,13 +178,19 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
           {/* The title: the name it goes by in every list. Unsigned, so small and in sans; the
               signed text beneath it is the largest thing here and the only words the sheet and the
               prompt repeat (S19). */}
-          <Text role="titleSm" tone="muted" accessibilityRole="header">
+          <Text role="titleSm" accessibilityRole="header">
             {detail.title}
           </Text>
           {/* Always the signed copy: verifyProposalIntegrity refuses a response whose two copies of
               the text disagree. */}
-          <SignedText text={detail.signing_inputs.action_text} />
-          {payment ? <PaymentCard action={payment} /> : null}
+          {/* A payment leads with its amount and recipient, read from the signed action, which the
+              integrity check has matched to the signed sentence; the sentence itself is one
+              tap away on the card (§5.12, D8). */}
+          {payment ? (
+            <PaymentCard action={payment} sentence={detail.signing_inputs.action_text} />
+          ) : (
+            <SignedText text={detail.signing_inputs.action_text} />
+          )}
           {payment ? <PaymentFacts action={payment} /> : null}
           {detail.payout ? <Payout payout={detail.payout} /> : null}
 
@@ -371,8 +377,11 @@ function ConfirmSheet({
         </>
       }
     >
-      <SignedText text={detail.signing_inputs.action_text} size="decision" />
-      {payment ? <PaymentCard action={payment} place="sheet" /> : null}
+      {payment ? (
+        <PaymentCard action={payment} place="sheet" sentence={detail.signing_inputs.action_text} />
+      ) : (
+        <SignedText text={detail.signing_inputs.action_text} size="decision" />
+      )}
       {payment ? <PaymentFacts action={payment} /> : null}
     </Sheet>
   );

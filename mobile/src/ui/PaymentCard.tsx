@@ -49,27 +49,18 @@ export function PaymentCard({
         <Text role="figure" tabular selectable accessibilityLabel={amount.replace(/ETH$/, 'ether')}>
           {amount}
         </Text>
-        {place === 'sheet' ? (
-          <View style={s.to}>
-            <Text role="body" tone="muted">
-              to
-            </Text>
-            <Identifier label="Recipient address" value={action.to} expanded="always" showLabel={false} />
-            <Text role="body" tone="muted">{`on ${network}`}</Text>
-          </View>
-        ) : (
-          <View style={s.toRow}>
-            <Text role="body" tone="muted" style={s.toWord}>
-              to
-            </Text>
-            <View style={s.flex}>
-              <Identifier label="Recipient address" value={action.to} showLabel={false} />
-            </View>
-          </View>
-        )}
-        {place === 'page' ? (
+        <View style={s.to}>
+          <Text role="caption" tone="muted">
+            To
+          </Text>
+          <Identifier
+            label="Recipient address"
+            value={action.to}
+            expanded={place === 'sheet' ? 'always' : 'toggle'}
+            showLabel={false}
+          />
           <Text role="body" tone="muted">{`on ${network}`}</Text>
-        ) : null}
+        </View>
         {short ? (
           <View style={s.warn}>
             <Icon name="warning" size={16} color={t.color.status.warning.fg} />
@@ -111,9 +102,7 @@ const useStyles = makeStyles((t) => ({
     padding: t.space[16],
     gap: t.space[8],
   },
-  to: { gap: t.space[4] },
-  toRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[8] },
-  toWord: { paddingTop: t.space[12] - 2 },
+  to: { gap: t.space[2] },
   warn: { flexDirection: 'row', gap: t.space[8], alignItems: 'flex-start', marginTop: t.space[4] },
   disclosure: {
     minHeight: 44,

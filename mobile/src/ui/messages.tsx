@@ -30,7 +30,7 @@ const TONE_ICON: Record<Tone, IconName> = {
 };
 
 /** Speak a message once when it appears: a live region on Android, an announcement on iOS. */
-function useAnnounce(text: string | null | undefined) {
+export function useAnnounce(text: string | null | undefined) {
   useEffect(() => {
     if (text && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(text);
   }, [text]);
