@@ -459,11 +459,35 @@ def decision_feed(user: User, *, limit: int = 6) -> list[dict]:
                 "avatar": _full_name(people.get(entry.actor_id), user, entry) if person else vault,
                 "entity": not person,
                 "when": _parse_time(entry.timestamp),
-                "status": FEED_EVENTS[event],
+                "status": _feed_status(event, proposal),
                 "proposal": proposal,
             }
         )
     return feed
+
+
+def _feed_status(event: str, proposal: Proposal) -> str | None:
+    """The badge an outcome earns, in the same words every list uses: an approved payment whose
+    latest event is the approval reads as its payout (Queued), through inbox_service.status_key."""
+    status = FEED_EVENTS[event]
+    if status != "approved" or proposal.action is None:
+        return status
+    from flask import current_app
+
+    from qvault.models.execution import Execution
+    from qvault.services.inbox_service import status_key
+
+    payout = Execution.query.filter_by(proposal_id=proposal.id).one_or_none()
+    key, _ = status_key(
+        "approved",
+        needs_me=False,
+        approvals=proposal.required_m,
+        required_m=proposal.required_m,
+        payment=True,
+        payout_state=payout.state if payout is not None else None,
+        treasuries_on=bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED")),
+    )
+    return key
 
 
 def _full_name(person: User | None, viewer: User, entry: LedgerEntry) -> str:

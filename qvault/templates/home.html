@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "ui/navigation.html" import page_header %}
-{% from "ui/menus.html" import menu, menu_item %}
+{% from "ui/menus.html" import menu, menu_item, menu_head %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/icons.html" import icon %}
 {% from "ui/avatars.html" import avatar %}
@@ -43,6 +43,7 @@
   {{ button('New decision', 'primary', href=url_for('vaults.new_proposal', vid=proposable[0].id), icon='plus') }}
   {%- elif proposable %}
   {% call menu('New decision', 'plus', trigger='primary') %}
+    {{ menu_head('Raise a decision in') }}
     {%- for v in proposable %}
     {{ menu_item(v.name, url_for('vaults.new_proposal', vid=v.id), caption='Any ' ~ v.policy.threshold_m ~ ' of ' ~ v.signer_ids()|length) }}
     {%- endfor %}

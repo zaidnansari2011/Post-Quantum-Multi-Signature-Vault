@@ -22,7 +22,7 @@
      A due time: absolute ("Tue 6 Oct, 17:00 UTC"), the relative caption under it, the warning
      tone and a clock inside 24 hours. "No due date" when there is none.
 
-   deadline(row, zone=False)
+   deadline(row, zone=True)
      The due cell of a table row: the due time while the decision is open or after it expired;
      once approved or rejected the deadline no longer matters, so it says when it was decided.
 
@@ -53,7 +53,7 @@
 {%- endif -%}
 {%- endmacro %}
 
-{% macro deadline(row, zone=False) -%}
+{% macro deadline(row, zone=True) -%}
 {%- set p = row.proposal -%}
 {%- if row.status in ('approved', 'rejected') -%}
 {%- set when = p.approved_at if row.status == 'approved' else p.rejected_at -%}
@@ -66,9 +66,11 @@
 
 {% macro signatures(row, avatars=True) -%}
 {%- set p = row.proposal -%}
-<span class="q-sigs">
+{%- set rejected = row.rejections -%}
+<span class="q-sigs{% if rejected %} q-sigs--rej{% endif %}">
   <span class="q-sigs__n">{{ row.approvals }} of {{ p.required_m }}</span>
   {%- if avatars and row.approved_by %}{{ avatar_stack(row.approved_by_full, 3, 20) }}{% endif %}
+  {%- if row.rejections %}<span class="q-sigs__rej">{{ row.rejections }} rejected</span>{% endif %}
 </span>
 {%- endmacro %}
 
@@ -134,7 +136,7 @@
     {%- endif %}
     {%- if more and not (near_empty and complete and total <= 3) %}
     <p class="q-wl__ft{% if near_empty and complete %} q-wl__ft--phone{% endif %}"><a class="q-lnk" href="{{ more.href }}">
-      <span class="q-wide">{{ more.label if complete else 'Show all ' ~ total }}</span><span class="q-narrow">{{ 'Show all ' ~ total if total > 3 else more.label }}</span></a></p>
+      <span class="q-wide">{{ more.label if complete else 'Show all' }}</span><span class="q-narrow">{{ 'Show all' if total > 3 else more.label }}</span></a></p>
     {%- endif %}
     {%- endif %}
   </div>

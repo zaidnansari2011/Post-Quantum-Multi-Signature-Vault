@@ -463,7 +463,12 @@
     var bounds = dueBounds(field);
     var base = chosen || bounds.min || new Date();
     var day = buildCalendar(field, base);
+    pop.classList.remove('is-up');
     pop.hidden = false;
+    // Open upwards when the calendar would run off the bottom of the window and fits above.
+    var box = pop.getBoundingClientRect();
+    var input = field.querySelector('.q-date__in').getBoundingClientRect();
+    if (box.bottom > window.innerHeight && input.top > box.height + 8) pop.classList.add('is-up');
     button.setAttribute('aria-expanded', 'true');
     if (day) day.focus();
   }
