@@ -252,6 +252,14 @@
 
   /* ------------------------------------------------------------------ forms */
 
+  // A read-only field holding something to copy (a public link) selects itself on focus, so one
+  // click and Ctrl+C is enough. focusin, not focus, because only focusin bubbles to a delegated
+  // listener.
+  doc.addEventListener('focusin', function (e) {
+    var el = e.target;
+    if (el.matches && el.matches('input[data-select-on-focus], textarea[data-select-on-focus]')) el.select();
+  });
+
   // Submitting a filter form on change is what makes a toolbar feel like a tool rather than a
   // form: no Apply button to hunt for. Text inputs are excluded: they submit on Enter.
   doc.addEventListener('change', function (e) {
