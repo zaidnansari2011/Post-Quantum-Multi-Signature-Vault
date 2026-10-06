@@ -180,14 +180,71 @@ def test_the_public_link_selects_itself_through_qvault_js_not_an_inline_handler(
     assert "input[data-select-on-focus]" in script and "el.select()" in script
 
 
-def test_a_confirmation_is_a_toast_and_an_error_stays_inline(app, client):
+def _flashed(client, *messages) -> str:
     with client.session_transaction() as session:
-        session["_flashes"] = [("success", "Vault created"), ("danger", "That did not work")]
-    page = client.get("/login").get_data(as_text=True)
-    toasts = re.search(
-        r'<div class="q-toasts" role="status" aria-live="polite">.*?</div>\s*</div>', page, re.S
-    ).group(0)
+        session["_flashes"] = list(messages)
+    return client.get("/login").get_data(as_text=True)
+
+
+def _toasts(page: str) -> str:
+    found = re.search(r'<div class="q-toasts">.*?</div>\s*</div>', page, re.S)
+    return found.group(0) if found else ""
+
+
+def test_a_short_confirmation_is_a_toast_and_an_error_stays_inline(app, client):
+    page = _flashed(client, ("success", "Vault created"), ("danger", "That did not work"))
+    toasts = _toasts(page)
     assert "Vault created" in toasts and "That did not work" not in toasts
     assert re.search(
         r'<div class="alert alert-danger" role="alert">\s*<span>That did not work</span>', page
     )
+
+
+def test_a_long_confirmation_stays_inline_rather_than_fading(app, client):
+    """A toast fades after eight seconds; a long message takes longer to read (WCAG 2.2.1)."""
+    long = (
+        "Signing key re-issued under ML-DSA-65. Your previous key is retired but still verifies "
+        "every signature it made."
+    )
+    assert len(long) > 90
+    page = _flashed(client, ("success", long), ("info", "Saved"))
+    assert long not in _toasts(page) and "Saved" in _toasts(page)
+    assert re.search(
+        r'<div class="alert alert-success" role="status">\s*<span>' + re.escape(long), page
+    )
+
+
+def test_a_persist_confirmation_stays_inline_however_short(app, client):
+    page = _flashed(client, ("persist", "12 of 12 attacks behaved as expected."))
+    assert not _toasts(page) and "data-toast" not in page
+    assert re.search(
+        r'<div class="alert alert-success" role="status">\s*<span>12 of 12 attacks', page
+    )
+    assert "data-dismiss" in page
+
+
+def test_toasts_are_announced_through_a_region_that_is_empty_at_load(app, client):
+    """A live region announces what is inserted after load, not what it was drawn with."""
+    page = _flashed(client, ("success", "Vault created"))
+    assert '<div id="q-live" class="visually-hidden" role="status" aria-live="polite"></div>' in (
+        page
+    )
+    assert "aria-live" not in _toasts(page) and 'role="status"' not in _toasts(page)
+    script = (STATIC / "qvault.js").read_text(encoding="utf-8")
+    start = script[script.index("function start()") :]
+    assert "announce(" in start and "[data-toast]" in start
+
+
+def test_the_actionable_confirmations_are_marked_persist():
+    """The results an administrator or a key holder acts on must not fade (WCAG 2.2.1)."""
+    blueprints = ROOT / "qvault" / "blueprints"
+    admin = (blueprints / "admin.py").read_text(encoding="utf-8")
+    auth = (blueprints / "auth.py").read_text(encoding="utf-8")
+    for source, opening in (
+        (admin, "Maintenance complete — "),
+        (admin, "attacks behaved as "),
+        (auth, "Signing key re-issued under"),
+    ):
+        # The flash() call's arguments end at the first line that closes the call.
+        call = re.search(re.escape(opening) + r".*?\n\s*\)\n", source, re.S).group(0)
+        assert '"persist",' in call and '"success"' not in call, opening
