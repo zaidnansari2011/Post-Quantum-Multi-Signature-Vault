@@ -2,29 +2,16 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
-
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from qvault.forms import LoginForm, RegisterForm, ReissueKeyForm
+from qvault.security.redirects import safe_next
 from qvault.services import auth_service, key_service
 from qvault.services.auth_service import EmailTakenError
 from qvault.services.key_service import KeyUnlockError
 
 bp = Blueprint("auth", __name__)
-
-
-def _safe_next(target: str | None) -> str | None:
-    """Only allow same-site relative redirects (prevents open-redirect via ?next=)."""
-    if not target or "\\" in target:
-        # Reject backslashes: browsers normalise "\" to "/" in a Location header, so
-        # "/\evil.com" would become the protocol-relative "//evil.com" (off-site).
-        return None
-    parsed = urlparse(target)
-    if parsed.scheme or parsed.netloc or not target.startswith("/") or target.startswith("//"):
-        return None
-    return target
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -57,7 +44,7 @@ def login():
             flash("Invalid email or password.", "danger")
             return render_template("login.html", form=form)
         login_user(user)
-        return redirect(_safe_next(request.args.get("next")) or url_for("auth.dashboard"))
+        return redirect(safe_next(request.args.get("next")) or url_for("auth.dashboard"))
     return render_template("login.html", form=form)
 
 

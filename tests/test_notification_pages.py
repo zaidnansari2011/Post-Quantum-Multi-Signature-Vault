@@ -172,11 +172,53 @@ def test_mark_read_and_archive_return_to_the_page_they_came_from(client, team):
     assert "The decision still waits on you" in text
 
 
-@pytest.mark.parametrize("target", ["https://evil.example/", "//evil.example/", "/\\evil.example"])
-def test_a_return_address_off_this_site_is_ignored(client, team, target):
+#: Addresses that leave the site, or break the header, if followed as given. A tab or newline is
+#: dropped by browsers and by Werkzeug, so "/<tab>/evil.example" would arrive as "//evil.example".
+OFF_SITE = [
+    "https://evil.example/",
+    "//evil.example/",
+    "/\\evil.example",
+    "/\t/evil.example",
+    "/\n/evil.example",
+    "/\r\n/evil.example",
+    " //evil.example/",
+]
+
+
+@pytest.mark.parametrize("route", ["read", "archive", "read-all"])
+@pytest.mark.parametrize("target", OFF_SITE)
+def test_a_return_address_off_this_site_is_ignored(client, team, route, target):
+    note = Notification.query.filter_by(recipient_id=team.dara.id).first()
     _login(client, team.dara)
-    r = client.post("/notifications/read-all", data={"next": target})
-    assert r.status_code == 302 and r.headers["Location"].startswith("/notifications/")
+    path = "/notifications/read-all" if route == "read-all" else f"/notifications/{note.id}/{route}"
+
+    r = client.post(path, data={"next": target})
+
+    assert r.status_code == 302
+    location = r.headers["Location"]
+    assert location.startswith("/notifications/") and "evil" not in location
+
+
+@pytest.mark.parametrize("route", ["read", "archive", "read-all"])
+def test_a_percent_encoded_return_address_stays_on_this_site(client, team, route):
+    # Nobody decodes a Location header before following it: "/%09/evil.example" is a path here.
+    note = Notification.query.filter_by(recipient_id=team.dara.id).first()
+    _login(client, team.dara)
+    path = "/notifications/read-all" if route == "read-all" else f"/notifications/{note.id}/{route}"
+
+    r = client.post(path, data={"next": "/%09/evil.example"})
+
+    assert r.status_code == 302 and r.headers["Location"] == "/%09/evil.example"
+
+
+@pytest.mark.parametrize("target", OFF_SITE)
+def test_the_popover_does_not_carry_a_return_address_off_this_site(client, team, target):
+    _login(client, team.dara)
+    html = client.get("/notifications/popover", query_string={"next": target}).get_data(
+        as_text=True
+    )
+    assert "evil.example" not in html
+    assert 'name="next" value="/notifications/"' in html
 
 
 def test_mark_all_read_on_a_tab_leaves_the_other_tab_unread(client, team):

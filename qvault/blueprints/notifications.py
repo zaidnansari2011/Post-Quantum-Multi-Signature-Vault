@@ -21,6 +21,7 @@ from flask_login import current_user, login_required
 from qvault.extensions import db
 from qvault.models.proposal import Proposal
 from qvault.security.decorators import get_membership_or_403
+from qvault.security.redirects import safe_next
 from qvault.services import notification_copy, notification_service
 from qvault.services.notification_service import PreferenceError, RemindRefused
 
@@ -51,11 +52,10 @@ def _helpers():
 
 def _back(default: str):
     """Where a form asked to return to: a path on this site, or ``default``. Anything else (a
-    full URL, ``//host``, a backslash trick) is ignored, so a link cannot bounce someone away."""
-    target = (request.form.get("next") or request.args.get("next") or "").strip()
-    if target.startswith("/") and not target.startswith("//") and "\\" not in target:
-        return redirect(target)
-    return redirect(default)
+    full URL, ``//host``, a backslash or control-character trick) is ignored, so a link cannot
+    bounce someone away."""
+    target = request.form.get("next") or request.args.get("next")
+    return redirect(safe_next(target) or default)
 
 
 def _stamper():
@@ -101,7 +101,9 @@ def popover():
         updates=updates,
         unread=notification_service.unread_counts(current_user),
         stamp=_stamper(),
-        back=request.args.get("next") or url_for("notifications.inbox"),
+        # Checked here as well as on the way back: it goes into every form in the popover, and a
+        # page should not carry an address it would refuse to follow.
+        back=safe_next(request.args.get("next")) or url_for("notifications.inbox"),
     )
 
 
