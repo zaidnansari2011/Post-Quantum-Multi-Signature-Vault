@@ -438,6 +438,23 @@ th[aria-sort] .q-sort { color: var(--text); }
   .q-dlg__ft .q-btn { --btn-h: var(--target-touch); }
 }
 
+/* ---------------------------------------------------------------- skip link (base.html)
+ * The first stop for a keyboard: off screen until it is focused, then a raised chip at the top left,
+ * over the sidebar and the sticky top bar, so it never takes a line of the page for anyone else.
+ * Hidden with the clip pattern rather than display: none, which would drop it from the tab order. */
+
+.q-skip {
+  position: fixed; top: var(--space-8); left: var(--space-8); z-index: var(--z-toast);
+  padding: var(--space-8) var(--space-12); border-radius: var(--radius-control);
+  font: var(--text-body-strong); color: var(--text); text-decoration: none;
+  background: var(--surface-raised); box-shadow: var(--shadow-e2);
+}
+.q-skip:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-skip:not(:focus-visible) {
+  width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; box-shadow: none;
+}
+
 /* ================================================================ the shell (base.html, ui/shell.html)
  * A 240px sidebar that collapses to a 56px icon rail; a 48px top bar; below 768px the sidebar is a
  * drawer behind the menu button. */
