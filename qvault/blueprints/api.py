@@ -1038,7 +1038,7 @@ def list_notifications():
             f"section must be one of {', '.join(notification_service.SECTIONS)}.",
             400,
         )
-    page = _whole("page", 1, 1, 10_000)
+    page = _whole("page", 1, 1, notification_service.MAX_PAGE)
     per_page = _whole(
         "per_page", notification_service.PER_PAGE, 1, notification_service.MAX_PER_PAGE
     )

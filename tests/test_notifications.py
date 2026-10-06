@@ -616,6 +616,13 @@ def test_the_inbox_lists_newest_first_in_pages(team):
     assert [i["kind"] for i in _section(team.brij, "updates")] == ["vault_member_added"]
 
 
+def test_the_page_asked_for_is_held_to_what_a_database_can_offset(team):
+    _raise(team)
+    far = notification_service.inbox(team.brij, "needs_you", page=10**30)
+    assert far.page == notification_service.MAX_PAGE and far.items == [] and far.total == 1
+    assert notification_service.inbox(team.brij, "needs_you", page=-3).page == 1
+
+
 def test_unread_counts_follow_reads_and_archives(team):
     _raise(team)
     assert notification_service.unread_counts(team.brij) == {
