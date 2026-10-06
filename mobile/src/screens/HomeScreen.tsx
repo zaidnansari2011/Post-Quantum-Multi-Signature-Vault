@@ -37,6 +37,7 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
+import { offersRaise } from '../proposing.ts';
 
 export default function HomeScreen({
   onOpen,
@@ -52,6 +53,14 @@ export default function HomeScreen({
     queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
     retry: (count, err) => !(err instanceof ApiError) && count < 2,
   });
+  // The same list the Vaults tab and the picker read. Someone who only views every vault they are
+  // on is not offered a form the server will refuse (a viewer cannot raise a decision).
+  const vaultsQuery = useQuery({
+    queryKey: ['vaults'],
+    queryFn: ({ signal }) => api.fetchVaults(token, signal),
+    retry: (count, err) => !(err instanceof ApiError) && count < 2,
+  });
+  const canRaise = offersRaise(vaultsQuery.data?.vaults);
 
   if (query.error instanceof ApiError && query.error.status === 401) {
     void handleUnauthorized();
@@ -87,11 +96,13 @@ export default function HomeScreen({
               lead={greeting(identity.displayName)}
               title={headline(query.isLoading, proposals.length)}
               trailing={
-                <HeaderAction
-                  label="Raise a decision"
-                  onPress={onRaise}
-                  icon={<Feather name="plus" size={22} color={color.chromeInk} />}
-                />
+                canRaise ? (
+                  <HeaderAction
+                    label="Raise a decision"
+                    onPress={onRaise}
+                    icon={<Feather name="plus" size={22} color={color.chromeInk} />}
+                  />
+                ) : undefined
               }
             />
             {transportFailure ? (
@@ -111,8 +122,16 @@ export default function HomeScreen({
           ) : transportFailure ? null : (
             <Empty
               title="Nothing is waiting on you."
-              detail="Decisions you are authorised to sign appear here. You can raise one yourself."
-              action={<Button label="Raise a decision" onPress={onRaise} full={false} />}
+              detail={
+                canRaise
+                  ? 'Decisions you are authorised to sign appear here. You can raise one yourself.'
+                  : 'Decisions you are authorised to sign appear here.'
+              }
+              action={
+                canRaise ? (
+                  <Button label="Raise a decision" onPress={onRaise} full={false} />
+                ) : undefined
+              }
             />
           )
         }

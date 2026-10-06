@@ -173,9 +173,14 @@ def main() -> int:
             if vault is None:
                 print(f"  ! no vault for {title!r}, skipped")
                 continue
-            # The creator must be a member. Falling back to the owner keeps the script working on
-            # an instance where the intended raiser is not in that vault.
-            creator = signer if vault.is_member(signer.id) else db.session.get(User, vault.owner_id)
+            # The creator must be the vault's owner or a signer of it (a viewer cannot raise a
+            # decision). Falling back to the owner keeps the script working on an instance where
+            # the intended raiser is not in that vault, or only views it.
+            creator = (
+                signer
+                if proposal_service.may_propose(vault, signer)
+                else db.session.get(User, vault.owner_id)
+            )
             raise_decision(vault, creator, title, text, hours, dry_run=args.dry_run)
 
         if not args.dry_run:

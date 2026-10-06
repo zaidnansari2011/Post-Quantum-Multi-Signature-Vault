@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import json
 import pathlib
+import secrets
+import threading
+from collections import OrderedDict
 from datetime import UTC, datetime
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from qvault.extensions import db
@@ -34,6 +37,44 @@ from qvault.services import (
 from qvault.services.config_service import ConfigError, DowngradeRefused
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+# --- live runs, shown after a redirect -----------------------------------------------------------
+#
+# The benchmark and the adversary lab can each be run from their page. The run used to be the
+# POST's own response, so refreshing the page sent the POST again and ran it a second time. Now
+# the POST redirects to the page with ``?run=<id>`` and the page shows the run it names, as
+# ``?receipt=`` does for a signature: a refresh reads the result again instead of producing
+# another.
+#
+# A run is not persisted; it is held in this process until newer runs push it out. That is as
+# durable as the rendered response it replaces, and enough because the app runs as one worker
+# (see the Dockerfile), so the GET after the redirect reaches the process holding the run. An id
+# no longer held shows the page without a live run, never an error.
+
+_LIVE_RUNS_KEPT = 8
+_live_runs: OrderedDict[str, tuple[str, dict]] = OrderedDict()
+_live_runs_lock = threading.Lock()
+
+
+def _hold_live_run(kind: str, result: dict) -> str:
+    run_id = secrets.token_urlsafe(9)
+    with _live_runs_lock:
+        _live_runs[run_id] = (kind, result)
+        while len(_live_runs) > _LIVE_RUNS_KEPT:
+            _live_runs.popitem(last=False)
+    return run_id
+
+
+def _live_run(kind: str) -> dict | None:
+    """The run of ``kind`` this request names with ``?run=``, if it is still held.
+
+    The kind is checked because both pages read ``?run=``: a benchmark's result handed to the
+    attack template would fail to render rather than show nothing.
+    """
+    with _live_runs_lock:
+        held = _live_runs.get(request.args.get("run", ""))
+    return held[1] if held is not None and held[0] == kind else None
 
 
 def _algorithm_choices():
@@ -158,7 +199,7 @@ def benchmark():
     return render_template(
         "admin/benchmark.html",
         report=_stored_report(),
-        live=None,
+        live=_live_run("benchmark"),
         form=RunBenchmarkForm(),
         max_iterations=current_app.config["BENCHMARK_LIVE_MAX_ITERATIONS"],
     )
@@ -192,13 +233,7 @@ def run_benchmark():
         flash(f"Benchmark aborted — a correctness check failed: {exc}", "danger")
         return redirect(url_for("admin.benchmark"))
 
-    return render_template(
-        "admin/benchmark.html",
-        report=_stored_report(),
-        live=live,
-        form=form,
-        max_iterations=cap,
-    )
+    return redirect(url_for("admin.benchmark", run=_hold_live_run("benchmark", live)))
 
 
 @bp.get("/chain")
@@ -331,7 +366,7 @@ def attack_lab():
     return render_template(
         "admin/attack.html",
         stored=_stored_attack_report(),
-        live=None,
+        live=_live_run("attack"),
         form=RunAttackLabForm(),
     )
 
@@ -370,6 +405,4 @@ def run_attack_lab():
             "expected, each confirmed by its control.",
             "success",
         )
-    return render_template(
-        "admin/attack.html", stored=_stored_attack_report(), live=live, form=RunAttackLabForm()
-    )
+    return redirect(url_for("admin.attack_lab", run=_hold_live_run("attack", live)))

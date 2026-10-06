@@ -642,6 +642,10 @@ def create_proposal(vid: int):
     vault = _member_of(user, vid)
     if vault is None:
         return _error("unknown_vault", "No such vault.", 404)
+    if not proposal_service.may_propose(vault, user):
+        # A viewer is read-only. Answered before the body is read, as the owner-only routes do;
+        # the service refuses too, since every path to a decision goes through it.
+        return _error("view_only", proposal_service.NOT_A_PROPOSER, 403)
 
     body = _body()
     title = (body.get("title") or "").strip()
