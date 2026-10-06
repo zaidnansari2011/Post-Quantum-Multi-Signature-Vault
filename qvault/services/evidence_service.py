@@ -235,7 +235,7 @@ def decision_evidence(
                 "content",
                 "Contents match what was signed",
                 f"What is stored now produces code {recomputed_code}, not {ev.code}. "
-                "The signatures don't cover this text.",
+                "The signatures don’t cover this text.",
                 "failed",
                 "Content altered",
             )
@@ -314,8 +314,8 @@ def decision_evidence(
                 Check(
                     f"signature:{sig.id}",
                     f"{_possessive(who)} signature is valid",
-                    "It didn't verify against the key registered to "
-                    f"{whose}, so it isn't counted.",
+                    "It didn’t verify against the key registered to "
+                    f"{whose}, so it isn’t counted.",
                     "failed",
                     "",
                 )

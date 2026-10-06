@@ -111,8 +111,8 @@ def approve_consequence(
     else:
         lines.append(f"After yours, this still needs {_approvals(required_m - after)}.")
     lines.append(
-        "You can't withdraw your signature"
-        + (", and a payment can't be reversed once it is sent." if payment else ".")
+        "You can’t withdraw your signature"
+        + (", and a payment can’t be reversed once it is sent." if payment else ".")
     )
     return lines
 
@@ -126,14 +126,14 @@ def reject_consequence(*, rejections: int, required_m: int, required_n: int) -> 
     limit = required_n - required_m
     after = rejections + 1
     if after > limit:
-        lines = ["Rejecting ends this decision for everyone. It can't be approved after this."]
+        lines = ["Rejecting ends this decision for everyone. It can’t be approved after this."]
     else:
         more = limit + 1 - after
         lines = [
-            "Rejecting doesn't end this decision on its own. It ends only if "
+            "Rejecting doesn’t end this decision on its own. It ends only if "
             f"{more} more approver{' rejects' if more == 1 else 's reject'} it too."
         ]
-    lines.append("You can't withdraw your rejection.")
+    lines.append("You can’t withdraw your rejection.")
     return lines
 
 
@@ -285,7 +285,7 @@ def _address_html(address: str) -> str:
     every 10 characters. ``<wbr>`` adds no character, so a copy of the text is unchanged."""
     out = []
     for i, ch in enumerate(address):
-        if i in (10, 20, 30, 40):
+        if i in (10, 20, 30):
             out.append("<wbr>")
         if i == 2:
             out.append("<b>")
