@@ -1,4 +1,4 @@
-"""Account settings — profile, password, and this user's signing keys.
+"""Account settings: Profile, Notifications (``notifications.preferences``) and Security.
 
 The password form is the reason this module is careful. Changing a password re-encrypts the
 private key material it protects (``key_service.change_password``), so a failure here is not a
@@ -27,7 +27,7 @@ class SigningChoiceForm(FlaskForm):
 bp = Blueprint("account", __name__, url_prefix="/account")
 
 
-def _render(profile_form=None, password_form=None):
+def _render(profile_form=None, password_form=None, tab="profile"):
     key = key_service.active_signing_key(current_user)
     on_chain = bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED"))
     phones = []
@@ -37,7 +37,8 @@ def _render(profile_form=None, password_form=None):
             if phone is not None and phone.is_usable():
                 phones.append((phone, device_key))
     return render_template(
-        "account/index.html",
+        "account/security.html" if tab == "security" else "account/index.html",
+        tab=tab,
         profile_form=profile_form or ProfileForm(display_name=current_user.display_name),
         password_form=password_form or ChangePasswordForm(),
         key=key,
@@ -46,6 +47,10 @@ def _render(profile_form=None, password_form=None):
         treasuries_on=on_chain,
         key_choice=treasury_service.key_choice(current_user) if on_chain else None,
         phones=phones,
+        # Every phone this account has paired, usable or not, for the Security tab's list.
+        devices=Device.query.filter_by(owner_id=current_user.id)
+        .order_by(Device.created_at.desc())
+        .all(),
         choice_form=SigningChoiceForm(),
     )
 
@@ -61,7 +66,7 @@ def set_signing_choice():
     form = SigningChoiceForm()
     if not form.validate_on_submit():
         flash("That form had expired. Try again.", "error")
-        return redirect(url_for("account.index"))
+        return redirect(url_for("account.security"))
     choice = (request.form.get("choice") or "").strip()
     device_key = None
     custody = "password"
@@ -77,13 +82,20 @@ def set_signing_choice():
     except LinkRefused as exc:
         for problem in exc.problems:
             flash(f"{problem[:1].upper()}{problem[1:]}.", "error")
-    return redirect(url_for("account.index"))
+    return redirect(url_for("account.security"))
 
 
 @bp.get("/")
 @login_required
 def index():
     return _render()
+
+
+@bp.get("/security")
+@login_required
+def security():
+    """Keys, phones, the treasury key choice, the password and what recovery there is (R2)."""
+    return _render(tab="security")
 
 
 @bp.post("/profile")
@@ -102,7 +114,7 @@ def update_profile():
 def change_password():
     form = ChangePasswordForm()
     if not form.validate_on_submit():
-        return _render(password_form=form)
+        return _render(password_form=form, tab="security")
 
     try:
         count = key_service.change_password(
@@ -112,7 +124,7 @@ def change_password():
         # Deliberately attached to the field rather than flashed: this is a form error about one
         # input, and the page should come back with the rest of what they typed intact.
         form.current_password.errors.append("That is not your current password.")
-        return _render(password_form=form)
+        return _render(password_form=form, tab="security")
 
     # Log them out. The session was established under the old password and this is the moment a
     # user expects to re-authenticate; leaving it live would also mean a stolen session survives

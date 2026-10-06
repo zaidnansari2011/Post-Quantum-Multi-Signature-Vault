@@ -1,132 +1,107 @@
 {% extends "base.html" %}
 {% block title %}Verify a decision — Q-Vault{% endblock %}
+{% block crumbs %}{% from "ui/navigation.html" import breadcrumbs %}{{ breadcrumbs([('Verify a decision', None)]) }}{% endblock %}
+{#- Verify (rework R2): a file or a paste, then the outcome, a coverage line built from the checks
+    that actually ran ("Checked: the decision text, 3 signatures, ..."), and one row per check
+    saying Passed, Failed or Unavailable. Rendered identically signed in or out: most people this
+    page is for have never had an account here. -#}
+{% from "ui/feedback.html" import banner %}
+{% from "ui/forms.html" import field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/data.html" import hash %}
+{% from "ui/icons.html" import icon %}
 
-{# Rendered identically signed in or out: base.html chooses the block, and this page has to work
-   for someone who has never had an account here, which is most of the people it is for. #}
 {% macro page() %}
-<div class="verify">
-  <div class="verify__head">
-    <h1 class="verify__title">Verify a decision</h1>
-    <p class="verify__lead">
-      Check an exported Q-Vault decision. No account needed.
-    </p>
-  </div>
+<div class="q-verify">
+  <header>
+    <h1 class="q-ph__t">Verify a decision</h1>
+    <p class="q-verify__lead">Check an exported Q-Vault decision: its text, every signature, its place in the log and the witness’s co-signature. No account needed.</p>
+  </header>
 
-  {% if error %}
-  <div class="banner banner--broken">
-    <div><div class="banner__title">Could not read that file</div>
-         <div class="banner__body">{{ error }}</div></div>
-  </div>
-  {% endif %}
+  {% if error %}{{ banner('critical', 'Couldn’t read that file', error) }}{% endif %}
 
   {% if report %}
-  <div class="banner {% if report.ok %}banner--sealed{% else %}banner--broken{% endif %}">
-    <div>
-      <div class="banner__title">{{ report.summary }}</div>
-      {% if report.facts.title %}
-      <div class="banner__body">
-        {{ report.facts.title }}{% if report.facts.vault %} · {{ report.facts.vault }}{% endif %}
-      </div>
-      {% endif %}
-    </div>
-  </div>
+  {#- Layer 1: the verifier's own verdict, word for word. -#}
+  {{ banner('success' if report.ok else 'critical', report.summary, (report.facts.title ~ (', in ' ~ report.facts.vault if report.facts.vault else '')) if report.facts.title else None) }}
 
   {% if report.facts.action_text %}
-  <div class="panel">
-    <div class="panel__head">
-      <span class="label">Decision</span>
-      <span class="push tiny muted mono">{{ report.facts.status }}</span>
-    </div>
-    <div class="panel__body">
-      <p style="white-space:pre-wrap;margin:0 0 .75rem">{{ report.facts.action_text }}</p>
-      <dl class="meta">
-        <dt>Approvals required</dt><dd class="mono">{{ report.facts.required_m }} of {{ report.facts.required_n }}</dd>
-        <dt>Opened</dt><dd class="mono">{{ report.facts.created_at }}</dd>
-        <dt>Payload hash</dt>
-        <dd><code class="hash" data-copy="{{ report.facts.payload_hash }}">{{ report.facts.payload_hash[:24] }}…</code></dd>
-      </dl>
-    </div>
-  </div>
+  <section class="q-panel" aria-labelledby="v-dec">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="v-dec">The decision</h2>{% if report.facts.status %}<span class="q-cap">Recorded as {{ report.facts.status }}</span>{% endif %}</div>
+    <div class="q-panel__bd"><p class="q-dtext">{{ report.facts.action_text|decision_text }}</p></div>
+    <dl class="q-kv">
+      <div><dt>Approval rule</dt><dd>{{ report.facts.required_m }} of {{ report.facts.required_n }}</dd></div>
+      <div><dt>Raised</dt><dd>{{ ev_precise(report.facts.created_at) or report.facts.created_at }}</dd></div>
+      {% if code %}<div><dt>Decision code</dt><dd><code class="q-code">{{ code }}</code><span class="q-cap">From the payload hash recomputed here. It should match the code on the decision page and on the approvers’ phones.</span></dd></div>{% endif %}
+      <div><dt>Payload hash</dt><dd>{{ hash(report.facts.payload_hash, 'payload hash') }}</dd></div>
+    </dl>
+  </section>
   {% endif %}
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">Checks</span></div>
-    <ol class="checks">
+  {#- Layer 2: what was checked, then each check. -#}
+  <section class="q-panel q-checks" aria-labelledby="v-chk">
+    <div class="q-checks__hd{% if not report.ok %} is-bad{% endif %}">
+      <span class="q-chk__i q-chk__i--{{ 'passed' if report.ok else 'failed' }}">{{ icon('success' if report.ok else 'critical') }}</span>
+      <h2 id="v-chk">{{ checks_summary }}</h2>
+    </div>
+    {% if coverage %}<p class="q-cover">{{ coverage }}</p>{% endif %}
+    <ol class="q-checks__l">
       {% for c in report.checks %}
-      <li class="checks__row {% if c.skipped %}is-skipped{% elif c.ok %}is-ok{% else %}is-bad{% endif %}">
-        <span class="checks__mark" aria-hidden="true">
-          {%- if c.skipped %}—{% elif c.ok %}&check;{% else %}&times;{% endif -%}
-        </span>
-        <span class="checks__text">
-          <span class="checks__title">{{ c.title }}</span>
-          <span class="checks__detail">{{ c.detail }}</span>
-        </span>
+      {% set state = 'unavailable' if c.skipped else ('passed' if c.ok else 'failed') %}
+      <li class="q-chk">
+        <span class="q-chk__i q-chk__i--{{ state }}">{{ icon({'passed': 'success', 'failed': 'critical', 'unavailable': 'info'}[state]) }}</span>
+        <div class="q-chk__b"><p class="q-chk__t">{{ c.title }}</p><p class="q-chk__l">{{ c.detail }}</p></div>
+        <span class="q-chk__w q-chk__w--{{ state }}">{{ ev_check_word(state) }}</span>
       </li>
       {% endfor %}
     </ol>
-  </div>
+  </section>
 
   {% if report.fingerprints.log or report.fingerprints.witnesses %}
-  <div class="panel">
-    <div class="panel__head"><span class="label">Keys in this bundle</span></div>
-    <div class="panel__body">
-      <dl class="meta">
-        {% if report.fingerprints.log %}
-        <dt>Log</dt>
-        <dd><code class="hash" data-copy="{{ report.fingerprints.log }}">{{ report.fingerprints.log }}</code></dd>
-        {% endif %}
-        {% for w in report.fingerprints.witnesses %}
-        <dt>{{ w.name }}</dt>
-        <dd><code class="hash" data-copy="{{ w.fingerprint }}">{{ w.fingerprint }}</code></dd>
-        {% endfor %}
-      </dl>
-      <p class="tiny muted" style="margin:.75rem 0 0">
-        A bundle names its own keys, so these prove nothing on their own. Compare them against
-        fingerprints you obtained from somewhere other than the file, then enter them below.
-      </p>
-    </div>
-  </div>
+  <section class="q-panel" aria-labelledby="v-keys">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="v-keys">Keys in this file</h2></div>
+    <dl class="q-kv">
+      {% if report.fingerprints.log %}<div><dt>Log</dt><dd>{{ hash(report.fingerprints.log, 'log key fingerprint', 16, 0) }}</dd></div>{% endif %}
+      {% for w in report.fingerprints.witnesses %}<div><dt>{{ w.name }}</dt><dd>{{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</dd></div>{% endfor %}
+    </dl>
+    <p class="q-sigrec__note">A file names its own keys, so these prove nothing on their own. Compare them with fingerprints you got from somewhere other than the file, then pin them below.</p>
+  </section>
   {% endif %}
   {% endif %}
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">{% if report %}Check another{% else %}Bundle{% endif %}</span></div>
-    <div class="panel__body">
+  <section class="q-panel" aria-labelledby="v-form">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="v-form">{% if report %}Check another{% else %}The exported decision{% endif %}</h2></div>
+    <div class="q-panel__bd">
       <form method="post" enctype="multipart/form-data" action="{{ url_for('verify.index') }}">
-        <div class="field">
-          {# EVERY format the export can produce, default first. This list has been wrong twice --
-             once holding only .json while the download was a .zip, then only .zip/.json while the
-             download had become .html -- and both times the symptom was identical: the single file
-             the user actually possessed was greyed out in the file dialog, so the page looked like
-             it was refusing their evidence. The route accepts all three either way
-             (verify.py::_read_submission -> qvault/verify/reader.py); this attribute only governs
-             what the OS dialog will show, which is exactly why it is easy to forget and impossible
-             for a route-level test to catch. #}
-          <input class="input" type="file" name="bundle"
+        <div class="q-file">
+          <label class="q-field__label" for="f-bundle">File</label>
+          {#- EVERY format the export can produce, default first. This list has been wrong twice --
+              once holding only .json while the download was a .zip, then only .zip/.json while
+              the download had become .html -- and both times the symptom was identical: the
+              single file the user actually possessed was greyed out in the file dialog. The route
+              accepts all three either way (verify.py::_read_submission -> verify/reader.py); this
+              attribute only governs what the OS dialog shows. -#}
+          <input id="f-bundle" type="file" name="bundle" aria-describedby="f-bundle-cap"
                  accept=".html,.zip,.json,text/html,application/zip,application/json">
+          <p class="q-field__cap" id="f-bundle-cap">The .html record, the .zip package or the .json bundle. Up to 4 MB.</p>
         </div>
-        <details class="verify__more">
-          <summary>Pin the keys you expect</summary>
-          <div class="field">
-            <label class="label" for="expect_log">Log key fingerprint</label>
-            <input class="input mono" id="expect_log" name="expect_log" value="{{ expect_log }}"
-                   placeholder="16 hex characters" autocomplete="off">
-          </div>
-          <div class="field">
-            <label class="label" for="expect_witness">Witness key fingerprint</label>
-            <input class="input mono" id="expect_witness" name="expect_witness" value="{{ expect_witness }}"
-                   placeholder="16 hex characters" autocomplete="off">
+        <p class="q-verify__or">or</p>
+        {{ field('bundle_text', 'Paste the contents', type='textarea', caption='The JSON bundle, or the text of the .html record.', attrs={'spellcheck': 'false', 'rows': 5}) }}
+        <details class="q-acc">
+          <summary>Pin the keys you expect <span>optional</span></summary>
+          <div class="q-panel__bd">
+            {{ field('expect_log', 'Log key fingerprint', value=expect_log, id='expect_log', caption='16 hex characters, from somewhere other than the file.', attrs={'autocomplete': 'off', 'spellcheck': 'false'}) }}
+            {{ field('expect_witness', 'Witness key fingerprint', value=expect_witness, id='expect_witness', caption='16 hex characters.', attrs={'autocomplete': 'off', 'spellcheck': 'false'}) }}
           </div>
         </details>
-        <button class="btn btn--primary" type="submit">Verify</button>
+        <div>{{ button('Verify', 'primary', type='submit', attrs={'data-busy-on-submit': True}) }}</div>
       </form>
     </div>
-  </div>
+  </section>
 
-  <p class="verify__foot tiny muted">
+  <p class="q-verify__foot">
     This page runs the check on our server, so it is a convenience rather than evidence.
-    To check without trusting us: <code class="mono">python -m qvault.verify decision-xxxxxxxx.qvault.zip</code>
-    &mdash; or open <code class="mono">verifier.html</code> from inside that package, which needs no Python.
+    To check without trusting us: <code>python -m qvault.verify decision-xxxxxxxx.qvault.zip</code>,
+    or open the exported .html record, which checks itself in your browser.
   </p>
 </div>
 {% endmacro %}
