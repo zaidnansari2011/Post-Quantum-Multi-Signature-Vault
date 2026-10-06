@@ -41,7 +41,9 @@
   background: color-mix(in srgb, currentColor 18%, transparent);
 }
 /* Loud only when something unread waits on you: the one count that means you are blocking. */
-.nbell__badge--needs { background: var(--waiting); color: #fff; }
+/* --surface is light on the light theme's dark warning and dark on the dark theme's light one,
+ * so the count reads in both (white on the dark theme's #EFBE77 was 1.6:1). */
+.nbell__badge--needs { background: var(--waiting); color: var(--surface); }
 
 /* Fixed, and placed by the script: the rail scrolls, and would clip anything absolute in it. */
 .nbell__pop {

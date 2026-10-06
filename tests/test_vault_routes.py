@@ -148,7 +148,9 @@ def test_the_decision_page_distinguishes_device_from_server_custody(client):
     client.post("/login", data={"email": "cust-a@e.com", "password": "password-123"})
     body = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
 
-    assert "Device" in body
-    assert "Server" in body
-    # The header figure states the split, so the count is legible without reading the table.
-    assert "1 device-held" in body
+    # Rework R2: the signer timeline names each signature's key in the product's words ("Phone
+    # key" for a device-held key, "Password key" for one this server unwraps), and the Signatures
+    # sentence states the split, so the count is legible without reading the timeline.
+    assert "Phone key" in body
+    assert "Password key" in body
+    assert "1 of the signatures below was made with a phone key" in body

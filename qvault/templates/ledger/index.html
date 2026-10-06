@@ -1,168 +1,192 @@
 {% extends "base.html" %}
-{% from "_macros.html" import pager %}
+{#- The audit log (rework R2, plan section 5): events as sentences with absolute times and their
+    zone, an integrity column that opens a proof drawer (?proof=), filters in the URL, and the
+    Merkle root as the screen's figure. The chain is verified in full on every view, never from
+    the filtered page; the integrity column comes from evidence_service. -#}
+{% from "ui/navigation.html" import tabs, page_header %}
+{% from "ui/buttons.html" import button, icon_button %}
+{% from "ui/data.html" import hash %}
+{% from "ui/feedback.html" import banner %}
+{% from "ui/forms.html" import select %}
+{% from "ui/avatars.html" import avatar %}
+{% from "ui/icons.html" import icon %}
 {% block title %}Audit — Q-Vault{% endblock %}
-{% block bodyclass %}body body--flush{% endblock %}
 
-{% set head_signed = report.anchor_present and report.anchor_ok and report.anchor_covers_head %}
 {% set total = (report.head_seq + 1) if report.head_seq is not none else 0 %}
+{% set query = filters.to_query() %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Audit</div>
-    <div class="head__sub">
-      {# Two different facts. "3 of 25 entries visible to you" reads as a permissions statement
-         when it is actually a filter result. #}
-      {{ total }} entries
-      {%- if filters.is_filtered %} · {{ page.total }} match these filters{% endif %}
-      {%- if anchor %} · sealed to #{{ anchor.seq }} with {{ anchor.alg_id }}{% endif %}
-    </div>
-  </div>
-  <div class="head__actions">
-    {# Rule 3: this screen's one moment of scale. The root is the value the whole record reduces
-       to, and it is the thing a third party checks an export against. #}
-    {% if log.root %}
-    <div class="head__figure {% if report.ok %}head__figure--sealed{% else %}head__figure--broken{% endif %}">
-      <b><code class="hash" data-copy="{{ log.root }}"
-               style="border:0;background:none;padding:0;font-size:inherit;color:inherit">{{ log.root[:8] }}</code></b>
-      <span>Merkle root</span>
-    </div>
-    {% endif %}
-    {# The phrases "Ledger verified" and "Tamper detected" are asserted by tests/test_anchor.py. #}
-    {% if report.ok %}
-      <span class="chip chip--sealed" title="Ledger verified">Ledger verified</span>
-    {% else %}
-      <span class="chip chip--broken" title="Tamper detected">Tamper detected</span>
-    {% endif %}
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('ledger.export_csv', **filters.to_query()) }}">Export CSV</a>
-  </div>
-</div>
-
-<nav class="tabs" aria-label="Audit sections">
-  <a class="tab" aria-current="page" href="{{ url_for('ledger.view') }}">Record</a>
-  <a class="tab" href="{{ url_for('ledger.transparency') }}">Transparency</a>
-</nav>
-
-<form class="toolbar" method="get" action="{{ url_for('ledger.view') }}" data-autosubmit>
-  <select class="input input--auto" name="event" aria-label="Event">
-    <option value="">All events</option>
-    {% for e in event_types %}
-      <option value="{{ e }}" {% if filters.event == e %}selected{% endif %}>{{ e.replace('_', ' ') }}</option>
-    {% endfor %}
-  </select>
-  <select class="input input--auto" name="vault" aria-label="Vault">
-    <option value="">All vaults</option>
-    {% for v in vaults %}
-      <option value="{{ v.id }}" {% if filters.vault_id == v.id %}selected{% endif %}>{{ v.name }}</option>
-    {% endfor %}
-  </select>
-  <select class="input input--auto" name="actor" aria-label="Person">
-    <option value="">Anyone</option>
-    {% for a in actors %}
-      <option value="{{ a.id }}" {% if filters.actor_id == a.id %}selected{% endif %}>{{ a.display_name or a.email }}</option>
-    {% endfor %}
-  </select>
-  <input class="input input--auto" type="date" name="from" value="{{ filters.date_from }}" aria-label="From">
-  <input class="input input--auto" type="date" name="to" value="{{ filters.date_to }}" aria-label="To">
-  {% if filters.is_filtered %}
-    <a class="btn btn--quiet btn--sm" href="{{ url_for('ledger.view') }}">Clear</a>
-  {% endif %}
-</form>
-{% endblock %}
+{% macro integ(state) -%}
+{%- set word, tone = ev_integrity[state] -%}
+<span class="q-integ q-integ--{{ tone }}">{{ icon({'success': 'success', 'critical': 'critical'}.get(tone, 'info')) }}{{ word }}</span>
+{%- endmacro %}
 
 {% block content %}
+{% set facts = [('Entries', '{:,}'.format(total))] %}
+{% if anchor %}{% set _ = facts.append(('Sealed up to', '#' ~ '{:,}'.format(anchor.seq) ~ ' with ' ~ anchor.alg_id)) %}{% endif %}
+{% call page_header('Audit log', description='Everything that happened in your vaults, in order. Each entry is chained to the one before it and published in a Merkle tree' ~ (' that an independent witness co-signs.' if witness.configured else '.'), facts=facts) %}
+  {{ button('Export CSV', 'secondary', href=url_for('ledger.export_csv', **query)) }}
+{% endcall %}
+
+{{ tabs([
+  {'key': 'log', 'label': 'Log', 'href': url_for('ledger.view')},
+  {'key': 'transparency', 'label': 'Transparency', 'href': url_for('ledger.transparency')},
+], 'log', 'Audit sections') }}
 
 {% if not report.ok %}
-<div class="banner banner--broken" style="margin:1rem 1.5rem 0">
-  <div>
-    <div class="banner__title">Tamper detected</div>
-    <div class="banner__body">
-      {% if not report.chain_ok %}
-        Entry #{{ report.chain_break_seq }} no longer matches its contents; every later entry is
-        unprovable.
-      {% elif not report.anchor_present %}
-        The end of the record is unsealed.
-      {% elif not report.anchor_ok %}
-        The seal over the end of the record does not verify.
-      {% elif not report.anchor_covers_head %}
-        The record was rewritten. The seal still covers entry #{{ report.anchor_seq }} and no longer
-        matches the current head.
-      {% endif %}
-    </div>
-  </div>
-</div>
+{% set why %}
+  {%- if not report.chain_ok %}Entry #{{ report.chain_break_seq }} no longer matches its contents, so it and every later entry can’t be proved.
+  {%- elif not report.anchor_present %}The end of the record is unsealed.
+  {%- elif not report.anchor_ok %}The seal over the end of the record doesn’t verify.
+  {%- elif not report.anchor_covers_head %}The record was rewritten. The seal still covers entry #{{ report.anchor_seq }} and no longer matches the newest entry.{% endif -%}
+{% endset %}
+<div class="q-gap">{{ banner('critical', 'Tamper detected', why) }}</div>
 {% endif %}
 
-{% if rows %}
-<div class="scroll-x scroll-x--tall">
-  <table class="dt">
-    <thead>
-      <tr>
-        <th class="num" style="width:64px">#</th>
-        <th style="width:38%">Event</th>
-        <th>Person</th>
-        <th>Vault</th>
-        <th>Entry hash</th>
-        <th class="num">Time</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for a in rows %}
-      {% set e = a.entry %}
-      {% set broken = report.chain_break_seq is not none and e.seq == report.chain_break_seq %}
-      {% set tainted = report.chain_break_seq is not none and e.seq > report.chain_break_seq %}
-      <tr {% if broken %}style="background:var(--broken-tint)"{% endif %}>
-        <td class="num mono">{{ e.seq }}</td>
-        <td>
-          <span class="truncate" style="display:block">{{ a.sentence }}</span>
-          <span class="dt__sub">
-            <span class="tag">{{ e.event_type }}</span>
-            {% if broken %}<span class="chip chip--broken">altered</span>
-            {% elif tainted %}<span class="chip">unprovable</span>{% endif %}
-          </span>
-        </td>
-        <td class="truncate small">{{ a.who }}</td>
-        <td class="truncate small">{{ a.vault if e.vault_id else '—' }}</td>
-        <td><code class="hash" data-copy="{{ e.entry_hash }}">{{ e.entry_hash[:10] }}…</code></td>
-        <td class="num tiny muted nowrap">{{ e.timestamp[:10] }} {{ e.timestamp[11:16] }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{{ pager('ledger.view', page, filters) }}
-{% else %}
-<div class="empty">
-  <div class="empty__title">{% if filters.is_filtered %}No matches{% else %}Nothing recorded{% endif %}</div>
-  <p class="empty__sub">
-    {% if filters.is_filtered %}No entries match those filters.{% else %}Activity will appear here.{% endif %}
-  </p>
-  {% if filters.is_filtered %}
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('ledger.view') }}">Clear filters</a>
+<div class="q-audit-sum q-audit-sum--log">
+  <section class="q-figure" aria-labelledby="int-t">
+    <span class="q-figure__l" id="int-t">Integrity</span>
+    {% if report.ok %}
+    <p class="q-figure__s"><span class="q-res">{{ icon('success') }}Ledger verified</span></p>
+    <p class="q-figure__s">All {{ '{:,}'.format(total) }} entries recompute, and the seal covers the newest, #{{ '{:,}'.format(report.head_seq) }}.</p>
+    {% else %}
+    <p class="q-figure__s"><span class="q-res q-res--bad">{{ icon('critical') }}Tamper detected</span></p>
+    <p class="q-figure__s">Checked over the whole record, not only this page.</p>
+    {% endif %}
+    <p class="q-figure__s">
+      {%- if witness.size and witness.ok %}Witnessed up to #{{ '{:,}'.format(witness.size - 1) }} by {{ witness.row.witness_name }}{% if log.entries and log.entries > witness.size %}; {{ '{:,}'.format(log.entries - witness.size) }} newer {{ 'entry awaits' if log.entries - witness.size == 1 else 'entries await' }} its next co-signature{% endif %}.
+      {%- elif witness.size %}<span class="q-brief__bad">The log no longer contains the tree the witness co-signed.</span>
+      {%- elif witness.configured %}No checkpoint has been witnessed yet.
+      {%- else %}No witness is configured.{% endif -%}
+    </p>
+  </section>
+  {% if log.root %}
+  <section class="q-figure q-figure--root" aria-labelledby="root-t">
+    <span class="q-figure__l" id="root-t">Merkle root</span>
+    <span class="q-figure__v"><code title="{{ log.root }}">{{ log.root[:16] }}</code><button class="q-copy" type="button" data-copy="{{ log.root }}" aria-label="Copy Merkle root" title="Copy Merkle root"><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button></span>
+    <p class="q-figure__s">The value all {{ '{:,}'.format(log.entries) }} entries reduce to. An export’s proofs are checked against a root like this.</p>
+  </section>
   {% endif %}
 </div>
+
+<form class="q-filters" method="get" action="{{ url_for('ledger.view') }}" data-autosubmit role="search" aria-label="Filter the audit log">
+  {% set ev_opts = [('', 'All events')] %}{% for e in event_types %}{% set _ = ev_opts.append((e, event_label(e))) %}{% endfor %}
+  {% set vault_opts = [('', 'All vaults')] %}{% for v in vaults %}{% set _ = vault_opts.append((v.id, v.name)) %}{% endfor %}
+  {% set actor_opts = [('', 'Anyone')] %}{% for a in actors %}{% set _ = actor_opts.append((a.id, a.display_name or a.email)) %}{% endfor %}
+  {{ select('event', 'Event', ev_opts, selected=filters.event, id='f-event') }}
+  {{ select('vault', 'Vault', vault_opts, selected=filters.vault_id or '', id='f-vault') }}
+  {{ select('actor', 'Person', actor_opts, selected=filters.actor_id or '', id='f-actor') }}
+  <div class="q-field"><label class="q-field__label" for="f-from">From</label><input class="q-input" id="f-from" type="date" name="from" value="{{ filters.date_from }}"></div>
+  <div class="q-field"><label class="q-field__label" for="f-to">To</label><input class="q-input" id="f-to" type="date" name="to" value="{{ filters.date_to }}"></div>
+  <noscript>{{ button('Apply', 'secondary', type='submit') }}</noscript>
+  {% if filters.is_filtered %}{{ button('Clear filters', 'ghost', href=url_for('ledger.view')) }}{% endif %}
+</form>
+
+{% if filters.is_filtered %}<p class="q-filters__count">{{ '{:,}'.format(page.total) }} of {{ '{:,}'.format(total) }} entries match these filters.</p>{% endif %}
+
+<div class="q-table-wrap">
+<table class="q-table q-table--compact q-audit">
+  <caption class="visually-hidden">Audit log, newest first</caption>
+  <thead>
+    <tr><th scope="col">Entry</th><th scope="col">Event</th><th scope="col" class="q-audit__vault">Vault</th><th scope="col">Time (UTC)</th><th scope="col">Integrity</th></tr>
+  </thead>
+  <tbody>
+    {% for a in rows %}
+    {% set e = a.entry %}
+    <tr{% if a.integrity == 'failed' and report.chain_break_seq == e.seq %} class="is-broken"{% endif %}>
+      <td class="q-audit__seq">#{{ '{:,}'.format(e.seq) }}</td>
+      <td class="q-audit__ev">{% if a.href %}<a href="{{ url_for('vaults.proposal_detail', vid=a.href[0], pid=a.href[1]) }}">{{ a.sentence }}</a>{% else %}{{ a.sentence }}{% endif %}</td>
+      <td class="q-audit__vault">{{ a.vault if e.vault_id else '' }}</td>
+      <td class="q-audit__when"><time datetime="{{ e.timestamp }}">{{ ev_short(e.timestamp, zone=False) }}</time></td>
+      <td><a class="q-integ-link" href="{{ url_for('ledger.view', proof=e.seq, **query) }}" aria-label="{{ ev_integrity[a.integrity][0] }}. Open the proof for entry {{ e.seq }}">{{ integ(a.integrity) }}</a></td>
+    </tr>
+    {% else %}
+    <tr class="q-table__none"><td colspan="5">
+      {% if filters.is_filtered %}
+      <div class="q-empty"><p class="q-empty__t">No entries match these filters</p>{{ button('Clear filters', 'secondary', href=url_for('ledger.view'), size='sm') }}</div>
+      {% else %}
+      <div class="q-empty"><p class="q-empty__t">Nothing recorded yet</p><p class="q-empty__c">Activity in your vaults appears here as it happens.</p></div>
+      {% endif %}
+    </td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<p class="q-note">Entries outside your vaults are left out, so the numbers can skip. The integrity check always covers the whole record.</p>
+
+{% if page.pages and page.pages > 1 %}
+<nav class="q-pager" aria-label="Pages">
+  <span>Page {{ page.page }} of {{ page.pages }}</span>
+  <span class="q-pager__b">
+    {{ button('Newer', 'secondary', size='sm', href=url_for('ledger.view', **filters.to_query(page=page.prev_num)) if page.has_prev else None, disabled=not page.has_prev) }}
+    {{ button('Older', 'secondary', size='sm', href=url_for('ledger.view', **filters.to_query(page=page.next_num)) if page.has_next else None, disabled=not page.has_next) }}
+  </span>
+</nav>
 {% endif %}
 
 {% if demo_enabled %}
-<div style="padding:1rem 1.5rem">
-  <div class="panel dev">
-    <div class="panel__head"><span class="label">Developer</span></div>
-    <div class="panel__body">
-      <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="hstack">
-        {{ tamper_form.hidden_tag() }}
-        <label class="tiny muted" for="{{ tamper_form.target_seq.id }}">Entry</label>
-        {{ tamper_form.target_seq(class="input input--auto", type="number", min="1", style="width:5rem") }}
-        {{ tamper_form.edit(class="btn btn--ghost btn--sm") }}
-        {{ tamper_form.rewrite(class="btn btn--ghost btn--sm") }}
-      </form>
-      {% if tampered %}
-      <form method="post" action="{{ url_for('ledger.demo_restore') }}" style="margin-top:.5rem">
-        {{ restore_form.hidden_tag() }}
-        {{ restore_form.restore(class="btn btn--sealed btn--sm") }}
-      </form>
-      {% endif %}
-    </div>
-  </div>
+<div class="q-dev q-gap-top">
+  <p class="q-dev__t">Developer: tamper with the record to see the check catch it</p>
+  <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="q-line q-line--gap">
+    {{ tamper_form.hidden_tag() }}
+    <label for="{{ tamper_form.target_seq.id }}">Entry</label>
+    {{ tamper_form.target_seq(class="q-input q-input--narrow", type="number", min="1") }}
+    {{ button('Edit an entry', 'ghost', type='submit', size='sm', name='edit', value=tamper_form.edit.label.text) }}
+    {{ button('Rewrite from an entry', 'ghost', type='submit', size='sm', name='rewrite', value=tamper_form.rewrite.label.text) }}
+  </form>
+  {% if tampered %}
+  <form method="post" action="{{ url_for('ledger.demo_restore') }}">
+    {{ restore_form.hidden_tag() }}
+    {{ button('Restore the record', 'secondary', type='submit', size='sm', name='restore', value=restore_form.restore.label.text) }}
+  </form>
+  {% endif %}
 </div>
+{% endif %}
+
+{#- ------------------------------------------------------------------ the proof drawer -#}
+{% if proof %}
+{% set e = proof.entry %}
+{% set state = (rows | selectattr('entry.seq', 'equalto', e.seq) | map(attribute='integrity') | first) or none %}
+<a class="q-drawer-scrim" href="{{ url_for('ledger.view', **query) }}" aria-label="Close the proof" tabindex="-1"></a>
+<aside class="q-drawer" role="dialog" aria-modal="false" aria-labelledby="proof-t">
+  <div class="q-drawer__hd">
+    <div>
+      <h2 class="q-drawer__t" id="proof-t">Entry #{{ '{:,}'.format(e.seq) }}</h2>
+      <p class="q-drawer__s">{{ proof.sentence }}</p>
+    </div>
+    {{ icon_button('close', 'Close the proof', href=url_for('ledger.view', **query)) }}
+  </div>
+  <div class="q-panel">
+    <dl class="q-kv">
+      <div><dt>Recorded</dt><dd>{{ ev_precise(e.timestamp) }}</dd></div>
+      <div><dt>Event</dt><dd>“{{ e.event_type }}”</dd></div>
+      <div><dt>Entry hash</dt><dd>{{ hash(e.entry_hash, 'entry hash') }}</dd></div>
+      <div><dt>Previous</dt><dd>{{ hash(e.prev_hash, 'previous entry hash') }}</dd></div>
+      <div><dt>Hash chain</dt><dd><span class="q-res{% if not proof.chain_ok %} q-res--bad{% endif %}">{{ icon('check' if proof.chain_ok else 'critical') }}{{ 'Valid' if proof.chain_ok else 'Broken here or before' }}</span><span class="q-cap">Recomputed over the whole record on this view.</span></dd></div>
+      <div><dt>Leaf hash</dt><dd>{{ hash(proof.leaf_hash, 'leaf hash') }}</dd></div>
+    </dl>
+  </div>
+  {% if proof.checkpoint %}
+  {% set cp = proof.checkpoint.row %}
+  <section aria-labelledby="proof-cp">
+    <h3 id="proof-cp">In the transparency log</h3>
+    <div class="q-panel">
+      <dl class="q-kv">
+        <div><dt>Checkpoint</dt><dd>{{ '{:,}'.format(cp.tree_size) }} entries<span class="q-line">Root {{ hash(cp.root_hash, 'root hash') }}</span></dd></div>
+        <div><dt>Signed by</dt><dd>The log key, {{ cp.alg_id }}{% if proof.checkpoint.key_fingerprint %}<span class="q-line">{{ hash(proof.checkpoint.key_fingerprint, 'log key fingerprint', 16, 0) }}</span>{% endif %}<span class="q-line">{% if proof.checkpoint.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
+        <div><dt>Inclusion proof</dt><dd>{% if proof.inclusion.length is not none %}{{ proof.inclusion.length }} hash{{ '' if proof.inclusion.length == 1 else 'es' }}, recomputed from this entry’s leaf to the checkpoint’s root{% else %}Couldn’t be built{% endif %}<span class="q-line">{% if proof.inclusion.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
+        {% for w in proof.witnesses %}
+        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-line">{% if w.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
+        {% else %}
+        <div><dt>Witness</dt><dd>Not co-signed yet. {% if witness.configured %}The witness signs newer checkpoints as it reaches them.{% else %}No witness is configured.{% endif %}</dd></div>
+        {% endfor %}
+      </dl>
+    </div>
+  </section>
+  {% else %}
+  <p class="q-note">No signed checkpoint covers this entry yet, so there is no inclusion proof to show.</p>
+  {% endif %}
+  <p class="q-note">An exported decision carries these proofs for its own entries, so anyone can check them offline. <a href="{{ url_for('verify.index') }}">Verify an export</a></p>
+</aside>
 {% endif %}
 {% endblock %}

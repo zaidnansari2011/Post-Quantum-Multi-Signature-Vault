@@ -26,7 +26,14 @@ TOKENS = STATIC / "tokens.css"
 #: Our stylesheets, in load order after the fonts. Vendor files are third-party and excepted.
 OUR_CSS = [
     STATIC / name
-    for name in ("tokens.css", "base.css", "components.css", "qvault.css", "utilities.css")
+    for name in (
+        "tokens.css",
+        "base.css",
+        "components.css",
+        "evidence.css",
+        "qvault.css",
+        "utilities.css",
+    )
 ]
 
 TEXT = 4.5  # WCAG 1.4.3, normal text

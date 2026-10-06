@@ -345,6 +345,7 @@ th[aria-sort] .q-sort { color: var(--text); }
 }
 .q-banner > .q-icon { color: var(--bn-fg); margin-top: 2px; vertical-align: 0; }
 .q-banner__b { display: grid; gap: var(--space-2); min-width: 0; flex: 1; }
+.q-banner__b p { margin: 0; }
 .q-banner__t { font-weight: var(--text-body-strong-weight); }
 .q-banner__act { flex: none; display: flex; gap: var(--space-8); }
 .q-banner--neutral { --bn-fg: var(--status-neutral-fg); --bn-bg: var(--status-neutral-bg); --bn-line: var(--status-neutral-border); }
@@ -514,6 +515,7 @@ th[aria-sort] .q-sort { color: var(--text); }
   background: var(--bg); border-bottom: var(--border-width) solid var(--border);
 }
 .q-top__menu { display: none; }
+.q-crumbs-nav { flex: 1; min-width: 0; }
 .q-crumbs { display: flex; align-items: center; gap: var(--space-6); flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; color: var(--text-muted); }
 .q-crumbs li { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
 .q-crumbs li + li::before { content: "/"; color: var(--text-subtle); }

@@ -1,403 +1,529 @@
 {% extends "base.html" %}
-{% from "ui/navigation.html" import breadcrumbs %}
-{% from "_macros.html" import status_chip, tally %}
+{#- The decision page (rework R2; style tile screens.md section B; plan S5, S6, S17).
+
+    One decision, three layers of evidence: Overview leads with the decision text and who has
+    signed; Evidence (layer 2) lists each check in plain words; Technical (layer 3) holds the
+    hashes, keys and proofs. Tabs are links (?tab=), so each layer has its own URL. Every check
+    result on this page comes from qvault/services/evidence_service.py, which runs the check on
+    this request. Presentation only: nothing here changes what is signed or verified. -#}
+{% from "ui/navigation.html" import breadcrumbs, tabs, page_header %}
+{% from "ui/status.html" import status, quorum, badge %}
+{% from "ui/avatars.html" import avatar, avatar_stack %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/data.html" import hash, reltime %}
+{% from "ui/feedback.html" import banner, dialog %}
+{% from "ui/forms.html" import field %}
+{% from "ui/menus.html" import menu, menu_item, menu_sep %}
+{% from "ui/icons.html" import icon %}
+
 {% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
-
-{% set verified_votes = votes | selectattr('verified') | list %}
-{% set unsigned = proposal.required_n - votes|length %}
-{% set still_needed = [proposal.required_m - approvals, 0] | max %}
-
 {% block crumbs %}{{ breadcrumbs([('Vaults', url_for('vaults.list_vaults')), (vault.name, url_for('vaults.vault_detail', vid=vault.id)), (proposal.title, None)]) }}{% endblock %}
+{% block bodyclass %}body q-dpage{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div style="min-width:0">
-    <div class="head__title truncate">{{ proposal.title }}</div>
-    <div class="head__sub">
-      {{ proposal.creator.display_name or proposal.creator.email }} ·
-      {{ proposal.created_at.strftime('%d %b %Y, %H:%M') }}
-    </div>
-  </div>
-  <div class="head__actions">
-    {{ status_chip(proposal.status) }}
-    {# Rule 3: the one figure on this screen. A decision is a count of people who agreed. #}
-    <div class="head__figure {% if approvals >= proposal.required_m %}head__figure--sealed{% endif %}">
-      <b>{{ approvals }}/{{ proposal.required_m }}</b>
-      <span>Approvals{% if device_signed %} &middot; {{ device_signed }} device-held{% endif %}</span>
-    </div>
-    {{ tally(approvals, proposal.required_m, proposal.required_n) }}
-    {# The hand-off to the offline verifier is the closing move of the whole demonstration. It
-       was the quietest control on the page while this slot held nothing but a chip. #}
-    <a class="btn btn--ghost btn--sm"
-       href="{{ url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-      Export for verification
-    </a>
-  </div>
-</div>
-{% endblock %}
+{% set names = ev.names %}
+{% set is_payment = ev.payment is not none %}
+{% set noun = 'payment' if is_payment else 'decision' %}
+{% set verified_votes = votes | selectattr('verified') | list %}
+{% set voted_ids = votes | map(attribute='sig.signer_id') | list %}
+{% set left = [proposal.required_m - approvals, 0] | max %}
+{% set here = url_for('vaults.proposal_detail', vid=vault.id, pid=proposal.proposal_uuid) %}
+{% set device_signed_n = votes | selectattr('sig.custody', 'equalto', 'device') | list | length %}
+
+{#- "Ada, Brij and you": names in a sentence, the viewer last and lower-cased. -#}
+{% macro people(ids, joiner='and') -%}
+{%- set words = [] -%}
+{%- for uid in ids if uid != current_user.id %}{% set _ = words.append(names.get(uid, 'Someone')) %}{% endfor -%}
+{%- if current_user.id in ids %}{% set _ = words.append('you') %}{% endif -%}
+{%- if words|length > 1 %}{{ words[:-1]|join(', ') }} {{ joiner }} {{ words[-1] }}{% else %}{{ words|first }}{% endif -%}
+{%- endmacro %}
+
+{% macro key_word(custody) -%}{{ 'Phone key' if custody == 'device' else 'Password key' }}{%- endmacro %}
+
+{% macro check_icon(state) -%}
+<span class="q-chk__i q-chk__i--{{ state }}">{{ icon({'passed': 'success', 'failed': 'critical', 'unavailable': 'info'}[state]) }}</span>
+{%- endmacro %}
+
+{#- A result inside a technical panel: only Valid or Same as signed, or their failures. -#}
+{% macro result(ok, yes='Valid', no='Didn’t verify') -%}
+<span class="q-res{% if not ok %} q-res--bad{% endif %}">{{ icon('check' if ok else 'critical') }}{{ yes if ok else no }}</span>
+{%- endmacro %}
+
+{% macro etherscan(kind, value) -%}
+{%- if ev.payment and ev.payment.chain_id == 11155111 %}<a class="q-ext" href="https://sepolia.etherscan.io/{{ kind }}/{{ value }}" target="_blank" rel="noreferrer noopener">View on Etherscan</a>{% endif -%}
+{%- endmacro %}
+
+{#- The full address, first and last 4 bytes in medium weight, behind "Show full address". -#}
+{% macro full_address(value) -%}
+<details class="q-reveal"><summary>Show full address</summary><p class="q-reveal__v">{{ value|decision_text }}</p></details>
+{%- endmacro %}
 
 {% block content %}
 
-{# The one banner that survives in this product: the record it exists to protect is lying. #}
+{#- ------------------------------------------------------------------ header -#}
+{% set raised %}{{ avatar(names.get(proposal.creator_id, 'Someone'), 20, decorative=True) }}<span>{{ names.get(proposal.creator_id, 'Someone') }}, {{ reltime(proposal.created_at) }}</span>{% endset %}
+{% set code %}<code class="q-code">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches the start of the payload hash on your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button>{% endset %}
+{% set facts = [('Raised by', raised)] %}
+{% if proposal.status == 'open' and proposal.expires_at %}
+  {% set due %}<span class="{{ 'q-due q-due--soon' if due_soon else 'q-due' }}">{% if due_soon %}{{ icon('warning') }}{% endif %}{{ ui_absolute(proposal.expires_at) }}</span>{% endset %}
+  {% set _ = facts.append(('Due', due)) %}
+{% elif proposal.status == 'approved' and proposal.approved_at %}
+  {% set _ = facts.append(('Approved', ui_absolute(proposal.approved_at))) %}
+{% elif proposal.status == 'rejected' and proposal.rejected_at %}
+  {% set _ = facts.append(('Rejected', ui_absolute(proposal.rejected_at))) %}
+{% elif proposal.status == 'expired' and proposal.expires_at %}
+  {% set _ = facts.append(('Expired', ui_absolute(proposal.expires_at))) %}
+{% endif %}
+{% set _ = facts.append(('Decision code', code)) %}
+
+{% call page_header(proposal.title, status=status(status_key, status_n), facts=facts) %}
+  {% if can_vote %}
+  <span class="q-vote">
+    {{ button('Reject', 'secondary', attrs={'data-dialog-open': 'dlg-reject'}) }}
+    {% if can_approve %}{{ button('Approve', 'primary', attrs={'data-dialog-open': 'dlg-approve'}) }}{% endif %}
+  </span>
+  {% endif %}
+  {% call menu('More actions', 'more', trigger='icon') %}
+    {{ menu_item('Export for verification', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
+    {{ menu_item('Download as JSON', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='json')) }}
+    {{ menu_item('Download as ZIP', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='zip')) }}
+    {{ menu_sep() }}
+    {{ menu_item('View in audit log', url_for('ledger.view', vault=vault.id)) }}
+    {{ menu_item('Verify an export', url_for('verify.index')) }}
+  {% endcall %}
+{% endcall %}
+
+{{ tabs([
+  {'key': 'overview', 'label': 'Overview', 'href': here},
+  {'key': 'evidence', 'label': 'Evidence', 'href': here ~ '?tab=evidence'},
+  {'key': 'technical', 'label': 'Technical', 'href': here ~ '?tab=technical'},
+], tab, 'Decision sections') }}
+
 {% if not binding.ok %}
-<div class="banner banner--broken">
-  <div>
-    <div class="banner__title">Content altered since signing</div>
-    <div class="banner__body">
-      {{ binding.detail }} The signatures below remain individually valid but do not authorise this
-      text, so they are not counted.
-    </div>
-  </div>
+<div class="q-dbanner">
+{{ banner('critical', ev.outcome[0][:-1], binding.detail ~ ' ' ~ ev.outcome[1] ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else '')) }}
 </div>
 {% endif %}
 
-{# What the machine just did. Shown only in the moment after signing, because that is the only
-   moment a person is asking "what did I actually do?" — every value here is also permanently
-   available in the table and panels below, so this is emphasis, never the sole home of a fact.
+<div class="q-detail">
+<div class="q-dmain">
 
-   Deliberately NOT a `.head__figure`: this screen's one moment of scale is the approvals count in
-   the header (rule 4), and a second large number would compete with the outcome. The weight here
-   comes from real bytes on the page, not from type size. #}
+{% if tab == 'overview' %}
+{#- ------------------------------------------------------------------ the receipt, just after signing -#}
 {% if receipt %}
-<div class="receipt">
-  <div class="receipt__head">
-    <span class="label">
-      {% if receipt.decision == 'approve' %}Approval signed{% else %}Rejection signed{% endif %}
-    </span>
-    <span class="push">
-      {% if receipt.verified %}<span class="chip chip--sealed">Verified</span>
-      {% else %}<span class="chip chip--broken">Did not verify</span>{% endif %}
-    </span>
+<section class="q-panel q-receipt" aria-labelledby="receipt-t">
+  <div class="q-panel__hd">
+    <h2 class="q-panel__t" id="receipt-t">{% if receipt.decision == 'approve' %}Approval signed{% else %}Rejection signed{% endif %}</h2>
+    {{ result(receipt.verified) }}
   </div>
-
-  {# The signature itself. The one artefact in this system whose size is a research finding
-     (ML-DSA 3,309 B against SLH-DSA 49,856 B at the same security category), so the bytes are
-     shown rather than described. #}
-  <div class="receipt__bytes">
-    <code class="receipt__hex">{{ receipt.preview_hex }}</code>
-    <span class="receipt__of">
-      first {{ receipt.preview_hex|length // 2 }} of {{ '{:,}'.format(receipt.size_bytes) }} bytes
-    </span>
-  </div>
-
-  <dl class="meta receipt__meta">
-    <dt>Algorithm</dt>
-    <dd>
-      <span class="tag">{{ receipt.alg_id }}</span>
-      {% if receipt.standard %}<span class="tiny muted">{{ receipt.standard }}{% if receipt.security_category %} · category {{ receipt.security_category }}{% endif %}</span>{% endif %}
-    </dd>
-    <dt>Custody</dt>
-    <dd>
-      {% if receipt.custody == 'device' %}
-        <span class="chip chip--sealed">Device</span>
-        <span class="tiny muted">this server has never held the key that produced it</span>
-      {% else %}
-        <span class="tag">Server</span>
-        <span class="tiny muted">unwrapped from your password for this signature, then discarded</span>
-      {% endif %}
-    </dd>
-    <dt>Signing key</dt>
-    <dd>{% if receipt.key_fingerprint %}<code class="hash" data-copy="{{ receipt.key_fingerprint }}">{{ receipt.key_fingerprint }}</code>{% else %}—{% endif %}</dd>
-    <dt>Re-verified in</dt>
-    <dd class="mono">{{ '%.2f'|format(receipt.verify_ms) }} ms</dd>
-    {% if receipt.ledger_seq is not none %}
-    <dt>Audit entry</dt>
-    <dd class="mono">#{{ receipt.ledger_seq }}
-      <code class="hash" data-copy="{{ receipt.ledger_entry_hash }}">{{ receipt.ledger_entry_hash[:16] }}…</code></dd>
-    {% endif %}
-    {% if receipt.root_after %}
-    {# A root only means something as something that moved, so the pair is ONE row. As two rows it
-       fell either side of the two-column split at wide widths and the reader met "now" above
-       "was" — an ordering claim rendered out of order. #}
-    <dt class="receipt__move-dt">Log root</dt>
-    <dd class="receipt__move">
-      {% if receipt.root_before %}
-      <code class="hash" data-copy="{{ receipt.root_before }}">{{ receipt.root_before[:16] }}…</code>
-      <span class="receipt__arrow" aria-hidden="true">→</span>
-      {% endif %}
-      <code class="hash" data-copy="{{ receipt.root_after }}">{{ receipt.root_after[:16] }}…</code>
-      <span class="tiny muted">{{ receipt.tree_size }} entries at this point</span>
-    </dd>
-    {% endif %}
+  <dl class="q-kv">
+    <div><dt>Signature</dt><dd><code class="q-receipt__hex">{{ receipt.preview_hex }}</code><span class="q-cap">The first {{ receipt.preview_hex|length // 2 }} of {{ '{:,}'.format(receipt.size_bytes) }} bytes.</span></dd></div>
+    <div><dt>Algorithm</dt><dd>{{ receipt.alg_id }}{% if receipt.standard %}<span class="q-cap">{{ receipt.standard }}{% if receipt.security_category %}, category {{ receipt.security_category }}{% endif %}</span>{% endif %}</dd></div>
+    <div><dt>Key</dt><dd>{{ key_word(receipt.custody) }}<span class="q-cap">{% if receipt.custody == 'device' %}Made on your phone. Q-Vault never held this key.{% else %}Unlocked with your password for this signature, then discarded.{% endif %}</span></dd></div>
+    {% if receipt.key_fingerprint %}<div><dt>Key fingerprint</dt><dd>{{ hash(receipt.key_fingerprint, 'key fingerprint', 16, 0) }}</dd></div>{% endif %}
+    <div><dt>Checked again in</dt><dd>{{ '%.2f'|format(receipt.verify_ms) }} ms</dd></div>
+    {% if receipt.ledger_seq is not none %}<div><dt>Log entry</dt><dd>#{{ '{:,}'.format(receipt.ledger_seq) }} {{ hash(receipt.ledger_entry_hash, 'entry hash') }}</dd></div>{% endif %}
+    {% if receipt.root_after %}<div><dt>Log root</dt><dd><span class="q-move">{% if receipt.root_before %}{{ hash(receipt.root_before, 'root before') }}<span aria-hidden="true">→</span>{% endif %}{{ hash(receipt.root_after, 'root after') }}</span><span class="q-cap">{{ '{:,}'.format(receipt.tree_size) }} entries after yours.</span></dd></div>{% endif %}
   </dl>
-</div>
+</section>
 {% endif %}
 
-{# `split` not `split--wide`: the signatures table carries eight columns of cryptographic metadata
-   and a 25rem sidebar clipped the last one off the screen. #}
-<div class="split">
-  <div class="stack">
-    <div class="panel">
-      <div class="panel__head">
-        <span class="label">Action</span>
-        {% if proposal.expires_at %}
-          <span class="push tiny muted">Expires {{ proposal.expires_at.strftime('%d %b %Y, %H:%M') }} UTC</span>
-        {% endif %}
-      </div>
-      <div class="panel__body">
-        <p style="white-space:pre-wrap;margin:0">{{ proposal.action_text }}</p>
-      </div>
-    </div>
+{#- ------------------------------------------------------------------ 1. the decision text -#}
+<section class="q-dblk" aria-label="Decision text">
+  <p class="q-dtext">{{ proposal.action_text|decision_text }}</p>
+  <p class="q-dcap">
+    {%- if binding.ok %}<span class="q-dcap__ok">{{ icon('success') }}Content verified.</span> {% if is_payment %}Generated from the payment below. {% endif %}This is the text every approver signs.
+    {%- else %}<span class="q-dcap__bad">{{ icon('critical') }}Content altered.</span> This isn’t the text the approvers signed.{% endif -%}
+  </p>
+  {% if proposal.file %}
+  <div class="q-attach">
+    {{ icon('docs') }}
+    <span class="q-attach__n">{{ proposal.file.filename }}</span>
+    <span class="q-attach__s">{{ '{:,}'.format(proposal.file.size_bytes) }} bytes</span>
+    {{ button('Download', 'ghost', href=url_for('vaults.download_file', vid=vault.id, pid=proposal.proposal_uuid), size='sm') }}
+    <span class="q-cap q-attach__c">The file’s SHA-256 is part of what every approver signs.</span>
+  </div>
+  {% endif %}
+</section>
 
-    {% if can_vote %}
-    <div class="panel">
-      <div class="panel__head"><span class="label">Sign</span></div>
-      <div class="panel__body">
-        <form method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
-          {{ vote_form.hidden_tag() }}
-          <div class="field">
-            {{ vote_form.password(class="input", placeholder="Your password", autocomplete="current-password") }}
-          </div>
-          <div class="field">
-            {{ vote_form.reason(class="input", placeholder="Note (optional)") }}
-          </div>
-          <div class="hstack">
-            {% if can_approve %}{{ vote_form.approve(class="btn btn--primary") }}{% endif %}
-            {{ vote_form.reject(class="btn btn--ghost") }}
-          </div>
-        </form>
-      </div>
-    </div>
-    {% endif %}
+{#- ------------------------------------------------------------------ 2. signatures -#}
+<section class="q-dblk" aria-labelledby="sig-t">
+  <h2 class="q-dblk__t" id="sig-t">Signatures</h2>
+  <div class="q-seal">{{ quorum(approvals, proposal.required_m, size='lg', show_count=False) }}<span class="q-seal__n">{{ approvals }} of {{ proposal.required_m }} approval{{ '' if proposal.required_m == 1 else 's' }}</span></div>
+  <p class="q-seal__s">
+    {%- if proposal.status == 'open' %}
+      {{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(approver_ids) }} can approve.
+    {%- elif proposal.status == 'approved' %}
+      Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.
+    {%- elif proposal.status == 'rejected' %}
+      Rejected by {{ rejections }} of the {{ proposal.required_n }} approvers, so it could no longer reach {{ proposal.required_m }} approvals.
+    {%- else %}
+      Expired with {{ approvals }} of the {{ proposal.required_m }} approvals it needed.
+    {%- endif %}
+    {%- if device_signed_n %} {{ device_signed_n }} of the signatures below {{ 'was' if device_signed_n == 1 else 'were' }} made with a phone key, which never leaves the phone that holds it.{% endif -%}
+  </p>
 
-    <div class="panel">
-      <div class="panel__head">
-        <span class="label">Signatures</span>
-        <span class="push tiny muted">{{ verified_votes|length }} of {{ votes|length }} verify</span>
+  <ol class="q-tl">
+    <li class="q-tl__i">
+      <span class="q-tl__who">{{ avatar(names.get(proposal.creator_id, 'Someone'), 24, decorative=True) }}</span>
+      <div class="q-tl__b"><p><b>{{ names.get(proposal.creator_id, 'Someone') }}</b> raised this {{ noun }}</p></div>
+      <span class="q-tl__time">{{ ui_absolute(proposal.created_at) }}</span>
+    </li>
+    {% set counted = namespace(n=0) %}
+    {% for v in votes %}
+    {% set s = v.sig %}{% set who = names.get(s.signer_id, 'Someone') %}
+    {% if v.verified and s.decision == 'approve' and binding.ok %}{% set counted.n = counted.n + 1 %}{% endif %}
+    <li class="q-tl__i">
+      <span class="q-tl__who">{{ avatar(who, 24, decorative=True) }}<span class="q-tl__g q-tl__g--{{ 'bad' if not v.verified else ('ok' if s.decision == 'approve' else 'no') }}" aria-hidden="true"></span></span>
+      <div class="q-tl__b">
+        <p><b>{{ who }}</b> {{ 'approved' if s.decision == 'approve' else 'rejected' }}</p>
+        <p class="q-tl__sub">
+          {{- key_word(s.custody) }}.
+          {%- if not v.verified %} The signature didn’t verify, so it isn’t counted.
+          {%- elif s.decision == 'approve' and binding.ok and counted.n <= proposal.required_m %} Signed {{ counted.n }} of {{ proposal.required_m }}.{% endif -%}
+        </p>
+        {% if s.reason %}<p class="q-tl__q">“{{ s.reason }}”</p>{% endif %}
       </div>
-      {% if votes %}
-      <div class="scroll-x">
-        <table class="dt">
-          <thead>
-            <tr><th style="width:22%">Signer</th><th>Decision</th><th>Custody</th><th>Algorithm</th>
-                <th class="num">Bytes</th><th>Fingerprint</th><th>Verified</th>
-                <th class="num" style="width:5.5rem">Signed</th></tr>
-          </thead>
-          <tbody>
-            {% for v in votes %}
-            <tr>
-              <td>
-                <span class="dt__link truncate">{{ v.sig.signer.display_name or v.sig.signer.email }}</span>
-                {% if v.sig.reason %}<span class="dt__sub truncate">{{ v.sig.reason }}</span>{% endif %}
-              </td>
-              <td>
-                {% if v.sig.decision == 'approve' %}<span class="chip chip--sealed">Approve</span>
-                {% else %}<span class="chip chip--broken">Reject</span>{% endif %}
-              </td>
-              {# Sealed for device, neutral for server. Not decoration: ADR-0016 records that a
-                 server-held key gives attributable audit but NOT third-party non-repudiation,
-                 because this process can unwrap it. Server custody is ordinary, not a failure,
-                 so it gets no status colour either way. #}
-              <td>
-                {% if v.sig.custody == 'device' %}<span class="chip chip--sealed">Device</span>
-                {% else %}<span class="tag">Server</span>{% endif %}
-              </td>
-              <td><span class="tag">{{ v.sig.alg_id }}</span></td>
-              <td class="num">{{ v.sig.signature|length }}</td>
-              <td><code class="hash" data-copy="{{ v.sig.fingerprint() }}">{{ v.sig.fingerprint() }}</code></td>
-              <td>
-                {% if v.verified %}<span class="chip chip--sealed">Yes</span>
-                {% else %}<span class="chip chip--broken">No</span>{% endif %}
-              </td>
-              <td class="num tiny muted nowrap">{{ v.sig.created_at.strftime('%d %b') }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="panel__body"><p class="small muted" style="margin:0">No signatures yet.</p></div>
+      <span class="q-tl__time">{{ ui_absolute(s.created_at) }}</span>
+    </li>
+    {% endfor %}
+
+    {% if proposal.status == 'open' %}
+      {% set others = approver_ids | reject('in', voted_ids) | reject('equalto', current_user.id) | list %}
+      {% if can_vote %}
+      <li class="q-tl__i q-tl__i--you">
+        <span class="q-tl__who">{{ avatar(current_user.display_name or current_user.email, 24, decorative=True) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
+        <div class="q-tl__b"><p><b>You</b></p>
+          <p class="q-tl__sub">{% if approvals + 1 >= proposal.required_m %}Your approval completes this {{ noun }}.{% else %}Your approval is one of the {{ left }} still needed.{% endif %}</p></div>
+      </li>
       {% endif %}
-    </div>
-
-    {% if proposal.file %}
-    <div class="panel">
-      <div class="panel__head">
-        <span class="label">Attachment</span>
-        <a class="btn btn--ghost btn--sm push"
-           href="{{ url_for('vaults.download_file', vid=vault.id, pid=proposal.proposal_uuid) }}">Download</a>
-      </div>
-      <div class="panel__body">
-        <dl class="meta">
-          <dt>File</dt><dd class="mono">{{ proposal.file.filename }}</dd>
-          <dt>Size</dt><dd class="mono">{{ proposal.file.size_bytes }} bytes</dd>
-          <dt>Encryption</dt><dd><span class="tag">AES-256-GCM</span> key wrapped by <span class="tag">{{ proposal.file.kem_alg_id }}</span></dd>
-        </dl>
-      </div>
-    </div>
+      {% if others %}
+      <li class="q-tl__i">
+        <span class="q-tl__who">{% set other_names = [] %}{% for uid in others %}{% set _ = other_names.append(names.get(uid, 'Someone')) %}{% endfor %}{{ avatar_stack(other_names, max=2, size=24) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
+        <div class="q-tl__b"><p>{% for uid in others %}<b>{{ names.get(uid, 'Someone') }}</b>{% if not loop.last %}{{ ' or ' if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %} can {{ 'also ' if can_vote or approvals else '' }}approve</p></div>
+      </li>
+      {% endif %}
+      {% if is_payment %}
+      <li class="q-tl__i q-tl__i--muted">
+        <span class="q-tl__who"><span class="q-tl__ent">{{ icon('vault') }}</span></span>
+        <div class="q-tl__b"><p>Then the treasury pays {{ ev.payment.amount }}</p><p class="q-tl__sub">Once {{ proposal.required_m }} approval{{ '' if proposal.required_m == 1 else 's' }} {{ 'is' if proposal.required_m == 1 else 'are' }} in.</p></div>
+      </li>
+      {% endif %}
+    {% else %}
+      <li class="q-tl__i q-tl__i--end">
+        <span class="q-tl__who"><span class="q-tl__ent">{{ icon('vault') }}</span><span class="q-tl__g q-tl__g--{{ {'approved': 'ok', 'rejected': 'no'}.get(proposal.status, 'wait') }}" aria-hidden="true"></span></span>
+        <div class="q-tl__b">
+          {% if proposal.status == 'approved' %}
+          <p><b>Approved</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
+          {% elif proposal.status == 'rejected' %}
+          <p><b>Rejected</b>. It can no longer be approved</p>
+          {% else %}
+          <p><b>Expired</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
+          {% endif %}
+        </div>
+        <span class="q-tl__time">{{ ui_absolute(proposal.approved_at or proposal.rejected_at or proposal.expires_at) if (proposal.approved_at or proposal.rejected_at or proposal.expires_at) }}</span>
+      </li>
+      {% if payout and payout.state == 'confirmed' %}
+      <li class="q-tl__i q-tl__i--end">
+        <span class="q-tl__who"><span class="q-tl__ent">{{ icon('vault') }}</span><span class="q-tl__g q-tl__g--ok" aria-hidden="true"></span></span>
+        <div class="q-tl__b"><p>The treasury paid <b>{{ ev.payment.amount }}</b></p></div>
+        <span class="q-tl__time">{% if payout.finished_at %}{{ ui_absolute(ev_stamp(payout.finished_at)) }}{% endif %}</span>
+      </li>
+      {% endif %}
     {% endif %}
+  </ol>
+</section>
+
+{#- ------------------------------------------------------------------ 3. the payment -#}
+{% if is_payment %}
+{% set p = ev.payment %}
+<section class="q-dblk" aria-labelledby="pay-t" id="payout">
+  <h2 class="q-dblk__t" id="pay-t">Payment</h2>
+  <div class="q-panel">
+    <dl class="q-kv">
+      <div><dt>Amount</dt><dd><span class="q-amount">{{ p.amount or (p.value_wei ~ ' wei') }}</span></dd></div>
+      <div><dt>To</dt><dd><span class="q-line">{{ hash(p.to, 'recipient address', 6, 4) }}{{ etherscan('address', p.to) }}</span>{{ full_address(p.to) }}</dd></div>
+      <div><dt>From</dt><dd><span class="q-line">This vault’s treasury {{ hash(p.treasury, 'treasury address', 6, 4) }}{{ etherscan('address', p.treasury) }}</span></dd></div>
+      <div><dt>Network</dt><dd><span class="q-line">{{ p.network }}{% if p.chain_id == 11155111 %} {{ badge('Testnet') }}{% endif %}</span></dd></div>
+      {% if payout %}
+      <div><dt>Payout</dt><dd>
+        {%- if payout.state == 'awaiting_approvals' %}Awaiting approvals<span class="q-cap">Starts once {{ proposal.required_m }} approval{{ '' if proposal.required_m == 1 else 's' }} {{ 'is' if proposal.required_m == 1 else 'are' }} in.</span>
+        {%- elif payout.state == 'not_paid' %}Not paid<span class="q-cap">{{ payout.reason[:1]|upper }}{{ payout.reason[1:] }}.</span>
+        {%- else %}
+          <span class="q-line">{{ status(ev_payout_status(payout.state) or 'queued') }}
+          {%- if payout.tx_hash %}{{ hash(payout.tx_hash, 'transaction hash', 10, 8) }}<a class="q-ext" href="https://sepolia.etherscan.io/tx/{{ payout.tx_hash }}" target="_blank" rel="noreferrer noopener">View on Etherscan</a>{% endif %}</span>
+          {%- if payout.state == 'submitting' %}<span class="q-cap">Sent to {{ p.network }}, waiting for a block.</span>
+          {%- elif payout.state == 'queued' %}<span class="q-cap">The treasury pays at its next check.</span>
+          {%- elif payout.state == 'confirmed' %}<span class="q-cap">{% if payout.block_number %}Block {{ '{:,}'.format(payout.block_number) }}{% endif %}{% if payout.gas_used %}, gas {{ '{:,}'.format(payout.gas_used) }}{% endif %}.</span>
+          {%- elif payout.reason %}<span class="q-cap">{{ payout.reason[:1]|upper }}{{ payout.reason[1:] }}.</span>{% endif %}
+        {%- endif -%}
+      </dd></div>
+      <div><dt>Treasury authorisations</dt><dd>{{ payout.execution_signatures }} of {{ payout.needed }} recorded<span class="q-cap">Each approval of a payment also signs the digest the treasury contract checks; the contract checks them again before it pays.</span></dd></div>
+      {% endif %}
+      <div><dt>Approvals valid until</dt><dd>{{ ui_absolute(ev_unix(p.valid_until)) }}<span class="q-cap">After this the treasury refuses the payment, even if it is approved.</span></dd></div>
+    </dl>
   </div>
+  <p class="q-foot">The treasury sends exactly {{ p.amount }}. Q-Vault’s relayer pays the network fee.</p>
+</section>
+{% endif %}
 
-  <div class="stack">
-    <div class="panel">
-      <div class="panel__head"><span class="label">Status</span></div>
-      <div class="panel__body">
-        <dl class="meta">
-          <dt>State</dt><dd>{{ status_chip(proposal.status) }}</dd>
-          <dt>Approvals</dt><dd class="mono">{{ approvals }} of {{ proposal.required_m }} required</dd>
-          <dt>Rejections</dt><dd class="mono">{{ rejections }}</dd>
-          <dt>Approvers</dt><dd class="mono">{{ proposal.required_n }} at creation</dd>
-          {% if unsigned > 0 and proposal.status == 'open' %}
-          <dt>Outstanding</dt><dd class="mono">{{ unsigned }}</dd>
-          {% endif %}
-          {% if my_vote %}
-          <dt>You</dt>
-          <dd>
-            {% if my_vote.decision == 'approve' %}<span class="chip chip--sealed">Approved</span>
-            {% else %}<span class="chip chip--broken">Rejected</span>{% endif %}
-          </dd>
-          {% elif not is_signer %}
-          <dt>You</dt><dd><span class="chip">View only</span></dd>
-          {% endif %}
-        </dl>
-      </div>
+{#- ------------------------------------------------------------------ 4. checks, in brief -#}
+<section class="q-dblk" aria-labelledby="chk-t">
+  <h2 class="visually-hidden" id="chk-t">Checks</h2>
+  <div class="q-brief{% if ev.failed %} is-bad{% endif %}">
+    {{ check_icon('failed' if ev.failed else 'passed') }}
+    <div class="q-brief__b">
+      <p class="q-brief__t">{{ ev.summary }}</p>
+      {%- set failing = ev.checks | selectattr('state', 'equalto', 'failed') | list %}
+      {%- if failing %}
+      <p class="q-brief__l">{% for c in failing %}<span class="q-brief__bad">{{ c.short or c.title }}.</span> {% endfor %}</p>
+      {%- endif %}
     </div>
-
-    {% include "notifications/_remind.html" %}
-
-    {% if payout %}
-    {% set chip = {'confirmed': 'chip--sealed', 'failed': 'chip--broken', 'expired': 'chip--waiting',
-                   'voided': 'chip--waiting', 'not_paid': 'chip--waiting'}.get(payout.state, 'chip--waiting') %}
-    {% set label = {'awaiting_approvals': 'Awaiting approvals', 'queued': 'Queued',
-                    'submitting': 'Sending', 'confirmed': 'Paid', 'expired': 'Expired',
-                    'voided': 'Voided', 'failed': 'Failed', 'not_paid': 'Not paid'}.get(payout.state, payout.state) %}
-    <div class="panel" id="payout">
-      <div class="panel__head"><span class="label">Payout</span>
-        <span class="push"><span class="chip {{ chip }}">{{ label }}</span></span>
-      </div>
-      <div class="panel__body">
-        <dl class="meta">
-          <dt>Authorisations</dt><dd class="mono">{{ payout.execution_signatures }} of {{ payout.needed }}</dd>
-          {% if payout.tx_hash %}
-          <dt>Transaction</dt>
-          <dd><a class="mono" rel="noreferrer noopener" target="_blank"
-                 href="https://sepolia.etherscan.io/tx/{{ payout.tx_hash }}">{{ payout.tx_hash[:18] }}…</a></dd>
-          {% endif %}
-          {% if payout.block_number %}<dt>Block</dt><dd class="mono">{{ '{:,}'.format(payout.block_number) }}</dd>{% endif %}
-          {% if payout.gas_used %}<dt>Gas</dt><dd class="mono">{{ '{:,}'.format(payout.gas_used) }}</dd>{% endif %}
-        </dl>
-        {% if payout.reason and payout.state != 'confirmed' %}<p class="small">{{ payout.reason[:1] | upper }}{{ payout.reason[1:] }}.</p>{% endif %}
-      </div>
-    </div>
-    {% endif %}
-
-    <div class="panel">
-      <div class="panel__head">
-        <span class="label">Integrity</span>
-        {# Distinctive phrasing: "Verified" alone also appears as a column header in the
-           signatures table, and tests/test_proposal_binding.py needs to tell them apart. #}
-        <span class="push">
-          {% if binding.ok %}<span class="chip chip--sealed">Content verified</span>
-          {% else %}<span class="chip chip--broken">Content altered</span>{% endif %}
-        </span>
-      </div>
-      <div class="panel__body">
-        <dl class="meta">
-          <dt>Recomputed</dt><dd><code class="hash" data-copy="{{ binding.recomputed_hash }}">{{ binding.recomputed_hash[:16] }}…</code></dd>
-          <dt>Signed</dt><dd><code class="hash" data-copy="{{ binding.recorded_hash }}">{{ binding.recorded_hash[:16] }}…</code></dd>
-          <dt>In audit</dt>
-          <dd>
-            {% if binding.ledger_hash %}
-              <code class="hash" data-copy="{{ binding.ledger_hash }}">{{ binding.ledger_hash[:16] }}…</code>
-            {% else %}<span class="chip chip--broken">missing</span>{% endif %}
-          </dd>
-          <dt>Reference</dt><dd><code class="hash" data-copy="{{ proposal.proposal_uuid }}">{{ proposal.proposal_uuid[:16] }}…</code></dd>
-        </dl>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel__head">
-        <span class="label">Transparency</span>
-        <span class="push">
-          {% if transparency.witnesses %}<span class="chip chip--sealed">Witnessed</span>
-          {% elif transparency.checkpoint %}<span class="chip chip--waiting">Unwitnessed</span>
-          {% else %}<span class="chip">Not checkpointed</span>{% endif %}
-        </span>
-      </div>
-      <div class="panel__body">
-        <dl class="meta">
-          {% if transparency.checkpoint %}
-          <dt>Log entries</dt><dd class="mono">{{ transparency.checkpoint.tree_size }}</dd>
-          <dt>Root</dt>
-          <dd><code class="hash" data-copy="{{ transparency.checkpoint.root_hash }}">{{ transparency.checkpoint.root_hash[:16] }}…</code></dd>
-          <dt>Signed by</dt><dd><span class="tag">{{ transparency.checkpoint.alg_id }}</span></dd>
-          {% endif %}
-          {% for w in transparency.witnesses %}
-          <dt>Witness</dt>
-          <dd>{{ w.witness_name }} <span class="tag">{{ w.alg_id }}</span>
-              <code class="hash" data-copy="{{ w.key_fingerprint() }}">{{ w.key_fingerprint() }}</code></dd>
-          {% endfor %}
-        </dl>
-        <a class="btn btn--quiet btn--sm" style="margin-top:.5rem"
-           href="{{ url_for('verify.index') }}">Check an export →</a>
-      </div>
-    </div>
-
-    {# Sharing. The export has always produced a file anyone can verify; this turns that into a
-       link, which is what people actually send. Only offered once a decision has been reached —
-       an open vote made public invites outside pressure on the signers who have not voted. #}
-    <div class="panel">
-      <div class="panel__head">
-        <span class="label">Public record</span>
-        <span class="push">
-          {% if publication.published %}<span class="chip chip--sealed">Shared</span>
-          {% elif publication.publishable %}<span class="chip">Private</span>
-          {% else %}<span class="chip">Not yet decided</span>{% endif %}
-        </span>
-      </div>
-      <div class="panel__body">
-        {% if publication.published %}
-          {% set public_url = url_for('record.public_record', uuid=proposal.proposal_uuid, _external=True) %}
-          <div class="field">
-            <input class="input mono tiny" value="{{ public_url }}" readonly
-                   data-select-on-focus aria-label="Public link">
-          </div>
-          <div class="hstack">
-            <a class="btn btn--ghost btn--sm" href="{{ public_url }}" target="_blank" rel="noopener">Open</a>
-            <form method="post" action="{{ url_for('vaults.unpublish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-              {{ unpublish_form.hidden_tag() }}
-              {{ unpublish_form.submit(class="btn btn--quiet btn--sm") }}
-            </form>
-          </div>
-          <p class="tiny muted" style="margin:.75rem 0 0">
-            Anyone with this link can read the decision and check its signatures without an
-            account. Revoking stops this server serving it; copies already downloaded stay valid.
-          </p>
-        {% elif publication.publishable %}
-          <form method="post" action="{{ url_for('vaults.publish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-            {{ publish_form.hidden_tag() }}
-            {{ publish_form.submit(class="btn btn--primary btn--sm btn--block") }}
-          </form>
-          <p class="tiny muted" style="margin:.75rem 0 0">
-            Publishing is recorded in the audit log with your name against it.
-          </p>
-        {% else %}
-          <p class="small muted" style="margin:0">
-            Available once this decision is approved or rejected.
-          </p>
-        {% endif %}
-      </div>
-    </div>
-
-    {% if demo_enabled %}
-    <div class="panel dev">
-      <div class="panel__head"><span class="label">Developer</span></div>
-      <div class="panel__body">
-        {% if tampered %}
-        <form method="post" action="{{ url_for('vaults.demo_restore_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-          {{ restore_form.hidden_tag() }}
-          {{ restore_form.restore(class="btn btn--sealed btn--sm btn--block") }}
-        </form>
-        {% else %}
-        <form method="post" action="{{ url_for('vaults.demo_tamper_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
-          {{ tamper_form.hidden_tag() }}
-          {{ tamper_form.tamper(class="btn btn--ghost btn--sm btn--block") }}
-        </form>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
+    <a class="q-brief__a" href="{{ here }}?tab=evidence">See the evidence</a>
   </div>
+</section>
+{% endif %}
+
+{#- ------------------------------------------------------------------ Evidence: layers 1 and 2 -#}
+{% if tab == 'evidence' %}
+<p class="q-outcome"><b>{{ ev.outcome[0] }}</b> {{ ev.outcome[1] }}</p>
+<section class="q-panel q-checks" aria-labelledby="checks-t">
+  <div class="q-checks__hd{% if ev.failed %} is-bad{% endif %}">{{ check_icon('failed' if ev.failed else 'passed') }}<h2 id="checks-t">{{ ev.summary }}</h2></div>
+  <ul class="q-checks__l">
+    {% for c in ev.checks %}
+    <li class="q-chk">
+      {{ check_icon(c.state) }}
+      <div class="q-chk__b"><p class="q-chk__t">{{ c.title }}</p><p class="q-chk__l">{{ c.line }}</p></div>
+      <span class="q-chk__w q-chk__w--{{ c.state }}">{{ c.word }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+<p class="q-more"><a href="{{ here }}?tab=technical">See the technical details</a></p>
+{% endif %}
+
+{#- ------------------------------------------------------------------ Technical: layer 3 -#}
+{% if tab == 'technical' %}
+<p class="q-outcome"><b>{{ ev.outcome[0] }}</b> {{ ev.outcome[1] }}</p>
+<div class="q-tech">
+  <section aria-labelledby="t-payload">
+    <h2 class="q-tech__t" id="t-payload">Decision payload</h2>
+    <div class="q-panel">
+      <dl class="q-kv">
+        <div><dt>Payload hash</dt><dd>{{ hash(binding.recorded_hash, 'payload hash') }}</dd></div>
+        <div><dt>Recomputed now</dt><dd>{{ result(binding.recomputed_hash == binding.recorded_hash, 'Same as signed', 'Different') }}{% if binding.recomputed_hash != binding.recorded_hash %} {{ hash(binding.recomputed_hash, 'recomputed hash') }}{% endif %}</dd></div>
+        <div><dt>{% if ev.payload.created_seq is not none %}In audit log entry #{{ '{:,}'.format(ev.payload.created_seq) }}{% else %}In the audit log{% endif %}</dt>
+          <dd>{% if binding.ledger_hash %}{{ result(binding.ledger_matches, 'Same as signed', 'Different') }}{% if not binding.ledger_matches %} {{ hash(binding.ledger_hash, 'logged hash') }}{% endif %}{% else %}{{ result(false, '', 'Missing') }}{% endif %}</dd></div>
+        <div><dt>Decision code</dt><dd><span class="q-line"><code class="q-code">{{ ev.code }}</code></span><span class="q-cap">The first 8 characters of the payload hash.</span></dd></div>
+        <div><dt>Decision ID</dt><dd>{{ hash(proposal.proposal_uuid, 'decision ID') }}</dd></div>
+        <div><dt>Nonce</dt><dd>{{ hash(ev.payload.nonce, 'nonce') }}</dd></div>
+        <div><dt>Raised at</dt><dd>{{ ev_precise(proposal.created_at_iso) }}</dd></div>
+        <div><dt>Approval rule</dt><dd>{{ proposal.required_m }} of {{ proposal.required_n }}: {{ people(approver_ids) }}</dd></div>
+        <div><dt>Attachment</dt><dd>{% if proposal.file %}{{ proposal.file.filename }}<span class="q-cap">Encrypted with AES-256-GCM, its key wrapped by {{ proposal.file.kem_alg_id }}.</span>{% else %}None{% endif %}</dd></div>
+        <div><dt>Decision payload</dt><dd>{{ '{:,}'.format(ev.payload.bytes) }} bytes, domain tag “{{ ev.payload.domain }}”<span class="q-cap">Its SHA-256 is the payload hash. Each signature covers the payload hash, not these bytes directly.</span></dd></div>
+        {% if is_payment %}
+        <div><dt>Payment in the payload</dt><dd>Kind “{{ ev.payment.kind }}” on chain {{ ev.payment.chain_id }}, to {{ hash(ev.payment.to, 'recipient address', 6, 4) }}<span class="q-cap">{{ ev.payment.value_wei }} wei, {{ 'no call data' if ev.payment.data == '0x' else 'call data ' ~ ev.payment.data }}, call gas {{ '{:,}'.format(ev.payment.call_gas) }}, valid until {{ ev.payment.valid_until }}, treasury configuration {{ ev.payment.config_nonce }}.</span></dd></div>
+        {% if ev.payment.digest %}<div><dt>Treasury digest</dt><dd>{{ hash(ev.payment.digest, 'treasury digest', 10, 8) }}<span class="q-cap">What each approval of this payment also signs, for the treasury contract.</span></dd></div>{% endif %}
+        {% endif %}
+      </dl>
+    </div>
+    <p class="q-note">The title, {{ proposal.title }}, is a label for lists. It isn’t part of the payload, so no signature covers it.</p>
+    <details class="q-acc">
+      <summary>Raw decision payload <span>{{ '{:,}'.format(ev.payload.bytes) }} bytes</span></summary>
+      <pre class="q-raw">{{ ev.payload.raw }}</pre>
+    </details>
+  </section>
+
+  <section aria-labelledby="t-sigs">
+    <h2 class="q-tech__t" id="t-sigs">Signatures</h2>
+    {% for r in ev.signatures %}
+    {% set s = r.sig %}
+    <div class="q-panel q-sigrec">
+      <div class="q-panel__hd">
+        <p class="q-sigrec__who">{{ avatar(r.name, 24, decorative=True) }}<span><b>{{ r.name }}</b> {{ 'approved' if s.decision == 'approve' else 'rejected' }} with {{ 'their' if r.name != 'You' else 'your' }} {{ key_word(r.custody)|lower }}</span></p>
+        {{ result(r.verified) }}
+      </div>
+      <dl class="q-grid">
+        <div><dt>Algorithm</dt><dd>{{ s.alg_id }}{% if r.standard %}<span class="q-cap">{{ r.standard }}{% if r.category %}, category {{ r.category }}{% endif %}</span>{% endif %}</dd></div>
+        <div><dt>Signature size</dt><dd>{{ '{:,}'.format(r.size) }} bytes</dd></div>
+        <div><dt>Public key</dt><dd>{{ '{:,}'.format(r.public_key_size) }} bytes</dd></div>
+        <div><dt>Log entry</dt><dd>{% if r.entry %}#{{ '{:,}'.format(r.entry.seq) }}<span class="q-cap">{{ ev_precise(r.entry.timestamp) }}</span>{% else %}None found{% endif %}</dd></div>
+        <div><dt>Key fingerprint</dt><dd>{% if r.key_fingerprint %}{{ hash(r.key_fingerprint, 'key fingerprint', 16, 0) }}{% else %}Unknown{% endif %}</dd></div>
+        <div><dt>Signature SHA-256</dt><dd>{{ hash(r.sha256, 'signature SHA-256') }}</dd></div>
+      </dl>
+      <dl class="q-kv">
+        <div><dt>Signed message</dt><dd>“{{ ev.payload.vote_domain }}”, decision “{{ s.decision }}”, signer {{ s.signer_id }}<span class="q-line">Payload hash {{ hash(s.signed_payload_hash, 'signed payload hash') }}</span></dd></div>
+        {% if r.execution_sha256 %}
+        <div><dt>Also signed</dt><dd>Treasury digest {{ hash(r.execution_digest, 'treasury digest', 10, 8) }}<span class="q-cap">Payment approvals sign the digest the treasury contract checks.</span></dd></div>
+        <div><dt>Treasury signature SHA-256</dt><dd>{{ hash(r.execution_sha256, 'treasury signature SHA-256') }}</dd></div>
+        {% endif %}
+        {% if s.reason %}<div><dt>Note</dt><dd>“{{ s.reason }}”<span class="q-cap">Not part of what is signed.</span></dd></div>{% endif %}
+      </dl>
+      <p class="q-sigrec__note">{% if r.custody == 'device' %}A phone key never leaves the phone that holds it, so Q-Vault could not have made this signature.{% else %}Made by Q-Vault with a password key, which it stores encrypted and unlocks only with that person’s password.{% endif %}</p>
+    </div>
+    {% else %}
+    <p class="q-empty-line">No one has signed yet.</p>
+    {% endfor %}
+  </section>
+
+  <section aria-labelledby="t-log">
+    <h2 class="q-tech__t" id="t-log">Transparency log</h2>
+    <div class="q-panel">
+      <dl class="q-kv">
+        {% for e in ev.events %}
+        <div><dt>Entry #{{ '{:,}'.format(e.seq) }}</dt><dd>{{ ev_event(e.event_type, names.get(e.actor_id)) }}. Entry hash {{ hash(e.entry_hash, 'entry hash') }}<span class="q-cap q-line">Leaf hash {{ hash(e.leaf_hash, 'leaf hash') }}</span></dd></div>
+        {% endfor %}
+        {% if ev.checkpoint %}
+        {% set cp = ev.checkpoint.row %}
+        <div><dt>Checkpoint</dt><dd><span class="q-line">{{ '{:,}'.format(cp.tree_size) }} entries, root {{ hash(cp.root_hash, 'root hash') }}</span><span class="q-cap q-line">Signed by the log key, {{ cp.alg_id }}{% if ev.checkpoint.key_fingerprint %}, fingerprint {{ hash(ev.checkpoint.key_fingerprint, 'log key fingerprint', 16, 0) }}{% endif %}</span><span class="q-line">{{ result(ev.checkpoint.valid) }}</span></dd></div>
+        {% for w in ev.witnesses %}
+        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap q-line">Key fingerprint {{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ result(w.valid) }}</span></dd></div>
+        {% else %}
+        <div><dt>Witness</dt><dd>No witness has co-signed this checkpoint.</dd></div>
+        {% endfor %}
+        {% if ev.inclusion %}
+        <div><dt>Inclusion proof for #{{ '{:,}'.format(ev.inclusion.seq) }}</dt><dd>{% if ev.inclusion.length is not none %}{{ ev.inclusion.length }} hash{{ '' if ev.inclusion.length == 1 else 'es' }}, recomputed to the checkpoint’s root. Included in the export.{% else %}Couldn’t be built.{% endif %}<span class="q-line">{{ result(ev.inclusion.valid) }}</span></dd></div>
+        {% endif %}
+        {% else %}
+        <div><dt>Checkpoint</dt><dd>No signed checkpoint covers this decision’s newest entry yet.</dd></div>
+        {% endif %}
+        {% if ev.log.entries is not none %}
+        {% set wc = ev.witness_check %}
+        <div><dt>Log status</dt><dd>{{ '{:,}'.format(ev.log.entries) }} entries.
+          {%- if wc.size and wc.ok %} The witness has co-signed up to entry #{{ '{:,}'.format(wc.size - 1) }}{% if ev.log.lag %}, {{ ev.log.lag }} {{ 'entry' if ev.log.lag == 1 else 'entries' }} behind the newest checkpoint{% endif %}.
+          {%- elif wc.size %} The log no longer holds the tree the witness co-signed.
+          {%- else %} No witness has co-signed a checkpoint yet.{% endif %}</dd></div>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-act">
+    <h2 class="q-tech__t" id="t-act">Check it yourself</h2>
+    <div class="q-line q-line--gap">
+      {{ button('Export for verification', 'secondary', href=url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
+      <a href="{{ url_for('verify.index') }}">Verify an export</a>
+      {% if glassbox_enabled %}<a href="{{ url_for('glassbox.index') }}">Watch the next signature in the live trace</a>{% endif %}
+    </div>
+    <p class="q-note">The export is a decision record that checks every signature, the log entries and the witness in your browser when opened. Nothing is uploaded.</p>
+  </section>
 </div>
+{% endif %}
+</div>
+
+{#- ------------------------------------------------------------------ Details aside -#}
+<aside class="q-daside" aria-labelledby="det-t">
+  <h2 class="q-dblk__t" id="det-t">Details</h2>
+  <dl class="q-plain">
+    <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
+    <div><dt>Type</dt><dd>{{ 'Payment' if is_payment else 'General' }}</dd></div>
+    <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the vault’s rule don’t apply to this decision.</span></dd></div>
+    <div><dt>Raised</dt><dd>{{ ui_absolute(proposal.created_at) }}</dd></div>
+    <div><dt>Decision ID</dt><dd>{{ hash(proposal.proposal_uuid, 'decision ID') }}</dd></div>
+    {% if is_signer %}
+    <div><dt>You</dt><dd>
+      {%- if my_vote %}{{ 'Approved' if my_vote.decision == 'approve' else 'Rejected' }}, with your {{ key_word(my_vote.custody)|lower }}
+      {%- elif proposal.status == 'open' %}An approver. You sign with your {{ 'password key' if my_key and my_key.wrap_domain != 'device' else 'key' }}{% if my_key %}, {{ my_key.alg_id }}{% endif %}.
+      {%- else %}An approver. You didn’t sign this.{% endif -%}
+    </dd></div>
+    {% else %}
+    <div><dt>You</dt><dd>View only<span class="q-cap">You aren’t one of this decision’s approvers.</span></dd></div>
+    {% endif %}
+    <div><dt>Public record</dt><dd>
+      {%- if publication.published %}
+        {% set public_url = url_for('record.public_record', uuid=proposal.proposal_uuid, _external=True) %}
+        Shared
+        <input class="q-input q-input--mono q-pubinput" value="{{ public_url }}" readonly data-select-on-focus aria-label="Public link">
+        <span class="q-line q-line--gap">
+          {{ button('Open', 'ghost', href=public_url, size='sm', attrs={'target': '_blank', 'rel': 'noopener'}) }}
+          <form method="post" action="{{ url_for('vaults.unpublish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+            {{ unpublish_form.hidden_tag() }}
+            {{ button('Revoke link', 'ghost', type='submit', size='sm', name='submit', value='Revoke link') }}
+          </form>
+        </span>
+        <span class="q-cap">Anyone with this link can read the decision and check its signatures without an account. Revoking stops this server serving it; copies already downloaded stay valid.</span>
+      {%- elif publication.publishable %}
+        Private
+        <form method="post" action="{{ url_for('vaults.publish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}" class="q-pubform">
+          {{ publish_form.hidden_tag() }}
+          {{ button('Create public link', 'secondary', type='submit', size='sm', name='submit', value='Create public link') }}
+        </form>
+        <span class="q-cap">Publishing is recorded in the audit log with your name against it.</span>
+      {%- elif proposal.status in ('expired', 'withdrawn') %}
+        Not shared<span class="q-cap">Only an approved or rejected decision can have a public link.</span>
+      {%- else %}
+        Not yet decided<span class="q-cap">It can be shared once it is approved or rejected.</span>
+      {%- endif -%}
+    </dd></div>
+  </dl>
+
+  {% include "notifications/_remind.html" %}
+
+  {% if demo_enabled %}
+  <div class="q-dev">
+    <p class="q-dev__t">Developer</p>
+    {% if tampered %}
+    <form method="post" action="{{ url_for('vaults.demo_restore_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+      {{ restore_form.hidden_tag() }}
+      {{ button('Restore original text', 'secondary', type='submit', size='sm', name='restore', value='Restore original text') }}
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('vaults.demo_tamper_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+      {{ tamper_form.hidden_tag() }}
+      {{ button('Rewrite this proposal', 'ghost', type='submit', size='sm', name='tamper', value='Rewrite this proposal') }}
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</aside>
+</div>
+
+{#- ------------------------------------------------------------------ phone: the actions stay in reach -#}
+{% if can_vote %}
+<div class="q-actbar">
+  {% if can_approve %}{{ button('Approve', 'primary', block=True, attrs={'data-dialog-open': 'dlg-approve'}) }}{% endif %}
+  {{ button('Reject', 'secondary', block=True, attrs={'data-dialog-open': 'dlg-reject'}) }}
+</div>
+
+{#- ------------------------------------------------------------------ the signing dialogs (B.7, B.8) -#}
+{% macro restated(id) -%}
+<p class="q-dtext q-dtext--dlg" id="{{ id }}">{{ proposal.action_text|decision_text }}</p>
+{%- endmacro %}
+
+{% if can_approve %}
+{% call(part) dialog('dlg-approve', 'Approve this ' ~ noun) %}
+  {% if part == 'body' %}
+  <form id="approve-form" method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
+    {{ vote_form.csrf_token }}
+    {{ restated('approve-text') }}
+    <div class="q-codeblock">
+      <span class="q-codeblock__l">Decision code</span>
+      <span class="q-line"><code class="q-codeblock__v">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button></span>
+      <p class="q-codeblock__s">Check this code matches your phone.</p>
+      <p class="q-cap">It is the first 8 characters of the payload hash, which your phone works out on its own from the text it shows. If they differ, or the text does, don’t sign.</p>
+    </div>
+    {% for line in approve_lines %}<p class="q-conseq">{{ line }}</p>{% endfor %}
+    {{ field('password', 'Password', type='password', id='f-password-approve', required=True, caption='Unlocks your signing key for this signature only. It isn’t stored.', attrs={'autocomplete': 'current-password', 'autofocus': True}) }}
+  </form>
+  {% else %}
+  {{ button('Cancel', 'secondary', attrs={'data-dialog-close': True}) }}
+  {{ button('Sign approval', 'primary', type='submit', name='approve', value='Approve & sign', attrs={'form': 'approve-form', 'data-busy-on-submit': True}) }}
+  {% endif %}
+{% endcall %}
+{% endif %}
+
+{% call(part) dialog('dlg-reject', 'Reject this ' ~ noun) %}
+  {% if part == 'body' %}
+  <form id="reject-form" method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
+    {{ vote_form.csrf_token }}
+    {{ restated('reject-text') }}
+    {{ field('reason', 'Reason (optional)', id='f-reason-reject', caption='Everyone in ' ~ vault.name ~ ' sees this next to your rejection. It isn’t part of what you sign. Up to 255 characters.', attrs={'maxlength': 255, 'autofocus': True}) }}
+    {% for line in reject_lines %}<p class="q-conseq">{{ line }}</p>{% endfor %}
+    {{ field('password', 'Password', type='password', id='f-password-reject', required=True, caption='Unlocks your signing key for this signature only. It isn’t stored.', attrs={'autocomplete': 'current-password'}) }}
+  </form>
+  {% else %}
+  {{ button('Cancel', 'secondary', attrs={'data-dialog-close': True}) }}
+  {{ button('Sign rejection', 'danger', type='submit', name='reject', value='Reject', attrs={'form': 'reject-form', 'data-busy-on-submit': True}) }}
+  {% endif %}
+{% endcall %}
+{% endif %}
 {% endblock %}

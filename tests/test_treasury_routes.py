@@ -264,7 +264,8 @@ def test_the_account_page_offers_the_choice_and_saves_it(world):
     db.session.commit()
     _login(world, world.owner)
 
-    page = world.client.get("/account/").get_data(as_text=True)
+    # Rework R2: the key choice moved to the Security tab of the account.
+    page = world.client.get("/account/security").get_data(as_text=True)
     assert "Treasury approvals" in page and "Ada phone" in page
 
     saved = world.client.post(
@@ -291,8 +292,12 @@ def test_a_phone_that_can_no_longer_sign_in_is_refused_as_a_choice(world):
     )
     db.session.commit()
     _login(world, world.owner)
-    page = world.client.get("/account/").get_data(as_text=True)
-    assert "old phone" not in page  # not offered
+    # Rework R2: the key choice moved to the Security tab of the account.
+    page = world.client.get("/account/security").get_data(as_text=True)
+    # Not offered as a choice. (Rework R2: the Security tab still lists the phone itself, as
+    # "Sign-in expired", so the check is on the radio, not on the name.)
+    assert f'value="device:{key.id}"' not in page
+    assert "Sign-in expired" in page
 
     saved = world.client.post(
         "/account/signing-choice",
