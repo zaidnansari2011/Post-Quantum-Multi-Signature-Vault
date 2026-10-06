@@ -139,11 +139,17 @@ def vault_detail(vid: int):
 
     proposals = (
         Proposal.query.filter_by(vault_id=vid)
-        .options(selectinload(Proposal.signatures), selectinload(Proposal.file))
+        .options(
+            selectinload(Proposal.signatures),
+            selectinload(Proposal.file),
+            selectinload(Proposal.action),
+            selectinload(Proposal.creator),
+        )
         .order_by(Proposal.created_at.desc())
         .all()
     )
-    is_owner = vault.member_for(current_user.id).member_role == "owner"
+    me = vault.member_for(current_user.id)
+    is_owner = me.member_role == "owner"
     signer_vaults = inbox_service.signer_vault_ids(current_user)
     treasury = treasury_jobs.view(vault) if _treasuries_on() else None
     if tab == "treasury" and treasury is None:
@@ -156,7 +162,11 @@ def vault_detail(vid: int):
         "vaults/detail.html",
         vault=vault,
         tab=tab,
+        me=me,
         rows=inbox_service.decorate(proposals, current_user, signer_vaults),
+        # Who is in the vault, how each signs and when they last did (rework R2).
+        members=vault_service.member_overview(vault) if tab == "members" else None,
+        linked=linked,
         files=[p for p in proposals if p.file is not None],
         is_owner=is_owner,
         # New decision and New payment are drawn only for someone the route will let through.

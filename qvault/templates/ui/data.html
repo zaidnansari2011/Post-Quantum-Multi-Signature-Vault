@@ -2,7 +2,8 @@
 
    data_table(columns, has_rows, filtered=False, sort=None, descending=False, sort_href=None,
               empty_title='Nothing here yet', empty_caption=None, empty_action=None,
-              clear_href=None, compact=False, label=None)
+              clear_href=None, compact=False, label=None, no_results_title='No results',
+              no_results_caption='Nothing matches these filters.', stack=False)
      A table whose body rows come from caller() (each a <tr>, cells in column order).
      columns   a list of dicts: key, label, and optionally sortable (bool), numeric (bool, right
                aligned) and hide_label (bool: the header is read but not shown, for an actions
@@ -15,6 +16,11 @@
                is genuinely empty: empty_title, empty_caption and an optional empty_action
                {label, href}. The two must never read the same.
      label     the table's caption, read by screen readers and hidden on screen.
+     no_results_title, no_results_caption
+               what the filtered-empty state says, when the screen can name what was searched
+               ("No decisions match “deployer”").
+     stack     below 768px each row becomes a small card instead of a table row; cells say where
+               they go with a class (q-c-main, q-c-aside, q-c-meta, q-c-end, q-c-wide-only).
 
    kv_panel(items, title=None)
      A panel of labelled facts, as a description list. items is a list of (label, value) pairs;
@@ -25,6 +31,11 @@
      full value in the tooltip, and a copy button for the full value. label completes the button's
      name: "Copy " ~ label.
 
+   pager(page, href)
+     Previous and Next under a paginated list, with "Page 2 of 5". page is a Flask-SQLAlchemy
+     Pagination; href(n) is a callable (a macro works) giving the URL of page n with the current
+     filters, so paging is a link and survives a reload. Nothing is drawn for a single page.
+
    reltime(moment)
      A <time> whose text is the absolute time; qvault.js rewrites it to "3 minutes ago" and keeps
      the absolute time as its title. Without JavaScript the absolute time stays.
@@ -34,9 +45,10 @@
 
 {% macro data_table(columns, has_rows, filtered=False, sort=None, descending=False, sort_href=None,
                     empty_title='Nothing here yet', empty_caption=None, empty_action=None,
-                    clear_href=None, compact=False, label=None) -%}
-<div class="q-table-wrap">
-<table class="q-table{% if compact %} q-table--compact{% endif %}">
+                    clear_href=None, compact=False, label=None, no_results_title='No results',
+                    no_results_caption='Nothing matches these filters.', stack=False) -%}
+<div class="q-table-wrap{% if stack %} q-table-wrap--stack{% endif %}">
+<table class="q-table{% if compact %} q-table--compact{% endif %}{% if stack %} q-table--stack{% endif %}">
   {%- if label %}<caption class="visually-hidden">{{ label }}</caption>{% endif %}
   <thead>
     <tr>
@@ -58,8 +70,8 @@
       <td colspan="{{ columns|length }}">
         {%- if filtered %}
         <div class="q-empty" data-empty="no-results">
-          <p class="q-empty__t">No results</p>
-          <p class="q-empty__c">Nothing matches these filters.</p>
+          <p class="q-empty__t">{{ no_results_title }}</p>
+          {%- if no_results_caption %}<p class="q-empty__c">{{ no_results_caption }}</p>{% endif %}
           {%- if clear_href %}{{ button('Clear filters', 'secondary', href=clear_href, size='sm') }}{% endif %}
         </div>
         {%- else %}
@@ -95,6 +107,18 @@
     <span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span>
   </button>
 </span>
+{%- endmacro %}
+
+{% macro pager(page, href) -%}
+{%- if page.pages and page.pages > 1 %}
+<nav class="q-pager" aria-label="Pages">
+  <span class="q-pager__n">Page {{ page.page }} of {{ page.pages }}</span>
+  <span class="q-pager__b">
+    {{- button('Previous', 'secondary', href=href(page.prev_num) if page.has_prev else None, size='sm', disabled=not page.has_prev) -}}
+    {{- button('Next', 'secondary', href=href(page.next_num) if page.has_next else None, size='sm', disabled=not page.has_next) -}}
+  </span>
+</nav>
+{%- endif %}
 {%- endmacro %}
 
 {% macro reltime(moment) -%}

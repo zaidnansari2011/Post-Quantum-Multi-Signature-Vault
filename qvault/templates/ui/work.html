@@ -1,0 +1,127 @@
+{# Work lists and decision rows (styles: components.css, "work lists" and "decision rows").
+
+   The rows behind Home, the Approvals inbox and a vault's decisions. Each takes rows from
+   inbox_service.decorate (a dict per decision: proposal, status_key, status_n, approvals,
+   approved_by, can_still_approve, amount, code, my_vote, needs_me ...), so a row cannot say
+   something the inbox's own query does not.
+
+   work_list(id, title, rows, total, mode, empty, more=None, caption=None, near_empty=None)
+     One of Home's three lists (screens.md A.3): two-line rows, 56px at least, every list on the
+     same column template (decision, amount 72, signatures 160, due 168) so the columns line up
+     down the page. The whole row is one link to the decision; there is no Approve here, because a
+     signature is a deliberate act on the decision page.
+     mode        'mine' (yours to sign: the note says who has approved) or 'others' (due soon,
+                 waiting on others: the note says Waiting on N, then who can complete it).
+     total       the list's full length; rows is already cut to what is shown.
+     empty       the one line a list says when it has nothing (it never disappears).
+     more        {label, href}: the footer link to the matching Approvals tab.
+     near_empty  the line under the last row when the list ran out early ("Nothing else is due in
+                 the next 48 hours").
+
+   due(moment, zone=True)
+     A due time: absolute ("Tue 6 Oct, 17:00 UTC"), the relative caption under it, the warning
+     tone and a clock inside 24 hours. "No due date" when there is none.
+
+   signatures(row, avatars=True)
+     The approvals as "1 of 2" with the people who approved as an avatar stack. No quorum marks
+     here: avatars never sit beside the marks (plan section 6), and a table counts in numerals.
+
+   rule(m, n)
+     The approval rule as a chip, "Any 2 of 3": a fact about the vault, so a neutral outline,
+     never a status colour.
+
+   type_tag(row)
+     The decision's type as a neutral tag. General, the default, has none (screens.md A.3).
+#}
+{% from "ui/icons.html" import icon %}
+{% from "ui/status.html" import quorum %}
+{% from "ui/avatars.html" import avatar_stack %}
+
+{% macro due(moment, zone=True) -%}
+{%- set d = ui_due(moment) -%}
+{%- if d is none -%}
+<span class="q-due q-due--none">No due date</span>
+{%- else -%}
+<span class="q-due{% if d.soon %} is-soon{% endif %}{% if d.past %} is-past{% endif %}">
+  <time class="q-due__abs" datetime="{{ d.iso }}">{% if d.soon %}{{ icon('clock') }}{% endif %}{{ d.text }}{% if zone %}<span class="q-due__zone"> {{ d.zone }}</span>{% endif %}</time>
+  <span class="q-due__rel">{{ d.relative }}</span>
+</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro signatures(row, avatars=True) -%}
+{%- set p = row.proposal -%}
+<span class="q-sigs">
+  <span class="q-sigs__n">{{ row.approvals }} of {{ p.required_m }}</span>
+  {%- if avatars and row.approved_by %}{{ avatar_stack(row.approved_by_full, 3, 20) }}{% endif %}
+</span>
+{%- endmacro %}
+
+{% macro rule(m, n) -%}
+<span class="q-tag q-tag--rule">Any {{ m }} of {{ n }}</span>
+{%- endmacro %}
+
+{% macro type_tag(row) -%}
+{%- if row.is_payment %}<span class="q-tag">Payment</span>{% endif -%}
+{%- endmacro %}
+
+{% macro _note(row, mode) -%}
+{%- set p = row.proposal -%}
+{%- if mode == 'mine' -%}
+  {%- if row.approved_by %}<span class="q-wl__note">{{ ui_names(row.approved_by) }} approved</span>{% endif -%}
+{%- else -%}
+  <span class="q-wl__note q-wl__note--keep">{{ ui_status(row.status_key, row.status_n)[0] }}</span>
+  {%- if row.my_vote == 'reject' -%}
+  {%- set needed = p.required_n - p.required_m + 1 -%}
+  <span class="q-wl__note">You rejected. It’s rejected only if {{ needed }} of {{ p.required_n }} reject.</span>
+  {%- else -%}
+  {%- set others = row.can_still_approve | reject('equalto', 'You') | list -%}
+  {%- if others %}<span class="q-wl__note">{{ ui_names(others, conjunction='or') }}</span>{% endif -%}
+  {%- endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro work_list(id, title, rows, total, mode, empty, more=None, caption=None, near_empty=None) -%}
+<section class="q-wsec" aria-labelledby="{{ id }}">
+  <div class="q-wsec__hd">
+    <h2 class="q-wsec__t" id="{{ id }}">{{ title }}</h2>
+    {%- if total %}<span class="q-count">{{ total }}</span>{% endif %}
+    {%- if caption %}<span class="q-wsec__n">{{ caption }}</span>{% endif %}
+  </div>
+  <div class="q-wl">
+    {%- if rows %}
+    <div class="q-wl__hd" aria-hidden="true"><span>Decision</span><span class="is-num">Amount</span><span>Signatures</span><span>Due</span></div>
+    <ul class="q-wl__list">
+      {%- for row in rows %}
+      {%- set p = row.proposal %}
+      <li><a class="q-wl__row" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">
+        <span class="q-wl__t">{{ p.title }}</span>
+        <span class="q-wl__m"><span>{{ p.vault.name }}</span>{{ type_tag(row) }}
+          {%- if p.file %}<span class="q-wl__clip" role="img" aria-label="Attachment: {{ p.file.filename }}">{{ icon('clip') }}</span>{% endif -%}
+        </span>
+        <span class="q-wl__amt">{{ row.amount or '' }}</span>
+        <span class="q-wl__sig">
+          <span class="q-wl__s1">{{ quorum(row.approvals, p.required_m) }}</span>
+          {{- _note(row, mode) -}}
+        </span>
+        <span class="q-wl__due">{{ due(p.expires_at) }}</span>
+      </a></li>
+      {%- endfor %}
+    </ul>
+    {%- endif %}
+    {%- if not rows %}
+    <p class="q-wl__ft q-wl__ft--empty">{{ empty }}</p>
+    {%- else %}
+    {#- A phone shows three rows, so its link counts from there; a wide screen shows them all. -#}
+    {%- set complete = total == rows|length %}
+    {%- if near_empty and complete %}
+    <p class="q-wl__ft">{{ near_empty }}</p>
+    {%- endif %}
+    {%- if more and not (near_empty and complete and total <= 3) %}
+    <p class="q-wl__ft{% if near_empty and complete %} q-wl__ft--phone{% endif %}"><a class="q-lnk" href="{{ more.href }}">
+      <span class="q-wide">{{ more.label if complete else 'Show all ' ~ total }}</span><span class="q-narrow">{{ 'Show all ' ~ total if total > 3 else more.label }}</span></a></p>
+    {%- endif %}
+    {%- endif %}
+  </div>
+</section>
+{%- endmacro %}
