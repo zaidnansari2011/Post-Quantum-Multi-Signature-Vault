@@ -326,9 +326,9 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [ ] **R1.1 Style tile ⚑:** one HTML page showing the type scale, colours, components and two real screens (Home and a decision) in the new language, for the owner to approve before anything is converted. Includes the logo mark.
 - [ ] Vendor Public Sans and Source Serif 4 (woff2, OFL, update `static/vendor/README.md`); drop Archivo; dedupe the five identical Inter files
 - [ ] Token CSS (`tokens.css`, `base.css`, `components.css`, `utilities.css`) replacing `qvault.css`, with **light and dark values for every token** (S25), contrast-tested in both
-- [ ] Theme switching: `prefers-color-scheme` by default, a System / Light / Dark choice in the avatar menu stored per user, applied before first paint
+- [ ] Theme switching: `prefers-color-scheme` by default, a System / Light / Dark choice in the avatar menu stored per user, applied before first paint. Stored in a cookie on this branch (no migration in R1); the per-user column follows at integration as revision 0004, with the cookie as the signed-out fallback.
 - [ ] Jinja component macros (`templates/ui/`) and `static/qvault.js` behaviours (S7)
-- [ ] The shell: sidebar, top bar (search and bell present; the bell is wired in R4), avatar menu, help menu, mobile drawer
+- [ ] The shell: sidebar, top bar, avatar menu, help menu, mobile drawer. The search box and the bell are deliberately absent from the R1 top bar rather than shown dead: the bell arrives with R4's notifications at integration, and search waits for the command palette.
 - [ ] Error pages for 400/403/404/405/413/500 and CSRF failure, signed in or out, with a next step
 - [ ] Styled controls replacing every native date, file, select, number, radio and checkbox listed in research 05 §3
 - [ ] Every existing screen converted to the new components, same content and behaviour
