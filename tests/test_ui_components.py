@@ -44,7 +44,8 @@ def test_each_status_always_has_the_same_word_and_tone(app, key, word, tone):
 
 def test_waiting_names_how_many_approvals_are_still_needed(app):
     html = render(app, '{% from "ui/status.html" import status %}{{ status("waiting", 2) }}')
-    assert "q-badge--info" in html and ">Waiting on 2<" in html
+    # S6 tone map (R1.1 critique): Waiting on N is neutral, not info.
+    assert "q-badge--neutral" in html and ">Waiting on 2<" in html
 
 
 def test_a_status_outside_the_vocabulary_fails_the_render_instead_of_inventing_one(app):

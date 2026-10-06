@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 #: badge outside this table is refused rather than invented on the spot.
 STATUS: dict[str, tuple[str, str]] = {
     "needs_you": ("Needs your signature", "warning"),
-    "waiting": ("Waiting on {n}", "info"),
+    "waiting": ("Waiting on {n}", "neutral"),  # S6 tone map: pending, but not yours to act on
     "approved": ("Approved", "success"),
     "rejected": ("Rejected", "critical"),
     "expired": ("Expired", "neutral"),
