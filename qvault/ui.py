@@ -7,13 +7,15 @@ down without losing either end. ``register`` puts them on the Jinja environment.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 #: The closed status vocabulary (plan S6): one word per state, and the tone it always takes. A
 #: badge outside this table is refused rather than invented on the spot.
 STATUS: dict[str, tuple[str, str]] = {
     "needs_you": ("Needs your signature", "warning"),
-    "waiting": ("Waiting on {n}", "info"),
+    # Neutral, not info (S6 tone map, after the R1.1 critique): pending, but nothing for the viewer
+    # to do, so it must not draw the eye the way "Needs your signature" does.
+    "waiting": ("Waiting on {n}", "neutral"),
     "approved": ("Approved", "success"),
     "rejected": ("Rejected", "critical"),
     "expired": ("Expired", "neutral"),
@@ -63,6 +65,94 @@ def absolute_time(moment: datetime) -> str:
     return f"{moment:%a} {moment.day} {moment:%b %Y, %H:%M} UTC"
 
 
+def due(moment: datetime | None, now: datetime | None = None) -> dict | None:
+    """A due time as lists and forms show it (screens.md, "Time and number rules").
+
+    ``text`` is absolute, without the zone ("Tue 6 Oct, 17:00", "Today, 18:00"); the zone is
+    ``zone``, for the places that name it. ``relative`` is the caption ("in 7 hours", "in 2 days",
+    "3 days ago"): hours below two days, whole days above, always rounded down, so "in 2 days"
+    never arrives early. ``soon`` is within the next 24 hours (the warning tone and clock icon);
+    ``past`` is a deadline already gone. None when there is no deadline.
+    """
+    if moment is None:
+        return None
+    moment = _utc(moment)
+    now = _utc(now) if now is not None else datetime.now(UTC)
+    days = (moment.date() - now.date()).days
+    clock = f"{moment:%H:%M}"
+    if days == 0:
+        text = f"Today, {clock}"
+    elif days == 1:
+        text = f"Tomorrow, {clock}"
+    elif days == -1:
+        text = f"Yesterday, {clock}"
+    elif moment.year == now.year:
+        text = f"{moment:%a} {moment.day} {moment:%b}, {clock}"
+    else:
+        text = f"{moment:%a} {moment.day} {moment:%b %Y}, {clock}"
+    delta = moment - now
+    left = abs(delta)
+    if left < timedelta(hours=1):
+        amount = max(1, int(left.total_seconds() // 60))
+        unit = "minute"
+    elif left < timedelta(hours=48):
+        amount, unit = int(left.total_seconds() // 3600), "hour"
+    else:
+        amount, unit = left.days, "day"
+    span = f"{amount} {unit}{'' if amount == 1 else 's'}"
+    past = delta.total_seconds() <= 0
+    return {
+        "text": text,
+        "zone": "UTC",
+        "relative": f"{span} ago" if past else f"in {span}",
+        "soon": not past and delta <= timedelta(hours=24),
+        "past": past,
+        "iso": iso_utc(moment),
+        "full": absolute_time(moment),
+    }
+
+
+def decision_code(payload_hash: str) -> str:
+    """The decision code (S17): the payload hash's first 8 hex characters, grouped ``7F3A-91C2``.
+
+    A display of a hash both the web and the phone already compute, so nothing new is trusted.
+    """
+    head = str(payload_hash)[:8].upper()
+    return f"{head[:4]}-{head[4:]}"
+
+
+#: Small counts in a sentence are words, as the phone app writes them ("Three decisions need you");
+#: counts in badges and tables stay numerals.
+_COUNT_WORDS = ("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine")
+
+
+def count_word(n: int, *, capital: bool = True) -> str:
+    """``n`` as a word up to nine, then as a numeral: ``Three``, ``12``."""
+    if 0 <= n < len(_COUNT_WORDS):
+        word = _COUNT_WORDS[n]
+        return word if capital else word.lower()
+    return str(n)
+
+
+def first_name(name: str | None) -> str:
+    """The name people are called by in lists and sentences (screens.md: first names only)."""
+    name = (name or "").strip()
+    if "@" in name and " " not in name:
+        return name.split("@", 1)[0]
+    return name.split(" ", 1)[0] if name else "Someone"
+
+
+def name_list(names: list[str], *, conjunction: str = "and", limit: int = 4) -> str:
+    """``Ada, Brij and Chen``; past ``limit`` names, ``Ada, Brij, Chen and 3 others``."""
+    names = [n for n in names if n]
+    if len(names) > limit:
+        rest = len(names) - (limit - 1)
+        names = names[: limit - 1] + [f"{rest} others"]
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} {conjunction} {names[-1]}"
+
+
 def middle_truncate(value: str, head: int = 8, tail: int = 6) -> str:
     """``value`` with its middle replaced by an ellipsis, keeping both ends to compare by eye."""
     value = str(value)
@@ -85,4 +175,9 @@ def register(app) -> None:
         ui_absolute=absolute_time,
         ui_truncate=middle_truncate,
         ui_initials=initials,
+        ui_due=due,
+        ui_code=decision_code,
+        ui_count_word=count_word,
+        ui_first_name=first_name,
+        ui_names=name_list,
     )

@@ -24,14 +24,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 
 from sqlalchemy import String, and_, cast, distinct, or_, select
 
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
+from qvault.models.proposal import Proposal
+from qvault.models.signature import Signature
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.models.workspace import Workspace, WorkspaceMember
+from qvault.services.signing import format_wei
+from qvault.ui import first_name
 
 # Workspace roles that see the workspace's own events in the audit record.
 WORKSPACE_AUDIT_ROLES = ("owner", "admin", "auditor")
@@ -340,3 +345,143 @@ def actors_present(user: User) -> list[User]:
             select(User).where(User.id.in_(ids)).order_by(User.display_name, User.email)
         )
     )
+
+
+#: The events Home's Recent activity tells (screens.md A.7), and whether each is an outcome, which
+#: earns it a status badge. Attaching the file is part of raising, so it is not told separately.
+FEED_EVENTS = {
+    "proposal_created": None,
+    "proposal_signed": None,
+    "proposal_approved": "approved",
+    "proposal_rejected": "rejected",
+    "proposal_expired": "expired",
+    "proposal_executed": "paid",
+    "proposal_execution_failed": "failed",
+    "decision_published": None,
+}
+FEED_SCAN = 200
+
+
+def decision_feed(user: User, *, limit: int = 6) -> list[dict]:
+    """Home's Recent activity: one item per decision, its latest event, newest first.
+
+    Read from the audit record under the same scope as every other view of it, and narrowed to
+    decisions in vaults the reader belongs to today, so a vault they have left does not keep
+    showing them its titles. Each item is one sentence in three parts (``lead``, the decision's
+    ``title`` set strong by the template, ``tail``), who acted (a person, or the vault when the
+    system did), when, and a status key only when the event is an outcome.
+    """
+    member_vaults = select(VaultMember.vault_id).where(VaultMember.user_id == user.id)
+    entries = db.session.scalars(
+        select(LedgerEntry)
+        .where(
+            _scope(user),
+            LedgerEntry.ref_type == "proposal",
+            LedgerEntry.vault_id.in_(member_vaults),
+            LedgerEntry.event_type.in_(tuple(FEED_EVENTS)),
+        )
+        .order_by(LedgerEntry.seq.desc())
+        .limit(FEED_SCAN)
+    ).all()
+    latest: dict[str, LedgerEntry] = {}
+    for entry in entries:
+        if entry.ref_id and entry.ref_id not in latest:
+            latest[entry.ref_id] = entry
+            if len(latest) == limit:
+                break
+    if not latest:
+        return []
+    proposals = {
+        p.proposal_uuid: p
+        for p in Proposal.query.filter(
+            Proposal.proposal_uuid.in_(tuple(latest)), Proposal.vault_id.in_(member_vaults)
+        ).all()
+    }
+    actor_ids = {e.actor_id for e in latest.values() if e.actor_id}
+    people = {u.id: u for u in User.query.filter(User.id.in_(actor_ids))} if actor_ids else {}
+
+    def who(entry: LedgerEntry) -> str:
+        if entry.actor_id == user.id:
+            return "You"
+        person = people.get(entry.actor_id)
+        return first_name(person.display_name or person.email) if person else "Someone"
+
+    feed = []
+    for uuid, entry in latest.items():
+        proposal = proposals.get(uuid)
+        if proposal is None:
+            continue
+        try:
+            payload = json.loads(entry.payload_json)
+        except ValueError:
+            payload = {}
+        vault = proposal.vault.name if proposal.vault else "the vault"
+        person = entry.actor != "SYSTEM" and entry.actor_id is not None
+        event = entry.event_type
+        lead, tail = "", ""
+        if event == "proposal_created":
+            lead = f"{who(entry)} raised "
+        elif event == "proposal_signed":
+            verb = "rejected" if payload.get("decision") == "reject" else "approved"
+            lead = f"{who(entry)} {verb} "
+            vote = Signature.query.filter_by(
+                proposal_id=proposal.id, signer_id=payload.get("signer_id")
+            ).first()
+            if verb == "rejected" and vote is not None and vote.reason:
+                tail = f". Reason: “{vote.reason}”"
+        elif event in ("proposal_approved", "proposal_rejected"):
+            verb = "approved" if event == "proposal_approved" else "rejected"
+            if person:
+                lead = f"{who(entry)} {verb} "
+            else:
+                lead, tail = "", f" was {verb}"
+        elif event == "proposal_expired":
+            approvals = sum(1 for s in proposal.signatures if s.decision == "approve")
+            tail = f" expired with {approvals} of {proposal.required_m} approvals"
+        elif event == "proposal_executed":
+            amount = _paid_amount(proposal)
+            lead = (
+                f"The {vault} treasury paid {amount} for "
+                if amount
+                else f"The {vault} treasury paid "
+            )
+        elif event == "proposal_execution_failed":
+            lead = f"The {vault} treasury couldn’t pay "
+        elif event == "decision_published":
+            lead, tail = f"{who(entry)} published ", " to a public link"
+        feed.append(
+            {
+                "lead": lead,
+                "title": proposal.title,
+                "tail": tail,
+                "actor": who(entry) if person else vault,
+                # The avatar draws the person's own initial even when the sentence says "You".
+                "avatar": _full_name(people.get(entry.actor_id), user, entry) if person else vault,
+                "entity": not person,
+                "when": _parse_time(entry.timestamp),
+                "status": FEED_EVENTS[event],
+                "proposal": proposal,
+            }
+        )
+    return feed
+
+
+def _full_name(person: User | None, viewer: User, entry: LedgerEntry) -> str:
+    if entry.actor_id == viewer.id:
+        person = viewer
+    return (person.display_name or person.email) if person is not None else "Someone"
+
+
+def _paid_amount(proposal) -> str | None:
+    value = proposal.action.value_wei if proposal.action is not None else None
+    if isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 78:
+        return format_wei(int(value))
+    return None
+
+
+def _parse_time(stamp: str):
+    try:
+        moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
