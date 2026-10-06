@@ -82,7 +82,7 @@
     {% if can_approve %}{{ button('Approve', 'primary', attrs={'data-dialog-open': 'dlg-approve'}) }}{% endif %}
   </span>
   {% endif %}
-  {% call menu('More actions', trigger='ghost') %}
+  {% call menu('More actions', 'more', trigger='icon') %}
     {{ menu_item('Export for verification', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
     {{ menu_item('Download as JSON', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='json')) }}
     {{ menu_item('Download as ZIP', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='zip')) }}
