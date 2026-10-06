@@ -280,6 +280,13 @@ def test_the_inbox_pages_older_notifications(client, team):
     assert "Decision 0," in second and "Newer" in second
 
 
+def test_a_page_far_past_the_end_is_an_empty_page_not_an_error(client, team):
+    # An offset this large overflowed SQLite's integer and failed the request.
+    _login(client, team.brij)
+    assert client.get(f"/notifications/?page={10**30}").status_code == 200
+    assert client.get("/notifications/?page=-5").status_code == 200
+
+
 # --------------------------------------------------------------------------------------------
 # Preferences
 

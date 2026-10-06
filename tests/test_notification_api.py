@@ -162,7 +162,8 @@ def test_a_removed_member_stops_seeing_the_vaults_notifications_on_the_phone(cli
 
 
 @pytest.mark.parametrize(
-    "query", ["section=everything", "page=0", "page=x", "per_page=0", "per_page=101"]
+    "query",
+    ["section=everything", "page=0", "page=x", "page=10001", "per_page=0", "per_page=101"],
 )
 def test_a_bad_section_or_page_is_a_bad_request(client, inbox, query):
     r = client.get(f"/api/v1/notifications?{query}", headers=inbox["brij_phone"])

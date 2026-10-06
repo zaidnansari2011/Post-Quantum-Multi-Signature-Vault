@@ -77,6 +77,9 @@ REMIND_EVERY = timedelta(hours=24)
 
 PER_PAGE = 25
 MAX_PER_PAGE = 100
+#: The furthest page anyone can ask for. Far past any real inbox, and small enough that the offset
+#: it makes stays an integer every database can take (a huge one overflows SQLite's).
+MAX_PAGE = 10_000
 
 
 class PreferenceError(ValueError):
@@ -713,7 +716,7 @@ def inbox(
 ) -> InboxPage:
     """One section of ``user``'s inbox, newest first."""
     now = now or _utcnow()
-    page = max(1, page)
+    page = max(1, min(MAX_PAGE, page))
     per_page = max(1, min(MAX_PER_PAGE, per_page))
     condition = and_(Notification.recipient_id == user.id, _in_section(section, now))
     total = db.session.scalar(select(func.count()).select_from(Notification).where(condition))
