@@ -67,7 +67,8 @@ export function Field({
         <Text role="caption" tone="muted" nativeID={`${label}-label`}>
           {label}
         </Text>
-        {labelTrailing}
+        {/* Its 44pt target overlaps the label row instead of pushing the input down. */}
+        {labelTrailing ? <View style={s.labelTrailing}>{labelTrailing}</View> : null}
       </View>
       <View style={[s.inputBox, border, { paddingLeft: pad, paddingRight: trailing ? 0 : pad }]}>
         <TextInput
@@ -421,13 +422,16 @@ export function Switch({
       trackColor={{ true: t.color.accent, false: t.color.borderStrong }}
       thumbColor={t.color.surface}
       ios_backgroundColor={t.color.borderStrong}
+      // react-native-web's own default thumb is teal; selection is never a status green.
+      {...({ activeThumbColor: t.color.surface } as object)}
     />
   );
 }
 
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
-  field: { gap: t.space[8] },
+  field: { gap: t.space[8], paddingBottom: t.space[8] },
+  labelTrailing: { marginVertical: -13 },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 18 },
   inputBox: {
     minHeight: 48,
