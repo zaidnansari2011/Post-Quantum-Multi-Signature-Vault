@@ -45,42 +45,99 @@ development server opens. Run commands from the repository root with the project
 The live database, the laptop's demo database and every backup were built by `create_all`, so they
 already have every table in `0001_baseline`. Upgrading one from nothing would try to create tables
 that exist and fail. Instead it is **stamped**: Alembic records that the database is at the
-baseline, in a new one-row table, `alembic_version`. No other table is touched.
+baseline, in a new one-row table, `alembic_version`, and then upgraded from there. The stamp
+itself touches no other table, and it takes the baseline on trust, so the database is checked
+before it is stamped and again after it is upgraded.
 
-1. Back up the database first (plan R10, switch procedure).
-2. Stamp it and check it. Point `DATABASE_URL` at the database, as for the other operator scripts:
+**Why `check` comes last.** `alembic check` compares a database with the models *at the head*, and
+refuses to run at all on a database that is not at the head (`FAILED: Target database is not up
+to date.`). With only the baseline that was the same thing as checking right after the stamp; now
+that `0002_workspaces` exists, a database stamped at the baseline is one revision behind, so
+`check` can only run after `upgrade head`. What guards the stamp is a pre-check of its own.
+
+Point `DATABASE_URL` at the database, as for the other operator scripts. `-x url=...` does the same
+for the `alembic` commands (`python -m alembic -x url=postgresql+psycopg://... current`) and
+`--url` for the pre-check; with neither, every command acts on the laptop's `instance/qvault.db`.
+
+1. **Back up** the database first (plan R10, switch procedure).
+2. **Pre-check: it holds exactly the baseline's tables.**
 
    ```powershell
    $env:DATABASE_URL = "postgresql+psycopg://..."   # the database to stamp
+   python scripts/check_baseline.py
+   ```
+
+   It is read-only, and must print `... holds exactly the tables and columns of 0001_baseline.
+   It can be stamped.` It reads the baseline's tables off the revision itself, so it never needs
+   editing. Anything else is a reason to stop and find out why, not to stamp:
+   - `alembic_version exists`: it was stamped or upgraded before. `python -m alembic current`
+     says where it is; carry on from there with `upgrade head`, never a second stamp.
+   - `table workspaces is not in the baseline` (or another later table): an image with newer
+     models has already started against it, and its `create_all` made them. The revision that
+     creates them would fail. Restore the backup taken before that start.
+   - a missing table or column, or one the baseline doesn't have: the database is not what the
+     tag built.
+3. **Stamp, upgrade, check:**
+
+   ```powershell
    python -m alembic stamp 0001_baseline
+   python -m alembic upgrade head
    python -m alembic check
    Remove-Item Env:DATABASE_URL
    ```
 
-   `-x url=...` does the same without the environment variable:
-   `python -m alembic -x url=postgresql+psycopg://... stamp 0001_baseline`.
-   With neither, the command acts on the laptop's `instance/qvault.db`.
+   `upgrade head` applies only the revisions after the baseline. `check` must print
+   `No new upgrade operations detected.`: the whole schema, every baseline table's columns,
+   types and indexes included, now matches the models. The revisions so far only add tables, so a
+   difference it reports is one the database already had.
+4. **If `check` reports anything,** undo the upgrade and the stamp, which puts the database back
+   as it was (the pre-check accepts it again), and find out why before going on:
 
-   `check` must print `No new upgrade operations detected.` Anything else means the database is
-   not the baseline schema: undo the stamp with `python -m alembic stamp base` (it removes the
-   version row and nothing else) and find out why before going on.
-3. Then `python -m alembic upgrade head`, which applies only the revisions after the baseline.
+   ```powershell
+   python -m alembic downgrade 0001_baseline   # drops the workspace tables it just made
+   python -m alembic stamp base                # removes the version row and nothing else
+   ```
 
 **The live Azure database** accepts connections only from Azure services, so its commands run
 inside Azure, as a one-off run of the rework image with `DATABASE_URL` already set. The
-`qvault-seed` job is that already ([OWNER-ACTIONS §2.9](../OWNER-ACTIONS.md)); its command becomes
-`alembic stamp 0001_baseline`, then `alembic check`, then `alembic upgrade head`. The image's
-working directory holds `alembic.ini`, so no path is needed.
+`qvault-seed` job is that already ([OWNER-ACTIONS §2.9](../OWNER-ACTIONS.md)). Its command becomes
+one shell line, so a refused pre-check stops it before anything is written:
 
-**Order matters at the switch.** Stamp and upgrade *before* the first start of an image whose
-models are ahead of the baseline. That image's startup `create_all` would otherwise create the new
-tables itself, the revision that creates them would then fail, and the new columns on old tables
-would be missing either way.
+```sh
+/bin/sh -c "python scripts/check_baseline.py && alembic stamp 0001_baseline && alembic upgrade head && alembic check"
+```
+
+The image's working directory is the repository root, which holds `alembic.ini` and `scripts/`,
+so no path is needed. Read the execution's log for both expected lines. If `check` failed, the
+job exits non-zero; run it once more with `alembic downgrade 0001_baseline && alembic stamp base`,
+then put its command back to the harmless default.
+
+**Order matters at the switch.** Run all of this *before* the first start of an image whose models
+are ahead of the baseline. That image's startup `create_all` would otherwise create the new tables
+itself, the revision that creates them would then fail, and the new columns on old tables would be
+missing either way. The pre-check catches that case, but the only way out of it is the backup.
 
 Checked on 2026-10-04 against a copy of the laptop's `instance/qvault.db`: all 26 tables, no
 differences from the models, and the three partial unique indexes with their exact predicates. It
-will stamp cleanly. The live database cannot be checked from here; `check` after the stamp is
-that check.
+will stamp cleanly. The live database cannot be checked from here; the pre-check and `check` after
+the upgrade are that check.
+
+Checked on 2026-10-06 on a scratch SQLite database built at the baseline without a version row
+(what `create_all` at the tag leaves): the old sequence (stamp, then `check`) failed with `Target
+database is not up to date.`; the procedure above passed every step and ended with `No new upgrade
+operations detected.`; its undo left a database the pre-check accepted again; and a database
+whose `create_all` had already made the workspace tables was refused by the pre-check.
+`tests/test_migrations.py` runs the same steps.
+
+## Rolling back after the switch
+
+The way back is the tagged image **against the backup** (plan R10), not against the upgraded
+database. The old image knows nothing of workspaces: anyone who registers while it runs against
+an upgraded database gets no `workspace_members` row, and when the new image returns its startup
+step does nothing (a workspace already exists), so they stay outside every workspace, with no
+people list and no members page. If the old image did run against the upgraded database, find
+those users (a `users` row with no `workspace_members` row) and add them to the workspace by hand
+before reopening.
 
 ## Changing the schema
 

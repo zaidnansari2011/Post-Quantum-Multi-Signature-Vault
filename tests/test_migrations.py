@@ -12,7 +12,10 @@ agree, so these tests hold them to it:
 - ``downgrade base`` removes every application table;
 - the same upgrade renders as PostgreSQL SQL, which production runs on, with every table and
   index ``create_all`` would emit there;
-- the documented stamp leaves a ``create_all`` database's tables as they were and at the head.
+- the documented procedure for an existing database works with later revisions present: the
+  pre-check (``scripts/check_baseline.py``) accepts a ``create_all`` database at the baseline and
+  refuses one that is not, the stamp leaves its tables as they were, and after ``upgrade head``
+  ``alembic check`` finds nothing; its undo puts the database back where the pre-check accepts it.
 
 Every command gets its database as ``-x url=...``, which ``migrations/env.py`` puts ahead of
 ``DATABASE_URL``, so no test can reach a database named in the environment.
@@ -27,17 +30,20 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
+from alembic.util import CommandError
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
 from qvault import models  # noqa: F401 - registers every table on the metadata
 from qvault.extensions import db
+from scripts import check_baseline
 
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE = "0001_baseline"
@@ -234,15 +240,22 @@ def test_upgrade_renders_as_postgresql_sql():
     assert dropped == set(db.metadata.tables) | {"alembic_version"}
 
 
-def test_stamping_a_create_all_database_changes_no_table(tmp_path, monkeypatch):
-    """The runbook's procedure for an existing database, with its URL in DATABASE_URL exactly as
-    the documented command has it: stamp the baseline, then upgrade to the head."""
-    url = _sqlite(tmp_path, "existing.db")
+def _create_all_at_baseline(tmp_path: Path, name: str = "existing.db") -> str:
+    """A database as every existing one was built: ``create_all`` at the baseline, unstamped."""
+    url = _sqlite(tmp_path, name)
     with _engine(url) as engine:
         db.metadata.create_all(engine, tables=_baseline_tables(tmp_path))
+    return url
+
+
+def test_stamping_a_create_all_database_changes_no_table(tmp_path, monkeypatch):
+    """The runbook's procedure for an existing database, with its URL in DATABASE_URL exactly as
+    the documented commands have it: pre-check, stamp the baseline, upgrade to the head, check."""
+    url = _create_all_at_baseline(tmp_path)
     before = _schema(url)
     monkeypatch.setenv("DATABASE_URL", url)
 
+    assert check_baseline.main([]) == 0
     command.stamp(_alembic(None), BASELINE)
 
     assert _current_revision(url) == BASELINE
@@ -250,7 +263,53 @@ def test_stamping_a_create_all_database_changes_no_table(tmp_path, monkeypatch):
 
     command.upgrade(_alembic(None), "head")
     assert _current_revision(url) == _head()
+    command.check(_alembic(None))  # raises unless it finds no new upgrade operations
     assert _unmigrated_changes(url) == []
+
+
+def test_check_cannot_run_between_the_stamp_and_the_upgrade(tmp_path):
+    """Why the runbook checks after upgrading: with any revision after the baseline, ``check``
+    refuses a database stamped at the baseline as not up to date."""
+    url = _create_all_at_baseline(tmp_path)
+    command.stamp(_alembic(url), BASELINE)
+
+    with pytest.raises(CommandError, match="not up to date"):
+        command.check(_alembic(url))
+
+
+def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
+    newer = _sqlite(tmp_path, "newer.db")  # an image with later models started on it first
+    with _engine(newer) as engine:
+        db.metadata.create_all(engine)
+    stamped = _create_all_at_baseline(tmp_path, "stamped.db")
+    command.stamp(_alembic(stamped), BASELINE)
+    drifted = _create_all_at_baseline(tmp_path, "drifted.db")
+    with _engine(drifted) as engine, engine.begin() as connection:
+        connection.exec_driver_sql("ALTER TABLE users ADD COLUMN nickname VARCHAR(40)")
+
+    assert check_baseline.differences(newer) == [
+        "table invitations is not in the baseline",
+        "table workspace_members is not in the baseline",
+        "table workspaces is not in the baseline",
+    ]
+    assert check_baseline.differences(stamped)[0].startswith("alembic_version exists")
+    assert check_baseline.differences(drifted) == ["column users.nickname is not in the baseline"]
+    assert check_baseline.main(["--url", newer]) == 1
+
+
+def test_undoing_the_procedure_returns_the_database_to_where_it_started(tmp_path):
+    """The runbook's way back when ``check`` finds a difference: downgrade, then unstamp."""
+    url = _create_all_at_baseline(tmp_path)
+    before = _schema(url)
+    command.stamp(_alembic(url), BASELINE)
+    command.upgrade(_alembic(url), "head")
+
+    command.downgrade(_alembic(url), BASELINE)
+    command.stamp(_alembic(url), "base")
+
+    assert _current_revision(url) is None
+    assert _schema(url) == before
+    assert check_baseline.differences(url) == []
 
 
 # --------------------------------------------------------------------------------------------
