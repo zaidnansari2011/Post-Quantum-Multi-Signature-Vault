@@ -23,7 +23,7 @@
 {% block content %}
 {% set facts = [('Entries', '{:,}'.format(total))] %}
 {% if anchor %}{% set _ = facts.append(('Sealed up to', '#' ~ '{:,}'.format(anchor.seq) ~ ' with ' ~ anchor.alg_id)) %}{% endif %}
-{% call page_header('Audit log', description='Everything that happened in your vaults, in order. Each entry is chained to the one before it and published in a Merkle tree an independent witness co-signs.', facts=facts) %}
+{% call page_header('Audit log', description='Everything that happened in your vaults, in order. Each entry is chained to the one before it and published in a Merkle tree' ~ (' that an independent witness co-signs.' if witness.configured else '.'), facts=facts) %}
   {{ button('Export CSV', 'secondary', href=url_for('ledger.export_csv', **query)) }}
 {% endcall %}
 
@@ -42,7 +42,7 @@
 <div class="q-gap">{{ banner('critical', 'Tamper detected', why) }}</div>
 {% endif %}
 
-<div class="q-audit-sum">
+<div class="q-audit-sum q-audit-sum--log">
   <section class="q-figure" aria-labelledby="int-t">
     <span class="q-figure__l" id="int-t">Integrity</span>
     {% if report.ok %}
@@ -60,7 +60,7 @@
     </p>
   </section>
   {% if log.root %}
-  <section class="q-figure" aria-labelledby="root-t">
+  <section class="q-figure q-figure--root" aria-labelledby="root-t">
     <span class="q-figure__l" id="root-t">Merkle root</span>
     <span class="q-figure__v"><code title="{{ log.root }}">{{ log.root[:16] }}</code><button class="q-copy" type="button" data-copy="{{ log.root }}" aria-label="Copy Merkle root" title="Copy Merkle root"><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button></span>
     <p class="q-figure__s">The value all {{ '{:,}'.format(log.entries) }} entries reduce to. An export’s proofs are checked against a root like this.</p>
@@ -87,7 +87,7 @@
 <table class="q-table q-table--compact q-audit">
   <caption class="visually-hidden">Audit log, newest first</caption>
   <thead>
-    <tr><th scope="col">Entry</th><th scope="col">Event</th><th scope="col">Person</th><th scope="col" class="q-audit__vault">Vault</th><th scope="col">Time</th><th scope="col">Integrity</th></tr>
+    <tr><th scope="col">Entry</th><th scope="col">Event</th><th scope="col" class="q-audit__vault">Vault</th><th scope="col">Time (UTC)</th><th scope="col">Integrity</th></tr>
   </thead>
   <tbody>
     {% for a in rows %}
@@ -95,13 +95,12 @@
     <tr{% if a.integrity == 'failed' and report.chain_break_seq == e.seq %} class="is-broken"{% endif %}>
       <td class="q-audit__seq">#{{ '{:,}'.format(e.seq) }}</td>
       <td class="q-audit__ev">{% if a.href %}<a href="{{ url_for('vaults.proposal_detail', vid=a.href[0], pid=a.href[1]) }}">{{ a.sentence }}</a>{% else %}{{ a.sentence }}{% endif %}</td>
-      <td class="q-audit__who">{% if e.actor != 'SYSTEM' and e.actor_id %}{{ avatar(a.who, 20, decorative=True) }}{% endif %}{{ a.who }}</td>
       <td class="q-audit__vault">{{ a.vault if e.vault_id else '' }}</td>
-      <td class="q-audit__when"><time datetime="{{ e.timestamp }}">{{ ev_short(e.timestamp) }}</time></td>
+      <td class="q-audit__when"><time datetime="{{ e.timestamp }}">{{ ev_short(e.timestamp, zone=False) }}</time></td>
       <td><a class="q-integ-link" href="{{ url_for('ledger.view', proof=e.seq, **query) }}" aria-label="{{ ev_integrity[a.integrity][0] }}. Open the proof for entry {{ e.seq }}">{{ integ(a.integrity) }}</a></td>
     </tr>
     {% else %}
-    <tr class="q-table__none"><td colspan="6">
+    <tr class="q-table__none"><td colspan="5">
       {% if filters.is_filtered %}
       <div class="q-empty"><p class="q-empty__t">No entries match these filters</p>{{ button('Clear filters', 'secondary', href=url_for('ledger.view'), size='sm') }}</div>
       {% else %}
@@ -112,6 +111,8 @@
   </tbody>
 </table>
 </div>
+
+<p class="q-note">Entries outside your vaults are left out, so the numbers can skip. The integrity check always covers the whole record.</p>
 
 {% if page.pages and page.pages > 1 %}
 <nav class="q-pager" aria-label="Pages">

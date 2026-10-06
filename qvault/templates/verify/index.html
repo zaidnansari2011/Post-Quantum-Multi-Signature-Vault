@@ -68,8 +68,9 @@
   {% endif %}
   {% endif %}
 
-  <section class="q-panel" aria-labelledby="v-form">
-    <div class="q-panel__hd"><h2 class="q-panel__t" id="v-form">{% if report %}Check another{% else %}The exported decision{% endif %}</h2></div>
+  {% if report %}<details class="q-acc"><summary>Check another file</summary>{% endif %}
+  <section class="{{ 'q-verify__again' if report else 'q-panel' }}" aria-labelledby="v-form">
+    {% if not report %}<div class="q-panel__hd"><h2 class="q-panel__t" id="v-form">The exported decision</h2></div>{% else %}<h2 class="visually-hidden" id="v-form">Check another file</h2>{% endif %}
     <div class="q-panel__bd">
       <form method="post" enctype="multipart/form-data" action="{{ url_for('verify.index') }}">
         <div class="q-file">
@@ -97,11 +98,12 @@
       </form>
     </div>
   </section>
+  {% if report %}</details>{% endif %}
 
   <p class="q-verify__foot">
     This page runs the check on our server, so it is a convenience rather than evidence.
-    To check without trusting us: <code>python -m qvault.verify decision-xxxxxxxx.qvault.zip</code>,
-    or open the exported .html record, which checks itself in your browser.
+    To check without trusting us, open the exported .html record, which checks itself in your
+    browser, or run <code class="q-cmd">python -m qvault.verify decision-xxxxxxxx.qvault.zip</code>
   </p>
 </div>
 {% endmacro %}

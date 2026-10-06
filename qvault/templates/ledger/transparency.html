@@ -14,7 +14,7 @@
 {%- endmacro %}
 
 {% block content %}
-{% call page_header('Audit log', description='The log publishes signed checkpoints of its Merkle tree. An independent witness co-signs each one it can prove extends the last, so the log cannot quietly rewrite its past.', facts=[('Log', origin)]) %}{% endcall %}
+{% call page_header('Audit log', description='The log publishes signed checkpoints of its Merkle tree.' ~ (' An independent witness co-signs the ones it reaches, each only if it is proved to extend the last, so the log can’t quietly rewrite its past.' if witness.configured else ' No witness is configured, so nothing outside this server vouches for them.'), facts=[('Log', origin)]) %}{% endcall %}
 
 {{ tabs([
   {'key': 'log', 'label': 'Log', 'href': url_for('ledger.view')},
@@ -22,7 +22,7 @@
 ], 'transparency', 'Audit sections') }}
 
 {% if witness.configured and witness.lag and witness.lag > 0 %}
-<div class="q-gap">{{ banner('warning', 'The witness is ' ~ witness.lag ~ (' entry' if witness.lag == 1 else ' entries') ~ ' behind', 'It has co-signed ' ~ '{:,}'.format(witness.latest_witnessed_size) ~ ' of ' ~ '{:,}'.format(witness.latest_size) ~ ' checkpointed entries. It normally catches up at its next check; if the gap keeps growing, new checkpoints are not proved to extend what it already saw.') }}</div>
+<div class="q-gap">{{ banner('info', 'The witness is ' ~ witness.lag ~ (' entry' if witness.lag == 1 else ' entries') ~ ' behind', 'It has co-signed ' ~ '{:,}'.format(witness.latest_witnessed_size) ~ ' of ' ~ '{:,}'.format(witness.latest_size) ~ ' checkpointed entries and catches up at its next check. A gap that keeps growing means new checkpoints aren’t proved to extend what it saw.') }}</div>
 {% endif %}
 
 <div class="q-audit-sum">
@@ -46,7 +46,7 @@
       <p class="q-figure__s q-line">Key {{ hash(fingerprint, 'witness key fingerprint', 16, 0) }}</p>
       {% endfor %}
       <p class="q-figure__s">
-        {%- if witness_check.size %}Witnessed up to {{ '{:,}'.format(witness_check.size) }} entries, co-signed {{ ev_precise(witness_check.row.created_at) }}.{% endif %}
+        {%- if witness_check.size and witness_check.ok %}Witnessed up to entry #{{ '{:,}'.format(witness_check.size - 1) }}, co-signed {{ ev_precise(witness_check.row.created_at) }}.{% endif %}
         {%- if witness.lag == 0 %} Current: it has co-signed the newest checkpoint.{% elif witness.lag %} {{ witness.lag }} {{ 'entry' if witness.lag == 1 else 'entries' }} behind the newest checkpoint.{% endif -%}
       </p>
       {% if witness_check.size and not witness_check.ok %}
@@ -72,7 +72,7 @@
         <td class="is-num">{{ '{:,}'.format(c.tree_size) }}</td>
         <td>{{ hash(c.root_hash, 'root hash', 12, 8) }}</td>
         <td>{{ c.alg_id }}</td>
-        <td>{% if c.cosignatures %}{% for w in c.cosignatures %}<span class="q-integ q-integ--success">{{ icon('success') }}Witnessed by {{ w.witness_name }}</span>{% endfor %}{% else %}<span class="q-integ q-integ--neutral">Not witnessed</span>{% endif %}</td>
+        <td>{% if c.cosignatures %}{% for w in c.cosignatures %}{% if w.id in valid_cosignatures %}<span class="q-integ q-integ--success">{{ icon('success') }}Witnessed by {{ w.witness_name }}</span>{% else %}<span class="q-integ q-integ--critical">{{ icon('critical') }}{{ w.witness_name }}’s co-signature didn’t verify</span>{% endif %}{% endfor %}{% else %}<span class="q-integ q-integ--neutral">Not witnessed</span>{% endif %}</td>
         <td class="q-audit__when">{{ ui_absolute(c.created_at) }}</td>
       </tr>
       {% else %}

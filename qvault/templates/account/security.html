@@ -29,7 +29,7 @@
     <div class="q-panel__bd q-acct__foot">
       <form method="post" action="{{ url_for('auth.reissue_key') }}" class="q-acct__inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {{ field('password', 'Current password', type='password', id='f-reissue-password', required=True, caption='Issues a new key. The old one is retired and still verifies every signature it made.', attrs={'autocomplete': 'current-password'}) }}
+        {{ field('password', 'Password to replace this key', type='password', id='f-reissue-password', required=True, caption='Issues a new key. The old one is retired and still verifies every signature it made.', attrs={'autocomplete': 'current-password'}) }}
         {{ button('Replace key', 'secondary', type='submit') }}
       </form>
     </div>
@@ -71,9 +71,9 @@
           </div>
           {% endfor %}
         </fieldset>
+        <p class="q-cap q-gap">A treasury only counts approvals made with the key it holds for you. A change applies the next time a treasury is created or changed; what is on chain stays until its signers approve a change.</p>
         {{ button('Save', 'secondary', type='submit') }}
       </form>
-      <p class="q-cap">A treasury only counts approvals made with the key it holds for you. A change applies the next time a treasury is created or changed; what is on chain stays until its signers approve a change.</p>
     </div>
   </section>
   {% endif %}
@@ -95,7 +95,7 @@
   <section class="q-panel" aria-labelledby="rc-t">
     <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery</h2>{{ badge('Not available') }}</div>
     <div class="q-panel__bd">
-      <p>There is no password reset. If you forget your password, your password key can’t be unlocked, and Q-Vault can’t unlock it for you. A paired phone keeps its own key and can still sign.</p>
+      <p>There is no password reset. If you forget your password, your password key can’t be unlocked, and Q-Vault can’t unlock it for you. A paired phone keeps its own key and can still sign until its pairing ends.</p>
     </div>
   </section>
 

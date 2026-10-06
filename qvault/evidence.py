@@ -130,8 +130,8 @@ def reject_consequence(*, rejections: int, required_m: int, required_n: int) -> 
     else:
         more = limit + 1 - after
         lines = [
-            "Rejecting doesn’t end this decision on its own. It ends only if "
-            f"{more} more approver{' rejects' if more == 1 else 's reject'} it too."
+            "Rejecting doesn’t end this decision on its own. "
+            f"{more} more rejection{'' if more == 1 else 's'} would end it."
         ]
     lines.append("You can’t withdraw your rejection.")
     return lines
@@ -267,12 +267,13 @@ def precise_time(value: str | datetime | None) -> str:
     return f"{moment:%a} {moment.day} {moment:%b %Y, %H:%M:%S} UTC"
 
 
-def short_time(value: str | datetime | None) -> str:
-    """A scanning time with its zone, no seconds: ``4 Oct 2026, 09:58 UTC``."""
+def short_time(value: str | datetime | None, zone: bool = True) -> str:
+    """A scanning time, no seconds: ``4 Oct 2026, 09:58 UTC``. ``zone=False`` drops the zone for a
+    column whose header names it."""
     moment = parse_stamp(value)
     if moment is None:
         return ""
-    return f"{moment.day} {moment:%b %Y, %H:%M} UTC"
+    return f"{moment.day} {moment:%b %Y, %H:%M}" + (" UTC" if zone else "")
 
 
 # ------------------------------------------------------------------------------ decision text
@@ -326,7 +327,7 @@ EVENT_WORDS = {
 
 
 def event_words(event_type: str, who: str | None = None) -> str:
-    """"Signed by Hassan", "Approved": a log event in words, with the protocol name as a fallback
+    """ "Signed by Hassan", "Approved": a log event in words, with the protocol name as a fallback
     quoted in the interface face (plan section 6)."""
     word = EVENT_WORDS.get(event_type)
     if word is None:
