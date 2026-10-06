@@ -22,6 +22,10 @@
      A due time: absolute ("Tue 6 Oct, 17:00 UTC"), the relative caption under it, the warning
      tone and a clock inside 24 hours. "No due date" when there is none.
 
+   deadline(row, zone=False)
+     The due cell of a table row: the due time while the decision is open or after it expired;
+     once approved or rejected the deadline no longer matters, so it says when it was decided.
+
    signatures(row, avatars=True)
      The approvals as "1 of 2" with the people who approved as an avatar stack. No quorum marks
      here: avatars never sit beside the marks (plan section 6), and a table counts in numerals.
@@ -46,6 +50,17 @@
   <time class="q-due__abs" datetime="{{ d.iso }}">{% if d.soon %}{{ icon('clock') }}{% endif %}{{ d.text }}{% if zone %}<span class="q-due__zone"> {{ d.zone }}</span>{% endif %}</time>
   <span class="q-due__rel">{{ d.relative }}</span>
 </span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro deadline(row, zone=False) -%}
+{%- set p = row.proposal -%}
+{%- if row.status in ('approved', 'rejected') -%}
+{%- set when = p.approved_at if row.status == 'approved' else p.rejected_at -%}
+<span class="q-due q-due--done"><span class="q-due__abs">Decided</span>
+  {%- if when %}<time class="q-due__rel" datetime="{{ ui_iso(when) }}" data-relative title="{{ ui_absolute(when) }}">{{ ui_absolute(when) }}</time>{% endif %}</span>
+{%- else -%}
+{{ due(p.expires_at, zone) }}
 {%- endif -%}
 {%- endmacro %}
 

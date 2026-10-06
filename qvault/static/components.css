@@ -617,6 +617,7 @@ th[aria-sort] .q-sort { color: var(--text); }
 .q-due.is-soon .q-due__abs { color: var(--status-warning-fg); }
 .q-due.is-past .q-due__abs { color: var(--text-muted); }
 .q-due--none { color: var(--text-subtle); }
+.q-due--done .q-due__abs { color: var(--text-muted); }
 
 /* ---------------------------------------------------------------- signatures in a table (ui/work.html) */
 
