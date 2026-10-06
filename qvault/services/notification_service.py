@@ -470,24 +470,28 @@ def _remind_one(proposal, now: datetime) -> int:
     )
 
 
-def remind(proposal, requester, *, now: datetime | None = None, commit: bool = True) -> int:
-    """The requester's Remind: the approvers who have not voted are reminded, at most once a day
-    per decision. Returns how many were reminded (someone who switched reminders off is not).
+@dataclass(frozen=True)
+class RemindState:
+    """Whether the requester's Remind can be used now, and if not, why and when it can."""
 
-    Once a day is checked against the last reminder sent, and held under a race by the dedupe key,
-    which names the day of the decision's life it was sent in.
-    """
+    allowed: bool
+    #: Whether the decision page offers the button at all: the caller raised it, it is open and
+    #: someone has not voted. A reminder sent in the last day disables it rather than hiding it.
+    offered: bool
+    #: Approvers who have not voted: who a reminder would reach.
+    waiting: int
+    #: Why it cannot be used now, in words the requester can act on; None when it can.
+    refusal: str | None
+    last_sent: datetime | None
+    next_at: datetime | None
+
+
+def remind_state(proposal, requester, *, now: datetime | None = None) -> RemindState:
+    """What the decision page shows by the Remind button, and what ``remind`` enforces."""
     from qvault.services.inbox_service import effective_status
 
     now = now or _utcnow()
-    if proposal.creator_id != requester.id:
-        raise RemindRefused("Only the person who raised this decision can send a reminder.")
-    status = effective_status(proposal, now=now)
-    if status != "open":
-        raise RemindRefused(f"This decision is {status}, so there is no one to remind.")
     waiting = _waiting_approvers(proposal)
-    if not waiting:
-        raise RemindRefused("Everyone who can approve this decision has voted.")
     last = db.session.scalar(
         select(func.max(Notification.created_at)).where(
             Notification.proposal_id == proposal.id,
@@ -497,15 +501,49 @@ def remind(proposal, requester, *, now: datetime | None = None, commit: bool = T
     )
     if last is not None:
         last = last if last.tzinfo else last.replace(tzinfo=UTC)
-        if now - last < REMIND_EVERY:
-            raise RemindRefused(
-                f"You sent a reminder on {notification_copy.when(last, now=now)}. You can send "
-                f"another after {notification_copy.when(last + REMIND_EVERY, now=now)}."
-            )
+    next_at = last + REMIND_EVERY if last is not None and now - last < REMIND_EVERY else None
+
+    refusal = None
+    offered = False
+    if proposal.creator_id != requester.id:
+        refusal = "Only the person who raised this decision can send a reminder."
+    elif (status := effective_status(proposal, now=now)) != "open":
+        refusal = f"This decision is {status}, so there is no one to remind."
+    elif not waiting:
+        refusal = "Everyone who can approve this decision has voted."
+    elif next_at is not None:
+        offered = True
+        refusal = (
+            f"You sent a reminder on {notification_copy.when(last, now=now)}. You can send "
+            f"another after {notification_copy.when(next_at, now=now)}."
+        )
+    else:
+        offered = True
+    return RemindState(
+        allowed=refusal is None,
+        offered=offered,
+        waiting=len(waiting),
+        refusal=refusal,
+        last_sent=last,
+        next_at=next_at,
+    )
+
+
+def remind(proposal, requester, *, now: datetime | None = None, commit: bool = True) -> int:
+    """The requester's Remind: the approvers who have not voted are reminded, at most once a day
+    per decision. Returns how many were reminded (someone who switched reminders off is not).
+
+    Once a day is checked against the last reminder sent, and held under a race by the dedupe key,
+    which names the day of the decision's life it was sent in.
+    """
+    now = now or _utcnow()
+    state = remind_state(proposal, requester, now=now)
+    if not state.allowed:
+        raise RemindRefused(state.refusal)
     day = int((now - _raised_at(proposal)) / REMIND_EVERY)
     rows = _send(
         "decision_reminder",
-        waiting,
+        _waiting_approvers(proposal),
         key=f"decision_reminder:{proposal.proposal_uuid}:asked:{day}",
         now=now,
         vault_id=proposal.vault_id,

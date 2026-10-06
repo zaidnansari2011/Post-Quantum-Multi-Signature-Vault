@@ -49,11 +49,11 @@ MONDAY = datetime(2026, 10, 5, 10, 0, tzinfo=UTC)
 @pytest.fixture()
 def team(app):
     """Treasury, any 2 of 3: Ada owns it, Brij and Chen approve, Dara can only see it."""
-    ada = auth_service.register_user("ada@notify.test", "Ada Lovelace", PW)
-    brij = auth_service.register_user("brij@notify.test", "Brij Patel", PW)
-    chen = auth_service.register_user("chen@notify.test", "Chen Wu", PW)
-    dara = auth_service.register_user("dara@notify.test", "Dara Okafor", PW)
-    stranger = auth_service.register_user("stranger@notify.test", "Stranger", PW)
+    ada = auth_service.register_user("ada@notify-e.com", "Ada Lovelace", PW)
+    brij = auth_service.register_user("brij@notify-e.com", "Brij Patel", PW)
+    chen = auth_service.register_user("chen@notify-e.com", "Chen Wu", PW)
+    dara = auth_service.register_user("dara@notify-e.com", "Dara Okafor", PW)
+    stranger = auth_service.register_user("stranger@notify-e.com", "Stranger", PW)
     vault = vault_service.create_vault(ada, "Treasury", "", 2)
     vault_service.add_member(vault, brij.email, "signer", actor_id=ada.id)
     vault_service.add_member(vault, chen.email, "signer", actor_id=ada.id)
@@ -126,7 +126,7 @@ def test_raising_a_decision_asks_every_eligible_approver_except_the_requester(te
 
 def test_an_approver_who_joins_after_a_decision_is_raised_is_not_asked_about_it(team):
     proposal = _raise(team, deadline=MONDAY + timedelta(days=30), at=MONDAY)
-    eve = auth_service.register_user("eve@notify.test", "Eve Adams", PW)
+    eve = auth_service.register_user("eve@notify-e.com", "Eve Adams", PW)
     vault_service.add_member(team.vault, eve.email, "signer", actor_id=team.ada.id)
 
     notification_service.send_reminders(now=MONDAY + timedelta(days=8))
@@ -231,7 +231,9 @@ def test_a_passed_deadline_leaves_needs_you_before_the_sweep_runs(team):
 
     later = deadline + timedelta(minutes=1)
     assert _section(team.brij, "needs_you", now=later) == []
-    item, _added = _section(team.brij, "updates", now=later)
+    # By kind, not position: "added to the vault" is stamped with the real clock, so which is
+    # newer depends on the day the suite runs.
+    (item,) = [i for i in _section(team.brij, "updates", now=later) if i["kind"] == "decision_raised"]
     assert item["body"].endswith("Expired without your vote.")
 
 
@@ -240,7 +242,7 @@ def test_an_approver_made_a_viewer_is_no_longer_asked(team):
     vault_service.change_member_role(team.vault, team.brij.id, "viewer", actor_id=team.ada.id)
 
     assert _section(team.brij, "needs_you") == []
-    item, _added = _section(team.brij, "updates")
+    (item,) = [i for i in _section(team.brij, "updates") if i["kind"] == "decision_raised"]
     assert item["body"].endswith("You can no longer approve it.")
     notification_service.send_reminders(now=MONDAY + timedelta(days=1))
     assert _rows(team.brij, "decision_reminder", proposal) == []

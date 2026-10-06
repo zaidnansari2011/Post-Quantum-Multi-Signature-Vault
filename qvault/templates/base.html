@@ -47,6 +47,7 @@
          {% if request.endpoint == 'core.index' %}aria-current="page"{% endif %}>
         {{ icon('home') }} Home
       </a>
+      {% include "notifications/_bell.html" %}
       <a class="side__link" href="{{ url_for('approvals.index') }}"
          {% if request.blueprint == 'approvals' %}aria-current="page"{% endif %}>
         {{ icon('inbox') }} Approvals
