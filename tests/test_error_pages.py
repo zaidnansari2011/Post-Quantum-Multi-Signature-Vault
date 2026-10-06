@@ -89,7 +89,8 @@ def test_an_unhandled_exception_is_a_500_page_not_a_traceback(failing_app, clien
 def test_a_missing_csrf_token_says_the_form_expired(app, client):
     app.config["WTF_CSRF_ENABLED"] = True
     try:
-        resp = client.post("/theme", data={"theme": "dark"})
+        # /theme is exempt (it refuses other sites instead), so post a form that needs a token.
+        resp = client.post("/login", data={"email": "a@e.com", "password": "x"})
     finally:
         app.config["WTF_CSRF_ENABLED"] = False
     assert resp.status_code == 400
