@@ -27,7 +27,7 @@ from test_payouts import world as payout_world  # noqa: F401 - rworld's fixture,
 from test_reconfiguration import _dara, _done, _request, rworld  # noqa: F401 - rworld is a fixture
 
 from qvault.extensions import db
-from qvault.models import Notification, NotificationPreference
+from qvault.models import Notification, NotificationPreference, VaultMember
 from qvault.services import (
     approval_service,
     auth_service,
@@ -264,6 +264,20 @@ def test_being_added_to_a_vault_says_what_you_can_do_there(team):
     viewer = _one(team.dara, "vault_member_added")
     assert viewer["body"] == "You can see its decisions but not approve them."
     assert _rows(team.ada, "vault_member_added") == []  # the owner created it
+
+
+def test_someone_removed_and_added_back_is_told_again(team):
+    # Dara's membership row is the newest, so SQLite gives its id to the next one: a key built
+    # from the row id would match her first addition and tell her nothing.
+    first_id = VaultMember.query.filter_by(vault_id=team.vault.id, user_id=team.dara.id).one().id
+    vault_service.remove_member(team.vault, team.dara.id, actor_id=team.ada.id)
+    readded = vault_service.add_member(team.vault, team.dara.email, "signer", actor_id=team.ada.id)
+    assert readded.id == first_id  # the id really was reused
+
+    rows = _rows(team.dara, "vault_member_added")
+    assert len(rows) == 2
+    newest = notification_service.view(rows[-1])
+    assert newest["body"].startswith("You can approve decisions")
 
 
 def test_a_new_threshold_is_told_to_every_member_but_whoever_changed_it(team):

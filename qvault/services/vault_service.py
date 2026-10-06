@@ -114,7 +114,7 @@ def add_member(
 
     member = VaultMember(vault_id=vault.id, user_id=user.id, member_role=role)
     db.session.add(member)
-    ledger_service.append(
+    entry = ledger_service.append(
         "member_added",
         {"vault_id": vault.id, "user_id": user.id, "email": user.email, "role": role},
         actor=f"user:{actor_id}",
@@ -127,7 +127,7 @@ def add_member(
     try:
         # Inside the try: the trigger flushes, which is where a racing add of the same member
         # first meets uq_vault_member.
-        notification_service.member_added(member, actor_id=actor_id)
+        notification_service.member_added(member, actor_id=actor_id, entry=entry)
         if commit:
             db.session.commit()
     except IntegrityError as exc:

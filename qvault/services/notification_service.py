@@ -310,14 +310,17 @@ def payout_finished(execution, *, now: datetime | None = None) -> None:
         )
 
 
-def member_added(member, *, actor_id: int, now: datetime | None = None) -> None:
-    """The person added to a vault hears what they can now do in it."""
+def member_added(member, *, actor_id: int, entry, now: datetime | None = None) -> None:
+    """The person added to a vault hears what they can now do in it. ``entry`` is the ledger
+    entry recording the addition: it names this addition apart from any other, where the member
+    row's id does not (SQLite reuses the id of a removed row, so someone removed and added back
+    would match their first addition and not be told)."""
     with _best_effort("member added"):
         vault = member.vault
         _send(
             "vault_member_added",
             [member.user_id],
-            key=f"vault_member_added:{member.id}",
+            key=f"vault_member_added:{entry.seq}",
             now=now or _utcnow(),
             vault_id=member.vault_id,
             actor_id=actor_id,
