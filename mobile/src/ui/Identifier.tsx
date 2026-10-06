@@ -128,22 +128,23 @@ export function Identifier({
             </Text>
           )}
         </View>
+        {/* On the value's own row, so an identifier costs one line, not two. */}
+        {expanded === 'toggle' && canShorten ? (
+          <TextLink
+            label={whole ? 'Show less' : 'Show full'}
+            accessibilityLabel={whole ? `Shorten the ${label.toLowerCase()}` : `Show the full ${label.toLowerCase()}`}
+            onPress={() => setWhole((w) => !w)}
+            role="caption"
+          />
+        ) : null}
         <IconButton icon="copy" label={`Copy the ${label.toLowerCase()}`} onPress={() => void share()} size={20} />
       </View>
-      {expanded === 'toggle' && canShorten ? (
-        <TextLink
-          label={whole ? 'Show less' : 'Show full'}
-          accessibilityLabel={whole ? `Shorten the ${label.toLowerCase()}` : `Show the full ${label.toLowerCase()}`}
-          onPress={() => setWhole((w) => !w)}
-          role="caption"
-        />
-      ) : null}
     </View>
   );
 }
 
 const useStyles = makeStyles((t) => ({
   wrap: { gap: t.space[2] },
-  row: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
-  value: { flex: 1, minHeight: 24, justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[4] },
+  value: { flex: 1, minHeight: 44, justifyContent: 'center', paddingVertical: t.space[12] - 2 },
 }));

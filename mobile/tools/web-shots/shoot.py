@@ -17,6 +17,7 @@ import re
 import sys
 import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -144,15 +145,23 @@ def shot(page, name, tall=False, wait_ms=500):
 
 def button(page, name):
     """A button by its name; a decision or vault row by the title its composed name starts with."""
-    exact = page.get_by_role("button", name=name, exact=True)
-    if exact.count():
-        return exact.first
-    return page.get_by_role("button", name=re.compile("^" + re.escape(name) + r"\.")).first
+    # One locator for both, so waiting for a button that has not appeared yet still works.
+    return page.get_by_role("button", name=re.compile("^" + re.escape(name) + r"($|\.)")).first
 
 
 def tab(page, name):
-    page.get_by_role("tab", name=name, exact=True).first.click()
+    # A tab's spoken name carries its badge: "Approvals, 3 need your signature" (phone-ux §2.2).
+    page.get_by_role("tab", name=re.compile("^" + re.escape(name) + "(,|$)")).first.click()
     quiet(page)
+
+
+def segment(page, name):
+    """A segmented control's option; at large text it is a row of chips (phone-ux §5.8)."""
+    return (
+        page.get_by_role("tab", name=name, exact=True)
+        .or_(page.get_by_role("radio", name=name, exact=True))
+        .first
+    )
 
 
 def back(page):
@@ -182,8 +191,20 @@ def titles(state_file):
         BASE + "/api/v1/proposals?state=all",
         headers={"Authorization": "Bearer " + token_of(state_file), "Accept": "application/json"},
     )
+    # Only decisions still open before their deadline count as "already raised": a demo database
+    # carries expired copies of these titles from earlier runs, and those can no longer be signed.
+    now = time.time()
+
+    def live(p):
+        if p["status"] != "open":
+            return False
+        if not p["expires_at"]:
+            return True
+        stamp = p["expires_at"] if p["expires_at"][-6] in "+-" else p["expires_at"] + "+00:00"
+        return datetime.fromisoformat(stamp).timestamp() > now
+
     with urllib.request.urlopen(req, timeout=60) as r:
-        return {p["title"] for p in json.load(r)["proposals"]}
+        return {p["title"] for p in json.load(r)["proposals"] if live(p)}
 
 
 def enrol(browser, email, state_file):
@@ -426,10 +447,10 @@ with sync_playwright() as p:
     tab(page, "Activity")
     shot(page, "activity_all", tall=True)
     for f in ("Open", "Approved", "Declined"):
-        page.get_by_role("tab", name=f, exact=True).click()
+        segment(page, f).click()
         page.wait_for_timeout(500)
         shot(page, f"activity_{f.lower()}")
-    page.get_by_role("tab", name="All", exact=True).click()
+    segment(page, "All").click()
 
     # 7. Account and its two endings (both cancelled).
     tab(page, "Account")

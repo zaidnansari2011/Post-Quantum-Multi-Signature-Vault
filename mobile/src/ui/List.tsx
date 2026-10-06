@@ -293,7 +293,7 @@ const useStyles = makeStyles((t) => ({
   rowFlex: { flex: 1 },
   pressed: { backgroundColor: t.color.fill },
   rowText: { flex: 1, gap: t.space[2] },
-  value: { flexShrink: 0, maxWidth: '50%', textAlign: 'right' },
+  value: { flexShrink: 1, maxWidth: '62%', textAlign: 'right' },
   kv: { gap: t.space[2], paddingVertical: t.space[4] },
   avatar: { backgroundColor: t.color.fill, alignItems: 'center', justifyContent: 'center' },
   stack: { flexDirection: 'row', alignItems: 'center' },
