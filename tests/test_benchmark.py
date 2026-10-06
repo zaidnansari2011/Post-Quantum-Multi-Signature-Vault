@@ -390,7 +390,7 @@ def test_live_run_actually_renders_measured_results(app, client, registry):
     """End-to-end, unmocked: a real run over every registered algorithm renders on the page."""
     app.config["BENCHMARK_LIVE_MAX_ITERATIONS"] = 1
     _login_admin(client)
-    resp = client.post("/admin/benchmark/run", data={"iterations": 1})
+    resp = client.post("/admin/benchmark/run", data={"iterations": 1}, follow_redirects=True)
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "Live run" in body
@@ -413,6 +413,42 @@ def test_live_run_is_capped_by_config(app, client, monkeypatch):
     resp = client.post("/admin/benchmark/run", data={"iterations": 25}, follow_redirects=True)
     assert resp.status_code == 200
     assert seen["iterations"] == 1, "an admin must not be able to exceed the server-side cap"
+
+
+def test_a_live_run_is_shown_after_a_redirect_so_a_refresh_does_not_rerun_it(
+    app, client, monkeypatch
+):
+    """Post/Redirect/Get. The run was the POST's own response, so refreshing the page sent the
+    POST again and ran the whole benchmark a second time."""
+    from urllib.parse import urlsplit
+
+    app.config["BENCHMARK_LIVE_MAX_ITERATIONS"] = 1
+    runs = []
+    real = bench.run_benchmark
+
+    def counted(registry, **kwargs):
+        runs.append(kwargs)
+        return real(registry, **{**kwargs, "signature_algs": [SIG_ALG], "kem_algs": []})
+
+    monkeypatch.setattr("qvault.blueprints.admin.benchmark_service.run_benchmark", counted)
+    _login_admin(client)
+    response = client.post("/admin/benchmark/run", data={"iterations": 1})
+    assert response.status_code == 302
+    assert urlsplit(response.headers["Location"]).path == "/admin/benchmark"
+
+    for _ in range(2):  # the redirect, then a refresh of it
+        page = client.get(response.headers["Location"])
+        assert page.status_code == 200
+        assert b"Live run" in page.data
+    assert len(runs) == 1, "a refresh shows the run again rather than running another"
+    assert b"Live run" not in client.get("/admin/benchmark").data
+
+
+def test_a_live_run_that_is_no_longer_held_shows_the_page_without_it(app, client):
+    _login_admin(client)
+    response = client.get("/admin/benchmark?run=not-a-run")
+    assert response.status_code == 200
+    assert b"Live run" not in response.data
 
 
 def test_live_run_reports_a_correctness_failure_instead_of_timings(app, client, monkeypatch):

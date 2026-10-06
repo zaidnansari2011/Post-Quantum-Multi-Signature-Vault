@@ -135,9 +135,11 @@
 <div class="panel" style="margin-bottom:1rem">
   <div class="panel__head">
     <span class="label">Live run</span>
+    {# Shown after a redirect, and again on a refresh, so it gives the time it ran rather than
+       "just now". #}
     <span class="push tiny muted">
-      just now · {{ live.elapsed_s }} s · {{ live.summary.total }} algorithm-level attacks,
-      re-run in this request
+      {{ live.generated_at[11:16] }} UTC · {{ live.elapsed_s }} s · {{ live.summary.total }}
+      algorithm-level attacks, re-run on this server
     </span>
   </div>
   <div class="panel__body">{{ summary_figures(live) }}</div>

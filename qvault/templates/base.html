@@ -122,9 +122,11 @@
 {% else %}
 {# Signed out: no rail to navigate, so the page stands alone — but it still gets a way back to
    the two things a stranger can legitimately do here, or /login is a dead end that advertises a
-   verifier it offers no route to. #}
+   verifier it offers no route to. A page that reads the same either way (the documentation)
+   fills anon_chrome with its own header and opts out of the centred auth layout. #}
 <div class="main">
-  <div class="body body--anon">
+  {% block anon_chrome %}{% endblock %}
+  <div class="{% block anon_bodyclass %}body body--anon{% endblock %}">
     <div style="width:100%">
       {% include "_flash.html" %}
       {% block anon_content %}{% endblock %}

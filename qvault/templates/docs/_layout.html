@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} — Documentation — Q-Vault{% endblock %}
 
+{# The same words signed in or out. The landing page links here, and a visitor deciding whether to
+   trust the product is who most of this is written for; it rendered blank to them, because
+   base.html gives a visitor only the anon blocks. Signed out, the page keeps its header and its
+   contents list and loses only the rail, which belongs to an account. #}
+{% block anon_chrome %}{{ self.chrome() }}{% endblock %}
+{% block anon_bodyclass %}body{% endblock %}
+{% block anon_content %}{{ self.content() }}{% endblock %}
+
 {% block chrome %}
 <div class="head">
   <div>

@@ -18,13 +18,37 @@ from qvault.extensions import db
 from qvault.models.file import VaultFile
 from qvault.models.proposal import Proposal
 from qvault.models.treasury import ProposalAction, Treasury
-from qvault.models.vault import Vault
+from qvault.models.vault import SIGNER_ROLES, Vault
 from qvault.services import file_crypto_service, ledger_service
 from qvault.services.signing import proposal_signing_bytes
 
 
 class ProposalError(ValueError):
     """Raised when a proposal cannot be created (e.g. policy not satisfiable)."""
+
+
+class NotAllowedToPropose(ProposalError):
+    """Raised when the creator may not raise a decision in the vault (see :func:`may_propose`).
+
+    A ``ProposalError``, so a caller that treats every refusal alike still refuses. The web and the
+    API answer it with 403 rather than as a bad request: it is about who is asking, not what.
+    """
+
+
+#: Why a viewer is refused. One sentence for the service and the API, whose ``error`` the phone
+#: shows as it stands.
+NOT_A_PROPOSER = "Only this vault's owner and approvers can raise a decision."
+
+
+def may_propose(vault: Vault, user) -> bool:
+    """Whether ``user`` may raise a decision in ``vault``: its owner and its signers may.
+
+    A viewer is read-only: they see the vault and its decisions, sign nothing, and so raise
+    nothing either. The same roles as the signer set (``SIGNER_ROLES``), so a role that comes to
+    count towards a threshold can raise decisions without a second list to update.
+    """
+    member = vault.member_for(user.id)
+    return member is not None and member.member_role in SIGNER_ROLES
 
 
 @dataclass(frozen=True)
@@ -102,7 +126,14 @@ def create_proposal(
     generated from the payment (D24). A payment decision needs ``ONCHAIN_EXECUTION_ENABLED``, a
     linked treasury whose threshold is the vault's, and a deadline within the D23 policy (7 days
     when none is given, at most 30).
+
+    ``creator`` must be the vault's owner or one of its signers (:func:`may_propose`). Checked
+    here because every path to a decision comes through this function: the routes check first
+    only so they can refuse before reading a request.
     """
+    if not may_propose(vault, creator):
+        # First, before anything is encrypted, hashed or written.
+        raise NotAllowedToPropose(NOT_A_PROPOSER)
     # Normalised once, before hashing: the signed text must be exactly the stored text. Hashing
     # the submitted text and storing it stripped made any proposal with surrounding whitespace
     # (a browser textarea's trailing newline) fail its own binding check the moment it existed.

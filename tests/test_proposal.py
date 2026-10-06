@@ -81,3 +81,60 @@ def test_signer_snapshot_is_stable_after_membership_change(app):
     # The existing proposal is unaffected; its snapshot still says N=1.
     assert p.required_n == 1
     assert sha256_hex(signing_bytes_for(p)) == p.payload_hash
+
+
+# --- who may raise a decision -------------------------------------------------------------------
+
+
+def _member(vault, owner, email: str, role: str):
+    user = auth_service.register_user(email, "M", "password-123")
+    vault_service.add_member(vault, email, role, actor_id=owner.id)
+    return user
+
+
+def test_a_viewer_cannot_raise_a_decision(app, monkeypatch):
+    """A viewer is read-only. Refused here, in the one place the web, the API and every script go
+    through, and before anything is written: no row, no ledger entry, no encrypted file."""
+    from qvault.models.proposal import Proposal
+    from qvault.services import file_crypto_service
+
+    owner, vault = _owner_vault(email="role-o@e.com")
+    viewer = _member(vault, owner, "role-v@e.com", "viewer")
+    entries = LedgerEntry.query.count()
+
+    def no_file(*_a, **_kw):
+        raise AssertionError("a refused decision must not store its attachment")
+
+    monkeypatch.setattr(file_crypto_service, "encrypt_and_store", no_file)
+    with pytest.raises(proposal_service.NotAllowedToPropose, match="owner and approvers"):
+        proposal_service.create_proposal(
+            vault, viewer, "T", "a", file_bytes=b"data", filename="d.txt"
+        )
+    assert Proposal.query.count() == 0
+    assert LedgerEntry.query.count() == entries
+    assert proposal_service.may_propose(vault, viewer) is False
+
+
+def test_a_non_member_cannot_raise_a_decision(app):
+    """Caught as a ProposalError too, so a script that treats every refusal alike still refuses."""
+    owner, vault = _owner_vault(email="role-o2@e.com")
+    stranger = auth_service.register_user("role-s@e.com", "S", "password-123")
+    with pytest.raises(proposal_service.ProposalError):
+        proposal_service.create_proposal(vault, stranger, "T", "a")
+    assert proposal_service.may_propose(vault, stranger) is False
+
+
+def test_the_owner_and_a_signer_can_raise_a_decision(app):
+    owner, vault = _owner_vault(email="role-o3@e.com")
+    signer = _member(vault, owner, "role-s3@e.com", "signer")
+    for creator in (owner, signer):
+        assert proposal_service.may_propose(vault, creator) is True
+        assert proposal_service.create_proposal(vault, creator, "T", "a").creator_id == creator.id
+
+
+def test_a_signer_demoted_to_viewer_can_no_longer_raise_one(app):
+    owner, vault = _owner_vault(email="role-o4@e.com")
+    signer = _member(vault, owner, "role-s4@e.com", "signer")
+    vault_service.change_member_role(vault, signer.id, "viewer", actor_id=owner.id)
+    with pytest.raises(proposal_service.NotAllowedToPropose):
+        proposal_service.create_proposal(vault, signer, "T", "a")

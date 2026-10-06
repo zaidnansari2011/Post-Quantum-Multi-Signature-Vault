@@ -625,9 +625,12 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
         # timeline like everything else so the clock only ever moves forward, and the expiry is
         # performed by the REAL job rather than by writing "expired" into a column — the demo must
         # never show a state the application could not have produced.
+        stale_vault = vaults[3 if len(vaults) > 3 else 0]
         stale_spec = (
-            vaults[3 if len(vaults) > 3 else 0],
-            gita,
+            stale_vault,
+            # Raised by the vault's owner: Gita, who owns Contracts. Under --small it falls back to
+            # Treasury, where she is not a member, and only owners and signers may raise decisions.
+            stale_vault.owner,
             "Renew the Calderwood insurance policy",
             "Renew the buildings policy with Calderwood Underwriting for a further twelve months.",
             [],

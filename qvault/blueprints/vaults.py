@@ -152,6 +152,8 @@ def vault_detail(vid: int):
         rows=inbox_service.decorate(proposals, current_user, signer_vaults),
         files=[p for p in proposals if p.file is not None],
         is_owner=is_owner,
+        # New decision and New payment are drawn only for someone the route will let through.
+        can_propose=proposal_service.may_propose(vault, current_user),
         member_form=AddMemberForm(),
         role_form=MemberRoleForm(),
         remove_form=RemoveMemberForm(),
@@ -295,7 +297,9 @@ def add_member(vid: int):
             flash(str(exc), "danger")
     else:
         flash("Please provide a valid email.", "danger")
-    return redirect(url_for("vaults.vault_detail", vid=vid))
+    # Every outcome back to the members tab, where the new member, or the reason there is none,
+    # can be seen. Without the tab this opened the decisions.
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="members"))
 
 
 @bp.post("/<int:vid>/members/role")
@@ -355,6 +359,10 @@ def _payments_possible(vault) -> bool:
 @login_required
 def new_proposal(vid: int):
     vault = get_membership_or_403(vid)
+    if not proposal_service.may_propose(vault, current_user):
+        # A viewer is read-only. The service refuses too; this keeps the form from being offered
+        # and answers before the request is read, for either kind of decision.
+        abort(403)
     if request.args.get("kind") == "payment":
         return _new_payment(vault)
     form = ProposalForm()

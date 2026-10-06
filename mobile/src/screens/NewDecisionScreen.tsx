@@ -45,8 +45,8 @@ import {
 import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
-import { ApiError, TransportError } from '../api/client.ts';
 import { formatEth, parseEth } from '../crypto/signing.ts';
+import { describeRaiseRefusal, vaultsToRaiseIn } from '../proposing.ts';
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
@@ -122,7 +122,7 @@ export default function NewDecisionScreen({
       onRaised(result.proposal.proposal_uuid);
     },
     onError: (err) => {
-      setError(describe(err));
+      setError(describeRaiseRefusal(err));
       feedback.refused();
     },
   });
@@ -135,7 +135,9 @@ export default function NewDecisionScreen({
   });
 
   if (chosen === null) {
-    const vaults = vaultsQuery.data?.vaults ?? [];
+    const onAny = vaultsQuery.data?.vaults ?? [];
+    // Only the vaults this person may raise a decision in: a viewer would be refused (403).
+    const vaults = vaultsToRaiseIn(onAny);
     return (
       <Screen>
         <NavBar onBack={onBack} title="New decision" />
@@ -143,10 +145,15 @@ export default function NewDecisionScreen({
           <Text style={s.label}>Which vault is this decision for?</Text>
           {vaultsQuery.isLoading ? (
             <Loading />
-          ) : vaults.length === 0 ? (
+          ) : onAny.length === 0 ? (
             <Empty
               title="You are not on any vaults yet."
               detail="A decision has to belong to one. Create a vault first."
+            />
+          ) : vaults.length === 0 ? (
+            <Empty
+              title="You can only view the vaults you are on."
+              detail="Their owners and signers raise decisions. Create a vault to raise your own."
             />
           ) : (
             <Card>
@@ -329,35 +336,6 @@ export default function NewDecisionScreen({
       </KeyboardAvoidingView>
     </Screen>
   );
-}
-
-function describe(err: unknown): { title: string; detail?: string } {
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case 'policy_error':
-        // The service's own sentence, because the fix is to add a signer -- a governance decision,
-        // not a differently-shaped request.
-        return { title: 'This vault cannot approve anything yet.', detail: err.message };
-      case 'action_required':
-        return { title: 'Describe what is being decided.' };
-      case 'title_required':
-        return { title: 'Give this decision a title.' };
-      case 'title_too_long':
-        return { title: 'That title is too long.', detail: 'Titles are limited to 255 characters.' };
-      case 'bad_deadline':
-        return { title: 'That deadline has already passed.' };
-      case 'unknown_vault':
-        return { title: 'You are not a member of this vault.' };
-      case 'payment_invalid':
-        return { title: 'Check the recipient and the amount.', detail: err.message };
-      case 'payments_disabled':
-        return { title: 'Payments are not enabled on this server.' };
-      default:
-        return { title: err.message };
-    }
-  }
-  if (err instanceof TransportError) return { title: err.message };
-  return { title: err instanceof Error ? err.message : 'Something went wrong.' };
 }
 
 const s = StyleSheet.create({

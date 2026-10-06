@@ -134,6 +134,59 @@ def test_the_live_run_renders_results(client, app, admin):
     assert b"behaved as" in response.data  # the success flash
 
 
+def test_the_live_run_is_shown_after_a_redirect_so_a_refresh_does_not_rerun_it(
+    client, app, admin, monkeypatch
+):
+    """Post/Redirect/Get. The run was the POST's own response, so refreshing the page sent the
+    POST again and re-ran every attack."""
+    from urllib.parse import urlsplit
+
+    from qvault.attack import lab
+
+    runs = []
+    real = lab.run
+
+    def one_attack(**kwargs):
+        runs.append(kwargs)
+        return real(**{**kwargs, "seed": 3, "only": ("signature-bit-flip",)})
+
+    monkeypatch.setattr(lab, "run", one_attack)
+    _login(client, admin.email)
+    response = client.post("/admin/attack/run")
+    assert response.status_code == 302
+    assert urlsplit(response.headers["Location"]).path == "/admin/attack"
+
+    first = client.get(response.headers["Location"])
+    assert b"Live run" in first.data and b"Alter an approved decision by one bit" in first.data
+    assert b"behaved as" in first.data  # the outcome, flashed across the redirect once
+    again = client.get(response.headers["Location"])
+    assert b"Live run" in again.data and b"behaved as" not in again.data
+    assert len(runs) == 1, "a refresh shows the run again rather than running another"
+
+
+def test_a_benchmark_run_is_not_shown_as_an_attack_run(client, app, admin, monkeypatch):
+    """Both pages read ``?run=``; each shows only its own kind, never the other's shape."""
+    from urllib.parse import parse_qs, urlsplit
+
+    from qvault.services import benchmark_service
+
+    real = benchmark_service.run_benchmark
+    monkeypatch.setattr(
+        benchmark_service,
+        "run_benchmark",
+        lambda registry, **kw: real(
+            registry, **{**kw, "signature_algs": ["ML-DSA-65"], "kem_algs": []}
+        ),
+    )
+    _login(client, admin.email)
+    location = client.post("/admin/benchmark/run", data={"iterations": 1}).headers["Location"]
+    run_id = parse_qs(urlsplit(location).query)["run"][0]
+
+    response = client.get(f"/admin/attack?run={run_id}")
+    assert response.status_code == 200
+    assert b"Live run" not in response.data
+
+
 def test_the_live_run_leaves_the_database_untouched(client, app, admin):
     """The load-bearing test. A regression here would mean the page attacks the live vault.
 

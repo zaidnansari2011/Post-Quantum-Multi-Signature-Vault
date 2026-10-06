@@ -63,6 +63,51 @@ def test_non_member_cannot_download_file(client):
     assert client.get(f"/vaults/{vid}/proposals/{pid}/file").status_code == 404
 
 
+def _viewer_world():
+    owner = auth_service.register_user("vw-o@e.com", "Own", "password-123")
+    auth_service.register_user("vw-v@e.com", "View", "password-123")
+    vault = vault_service.create_vault(owner, "Board", "", 1)
+    vault_service.add_member(vault, "vw-v@e.com", "viewer", actor_id=owner.id)
+    return owner, vault
+
+
+def test_a_viewer_can_neither_open_nor_submit_the_new_decision_form(client):
+    from qvault.models.proposal import Proposal
+
+    _, vault = _viewer_world()
+    vid = vault.id
+    client.post("/login", data={"email": "vw-v@e.com", "password": "password-123"})
+
+    assert client.get(f"/vaults/{vid}").status_code == 200, "a viewer still reads the vault"
+    assert client.get(f"/vaults/{vid}/proposals/new").status_code == 403
+    assert client.get(f"/vaults/{vid}/proposals/new?kind=payment").status_code == 403
+    response = client.post(
+        f"/vaults/{vid}/proposals/new", data={"title": "Sneak", "action_text": "Pay me."}
+    )
+    assert response.status_code == 403
+    assert Proposal.query.count() == 0
+
+
+def test_a_viewer_is_not_offered_a_new_decision(client):
+    """Neither the header's button nor the empty state's: both lead only to a refusal."""
+    owner, vault = _viewer_world()
+    vid = vault.id
+    new_decision = f"/vaults/{vid}/proposals/new"
+
+    client.post("/login", data={"email": "vw-o@e.com", "password": "password-123"})
+    assert new_decision in client.get(f"/vaults/{vid}").get_data(as_text=True)
+
+    client.post("/logout")
+    client.post("/login", data={"email": "vw-v@e.com", "password": "password-123"})
+    page = client.get(f"/vaults/{vid}").get_data(as_text=True)
+    assert "No decisions" in page, "the empty state is still drawn, without its button"
+    assert new_decision not in page
+
+    proposal_service.create_proposal(vault, owner, "Release", "do it")
+    page = client.get(f"/vaults/{vid}").get_data(as_text=True)
+    assert "Release" in page and new_decision not in page
+
+
 def test_the_decision_page_distinguishes_device_from_server_custody(client):
     """The one distinction this project exists to make must be visible where it is demonstrated.
 

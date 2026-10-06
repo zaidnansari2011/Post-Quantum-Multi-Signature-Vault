@@ -83,6 +83,23 @@ def test_a_bad_payment_is_refused_with_the_reason(pw, to, amount, words):
     assert Proposal.query.count() == 0
 
 
+def test_a_viewer_is_not_offered_a_payment(pw):
+    """The treasury tab's New payment leads a viewer only to a refusal, so it is not drawn."""
+    viewer = auth_service.register_user("payview@e.com", "Dara", PASSWORD)
+    vault_service.add_member(pw.vault, viewer.email, "viewer", actor_id=pw.users[0].id)
+    _login(pw, viewer)
+    page = _get(pw, f"/vaults/{pw.vault.id}?tab=treasury")
+    assert "Linked" in page, "a viewer still sees the treasury"
+    assert "New payment" not in page and "kind=payment" not in page
+    assert pw.client.get(f"/vaults/{pw.vault.id}/proposals/new?kind=payment").status_code == 403
+    response = pw.client.post(
+        f"/vaults/{pw.vault.id}/proposals/new?kind=payment",
+        data={"title": "Pay me", "to": RECIPIENT, "amount": "0.001"},
+    )
+    assert response.status_code == 403
+    assert Proposal.query.count() == 0
+
+
 def test_a_vault_without_a_treasury_offers_no_payment(pw):
     ada = pw.users[0]
     other = vault_service.create_vault(ada, "Plain", "", 1)

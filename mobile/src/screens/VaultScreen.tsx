@@ -35,6 +35,7 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { VaultMember } from '../api/schemas.ts';
+import { mayPropose } from '../proposing.ts';
 
 export default function VaultScreen({
   vaultId,
@@ -94,9 +95,12 @@ export default function VaultScreen({
         <Text style={s.policy}>{policySentence(vault.threshold_m, vault.signer_count)}</Text>
         {vault.description ? <Text style={s.description}>{vault.description}</Text> : null}
 
-        <View style={{ marginTop: space.lg }}>
-          <Button label="Raise a decision" onPress={() => onRaise(vault.vault_id, vault.name)} />
-        </View>
+        {/* Not for a viewer: the server refuses them, and the web draws no such link either. */}
+        {mayPropose(vault.role) ? (
+          <View style={{ marginTop: space.lg }}>
+            <Button label="Raise a decision" onPress={() => onRaise(vault.vault_id, vault.name)} />
+          </View>
+        ) : null}
 
         <TreasuryCard vaultId={vault.vault_id} />
 

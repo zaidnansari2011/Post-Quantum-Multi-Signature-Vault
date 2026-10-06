@@ -409,6 +409,40 @@ def test_a_non_member_cannot_raise_a_decision(app, client):
     assert Proposal.query.filter_by(title="Sneak").first() is None
 
 
+def test_a_viewer_cannot_raise_a_decision(app, client):
+    """A viewer is read-only: 403 with a code the app can branch on, and nothing is created."""
+    owner, _, vault = _world("viewer")
+    viewer = auth_service.register_user("viewer-c@e.com", "Chen", PASSWORD)
+    vault_service.add_member(vault, viewer.email, "viewer", actor_id=owner.id)
+    headers = _enrol(client, viewer)
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        json={"title": "Sneak", "action_text": "Pay me."},
+        headers=headers,
+    )
+    assert r.status_code == 403
+    body = r.get_json()
+    assert body["ok"] is False
+    assert body["code"] == "view_only"
+    # The phone shows this sentence beneath its own title for the code (test_mobile_proposers).
+    assert "owner and approvers" in body["error"]
+    assert Proposal.query.filter_by(title="Sneak").first() is None
+
+
+def test_a_viewer_is_refused_before_the_request_is_read(app, client):
+    """Who is asking is answered before what they asked, as for the owner-only routes: a viewer's
+    malformed request gets the same 403, not a lesson in what a valid one looks like."""
+    owner, _, vault = _world("viewer2")
+    viewer = auth_service.register_user("viewer2-c@e.com", "Chen", PASSWORD)
+    vault_service.add_member(vault, viewer.email, "viewer", actor_id=owner.id)
+    headers = _enrol(client, viewer)
+
+    r = client.post(f"/api/v1/vaults/{vault.id}/proposals", json={}, headers=headers)
+    assert r.status_code == 403
+    assert r.get_json()["code"] == "view_only"
+
+
 def test_an_empty_action_is_refused(app, client):
     """A decision with no text is a signature over nothing anyone can read afterwards."""
     owner, _, vault = _world("empty")
