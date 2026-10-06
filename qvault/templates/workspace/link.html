@@ -20,7 +20,7 @@
     <div class="panel__body">
       <div style="display:flex;gap:.5rem;align-items:center">
         <input class="input mono" style="flex:1;min-width:0" id="invite-link" value="{{ link }}" readonly aria-label="Invitation link"
-               onclick="this.select()">
+               data-select-on-focus>
         <button class="btn btn--primary btn--sm" type="button" data-copy-link="invite-link">Copy</button>
       </div>
       <p class="small" style="margin-bottom:0">

@@ -1,0 +1,110 @@
+{# Form controls (styles: components.css, "forms"). Every control has a visible label tied to it;
+   a caption and an error are tied to it with aria-describedby, and an error sets aria-invalid.
+   The field names are the ones the routes read, so a converted form posts exactly what it did.
+
+   field(name, label, type='text', value=None, caption=None, error=None, required=False,
+         id=None, attrs={})
+     type    any input type, or 'textarea'.
+     error   a message or a list of messages (a WTForms field's .errors works as is).
+     id      defaults to 'f-' ~ name.
+
+   select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={})
+     options  a list of (value, text) pairs; selected is compared as a string.
+
+   checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={})
+   switch(name, label, checked=False, value='1', caption=None, id=None, attrs={})
+     A switch is a checkbox with role="switch": it posts the same way, and applies a setting
+     rather than agreeing to something.
+
+   radio_group(name, legend, options, selected=None, error=None)
+     options  a list of (value, text) or (value, text, caption) tuples.
+#}
+{% from "ui/icons.html" import icon %}
+
+{% macro _errors(error) -%}
+{%- if error is string %}{% set error = [error] %}{% endif -%}
+{%- for message in error or [] %}<p class="q-field__err">{{ icon('critical') }}<span>{{ message }}</span></p>{% endfor -%}
+{%- endmacro %}
+
+{% macro _described(fid, caption, error) -%}
+{%- set ids = [] -%}
+{%- if caption %}{% set _ = ids.append(fid ~ '-cap') %}{% endif -%}
+{%- if error %}{% set _ = ids.append(fid ~ '-err') %}{% endif -%}
+{%- if ids %} aria-describedby="{{ ids|join(' ') }}"{% endif -%}
+{%- if error %} aria-invalid="true"{% endif -%}
+{%- endmacro %}
+
+{% macro field(name, label, type='text', value=None, caption=None, error=None, required=False,
+               id=None, attrs={}) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-field">
+  <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
+  {%- if type == 'textarea' %}
+  <textarea class="q-input" id="{{ fid }}" name="{{ name }}"{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>{{ value if value is not none }}</textarea>
+  {%- else %}
+  <input class="q-input" id="{{ fid }}" name="{{ name }}" type="{{ type }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
+  {%- endif %}
+  {%- if caption %}
+  <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
+  {%- endif %}
+  {%- if error %}
+  <div id="{{ fid }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={}) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-field">
+  <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
+  <span class="q-selwrap">
+    <select class="q-select" id="{{ fid }}" name="{{ name }}"{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
+      {%- for value, text in options %}
+      <option value="{{ value }}"{% if selected is not none and value|string == selected|string %} selected{% endif %}>{{ text }}</option>
+      {%- endfor %}
+    </select>
+    {{ icon('chevron-down') }}
+  </span>
+  {%- if caption %}
+  <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
+  {%- endif %}
+  {%- if error %}
+  <div id="{{ fid }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro _check(kind, role, name, label, checked, value, caption, id, attrs) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="{{ 'q-swrow' if kind == 'q-sw' else 'q-choice' }}">
+  <input class="{{ kind }}" type="checkbox" id="{{ fid }}" name="{{ name }}" value="{{ value }}"
+    {%- if role %} role="{{ role }}"{% endif %}{% if checked %} checked{% endif %}
+    {%- if caption %} aria-describedby="{{ fid }}-cap"{% endif %}{{ attrs|xmlattr }}>
+  <label for="{{ fid }}">{{ label }}{% if caption %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ caption }}</span>{% endif %}</label>
+</div>
+{%- endmacro %}
+
+{% macro checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={}) -%}
+{{ _check('q-cb', None, name, label, checked, value, caption, id, attrs) }}
+{%- endmacro %}
+
+{% macro switch(name, label, checked=False, value='1', caption=None, id=None, attrs={}) -%}
+{{ _check('q-sw', 'switch', name, label, checked, value, caption, id, attrs) }}
+{%- endmacro %}
+
+{% macro radio_group(name, legend, options, selected=None, error=None) -%}
+<fieldset class="q-choices"{% if error %} aria-describedby="f-{{ name }}-err" aria-invalid="true"{% endif %}>
+  <legend>{{ legend }}</legend>
+  {%- for option in options %}
+  {%- set fid = 'f-' ~ name ~ '-' ~ loop.index %}
+  <div class="q-choice">
+    <input class="q-rd" type="radio" id="{{ fid }}" name="{{ name }}" value="{{ option[0] }}"
+      {%- if selected is not none and option[0]|string == selected|string %} checked{% endif %}>
+    <label for="{{ fid }}">{{ option[1] }}{% if option|length > 2 and option[2] %}<span class="q-choice__cap">{{ option[2] }}</span>{% endif %}</label>
+  </div>
+  {%- endfor %}
+  {%- if error %}
+  <div id="f-{{ name }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</fieldset>
+{%- endmacro %}

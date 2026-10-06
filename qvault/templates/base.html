@@ -1,136 +1,183 @@
 <!doctype html>
-<html lang="en">
+{# data-theme is set here, on the server, so the first paint is already in the reader's theme. No
+   attribute means System: the stylesheet follows prefers-color-scheme (rework S25). #}
+<html lang="en"{% if theme %} data-theme="{{ theme }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# The canvas colour before any stylesheet arrives: the chosen theme, or whichever the system
+     asks for. #}
+  <meta name="color-scheme" content="{{ theme or 'light dark' }}">
   <title>{% block title %}Q-Vault{% endblock %}</title>
   {# Every asset is served locally. A demonstration must not depend on the venue's network, and
-     a CDN failure would strip the entire interface mid-presentation. See docs/adr/0011. #}
+     a CDN failure would strip the entire interface mid-presentation. See docs/adr/0011.
+     Order matters: faces, tokens, base, components, the compatibility layer that maps every
+     existing class onto the tokens (qvault.css), then utilities, which win ties. #}
+  <link rel="preload" href="{{ url_for('static', filename='vendor/fonts/PublicSans-var.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link href="{{ url_for('static', filename='vendor/fonts.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='tokens.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='base.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='components.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='qvault.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='utilities.css') }}" rel="stylesheet">
+  <script src="{{ url_for('static', filename='qvault.js') }}" defer></script>
 </head>
 <body>
+{% from "ui/icons.html" import icon %}
+{% from "ui/mark.html" import mark %}
+{% from "ui/menus.html" import menu, menu_item, menu_post, menu_head, menu_sep %}
+{% from "ui/navigation.html" import breadcrumbs %}
+{% from "ui/avatars.html" import avatar %}
 
-{% macro icon(name) -%}
-<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
-     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  {%- if name == 'home' %}<path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-  {%- elif name == 'inbox' %}<path d="M2 9h3l1 2h4l1-2h3M2 9l1.6-5.5A1 1 0 0 1 4.6 3h6.8a1 1 0 0 1 1 .5L14 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>
-  {%- elif name == 'vault' %}<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><circle cx="8" cy="8" r="2.5"/><path d="M8 3.5v1M8 11.5v1"/>
-  {%- elif name == 'audit' %}<path d="M4 2h8a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>
-  {%- elif name == 'security' %}<path d="M8 1.8 13 4v4c0 3-2.1 5.3-5 6.2C5.1 13.3 3 11 3 8V4z"/><path d="M6 8l1.5 1.5L10.5 6.5"/>
-  {%- elif name == 'account' %}<circle cx="8" cy="5.5" r="2.5"/><path d="M3 13.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
-  {%- elif name == 'docs' %}<path d="M4 2h5l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 2v3h3"/>
-  {%- elif name == 'verify' %}<path d="M8 1.8 13 4v4c0 3-2.1 5.3-5 6.2C5.1 13.3 3 11 3 8V4z"/><path d="M5.8 8.2 7.3 9.7l3-3.4"/>
-  {%- elif name == 'search' %}<circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 14 14"/>
-  {%- elif name == 'people' %}<circle cx="6" cy="5.5" r="2.2"/><path d="M2 13c0-2.2 1.8-3.6 4-3.6s4 1.4 4 3.6"/><circle cx="11.2" cy="6" r="1.8"/><path d="M11 9.5c1.8 0 3 1.1 3 3"/>
-  {%- elif name == 'trace' %}<path d="M2 11.5 5 7l2.5 3L10 4.5l4 7"/><circle cx="5" cy="7" r="1"/><circle cx="10" cy="4.5" r="1"/>
-  {%- endif %}
-</svg>
+{# The theme choice, shared by the avatar menu and the public header. Each button posts its own
+   value, so the choice works without JavaScript; qvault.js only paints it before the reload.
+   No CSRF token: asking for one would start a session on every signed-out page, so /theme
+   refuses cross-site posts instead (qvault/blueprints/theme.py). The page is named as next only
+   when it was a GET; a page drawn in answer to a POST cannot be fetched again. An error page does
+   not name itself either: echoing the failed URL would make two 404s differ, and the public
+   record's 404s must be identical. Without next, /theme returns to the referring page anyway when
+   a GET of it works. #}
+{% macro theme_choice() -%}
+<form class="themepick" method="post" action="{{ url_for('theme.set_theme') }}">
+  {% if request.method == 'GET' and error_title is not defined %}<input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">{% endif %}
+  <span class="themepick__label" id="themepick-label">Theme</span>
+  <span class="seg" role="group" aria-labelledby="themepick-label">
+    {% for value in theme_choices %}
+    <button class="seg__b" type="submit" name="theme" value="{{ value }}"
+            aria-pressed="{{ 'true' if (theme or 'system') == value else 'false' }}">{{ value | capitalize }}</button>
+    {% endfor %}
+  </span>
+</form>
 {%- endmacro %}
 
+{# Help: only destinations that exist. Keyboard shortcuts, What's new, Status and Contact join
+   when they are built. #}
+{% macro help_menu() -%}
+{% call menu('Help', 'help', trigger='icon') %}
+  {{ menu_item('Docs', url_for('docs.index'), 'docs') }}
+  {{ menu_item('Verify a decision', url_for('verify.index'), 'verify') }}
+{% endcall %}
+{%- endmacro %}
+
+{# Live region for short announcements from qvault.js ("Copied"). #}
+<div id="q-live" class="visually-hidden" role="status" aria-live="polite"></div>
+<a class="q-skip" href="#main">Skip to content</a>
+
 {% if current_user.is_authenticated %}
-<div class="app">
-  <nav class="side" aria-label="Main">
-    <a class="side__brand" href="{{ url_for('core.index') }}">
-      {# Two overlapping squares: two parties whose agreement has to overlap before anything
-         happens. The product in one mark. #}
-      <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true">
-        <rect x="1" y="1" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
-        <rect x="6" y="6" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
-        <rect x="6" y="6" width="6" height="6" fill="currentColor" opacity=".18"/>
-      </svg>
-      Q-Vault
-    </a>
+{% set who = current_user.display_name or current_user.email %}
+{% set is_admin = current_user.role == 'admin' %}
+{% set ep = request.endpoint or '' %}
+{% set bp = request.blueprint or '' %}
+{# The Developer tools: the live trace and the adversary lab, each only where it is switched on. #}
+{% set dev_href = url_for('glassbox.index') if glassbox_enabled else (url_for('admin.attack_lab') if config.ATTACK_LAB_ENABLED else None) %}
+{% set in_dev = bp == 'glassbox' or ep in ('admin.attack_lab', 'admin.run_attack_lab') %}
+{% macro nav_item(label, href, icon_name, current, count=None) -%}
+<a class="q-nav-i" href="{{ href }}"{% if current %} aria-current="page"{% endif %}>
+  {{ icon(icon_name) }}<span class="q-nav-i__l">{{ label }}</span>
+  {%- if count %}<span class="q-count" aria-label="{{ count }} waiting on you">{{ count }}</span>{% endif %}
+</a>
+{%- endmacro %}
 
-    <div class="side__nav">
-      <a class="side__link" href="{{ url_for('core.index') }}"
-         {% if request.endpoint == 'core.index' %}aria-current="page"{% endif %}>
-        {{ icon('home') }} Home
-      </a>
-      {% include "notifications/_bell.html" %}
-      <a class="side__link" href="{{ url_for('approvals.index') }}"
-         {% if request.blueprint == 'approvals' %}aria-current="page"{% endif %}>
-        {{ icon('inbox') }} Approvals
-        {% if pending_count %}<span class="side__badge">{{ pending_count }}</span>{% endif %}
-      </a>
-      <a class="side__link" href="{{ url_for('vaults.list_vaults') }}"
-         {% if request.blueprint == 'vaults' %}aria-current="page"{% endif %}>
-        {{ icon('vault') }} Vaults
-      </a>
-      <a class="side__link" href="{{ url_for('ledger.view') }}"
-         {% if request.blueprint == 'ledger' %}aria-current="page"{% endif %}>
-        {{ icon('audit') }} Audit
-      </a>
-      {# The verifier is the capability nothing else in this product category has. It was
-         reachable only from one muted sentence on the signed-out landing page. #}
-      <a class="side__link" href="{{ url_for('verify.index') }}"
-         {% if request.blueprint == 'verify' %}aria-current="page"{% endif %}>
-        {{ icon('verify') }} Verify
-      </a>
-
-      <div class="side__sep" role="presentation"></div>
-
-      <a class="side__link" href="{{ url_for('workspace.members') }}"
-         {% if request.path.startswith('/workspace/') %}aria-current="page"{% endif %}>
-        {{ icon('people') }} Members
-      </a>
-      {% if current_user.role == 'admin' %}
-      <a class="side__link" href="{{ url_for('admin.crypto') }}"
-         {% if request.blueprint == 'admin' %}aria-current="page"{% endif %}>
-        {{ icon('security') }} Security
-      </a>
-      {# An instrument, not a feature: offered only where it is switched on, and only to an
-         administrator. See ADR-0020. #}
-      {% if glassbox_enabled %}
-      <a class="side__link" href="{{ url_for('glassbox.index') }}"
-         {% if request.blueprint == 'glassbox' %}aria-current="page"{% endif %}>
-        {{ icon('trace') }} Trace
-      </a>
-      {% endif %}
-      {% endif %}
-      <a class="side__link" href="{{ url_for('account.index') }}"
-         {% if request.blueprint == 'account' %}aria-current="page"{% endif %}>
-        {{ icon('account') }} Account
-      </a>
-      <a class="side__link" href="{{ url_for('docs.index') }}"
-         {% if request.blueprint == 'docs' %}aria-current="page"{% endif %}>
-        {{ icon('docs') }} Docs
-      </a>
+<div class="q-shell{% if request.cookies.get('qv_rail') == '1' %} is-rail{% endif %}" data-shell>
+  <nav class="q-side" id="q-side" aria-label="Main">
+    <div class="q-side__top">
+      <a class="q-side__brand" href="{{ url_for('core.index') }}">{{ mark(20) }}<span class="q-side__word">Q-Vault</span></a>
+      <button class="q-ib q-side__close" type="button" data-drawer-close aria-label="Close menu">{{ icon('close') }}</button>
     </div>
 
-    <div class="side__foot">
-      <div class="side__user">
-        <span class="side__avatar" aria-hidden="true">
-          {{ (current_user.display_name or current_user.email)[:1] | upper }}
-        </span>
-        <span class="truncate" style="min-width:0">
-          <span class="small truncate" style="display:block">{{ current_user.display_name or current_user.email }}</span>
-          <span class="tiny muted truncate" style="display:block">{{ current_user.email }}</span>
-        </span>
-      </div>
-      <form method="post" action="{{ url_for('auth.logout') }}" style="margin-top:.5rem">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn--ghost btn--sm btn--block" type="submit">Sign out</button>
-      </form>
+    <div class="q-nav">
+      {{ nav_item('Home', url_for('core.index'), 'home', ep == 'core.index') }}
+      {{ nav_item('Approvals', url_for('approvals.index'), 'inbox', bp == 'approvals', pending_count) }}
+      {{ nav_item('Vaults', url_for('vaults.list_vaults'), 'vault', bp == 'vaults') }}
+      {{ nav_item('Audit', url_for('ledger.view'), 'audit', bp == 'ledger') }}
+    </div>
+
+    <div class="q-nav">
+      {{ nav_item('Members', url_for('workspace.members'), 'people', request.path.startswith('/workspace/')) }}
+      {{ nav_item('Docs', url_for('docs.index'), 'docs', bp == 'docs') }}
+    </div>
+
+    {% if is_admin %}
+    <div class="q-nav" role="group" aria-labelledby="nav-settings">
+      <div class="q-nav__label" id="nav-settings">Settings</div>
+      {{ nav_item('Security', url_for('admin.crypto'), 'security', bp == 'admin' and not in_dev) }}
+      {% if dev_href %}
+      {{ nav_item('Developer', dev_href, 'developer', in_dev) }}
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="q-side__foot">
+      {% set rail = request.cookies.get('qv_rail') == '1' %}
+      <button class="q-ib" type="button" data-rail-toggle aria-pressed="{{ 'true' if rail else 'false' }}"
+              aria-label="{{ 'Expand sidebar' if rail else 'Collapse sidebar' }}" title="{{ 'Expand sidebar' if rail else 'Collapse sidebar' }}">
+        <span class="q-rail-icon--collapse">{{ icon('sidebar-collapse') }}</span><span class="q-rail-icon--expand">{{ icon('sidebar-expand') }}</span>
+      </button>
     </div>
   </nav>
+  <div class="q-scrim" data-drawer-close aria-hidden="true"></div>
 
-  <div class="main">
-    {% block chrome %}{% endblock %}
-    <div class="{% block bodyclass %}body{% endblock %}">
-      {% include "_flash.html" %}
-      {% block content %}{% endblock %}
-    </div>
+  <div class="q-main">
+    <header class="q-top">
+      <button class="q-ib q-top__menu" type="button" data-drawer-open aria-controls="q-side" aria-expanded="false" aria-label="Open menu">{{ icon('menu') }}</button>
+      {% block crumbs %}
+      {#- The default trail: the section, then this page's own name from its title when it adds
+          something. A page with a deeper trail (a vault, a decision) overrides this block. -#}
+      {%- set page_name = (self.title() | striptags).replace(' · ', ' — ').split(' — ')[0] -%}
+      {%- if bp == 'approvals' %}{% set section = ('Approvals', url_for('approvals.index')) %}
+      {%- elif bp == 'vaults' %}{% set section = ('Vaults', url_for('vaults.list_vaults')) %}
+      {%- elif bp == 'ledger' %}{% set section = ('Audit', url_for('ledger.view')) %}
+      {%- elif bp == 'account' %}{% set section = ('Account', url_for('account.index')) %}
+      {%- elif bp == 'docs' %}{% set section = ('Docs', url_for('docs.index')) %}
+      {%- elif bp == 'verify' %}{% set section = ('Verify', url_for('verify.index')) %}
+      {%- elif in_dev %}{% set section = ('Developer', dev_href) %}
+      {%- elif bp == 'admin' %}{% set section = ('Security', url_for('admin.crypto')) %}
+      {%- else %}{% set section = ('Home', url_for('core.index')) %}
+      {%- endif %}
+      {%- set trail = [section] -%}
+      {%- if page_name and page_name not in (section[0], 'Q-Vault', 'Documentation') %}{% set _ = trail.append((page_name, None)) %}{% endif -%}
+      {{ breadcrumbs(trail) }}
+      {% endblock %}
+      <div class="q-top__end">
+        {% include "notifications/_bell.html" %}
+        {{ help_menu() }}
+        {% call menu('Account menu for ' ~ who, trigger_content=avatar(who, 24, decorative=True)) %}
+          {{ menu_head(who, current_user.email if current_user.display_name else None) }}
+          {{ menu_item('Account', url_for('account.index'), 'account', bp == 'account') }}
+          {{ menu_sep() }}
+          {{ theme_choice() }}
+          {{ menu_sep() }}
+          {{ menu_post('Sign out', url_for('auth.logout'), 'sign-out') }}
+        {% endcall %}
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      {% block chrome %}{% endblock %}
+      <div class="{% block bodyclass %}body{% endblock %}">
+        {% include "_flash.html" %}
+        {% block content %}{% endblock %}
+      </div>
+    </main>
   </div>
 </div>
 
 {% else %}
-{# Signed out: no rail to navigate, so the page stands alone — but it still gets a way back to
-   the two things a stranger can legitimately do here, or /login is a dead end that advertises a
-   verifier it offers no route to. A page that reads the same either way (the documentation)
-   fills anon_chrome with its own header and opts out of the centred auth layout. #}
-<div class="main">
+{# Signed out: no sidebar to navigate, so a simple public header with the mark, and the two things
+   a stranger can legitimately do here: verify a decision, and read how it works. A page that
+   reads the same either way (the documentation) fills anon_chrome with its own header and opts
+   out of the centred auth layout with anon_bodyclass. #}
+<div class="q-pub">
+  <header class="q-pub__bar">
+    <a class="q-pub__brand" href="{{ url_for('core.index') }}">{{ mark(20) }}<span>Q-Vault</span></a>
+    <nav class="q-pub__nav" aria-label="Public">
+      <a href="{{ url_for('verify.index') }}"{% if request.blueprint == 'verify' %} aria-current="page"{% endif %}>Verify a decision</a>
+      <a class="q-pub__opt" href="{{ url_for('docs.index') }}"{% if request.blueprint == 'docs' %} aria-current="page"{% endif %}>Docs</a>
+      {% if request.endpoint != 'auth.login' %}<a href="{{ url_for('auth.login') }}">Sign in</a>{% endif %}
+      {% call menu('Theme', 'theme', trigger='icon') %}{{ theme_choice() }}{% endcall %}
+    </nav>
+  </header>
+  <main id="main" tabindex="-1">
   {% block anon_chrome %}{% endblock %}
   <div class="{% block anon_bodyclass %}body body--anon{% endblock %}">
     <div style="width:100%">
@@ -138,48 +185,8 @@
       {% block anon_content %}{% endblock %}
     </div>
   </div>
-  <div class="anonbar">
-    <a href="{{ url_for('core.index') }}">Q-Vault</a>
-    <span class="push"></span>
-    <a href="{{ url_for('verify.index') }}">Verify a decision</a>
-    <a href="{{ url_for('docs.index') }}">Documentation</a>
-  </div>
+  </main>
 </div>
 {% endif %}
-
-<script>
-  document.addEventListener('click', function (e) {
-    var close = e.target.closest('[data-dismiss]');
-    if (close) { close.closest('.alert').remove(); return; }
-
-    // Demonstration convenience: fill the sign-in form rather than making someone read two
-    // strings off one page and type them into another.
-    var fill = e.target.closest('[data-fill-email]');
-    if (fill) {
-      var form = document.querySelector('form');
-      form.querySelector('[name=email]').value = fill.getAttribute('data-fill-email');
-      form.querySelector('[name=password]').value = fill.getAttribute('data-fill-password');
-      form.querySelector('[name=email]').focus();
-      return;
-    }
-
-    // Click any .hash[data-copy] to copy its full value — a truncated hash you cannot retrieve
-    // in full is not evidence of anything.
-    var el = e.target.closest('.hash[data-copy]');
-    if (!el) return;
-    navigator.clipboard && navigator.clipboard.writeText(el.getAttribute('data-copy'));
-    var prev = el.textContent;
-    el.classList.add('copied');
-    el.textContent = 'copied';
-    setTimeout(function () { el.classList.remove('copied'); el.textContent = prev; }, 1000);
-  });
-
-  // Submitting a filter form on change is what makes a toolbar feel like a tool rather than a
-  // form: no Apply button to hunt for. Text inputs are excluded — they submit on Enter.
-  document.addEventListener('change', function (e) {
-    var el = e.target.closest('[data-autosubmit] select, [data-autosubmit] input[type=date]');
-    if (el) el.form.requestSubmit();
-  });
-</script>
 </body>
 </html>

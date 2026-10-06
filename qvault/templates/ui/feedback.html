@@ -1,0 +1,62 @@
+{# Feedback (styles: components.css, "banner, empty state", "toast", "dialog").
+
+   banner(tone, title, body=None)
+     A state the reader should know about before acting, in one of the five tones. An optional
+     caller() block holds its actions (one or two buttons). Use a status line, not a lecture (S4).
+
+   empty_state(title, caption=None, action=None)
+     What an empty list says: the plain fact, then the next step. action is {label, href}.
+
+   toast(message, tone='neutral')
+     A short confirmation that something happened ("Signature recorded"). Rendered in the page,
+     announced politely, dismissed after a few seconds by qvault.js (paused on hover and focus),
+     or by its close button. Errors are banners, never toasts: they must not disappear.
+
+   dialog(id, title, close_label='Close')
+     A modal on the native <dialog>. Use with {% call(part) dialog(...) %}: caller('body') and
+     caller('footer') are each rendered once. Open it with any button carrying
+     data-dialog-open="<id>"; a button with data-dialog-close, Escape or the backdrop closes it,
+     and focus returns to the button that opened it.
+#}
+{% from "ui/icons.html" import icon %}
+{% from "ui/buttons.html" import button %}
+
+{% set _tone_icon = {'neutral': 'info', 'info': 'info', 'success': 'success', 'warning': 'warning', 'critical': 'critical'} %}
+
+{% macro banner(tone, title, body=None) -%}
+<div class="q-banner q-banner--{{ ui_tone(tone) }}"{% if tone in ('critical', 'warning') %} role="alert"{% else %} role="status"{% endif %}>
+  {{ icon(_tone_icon[tone]) }}
+  <div class="q-banner__b">
+    <p class="q-banner__t">{{ title }}</p>
+    {%- if body %}<p>{{ body }}</p>{% endif %}
+  </div>
+  {%- if caller is defined %}<div class="q-banner__act">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro empty_state(title, caption=None, action=None) -%}
+<div class="q-empty">
+  <p class="q-empty__t">{{ title }}</p>
+  {%- if caption %}<p class="q-empty__c">{{ caption }}</p>{% endif %}
+  {%- if action %}{{ button(action.label, 'primary', href=action.href, size='sm') }}{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro toast(message, tone='neutral') -%}
+<div class="q-toast" data-toast data-tone="{{ ui_tone(tone) }}">
+  {{ icon(_tone_icon[tone]) }}
+  <span class="q-toast__m">{{ message }}</span>
+  <button class="q-ib" type="button" data-toast-close aria-label="Dismiss">{{ icon('close') }}</button>
+</div>
+{%- endmacro %}
+
+{% macro dialog(id, title, close_label='Close') -%}
+<dialog class="q-dialog" id="{{ id }}" aria-labelledby="{{ id }}-title">
+  <div class="q-dlg__hd">
+    <h2 class="q-dlg__t" id="{{ id }}-title">{{ title }}</h2>
+    <button class="q-ib" type="button" data-dialog-close aria-label="{{ close_label }}">{{ icon('close') }}</button>
+  </div>
+  <div class="q-dlg__bd">{{ caller('body') }}</div>
+  <div class="q-dlg__ft">{{ caller('footer') }}</div>
+</dialog>
+{%- endmacro %}
