@@ -25,7 +25,10 @@ from sqlalchemy.exc import IntegrityError
 
 from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
+from qvault.models.device import Device
 from qvault.models.key import Key
+from qvault.models.proposal import Proposal
+from qvault.models.signature import Signature
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember, VaultPolicy
 from qvault.security import master_key
@@ -327,3 +330,58 @@ def set_threshold(vault: Vault, threshold_m: int, *, actor_id: int, commit: bool
     notification_service.threshold_changed(vault, previous=previous, actor_id=actor_id, entry=entry)
     if commit:
         db.session.commit()
+
+
+ROLE_WORDS = {"owner": "Owner", "signer": "Approver", "viewer": "Viewer"}
+
+
+def member_overview(vault: Vault) -> list[dict]:
+    """A vault's Members tab (rework R2): each member's role, how they sign, and when they last did.
+
+    ``custody`` names the keys a person signs with, as the product calls them: a *password key*
+    (held here, encrypted, unlocked by their password) and a *phone key* for each usable phone
+    (held on the phone; this server never sees it). ``last_signed`` is their latest vote on any
+    decision in this vault, approve or reject. Three queries for the whole tab.
+    """
+    members = sorted(
+        vault.members,
+        key=lambda m: (m.member_role != "owner", m.member_role == "viewer", m.created_at),
+    )
+    ids = [m.user_id for m in members]
+    password = {
+        k.owner_id
+        for k in Key.query.filter(
+            Key.owner_id.in_(ids),
+            Key.role == "sig",
+            Key.status == "active",
+            Key.wrap_domain == "password",
+        )
+    }
+    phones: dict[int, int] = {}
+    for device in Device.query.filter(Device.owner_id.in_(ids)):
+        if device.is_usable():
+            phones[device.owner_id] = phones.get(device.owner_id, 0) + 1
+    last = dict(
+        db.session.query(Signature.signer_id, db.func.max(Signature.created_at))
+        .join(Proposal, Proposal.id == Signature.proposal_id)
+        .filter(Proposal.vault_id == vault.id, Signature.signer_id.in_(ids))
+        .group_by(Signature.signer_id)
+        .all()
+    )
+    out = []
+    for m in members:
+        keys = []
+        if phones.get(m.user_id):
+            count = phones[m.user_id]
+            keys.append("Phone key" if count == 1 else f"{count} phone keys")
+        if m.user_id in password:
+            keys.append("Password key")
+        out.append(
+            {
+                "member": m,
+                "role": ROLE_WORDS.get(m.member_role, m.member_role.capitalize()),
+                "custody": keys,
+                "last_signed": last.get(m.user_id),
+            }
+        )
+    return out

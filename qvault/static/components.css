@@ -575,3 +575,448 @@ th[aria-sort] .q-sort { color: var(--text); }
 .q-error__p { margin: 0; color: var(--text-muted); }
 .q-error__act { display: flex; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); }
 .q-pub .q-error { margin: 0 auto; padding-inline: var(--gutter); width: 100%; }
+
+/* ================================================================ the work screens (rework R2)
+ * Home, the Approvals inbox, a vault and New decision. Each block names its macro in ui/work.html,
+ * ui/data.html or ui/forms.html. */
+
+/* ---------------------------------------------------------------- tags and links (ui/work.html)
+ * A tag is a fact about a thing (its type, a vault's rule, "Testnet"): a neutral outline at radius 4,
+ * never a status colour, so it can sit beside a status badge without competing with it. */
+
+.q-tag {
+  display: inline-flex; align-items: center; gap: var(--space-4); flex: none;
+  min-height: 20px; padding: 0 var(--space-6);
+  border: var(--border-width) solid var(--border-hover); border-radius: var(--radius-badge);
+  color: var(--text-muted); background: transparent;
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
+  white-space: nowrap;
+}
+.q-tag--rule { color: var(--text); font-weight: var(--weight-medium); }
+/* A link that is an action in a list footer or at a sentence's end: medium weight, underlined on
+ * hover only, because it stands on its own and is not running text. */
+.q-lnk { color: var(--link); font-weight: var(--weight-medium); text-decoration: none; }
+.q-lnk:hover { color: var(--link-hover); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.q-av--entity { border-radius: var(--radius-badge); }
+.q-narrow { display: none; }
+@media (max-width: 767px) {
+  .q-wide { display: none; }
+  .q-narrow { display: inline; }
+}
+
+/* A menu item with a caption under its label (a vault and its rule). */
+.q-menu__i--2 { min-height: 44px; }
+.q-menu__il { display: grid; min-width: 0; }
+.q-menu__ic { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* ---------------------------------------------------------------- due times (ui/work.html) */
+
+.q-due { display: grid; gap: var(--space-2); min-width: 0; }
+.q-due__abs { display: inline-flex; align-items: center; gap: var(--space-4); color: var(--text); white-space: nowrap; }
+.q-due__rel { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); white-space: nowrap; }
+.q-due.is-soon .q-due__abs { color: var(--status-warning-fg); }
+.q-due.is-past .q-due__abs { color: var(--text-muted); }
+.q-due--none { color: var(--text-subtle); }
+.q-due--done .q-due__abs { color: var(--text-muted); }
+
+/* ---------------------------------------------------------------- signatures in a table (ui/work.html) */
+
+.q-sigs { display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+.q-sigs__n { color: var(--text); }
+
+/* ---------------------------------------------------------------- Home (home.html) */
+
+.q-home { container-type: inline-size; }
+.q-home__cols { display: grid; gap: var(--space-40) var(--space-32); align-items: start; }
+@container (min-width: 1040px) {
+  .q-home__cols { grid-template-columns: minmax(0, 1fr) 296px; }
+}
+.q-home__work { display: grid; gap: var(--space-32); min-width: 0; }
+
+/* The getting-started checklist (plan R3): the panel above the work for a new workspace. */
+.q-start { margin-bottom: var(--space-32); max-width: 720px; }
+.q-start .q-panel__hd { justify-content: flex-start; padding-block: var(--space-8); }
+.q-start__n { color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-start__hide { margin: 0 0 0 auto; }
+.q-start__list { display: grid; gap: var(--space-8); margin: 0; padding: var(--space-16); list-style: none; }
+.q-start__i { display: flex; align-items: center; gap: var(--space-12); }
+.q-start__i.is-done { color: var(--text-muted); }
+.q-start__mark {
+  flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px;
+  border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.5px var(--border-strong);
+}
+.q-start__i.is-done .q-start__mark { background: var(--mark-filled); color: var(--accent-text); box-shadow: none; }
+.q-start__mark .q-icon { width: 12px; height: 12px; vertical-align: 0; stroke-width: 2; }
+.q-start__cap { margin: 0; padding: 0 var(--space-16) var(--space-16); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* ---------------------------------------------------------------- work lists (ui/work.html)
+ * One column template for all three lists (decision, amount 72, signatures 160, due 168), so the
+ * columns line up down the page. Two-line rows, 56px at least; the whole row is one link. */
+
+.q-wsec { display: grid; gap: var(--space-12); min-width: 0; }
+.q-wsec__hd { display: flex; align-items: center; gap: var(--space-8); min-height: 24px; }
+.q-wsec__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-wsec__n { color: var(--text-subtle); }
+.q-wl {
+  --c-amt: 72px; --c-sig: 160px; --c-due: 168px;
+  background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+  overflow: hidden; --av-ring: var(--surface);
+}
+.q-wl__hd, .q-wl__row {
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--c-amt) var(--c-sig) var(--c-due);
+  column-gap: var(--space-12); padding-inline: var(--space-16);
+}
+.q-wl__hd {
+  height: 36px; align-items: center; background: var(--bg-subtle); border-bottom: var(--border-width) solid var(--border);
+  color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
+}
+.q-wl__hd .is-num, .q-wl__amt { text-align: right; }
+.q-wl__list { margin: 0; padding: 0; list-style: none; }
+.q-wl__row {
+  grid-template-areas: "t amt sig due" "m amt sig due"; grid-template-rows: auto 1fr; row-gap: var(--space-2);
+  min-height: 56px; padding-block: var(--space-8); align-items: start;
+  color: var(--text); text-decoration: none;
+  transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-wl__list li + li .q-wl__row { border-top: var(--border-width) solid var(--border); }
+.q-wl__row:hover { background: var(--fill); color: var(--text); --av-ring: var(--fill); }
+.q-wl__row:focus-visible { outline-offset: -2px; border-radius: var(--radius-card); }
+.q-wl__t { grid-area: t; font-weight: var(--text-body-strong-weight); text-wrap: pretty; min-width: 0; }
+.q-wl__m { grid-area: m; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8); min-width: 0; color: var(--text-muted); }
+.q-wl__clip { display: inline-flex; color: var(--text-subtle); }
+.q-wl__amt { grid-area: amt; white-space: nowrap; }
+.q-wl__sig { grid-area: sig; display: grid; gap: var(--space-2); min-width: 0; align-content: start; }
+.q-wl__s1 { display: flex; align-items: center; height: 20px; color: var(--text); }
+.q-wl__note { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-wl__note + .q-wl__note { color: var(--text-subtle); }
+.q-wl__due { grid-area: due; min-width: 0; }
+.q-wl__ft { margin: 0; padding: var(--space-12) var(--space-16); border-top: var(--border-width) solid var(--border); color: var(--text-muted); }
+.q-wl__ft--empty { border-top: 0; }
+.q-wl__ft--phone { display: none; }
+
+/* Recent activity: one item per decision, its latest event (screens.md A.7). */
+.q-act { display: grid; gap: var(--space-16); align-content: start; min-width: 0; --av-ring: var(--bg); }
+.q-act__list { display: grid; gap: var(--space-20); margin: 0; padding: 0; list-style: none; }
+.q-act__i { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--space-12); align-items: start; }
+.q-act__b { min-width: 0; }
+.q-act__s { margin: 0; color: var(--text-muted); overflow-wrap: anywhere; }
+.q-act__t { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; }
+.q-act__t:hover { color: var(--text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.q-act__meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin: var(--space-4) 0 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-act__none, .q-act__ft { margin: 0; color: var(--text-muted); }
+
+@media (max-width: 767px) {
+  .q-home__work { gap: var(--space-24); }
+  /* Rows become list items: title; vault, type and amount; marks and due (screens.md C.2). */
+  .q-wl { border-radius: 0; border-inline: 0; margin-inline: calc(-1 * var(--gutter)); }
+  .q-wl__hd { display: none; }
+  .q-wl__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "t t" "m amt" "sig due"; grid-template-rows: auto;
+    row-gap: var(--space-4); padding: var(--space-12) var(--gutter); min-height: 0;
+  }
+  .q-wl__row:focus-visible { border-radius: 0; }
+  .q-wl__t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .q-wl__amt { align-self: center; }
+  .q-wl__sig { display: flex; align-items: center; gap: var(--space-8); }
+  .q-wl__note { display: none; }
+  .q-wl__note--keep { display: inline; }
+  .q-wl__due { align-self: center; justify-self: end; }
+  .q-wl__due .q-due__rel { display: none; }
+  .q-wl__list li:nth-child(n + 4) { display: none; }
+  .q-wl__ft { padding-inline: var(--gutter); }
+  .q-wl__ft--phone { display: block; }
+}
+
+/* ---------------------------------------------------------------- toolbar filters (ui/forms.html)
+ * Filters live in the URL: the toolbar is a GET form that submits itself when a select changes
+ * (qvault.js, data-autosubmit) and on Enter in the search box. */
+
+.q-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin: var(--space-16) 0; }
+.q-field--inline { margin: 0; }
+.q-field--inline .q-select { width: auto; max-width: 220px; }
+.q-search { position: relative; flex: 1 1 220px; max-width: 320px; min-width: 0; }
+.q-search > .q-icon { position: absolute; left: var(--space-8); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+.q-search .q-input { padding-left: var(--space-32); }
+.q-search .q-input::-webkit-search-cancel-button { cursor: pointer; }
+.q-toolbar__n { margin-left: auto; color: var(--text-subtle); white-space: nowrap; }
+@media (max-width: 767px) {
+  .q-search { flex-basis: 100%; max-width: none; }
+  .q-field--inline { flex: 1 1 0; min-width: 0; }
+  .q-field--inline .q-select { width: 100%; max-width: none; }
+  .q-toolbar__n { flex-basis: 100%; margin-left: 0; }
+  .q-input, .q-select { font-size: var(--text-input-size-touch); }
+}
+
+/* ---------------------------------------------------------------- decision rows in a table
+ * The title is the row's link and covers the whole row, so the row is one target; the decision
+ * code sits under it in mono, the one place a list names it (S17). */
+
+.q-drow { position: relative; }
+.q-dec { display: grid; gap: var(--space-2); min-width: 0; }
+.q-dec__link { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; overflow-wrap: anywhere; }
+.q-dec__link::after { content: ""; position: absolute; inset: 0; }
+.q-dec__link:hover { color: var(--text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.q-dec__link:focus-visible { outline: none; }
+.q-dec__link:focus-visible::after { outline: var(--focus-width) solid var(--focus); outline-offset: -2px; border-radius: var(--radius-card); }
+.q-dec__m { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8); }
+.q-dec__code { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); letter-spacing: 0.02em; }
+.q-trunc { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-c-raised { white-space: nowrap; }
+.q-drow__by { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-table td.q-c-main { min-width: 220px; }
+@media (max-width: 1279px) { .q-c-raised { display: none; } }
+
+/* Below 768px a stacked table is a list of small cards: the decision, then its vault and amount,
+ * then its status and due time (screens.md C.2, the phone's list item). */
+@media (max-width: 767px) {
+  .q-table-wrap--stack { margin-inline: calc(-1 * var(--gutter)); border-radius: 0; border-inline: 0; overflow: visible; }
+  .q-table--stack, .q-table--stack tbody { display: block; }
+  .q-table--stack thead { display: none; }
+  .q-table--stack tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-12); row-gap: var(--space-4);
+    grid-template-areas: "main main" "meta aside" "status end";
+    padding: var(--space-12) var(--gutter);
+  }
+  .q-table--stack tbody tr + tr { border-top: var(--border-width) solid var(--border); }
+  .q-table--stack td, .q-table--stack tbody tr + tr > * { display: block; height: auto; padding: 0; border: 0; background: none; }
+  .q-table--stack tr.q-table__none { display: block; padding: 0; }
+  .q-table--stack .q-c-main { grid-area: main; min-width: 0; }
+  .q-table--stack .q-c-meta { grid-area: meta; color: var(--text-muted); min-width: 0; }
+  .q-table--stack .q-c-aside { grid-area: aside; }
+  .q-table--stack .q-c-status { grid-area: status; }
+  .q-table--stack .q-c-end { grid-area: end; justify-self: end; text-align: right; }
+  .q-table--stack .q-c-wide-only { display: none; }
+  .q-table--stack .q-due__rel { display: none; }
+  .q-trunc { max-width: none; }
+}
+
+/* ---------------------------------------------------------------- pager (ui/data.html) */
+
+.q-pager { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin-top: var(--space-16); color: var(--text-muted); }
+.q-pager__b { display: flex; gap: var(--space-8); }
+
+/* ---------------------------------------------------------------- a vault (vaults/detail.html) */
+
+.q-vault .q-ph { margin-bottom: var(--space-16); }
+.q-vault__body { margin-top: var(--space-24); }
+.q-split { display: grid; gap: var(--space-24); align-items: start; }
+@media (min-width: 1100px) {
+  .q-split { grid-template-columns: minmax(0, 1fr) 320px; }
+  .q-split--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.q-panel__bd { padding: var(--space-16); }
+.q-panel__bd > .q-field:last-of-type { margin-bottom: var(--space-16); }
+.q-panel__ft { margin: 0; padding: 0 var(--space-16) var(--space-16); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-muted { color: var(--text-subtle); }
+
+/* A person in a table: the avatar, then their name over their email. */
+.q-person { display: flex; align-items: center; gap: var(--space-12); min-width: 0; }
+.q-person__t { display: grid; min-width: 0; }
+.q-person__n { font-weight: var(--text-body-strong-weight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-person__you { color: var(--text-subtle); font-weight: var(--text-body-weight); }
+.q-person__e { color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Row actions: small forms side by side, right-aligned, never wrapping into the row above. */
+.q-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-8); }
+.q-inline-form { display: flex; align-items: center; gap: var(--space-6); margin: 0; }
+.q-inline-form .q-select { height: var(--control-h-sm); width: auto; }
+.q-c-actions { text-align: right; }
+@media (max-width: 767px) {
+  .q-table--stack .q-c-actions { grid-column: 1 / -1; justify-self: start; }
+  .q-actions { justify-content: flex-start; flex-wrap: wrap; }
+}
+
+/* Adding a member: one row above the members table, so the table keeps the page's width. */
+.q-addrow { margin: 0 0 var(--space-20); max-width: 760px; }
+.q-addrow__f { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; gap: var(--space-8); align-items: end; }
+.q-addrow__f .q-field { margin: 0; }
+.q-addrow__cap { margin: var(--space-8) 0 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); max-width: 76ch; }
+.q-nowrap { white-space: nowrap; }
+@media (max-width: 767px) {
+  .q-addrow__f { grid-template-columns: minmax(0, 1fr) auto; }
+  .q-addrow__f .q-field:first-child { grid-column: 1 / -1; }
+}
+
+/* ---------------------------------------------------------------- New decision (vaults/proposal_new.html) */
+
+/* The type: two cards, each its own URL (?kind=payment), so the choice survives a reload. */
+.q-typepick { display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-24); }
+.q-typecard {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: var(--space-8); row-gap: var(--space-2);
+  flex: 1 1 240px; max-width: 320px; padding: var(--space-12) var(--space-16);
+  border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card);
+  background: var(--surface); color: var(--text); text-decoration: none;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-typecard > .q-icon { margin-top: 2px; color: var(--text-subtle); }
+.q-typecard__t { font-weight: var(--text-body-strong-weight); }
+.q-typecard__c { grid-column: 2; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+a.q-typecard:hover { background: var(--fill); color: var(--text); }
+.q-typecard[aria-current="page"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-subtle); }
+.q-typecard[aria-current="page"] > .q-icon { color: var(--accent-fg); }
+.q-typecard.is-off { border-style: dashed; border-color: var(--border-hover); background: transparent; color: var(--text-subtle); cursor: not-allowed; }
+.q-typecard.is-off .q-typecard__c { color: var(--text-subtle); }
+
+/* The form, the preview beside it, and the actions under the form. One column on a phone, where
+ * the preview comes before the button it is about. */
+.q-compose {
+  display: grid; gap: var(--space-8) var(--space-32); align-items: start;
+  grid-template-columns: minmax(0, 640px); grid-template-areas: "fields" "preview" "act";
+}
+@media (min-width: 1100px) {
+  .q-compose { grid-template-columns: minmax(0, 640px) 320px; grid-template-areas: "fields preview" "act preview"; }
+}
+.q-compose__fields { grid-area: fields; min-width: 0; }
+.q-compose__act { grid-area: act; display: flex; gap: var(--space-8); align-items: center; padding-top: var(--space-8); }
+.q-compose__note { margin: 0 0 var(--space-16); color: var(--text-muted); }
+/* The decision text is what people sign, so it is set as the product sets signed words. */
+.q-compose textarea.q-input {
+  min-height: 168px; padding-block: var(--space-8);
+  font-family: var(--font-serif); font-size: var(--text-decision-size); line-height: var(--text-decision-line);
+}
+
+.q-preview {
+  grid-area: preview; display: grid; gap: var(--space-16); align-content: start; min-width: 0;
+  padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+  background: var(--bg-subtle); --av-ring: var(--bg-subtle);
+}
+@media (min-width: 1100px) { .q-preview { position: sticky; top: calc(var(--topbar-h) + var(--space-24)); } }
+.q-preview__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-preview__rule { display: flex; align-items: center; gap: var(--space-12); margin: 0; font-weight: var(--text-body-strong-weight); }
+.q-preview__people { display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-16); margin: 0; padding: 0; list-style: none; }
+.q-preview__people li { display: inline-flex; align-items: center; gap: var(--space-8); }
+.q-preview__facts { display: grid; gap: var(--space-12); margin: 0; padding-top: var(--space-16); border-top: var(--border-width) solid var(--border); }
+.q-preview__facts > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-8); }
+.q-preview__facts dt { color: var(--text-subtle); }
+.q-preview__facts dd { margin: 0; color: var(--text); }
+.q-preview__cap { margin: 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* An input with a unit inside its right edge ("ETH"). */
+.q-inwrap { position: relative; display: block; }
+.q-inwrap .q-input { padding-right: var(--space-48); }
+.q-inwrap__sfx { position: absolute; right: var(--space-12); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+
+/* ---------------------------------------------------------------- the due field (ui/forms.html: due_field)
+ * A typed text input with a calendar button; qvault.js draws the month grid and the time list. */
+
+.q-date { position: relative; display: block; max-width: 320px; }
+.q-date__in { padding-right: var(--space-40); font-variant-numeric: tabular-nums; }
+.q-date__btn {
+  position: absolute; right: 2px; top: 2px; display: inline-grid; place-items: center;
+  width: 28px; height: 28px; padding: 0; margin: 0; border: 0; border-radius: var(--radius-badge);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.q-date__btn:hover, .q-date__btn[aria-expanded="true"] { background: var(--fill); color: var(--text); }
+.q-date__read { display: block; color: var(--text); font-weight: var(--weight-medium); }
+.q-date__pop {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-popover);
+  width: 296px; padding: var(--space-12);
+  background: var(--surface-raised); border-radius: var(--radius-card); box-shadow: var(--shadow-e2);
+  animation: q-pop-in var(--duration-popover) var(--ease-enter) both;
+}
+.q-cal__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-bottom: var(--space-8); }
+.q-cal__m { font-weight: var(--text-body-strong-weight); }
+.q-cal__nav { display: flex; gap: var(--space-2); }
+.q-cal__nav .q-ib:disabled { color: var(--text-disabled); background: transparent; cursor: not-allowed; }
+.q-cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.q-cal__wd { display: grid; place-items: center; height: 24px; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-cal__d {
+  display: grid; place-items: center; height: 36px; padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.q-cal__d:hover:not(:disabled) { background: var(--fill-raised-hover); }
+.q-cal__d.is-today { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.q-cal__d[aria-pressed="true"], .q-cal__d[aria-pressed="true"]:hover { background: var(--accent); color: var(--accent-text); box-shadow: none; }
+.q-cal__d:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.q-cal__d.is-out { visibility: hidden; }
+.q-cal__time { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-top: var(--space-12); padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
+.q-cal__time label { color: var(--text-muted); }
+.q-cal__time .q-selwrap { width: 112px; }
+.q-cal__ft { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-12); }
+@media (max-width: 767px) {
+  .q-date { max-width: none; }
+  .q-date__pop { width: min(320px, calc(100vw - 2 * var(--gutter))); }
+  .q-cal__d { height: 40px; }
+}
+
+/* ---------------------------------------------------------------- file drop zone (ui/forms.html: file_drop) */
+
+.q-drop { position: relative; display: block; }
+.q-drop__in { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip-path: inset(50%); }
+.q-drop__zone {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8);
+  min-height: 64px; padding: var(--space-12) var(--space-16);
+  border: var(--border-width) dashed var(--border-strong); border-radius: var(--radius-card);
+  background: var(--surface); color: var(--text-muted); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-drop__zone > .q-icon { color: var(--text-subtle); }
+.q-drop__zone:hover, .q-drop.is-over .q-drop__zone { background: var(--fill); border-color: var(--text-subtle); }
+.q-drop__in:focus-visible + .q-drop__zone { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-drop__act { color: var(--link); font-weight: var(--weight-medium); }
+.q-drop__name { flex-basis: 100%; color: var(--text); font-weight: var(--text-body-strong-weight); overflow-wrap: anywhere; }
+.q-drop__name:empty { display: none; }
+.q-drop.is-filled .q-drop__or { display: none; }
+
+@media (max-width: 767px) {
+  /* A phone keeps the one primary action beside the headline, as an icon (screens.md C.2). */
+  .q-home .q-ph__row { flex-wrap: nowrap; }
+  .q-home .q-ph__act .q-btn--primary { width: var(--target-touch); height: var(--target-touch); padding: 0; }
+  .q-home .q-ph__act .q-btn--primary > span:not(.q-btn__busy),
+  .q-home .q-ph__act .q-btn--primary > .q-icon:last-child:not(:first-child) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .q-compose__act { flex-direction: column; align-items: stretch; }
+  .q-compose__act .q-btn { --btn-h: var(--target-touch); }
+  .q-typecard { max-width: none; }
+}
+
+/* ---------------------------------------------------------------- the vaults list (vaults/list.html) */
+
+.q-dec__d { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 56ch; }
+.q-c-label { display: none; }
+@media (max-width: 767px) {
+  .q-c-label { display: inline; color: var(--text-muted); }
+  .q-table--stack .q-c-status.is-num { text-align: left; }
+}
+
+.q-table td.is-num { white-space: nowrap; }
+
+/* ---------------------------------------------------------------- R2 review fixes */
+
+/* The breadcrumb's wrapper takes the bar's free space, so the bell, help and avatar sit at the
+ * right edge rather than against the trail. */
+.q-crumbs-nav { flex: 1; min-width: 0; }
+
+/* Rejections under the approval count: "Rejected 0 of 2" alone hides why. */
+.q-sigs__rej { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* The date popover opens upwards when there is no room below the field (qvault.js decides). */
+.q-date__pop.is-up { top: auto; bottom: calc(100% + 4px); }
+.q-date__read { font-weight: var(--weight-regular); color: var(--text-muted); }
+.q-inwrap { max-width: 280px; }
+
+/* Remove is a quiet action until it is pointed at. */
+.q-c-actions .q-btn--ghost { color: var(--text-muted); }
+.q-c-actions .q-btn--ghost:hover { color: var(--status-critical-fg); }
+
+@media (max-width: 767px) {
+  /* Tabs that run off a phone's edge fade there and scroll, so the hidden ones read as more. */
+  .q-tabs { scroll-padding-inline: var(--gutter); mask-image: linear-gradient(to right, var(--text) 85%, transparent); }
+  .q-toolbar .q-field--inline:first-of-type { flex-basis: 100%; }
+  .q-toolbar .q-field--inline { flex: 1 1 40%; }
+  .q-date__btn { right: 0; top: 0; width: 40px; height: 100%; }
+  .q-vault .q-ph__act .q-btn--primary { width: var(--target-touch); height: var(--target-touch); padding: 0; }
+  .q-vault .q-ph__act .q-btn--primary > span:not(.q-btn__busy) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .q-vault .q-ph__row { flex-wrap: nowrap; }
+}
+.q-sigs--rej { flex-wrap: wrap; row-gap: 0; }
+.q-sigs--rej .q-sigs__rej { flex-basis: 100%; }
+
+/* A table's header says "(UTC)" once; a stacked phone row has no header, so its time says it. */
+.q-table .q-due__zone { display: none; }
+@media (max-width: 767px) { .q-table--stack .q-due__zone { display: inline; } }

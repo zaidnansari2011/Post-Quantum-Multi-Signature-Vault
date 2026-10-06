@@ -3,13 +3,37 @@
    The field names are the ones the routes read, so a converted form posts exactly what it did.
 
    field(name, label, type='text', value=None, caption=None, error=None, required=False,
-         id=None, attrs={})
+         id=None, attrs={}, suffix=None, mono=False)
      type    any input type, or 'textarea'.
+     suffix  a unit drawn inside the right edge of the input ("ETH"); not part of the value.
+     mono    set the value in the mono face: for an address or a hash, never for prose.
      error   a message or a list of messages (a WTForms field's .errors works as is).
      id      defaults to 'f-' ~ name.
 
-   select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={})
+   select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={},
+          inline=False)
      options  a list of (value, text) pairs; selected is compared as a string.
+     inline   for a toolbar filter: the label is read but not shown (the first option names the
+              filter, "All vaults"), and the field takes no bottom margin.
+
+   due_field(name, label, value=None, caption=None, error=None, min=None, max=None, id=None,
+             empty='No due date')
+     A due date and time, in UTC, without the browser's native date control. It is a text input
+     a person can type "2026-10-13 17:00" into (the form reads that format and the native one),
+     with a calendar button: qvault.js opens a month grid and a time list and writes the input,
+     and reads the chosen moment back in words under the field ("Tue 13 Oct 2026, 17:00 UTC, in
+     7 days"). min and max (datetimes) bound the calendar; the route refuses a past due time and
+     a payment's longer than 30 days. empty is
+     what the read-back says while the field is blank. Elements anywhere on the page marked
+     data-due-echo="<id>" show the same words (the "who approves" preview).
+
+   file_drop(name, label, caption=None, error=None, id=None)
+     A file input drawn as a drop zone: "Choose a file or drop it here", then the chosen file's
+     name and size. The input itself stays in the page (visually hidden, still focusable), so it
+     posts exactly as before and works without JavaScript; qvault.js adds the drop and the name.
+
+   search(name, label, value=None, placeholder=None, id=None)
+     A search box for a toolbar, with its magnifier drawn inside. The label is read, not shown.
 
    checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={})
    switch(name, label, checked=False, value='1', caption=None, id=None, attrs={})
@@ -35,14 +59,17 @@
 {%- endmacro %}
 
 {% macro field(name, label, type='text', value=None, caption=None, error=None, required=False,
-               id=None, attrs={}) -%}
+               id=None, attrs={}, suffix=None, mono=False) -%}
 {%- set fid = id or 'f-' ~ name -%}
+{%- set cls = 'q-input' ~ (' q-input--mono' if mono else '') -%}
 <div class="q-field">
   <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
   {%- if type == 'textarea' %}
-  <textarea class="q-input" id="{{ fid }}" name="{{ name }}"{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>{{ value if value is not none }}</textarea>
+  <textarea class="{{ cls }}" id="{{ fid }}" name="{{ name }}"{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>{{ value if value is not none }}</textarea>
+  {%- elif suffix %}
+  <span class="q-inwrap"><input class="{{ cls }}" id="{{ fid }}" name="{{ name }}" type="{{ type }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}><span class="q-inwrap__sfx" aria-hidden="true">{{ suffix }}</span></span>
   {%- else %}
-  <input class="q-input" id="{{ fid }}" name="{{ name }}" type="{{ type }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
+  <input class="{{ cls }}" id="{{ fid }}" name="{{ name }}" type="{{ type }}"{% if value is not none %} value="{{ value }}"{% endif %}{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
   {%- endif %}
   {%- if caption %}
   <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
@@ -53,10 +80,11 @@
 </div>
 {%- endmacro %}
 
-{% macro select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={}) -%}
+{% macro select(name, label, options, selected=None, caption=None, error=None, id=None, attrs={},
+                inline=False) -%}
 {%- set fid = id or 'f-' ~ name -%}
-<div class="q-field">
-  <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
+<div class="q-field{% if inline %} q-field--inline{% endif %}">
+  <label class="{{ 'visually-hidden' if inline else 'q-field__label' }}" for="{{ fid }}">{{ label }}</label>
   <span class="q-selwrap">
     <select class="q-select" id="{{ fid }}" name="{{ name }}"{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
       {%- for value, text in options %}
@@ -71,6 +99,54 @@
   {%- if error %}
   <div id="{{ fid }}-err">{{ _errors(error) }}</div>
   {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro due_field(name, label, value=None, caption=None, error=None, min=None, max=None, id=None,
+                   empty='No due date') -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-field" data-due-field{% if min %} data-min="{{ ui_iso(min) }}"{% endif %}{% if max %} data-max="{{ ui_iso(max) }}"{% endif %} data-empty="{{ empty }}">
+  <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
+  <span class="q-date">
+    <input class="q-input q-date__in" id="{{ fid }}" name="{{ name }}" type="text" inputmode="numeric" autocomplete="off"
+      spellcheck="false"{% if value %} value="{{ value }}"{% endif %}{{ _described(fid, caption or True, error) }}>
+    <button class="q-date__btn" type="button" data-due-open aria-haspopup="dialog" aria-expanded="false" aria-controls="{{ fid }}-pop" aria-label="Choose a date" title="Choose a date">{{ icon('calendar') }}</button>
+    <span class="q-date__pop" id="{{ fid }}-pop" role="dialog" aria-label="Choose {{ label|lower }}" data-due-pop hidden></span>
+  </span>
+  <p class="q-field__cap" id="{{ fid }}-cap"><span class="q-date__read" data-due-read id="{{ fid }}-read" aria-live="polite">{{ empty }}</span>{% if caption %} {{ caption }}{% endif %}</p>
+  {%- if error %}
+  <div id="{{ fid }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro file_drop(name, label, caption=None, error=None, id=None) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-field">
+  <span class="q-field__label" id="{{ fid }}-l">{{ label }}</span>
+  <span class="q-drop" data-drop>
+    <input class="q-drop__in" type="file" id="{{ fid }}" name="{{ name }}" aria-labelledby="{{ fid }}-l"{{ _described(fid, caption, error) }}>
+    <label class="q-drop__zone" for="{{ fid }}">
+      {{ icon('upload') }}
+      <span class="q-drop__t"><span class="q-drop__act">Choose a file</span> <span class="q-drop__or">or drop it here</span></span>
+      <span class="q-drop__name" data-drop-name></span>
+    </label>
+  </span>
+  {%- if caption %}
+  <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
+  {%- endif %}
+  {%- if error %}
+  <div id="{{ fid }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro search(name, label, value=None, placeholder=None, id=None) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-search">
+  <label class="visually-hidden" for="{{ fid }}">{{ label }}</label>
+  {{ icon('search') }}
+  <input class="q-input" id="{{ fid }}" name="{{ name }}" type="search"{% if value %} value="{{ value }}"{% endif %}{% if placeholder %} placeholder="{{ placeholder }}"{% endif %} autocomplete="off">
 </div>
 {%- endmacro %}
 
