@@ -29,6 +29,8 @@
   {% set summary = 'The next is due ' ~ next_due ~ ' UTC.' %}
 {% elif n %}
   {% set summary = None %}
+{% elif not work.approves_anywhere %}
+  {% set summary = 'You can see your vaults’ decisions but approve in none of them.' %}
 {% elif work.open_total %}
   {% set summary = ui_count_word(work.open_total) ~ (' decision is' if work.open_total == 1 else ' decisions are') ~ ' open in your vaults, none of them waiting on you.' %}
 {% else %}
@@ -82,17 +84,21 @@
 
 <div class="q-home__cols">
   <div class="q-home__work">
+    {%- if work.approves_anywhere %}
     {{ work_list('home-needs', 'Yours to sign', needs.rows, needs.total, 'mine',
-                 empty='Nothing needs your signature. Everything you can approve has been signed.',
+                 empty='None right now. Everything you can approve has been signed.',
                  more={'label': 'Open Approvals', 'href': url_for('approvals.index')}) }}
+    {%- endif %}
     {{ work_list('home-due', 'Due soon', work.due_soon.rows, work.due_soon.total, 'others',
                  caption='Next 48 hours',
                  empty='Nothing else is due in the next 48 hours.',
                  near_empty='Nothing else is due in the next 48 hours.',
                  more={'label': 'Open Expiring soon', 'href': url_for('approvals.index', tab='expiring')}) }}
+    {%- if work.approves_anywhere %}
     {{ work_list('home-waiting', 'Waiting on others', work.waiting.rows, work.waiting.total, 'others',
                  empty='Nothing you raised or signed is waiting on anyone.',
                  more={'label': 'See all in Approvals', 'href': url_for('approvals.index', tab='waiting')}) }}
+    {%- endif %}
   </div>
 
   <section class="q-act" aria-labelledby="home-activity">

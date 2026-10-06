@@ -541,7 +541,8 @@ def home(user: User, *, now: datetime | None = None) -> dict:
         .order_by(Proposal.created_at.desc())
         .limit(HOME_SCAN)
     )
-    rows = decorate(db.session.scalars(stmt).unique().all(), user, signer_vault_ids(user), now=now)
+    signer_vaults = signer_vault_ids(user)
+    rows = decorate(db.session.scalars(stmt).unique().all(), user, signer_vaults, now=now)
     needs, due_soon, waiting = [], [], []
     for row in rows:
         p = row["proposal"]
@@ -561,6 +562,9 @@ def home(user: User, *, now: datetime | None = None) -> dict:
         1 for r in needs if r["proposal"].expires_at is not None and _day(r) == today
     )
     sections["open_total"] = len(rows)
+    # Someone who approves in no vault (a viewer everywhere) is never asked to sign, so Home
+    # does not offer them an empty "Yours to sign" as if it might fill.
+    sections["approves_anywhere"] = bool(signer_vaults)
     return sections
 
 

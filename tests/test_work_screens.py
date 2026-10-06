@@ -338,6 +338,9 @@ def test_a_viewer_gets_no_new_decision_on_home(app, team, client):
     _login(client, "dara@e.com")
     page = client.get("/").get_data(as_text=True)
     assert "/proposals/new" not in page
+    # Nor an empty "Yours to sign" that could never fill: a viewer approves nothing.
+    assert "Yours to sign" not in page and "Waiting on others" not in page
+    assert "approve in none of them" in page
 
 
 def test_recent_activity_is_one_item_per_decision_and_only_from_your_vaults(app, team):
