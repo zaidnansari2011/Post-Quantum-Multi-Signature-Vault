@@ -35,6 +35,10 @@ interface Input {
   decline_presence?: boolean;
   /** Stop after enrolling, without voting. */
   enrol_only?: boolean;
+  /** Simulate a phone with no screen lock (refused before enrolling). */
+  no_screen_lock?: boolean;
+  /** Simulate the screen lock being removed after enrolling (refused before signing). */
+  lock_removed_after_enrol?: boolean;
 }
 
 const input: Input = JSON.parse(readFileSync(process.argv[2], 'utf8'));
@@ -49,9 +53,14 @@ function memoryCustody(): Custody {
   let seed: Uint8Array | null = null;
   let token: string | null = null;
   let identity: StoredIdentity | null = null;
+  const lockLevel = (): ProtectionLevel =>
+    input.no_screen_lock || (input.lock_removed_after_enrol && identity !== null)
+      ? 'none'
+      : 'device_credential';
   return {
+    // A handset with a PIN, as every phone that may sign has; 'none' only when a test asks.
     async detectProtection(): Promise<ProtectionLevel> {
-      return 'none';
+      return lockLevel();
     },
     async confirmPresence(): Promise<ProtectionLevel> {
       if (input.decline_presence) {
@@ -59,7 +68,7 @@ function memoryCustody(): Custody {
         err.name = 'AuthenticationCancelled';
         throw err;
       }
-      return 'none';
+      return lockLevel();
     },
     async createKeyPair(algId: string) {
       seed = new Uint8Array(randomBytes(32));
