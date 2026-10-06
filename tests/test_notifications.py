@@ -10,10 +10,12 @@ thing it describes.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import event
 from test_payouts import PASSWORD as PAY_PASSWORD
 from test_payouts import (
     RECIPIENT,
@@ -655,6 +657,58 @@ def test_unread_counts_follow_reads_and_archives(team):
     assert notification_service.unread_counts(team.brij)["total"] == 0
     assert [i["id"] for i in _section(team.brij, "archived")] == [added["id"]]
     assert _section(team.brij, "updates") == []
+
+
+@contextmanager
+def _statements():
+    """Every SQL statement run inside the block, as text."""
+    seen: list[str] = []
+
+    def record(conn, cursor, statement, *args):  # noqa: ARG001 - the listener's signature
+        seen.append(statement)
+
+    event.listen(db.engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(db.engine, "before_cursor_execute", record)
+
+
+def test_a_page_of_the_inbox_costs_the_same_queries_however_many_it_shows(team):
+    """Each notification's words read its decision, the decision's payment and who raised it;
+    those load for the whole page at once, not one query per notification."""
+
+    def queries_for_a_page(section, user) -> int:
+        db.session.expire_all()  # nothing already loaded: count what a fresh request would run
+        with _statements() as seen:
+            notification_service.inbox(user, section)
+        return len(seen)
+
+    def approved(title):
+        proposal = _raise(team, title=title)
+        _vote(proposal, team.brij)
+        _vote(proposal, team.chen)
+
+    _raise(team, title="One")
+    approved("Approved one")
+    few = {
+        "needs_you": queries_for_a_page("needs_you", team.chen),
+        "updates": queries_for_a_page("updates", team.ada),
+    }
+    for n in range(3):
+        _raise(team, title=f"More {n}")
+        approved(f"Approved more {n}")
+    assert queries_for_a_page("needs_you", team.chen) == few["needs_you"]
+    assert queries_for_a_page("updates", team.ada) == few["updates"]
+
+
+def test_unread_counts_are_one_query(team):
+    _raise(team)
+    with _statements() as seen:
+        counts = notification_service.unread_counts(team.brij)
+    assert counts == {"needs_you": 1, "updates": 1, "total": 2}
+    # Loading Brij himself does not count; reading the notifications is one statement.
+    assert sum("FROM notifications" in sql for sql in seen) == 1
 
 
 def test_mark_all_read_can_be_limited_to_a_section(team):

@@ -15,7 +15,10 @@ import re
 from datetime import UTC, timedelta
 
 import pytest
-from test_notifications import team  # noqa: F401 - the fixture
+from test_notifications import (
+    _statements,
+    team,  # noqa: F401 - the fixture
+)
 
 from qvault.extensions import db
 from qvault.models import Notification
@@ -65,6 +68,23 @@ def test_the_bell_is_a_plain_link_to_the_inbox_with_the_unread_count(client, tea
     # of them waiting on him, so the badge is the loud one.
     assert 'nbell__badge nbell__badge--needs">2' in html
     assert "2 unread, 1 waiting on you" in _text(html)
+
+
+def test_the_inbox_works_out_the_unread_counts_once_for_the_page_and_the_bell(client, team):
+    _raise(team)
+    _login(client, team.brij)
+    with _statements() as seen:
+        html = client.get("/notifications/").get_data(as_text=True)
+    assert 'nbell__badge nbell__badge--needs">2' in html
+    assert sum("sum(case" in sql.lower() for sql in seen) == 1
+
+
+def test_the_counts_of_one_request_are_not_shown_in_the_next(client, team):
+    _raise(team)
+    _login(client, team.brij)
+    assert 'nbell__badge nbell__badge--needs">2' in client.get("/").get_data(as_text=True)
+    client.post("/notifications/read-all")
+    assert "nbell__badge" not in client.get("/").get_data(as_text=True)
 
 
 def test_the_bell_is_quiet_when_nothing_unread_waits_on_you(client, team):
