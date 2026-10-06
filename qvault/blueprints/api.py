@@ -35,13 +35,14 @@ from qvault.extensions import db
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.treasury import TreasurySigner
-from qvault.models.vault import Vault, VaultMember
+from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
     approval_service,
     auth_service,
     device_service,
     execution_service,
+    inbox_service,
     key_service,
     notification_service,
     payout_service,
@@ -58,6 +59,7 @@ from qvault.services.proposal_service import PaymentRequest, ProposalError
 from qvault.services.signing import signing_bytes_for
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
+from qvault.ui import status_of
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
@@ -285,7 +287,9 @@ def _vault_summary(vault: Vault, user) -> dict:
     member = vault.member_for(user.id)
     awaiting = 0
     for p in vault.proposals:
-        if p.status != "open":
+        # The effective status, not the stored one: a deadline that passed before the sweep ran
+        # leaves the count at once (rework S20), as it leaves every other needs-you queue.
+        if inbox_service.effective_status(p) != "open":
             continue
         if approval_service.vote_of(p, user.id) is not None:
             continue
@@ -773,6 +777,7 @@ def _authorized_ids(proposal) -> set[int]:
 def _proposal_summary(proposal, user) -> dict:
     approvals, rejections = approval_service.tally(proposal)
     return {
+        **_summary_facts(proposal, user, approvals, rejections),
         "proposal_uuid": proposal.proposal_uuid,
         "title": proposal.title,
         "vault_id": proposal.vault_id,
@@ -789,6 +794,35 @@ def _proposal_summary(proposal, user) -> dict:
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
     }
+
+
+def _summary_facts(proposal, user, approvals: int, rejections: int) -> dict:
+    """The status as every web list says it (rework S6): ``display_status`` is the key of the
+    closed vocabulary with its word and tone, from the same ``inbox_service.status_key`` the Home
+    lists and the inbox use. Additive: ``status`` stays the stored value the app already reads,
+    and the app may show this word instead of working one out."""
+    status = inbox_service.effective_status(proposal)
+    authorised = user.id in _authorized_ids(proposal)
+    member = proposal.vault.member_for(user.id) if proposal.vault else None
+    needs_me = (
+        status == "open"
+        and authorised
+        and member is not None
+        and member.member_role in SIGNER_ROLES
+        and approval_service.vote_of(proposal, user.id) is None
+    )
+    payout = payout_service.payout_of(proposal) if proposal.action is not None else None
+    key, n = inbox_service.status_key(
+        status,
+        needs_me=needs_me,
+        approvals=approvals,
+        required_m=proposal.required_m,
+        payment=proposal.action is not None,
+        payout_state=payout.state if payout is not None else None,
+        treasuries_on=bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED")),
+    )
+    word, tone = status_of(key, n)
+    return {"display_status": {"key": key, "word": word, "tone": tone}}
 
 
 def _payment_view(stored) -> dict:
@@ -864,6 +898,10 @@ def list_proposals():
     for p in proposals:
         summary = _proposal_summary(p, user)
         if state == "awaiting" and (summary["signed_by_me"] or not summary["can_sign"]):
+            continue
+        if state == "awaiting" and inbox_service.effective_status(p) != "open":
+            # Its deadline passed and the sweep has not run yet: it can no longer take a
+            # signature, so it is not awaiting one (rework S20).
             continue
         out.append(summary)
     return jsonify(ok=True, proposals=out, state=state)
