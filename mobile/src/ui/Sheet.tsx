@@ -104,8 +104,13 @@ export function Sheet({ visible, onClose, title, children, footer, dismissible =
       });
       // Focus moves to the title, so a screen reader starts at the top of the sheet (§5.9).
       const at = setTimeout(() => {
-        const node = titleRef.current ? findNodeHandle(titleRef.current) : null;
-        if (node) AccessibilityInfo.setAccessibilityFocus(node);
+        if (Platform.OS === 'web' || !titleRef.current) return;
+        try {
+          const node = findNodeHandle(titleRef.current);
+          if (node) AccessibilityInfo.setAccessibilityFocus(node);
+        } catch {
+          // Focus is a courtesy to a screen reader; failing to move it must not break the sheet.
+        }
       }, t.motion.dialog);
       return () => clearTimeout(at);
     }

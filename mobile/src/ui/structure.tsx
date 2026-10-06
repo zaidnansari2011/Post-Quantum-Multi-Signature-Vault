@@ -6,6 +6,7 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
+  type RefreshControlProps,
   View,
   useWindowDimensions,
   type NativeScrollEvent,
@@ -178,6 +179,7 @@ export function CollapsedBar({
       pointerEvents={visible ? 'box-none' : 'none'}
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
+      aria-hidden={!visible}
     >
       <View style={s.navSide} />
       <View style={[s.navTitle, s.navTitleCentred]}>
@@ -186,7 +188,11 @@ export function CollapsedBar({
         </Text>
       </View>
       <View style={[s.navSide, s.navTrailing]}>
-        {action ? <IconButton icon={action.icon} label={action.label} onPress={action.onPress} /> : null}
+        {/* Only while shown: a hidden duplicate of the header's button would be a second target
+            for the same action, reachable by a screen reader but not by a finger. */}
+        {action && visible ? (
+          <IconButton icon={action.icon} label={action.label} onPress={action.onPress} />
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -232,11 +238,22 @@ export function Scroll({
   );
 }
 
-/** Pull to refresh in the theme's colours. */
-export function ThemedRefresh({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
+/**
+ * Pull to refresh in the theme's colours.
+ *
+ * Every other prop is passed through: a ScrollView clones its `refreshControl` and hands it the
+ * scroll view itself as children (Android and the web wrap the list in the control), so a wrapper
+ * that dropped them would render no list at all.
+ */
+export function ThemedRefresh({
+  refreshing,
+  onRefresh,
+  ...rest
+}: { refreshing: boolean; onRefresh: () => void } & Omit<RefreshControlProps, 'refreshing' | 'onRefresh'>) {
   const t = useTheme();
   return (
     <RefreshControl
+      {...rest}
       refreshing={refreshing}
       onRefresh={onRefresh}
       tintColor={t.color.textMuted}

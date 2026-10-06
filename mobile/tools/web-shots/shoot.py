@@ -1,16 +1,19 @@
 """Web screenshot harness ONLY: drive the phone app's web build like a user; capture every screen.
 
-Usage: python shoot.py <harness origin> <out dir> <state dir>
+Usage: python shoot.py <harness origin> <out dir> <state dir> [theme] [font scale]
   harness origin  where serve.py is serving the web export, e.g. http://127.0.0.1:8099
   out dir         PNGs land here as app_<NN>_<screen>.png
   state dir       enrolled-device browser state (ada.json, brij.json) so a re-run reuses the same
                   enrolled devices instead of enrolling new ones
+  theme           light (default) or dark: the app's ThemeProvider override (phone-ux §3.6)
+  font scale      1 (default) or e.g. 2: the provider's emulated text size (§8.1)
 
 Phone viewport: 390x844 CSS px at deviceScaleFactor 2. Any request that is not to the harness
 origin is aborted, so nothing can reach a production host. Raising decisions is idempotent by title.
 """
 
 import json
+import re
 import sys
 import time
 import urllib.request
@@ -21,6 +24,9 @@ from playwright.sync_api import sync_playwright
 BASE = sys.argv[1].rstrip("/")
 OUT = Path(sys.argv[2])
 STATE = Path(sys.argv[3])
+THEME = sys.argv[4] if len(sys.argv) > 4 else "light"
+SCALE = sys.argv[5] if len(sys.argv) > 5 else "1"
+QUERY = f"?theme={THEME}&fontScale={SCALE}"
 OUT.mkdir(parents=True, exist_ok=True)
 STATE.mkdir(parents=True, exist_ok=True)
 
@@ -28,6 +34,18 @@ W, H = 390, 844
 PASSWORD = "demo-password-2026"
 counter = {"n": 0}
 taken = []
+audit = {"checked": 0, "findings": []}
+
+# The touch-target audit (phone-ux §4.6): ui/Touchable writes its effective target to
+# data-hit-w / data-hit-h because react-native-web ignores hitSlop. Under 48, or a target inside
+# another target, is a finding. Run on every screen this tour shoots.
+AUDIT = """() => [...document.querySelectorAll('[data-hit-w]')]
+  .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+  .map((el) => ({
+    w: Number(el.dataset.hitW), h: Number(el.dataset.hitH),
+    label: el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 40),
+    nested: !!(el.parentElement && el.parentElement.closest('[data-hit-w]')),
+  }))"""
 
 
 # -- plumbing ---------------------------------------------------------------------------------
@@ -101,6 +119,10 @@ def shot(page, name, tall=False, wait_ms=500):
     page.screenshot(path=str(path))
     taken.append(path.name)
     print("shot", path.name, flush=True)
+    for target in page.evaluate(AUDIT):
+        audit["checked"] += 1
+        if target["w"] < 48 or target["h"] < 48 or target["nested"]:
+            audit["findings"].append({"screen": name, **target})
     if tall:
         height = H
         for _ in range(4):  # a list may render more rows once the viewport grows
@@ -121,7 +143,11 @@ def shot(page, name, tall=False, wait_ms=500):
 
 
 def button(page, name):
-    return page.get_by_role("button", name=name, exact=True).first
+    """A button by its name; a decision or vault row by the title its composed name starts with."""
+    exact = page.get_by_role("button", name=name, exact=True)
+    if exact.count():
+        return exact.first
+    return page.get_by_role("button", name=re.compile("^" + re.escape(name) + r"\.")).first
 
 
 def tab(page, name):
@@ -165,7 +191,7 @@ def enrol(browser, email, state_file):
     if Path(state_file).exists():
         return
     ctx, page = new_page(browser)
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_placeholder("you@example.com").fill(email)
     page.get_by_placeholder("Your Q-Vault password").fill(PASSWORD)
     button(page, "Enrol this device").click()
@@ -245,7 +271,7 @@ with sync_playwright() as p:
 
     # 1. Enrolment, as someone meeting the app for the first time.
     ctx, page = new_page(browser)
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_placeholder("you@example.com").wait_for(timeout=60000)
     shot(page, "enrol")
     page.get_by_placeholder("you@example.com").fill("ada@qvault.demo")
@@ -262,20 +288,20 @@ with sync_playwright() as p:
     # 2. Loading and failure states of the queue (API delayed, then refused).
     ctx, page = new_page(browser, ada_state)
     page.route("**/api/v1/proposals*", lambda r: None)  # left pending: the queue stays loading
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_role("tab", name="Account", exact=True).wait_for(timeout=60000)
     shot(page, "home_loading", wait_ms=600)
     ctx.close()
     ctx, page = new_page(browser, ada_state)
     page.route("**/api/v1/proposals*", lambda r: r.abort())
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_text("Could not load your approvals.").wait_for(timeout=60000)
     shot(page, "home_error")
     ctx.close()
 
     # 3. Raising decisions (Ada).
     ctx, page = new_page(browser, ada_state)
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_role("tab", name="Account", exact=True).wait_for(timeout=60000)
     quiet(page)
     existing = titles(ada_state)
@@ -328,10 +354,10 @@ with sync_playwright() as p:
 
     # 4. A second signer (Brij, on his own phone) approves one, so Ada's signature completes it.
     ctx, page = new_page(browser, brij_state)
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_role("tab", name="Account", exact=True).wait_for(timeout=60000)
     quiet(page)
-    brij_target = page.get_by_role("button", name=RAISE[0]["title"], exact=True)
+    brij_target = button(page, RAISE[0]["title"])
     if brij_target.count():
         open_card(page, RAISE[0]["title"])
         if button(page, "Approve").count():
@@ -345,7 +371,7 @@ with sync_playwright() as p:
 
     # 5. The main tour (Ada).
     ctx, page = new_page(browser, ada_state)
-    page.goto(BASE + "/")
+    page.goto(BASE + "/" + QUERY)
     page.get_by_role("tab", name="Account", exact=True).wait_for(timeout=60000)
     quiet(page)
     shot(page, "home", tall=True)
@@ -375,7 +401,7 @@ with sync_playwright() as p:
         ("Return 0.0001 ETH to the relayer", "decision_payment_paid"),
         ("Tamper demonstration", "decision_payment_failed"),
     ]:
-        if not page.get_by_role("button", name=title, exact=True).count():
+        if not button(page, title).count():
             print("MISSING card", title)
             continue
         open_card(page, title)
@@ -433,28 +459,28 @@ with sync_playwright() as p:
 
     tctx, tpage = new_page(browser, ada_state)
     tpage.route("**/api/v1/proposals/*", tamper)
-    tpage.goto(BASE + "/")
+    tpage.goto(BASE + "/" + QUERY)
     tpage.get_by_role("tab", name="Account", exact=True).wait_for(timeout=60000)
     quiet(tpage)
-    if tpage.get_by_role("button", name=TAMPER_TITLE, exact=True).count():
+    if button(tpage, TAMPER_TITLE).count():
         open_card(tpage, TAMPER_TITLE)
         shot(tpage, "decision_integrity_failure_simulated", tall=True)
     tctx.close()
 
     # 8. Signing, three ways. From the queue, as an approver would.
     tab(page, "Approvals")
-    if page.get_by_role("button", name=TREASURY_RAISE["title"], exact=True).count():
+    if button(page, TREASURY_RAISE["title"]).count():
         open_card(page, TREASURY_RAISE["title"])
         if button(page, "Approve").count():
             sign(page, "Approve", "signed_overlay", "decision_after_signing")
         back(page)
-    if page.get_by_role("button", name=RAISE[0]["title"], exact=True).count():
+    if button(page, RAISE[0]["title"]).count():
         open_card(page, RAISE[0]["title"])
         shot(page, "decision_open_one_more_needed", tall=True)
         if button(page, "Approve").count():
             sign(page, "Approve", "signed_overlay_threshold_met", "decision_after_threshold_met")
         back(page)
-    if page.get_by_role("button", name=RAISE[1]["title"], exact=True).count():
+    if button(page, RAISE[1]["title"]).count():
         open_card(page, RAISE[1]["title"])
         shot(page, "decision_open_long_text", tall=True)
         if button(page, "Reject").count():
@@ -466,7 +492,7 @@ with sync_playwright() as p:
     # 9. A new vault, created from the vault list.
     tab(page, "Vaults")
     vault_name = "Board approvals"
-    exists = page.get_by_role("button", name=vault_name, exact=True).count() > 0
+    exists = button(page, vault_name).count() > 0
     button(page, "Create a vault").click()
     page.get_by_placeholder("Payments above the delegated limit").wait_for(timeout=30000)
     shot(page, "new_vault_empty")
@@ -499,3 +525,7 @@ with sync_playwright() as p:
     browser.close()
 
 print("\n".join(taken))
+(OUT / "audit.json").write_text(json.dumps(audit, indent=2), encoding="utf-8", newline="\n")
+print(f"audit: {audit['checked']} targets checked, {len(audit['findings'])} findings")
+for finding in audit["findings"]:
+    print("  ", finding)
