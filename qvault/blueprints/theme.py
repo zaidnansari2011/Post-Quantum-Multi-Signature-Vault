@@ -1,11 +1,12 @@
 """The colour theme: System, Light or Dark (rework decision S25).
 
-S25 asks for the choice to be stored per user. On this branch it is stored in a cookie instead,
-because R1 carries no migration (revisions 0002 and 0003 live on other branches); the per-user
-column follows at integration as revision 0004, with the cookie kept as the signed-out fallback. A
-cookie is read on the same request that renders the page, so ``<html>`` carries ``data-theme``
-before the first paint and the page never flashes the wrong theme. "System" is the absence of a
-choice: no cookie, no attribute, and the stylesheet follows ``prefers-color-scheme``.
+S25 asks for the choice to be stored per user. A choice made signed in is stored on the person
+(``user_settings``, revision 0004), so it follows them to every browser, and in a cookie, so this
+browser keeps it after they sign out; signed out, or before they have ever chosen, the cookie
+decides. Both are read on the same request that renders the page, so ``<html>`` carries
+``data-theme`` before the first paint and the page never flashes the wrong theme. "System" draws no
+attribute, and the stylesheet follows ``prefers-color-scheme``; signed in it is stored as
+``"system"``, so it overrides a cookie left by an earlier choice.
 
 Setting it is a form post that sends the reader back where they were, to a path on this site only.
 It is exempt from the app's CSRF token on purpose. The picker is on every page, signed out ones
@@ -20,10 +21,12 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 from flask import Blueprint, abort, current_app, redirect, request, url_for
+from flask_login import current_user
 from werkzeug.exceptions import HTTPException
 from werkzeug.routing import RequestRedirect
 
-from qvault.extensions import csrf
+from qvault.extensions import csrf, db
+from qvault.models import UserSetting
 from qvault.security.redirects import safe_next
 
 bp = Blueprint("theme", __name__)
@@ -36,8 +39,24 @@ STORED = ("light", "dark")
 ONE_YEAR = 365 * 24 * 60 * 60
 
 
+def _stored_theme(user_id: int) -> str | None:
+    setting = db.session.get(UserSetting, user_id)
+    return setting.theme if setting is not None else None
+
+
 def current_theme() -> str | None:
-    """``"light"`` or ``"dark"`` when the reader chose one, ``None`` for System."""
+    """``"light"`` or ``"dark"`` when the reader chose one, ``None`` for System.
+
+    A signed-in person's own choice wins; without one, the cookie. An error page is drawn with this
+    too, and a 500 may come from the database itself: if the person cannot be read, the cookie
+    decides rather than the error page failing as well.
+    """
+    try:
+        own = _stored_theme(current_user.id) if current_user.is_authenticated else None
+    except Exception:  # noqa: BLE001 - only ever the page's colours; see the docstring
+        own = None
+    if own is not None:
+        return own if own in STORED else None
     value = request.cookies.get(COOKIE)
     return value if value in STORED else None
 
@@ -108,6 +127,13 @@ def set_theme():
     choice = request.form.get("theme", "")
     if choice not in CHOICES:
         abort(400)
+    if current_user.is_authenticated:
+        setting = db.session.get(UserSetting, current_user.id)
+        if setting is None:
+            setting = UserSetting(user_id=current_user.id)
+            db.session.add(setting)
+        setting.theme = choice
+        db.session.commit()
     response = redirect(_return_path(), 303)
     # Behind a proxy that ends TLS (the Azure deployment), request.is_secure is False even though
     # the reader is on HTTPS, so the cookie follows the session cookie's switch as well.

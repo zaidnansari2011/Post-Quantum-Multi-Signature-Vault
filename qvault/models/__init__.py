@@ -33,6 +33,7 @@ from .signer_preference import SignerPreference
 from .treasury import ExecutionSignature, ProposalAction, Treasury, TreasurySigner
 from .treasury_job import TreasuryJob, TreasuryJobTransaction
 from .user import User
+from .user_setting import UserSetting
 from .vault import Vault, VaultMember, VaultPolicy
 from .workspace import Invitation, Workspace, WorkspaceMember
 
@@ -68,4 +69,5 @@ __all__ = [
     "Invitation",
     "Notification",
     "NotificationPreference",
+    "UserSetting",
 ]
