@@ -41,7 +41,7 @@ def _lands_on_the_members_tab(response, vid: int) -> str:
     [
         pytest.param("chen@e.com", "viewer", "Member added.", id="added"),
         pytest.param("not-an-address", "signer", "valid email", id="not-an-email"),
-        pytest.param("nobody@e.com", "signer", "No registered user", id="unregistered"),
+        pytest.param("nobody@e.com", "signer", "No one in this workspace has that email", id="unregistered"),
         pytest.param("brij@e.com", "signer", "already a member", id="already-a-member"),
         # Only a forged request can send a role the select does not offer.
         pytest.param("chen@e.com", "owner", None, id="role-not-offered"),
