@@ -13,11 +13,12 @@
 //   separate elements with real spacing, and where one of them matters more than the others it is
 //   allowed to be bigger.
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -35,6 +36,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { middleOut } from '../format.ts';
 import { color, elevation, motion, radius, space, tone, type as type_, type StatusTone } from '../theme.ts';
 
 export { Seal } from './Seal.tsx';
@@ -290,6 +292,64 @@ export function KeyValue({
   );
 }
 
+/**
+ * A long identifier -- an address -- with a label, shortened in the middle, and a Share action.
+ *
+ * Forty-two characters of mono is a value nobody reads and everybody has to scroll past. Its two
+ * ends are what a person compares against another screen, so those survive ("0xD491…f3D0"), and
+ * shortening never hides the value: tapping it shows it whole and selectable, Share hands the whole
+ * of it to the system sheet (which offers Copy), and a screen reader hears all of it.
+ *
+ * Share rather than a clipboard module: it is part of React Native, so this adds no native code to
+ * an APK already built at this runtime version (ADR-0018). A clipboard module would crash such an
+ * install on launch when the update reached it.
+ *
+ * Not for the recipient or the treasury inside a payment someone is about to sign: those are shown
+ * whole, because there the reader is checking every character of what they authorise.
+ */
+export function Identifier({ label, value }: { label: string; value: string }) {
+  const [whole, setWhole] = useState(false);
+  const short = middleOut(value);
+
+  const share = async () => {
+    try {
+      await Share.share({ message: value });
+    } catch {
+      // Where there is no share sheet, the value is shown whole to select instead.
+      setWhole(true);
+    }
+  };
+
+  return (
+    <View style={s.kv}>
+      <Text style={s.kvLabel}>{label}</Text>
+      <View style={s.identifier}>
+        <Pressable
+          onPress={() => setWhole((w) => !w)}
+          disabled={short === value}
+          accessibilityRole="button"
+          accessibilityLabel={`${label}, ${value}`}
+          accessibilityHint={whole ? 'Shortens it again' : 'Shows it in full'}
+          style={{ flex: 1 }}
+        >
+          <Text style={s.kvMono} selectable={whole}>
+            {whole ? value : short}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => void share()}
+          accessibilityRole="button"
+          accessibilityLabel={`Share the ${label.toLowerCase()}`}
+          hitSlop={8}
+          style={({ pressed }) => [s.copy, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={s.copyText}>Share</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /** A status token. Sentence case, because an interface that shouts every state is exhausting. */
 export function Chip({ label, tone: t = 'neutral' }: { label: string; tone?: StatusTone }) {
   const palette = tone[t];
@@ -541,6 +601,18 @@ const s = StyleSheet.create({
   kvLabel: { ...type_.micro, color: color.ink3 },
   kvValue: { ...type_.body },
   kvMono: { ...type_.hash },
+
+  identifier: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  copy: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderWidth: 1,
+    borderColor: color.rule,
+    borderRadius: radius.chip + 2,
+    backgroundColor: color.surface,
+  },
+  copyText: { ...type_.micro, fontSize: 12.5, color: color.ink2 },
 
   chip: {
     borderWidth: 1,

@@ -34,7 +34,7 @@ import {
 } from '../ui/index.tsx';
 import { Sheet } from '../ui/Sheet.tsx';
 import { color, space, type } from '../theme.ts';
-import { exactly, whenPhrase } from '../time.ts';
+import { exactly, whenAfter } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import type { ProtectionLevel } from '../custody.ts';
@@ -140,21 +140,23 @@ export default function AccountScreen() {
         onClose={() => !busy && setEnding(null)}
         dismissible={!busy}
         title={ending === 'revoke' ? 'Revoke this device' : 'Sign out'}
+        footer={
+          <View style={{ gap: space.sm, marginTop: space.xs }}>
+            <Button
+              label={ending === 'revoke' ? 'Revoke device' : 'Sign out'}
+              variant="danger"
+              onPress={() => void confirmEnding()}
+              busy={busy}
+            />
+            <Button label="Cancel" variant="quiet" onPress={() => setEnding(null)} disabled={busy} />
+          </View>
+        }
       >
         <Text style={s.sheetBody}>
           {ending === 'revoke'
             ? 'The signing key on this phone is destroyed and retired server-side. Decisions you have already signed stay verifiable. To approve anything again you will need to enrol this device from scratch.'
             : 'The signing key on this phone is destroyed. To approve anything again you will need to enrol this device from scratch.'}
         </Text>
-        <View style={{ gap: space.sm, marginTop: space.xs }}>
-          <Button
-            label={ending === 'revoke' ? 'Revoke device' : 'Sign out'}
-            variant="danger"
-            onPress={() => void confirmEnding()}
-            busy={busy}
-          />
-          <Button label="Cancel" variant="quiet" onPress={() => setEnding(null)} disabled={busy} />
-        </View>
       </Sheet>
     </Screen>
   );
@@ -172,7 +174,7 @@ function OtherDevice({ device }: { device: Device }) {
           {device.fingerprint ?? '—'}
         </Text>
         <Text style={s.otherMeta}>
-          {revoked ? `Revoked ${whenPhrase(device.revoked_at)}` : `Last used ${whenPhrase(device.last_seen_at)}`}
+          {revoked ? whenAfter('Revoked', device.revoked_at) : whenAfter('Last used', device.last_seen_at)}
         </Text>
       </View>
       <Chip label={revoked ? 'Revoked' : 'Active'} tone={revoked ? 'broken' : 'sealed'} />

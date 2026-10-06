@@ -49,8 +49,9 @@ import {
 import { Assurance } from '../ui/Assurance.tsx';
 import { Sheet } from '../ui/Sheet.tsx';
 import { SignedOverlay } from '../ui/SignedOverlay.tsx';
-import { color, space, statusTone, type } from '../theme.ts';
-import { expiryPhrase, exactly, urgencyOf, whenPhrase } from '../time.ts';
+import { color, font, space, statusTone, type } from '../theme.ts';
+import { decisionStatus } from '../status.ts';
+import { expiryPhrase, exactly, urgencyOf, whenAfter, whenPhrase } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
@@ -144,20 +145,24 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
     );
   }
 
+  // The threshold as signed. The top-level copy is not under the hash (verifyProposalIntegrity
+  // refuses a response whose two copies differ), so nothing on this screen reads it.
+  const { M: requiredM, N: requiredN } = detail.signing_inputs.policy;
+
+  // The state every other screen shows for this decision (`status.ts`): the server's, unless it
+  // still says open past the deadline, which happens when this page has been open a while.
+  const settled = decisionStatus({ ...detail, required_m: requiredM, required_n: requiredN });
   const tampered = integrity !== null && !integrity.ok;
   const alreadySigned = detail.signed_by_me || outcome !== null;
-  const closed = detail.status !== 'open';
+  const closed = settled !== 'open';
   const canSign = !tampered && !alreadySigned && !closed && detail.can_sign;
 
   // Counts after this device's own vote, so the marks reflect what just happened without waiting
   // for the refetch to land.
   const approvals = outcome?.approvals ?? detail.approvals;
-  const status = outcome?.status ?? detail.status;
+  const status = outcome?.status ?? settled;
   const expiry = expiryPhrase(detail.expires_at);
   const urgency = urgencyOf(detail.expires_at);
-  // The threshold as signed. The top-level copy is not under the hash (verifyProposalIntegrity
-  // refuses a response whose two copies differ), so nothing on this screen reads it.
-  const { M: requiredM, N: requiredN } = detail.signing_inputs.policy;
 
   return (
     <Screen edges={['top']}>
@@ -189,6 +194,13 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
             they are even being asked. Long decisions step down to a reading size and hand the
             screen's moment of scale to the quorum instead, which is where it belongs once the text
             is a document rather than a sentence. */}
+        {/* The title, so a reader knows they opened the decision they meant: the name it goes by
+            in every list. A label for the decision, not the decision. It is not under the hash, so
+            it is set small in the interface face, and the signed text beneath it stays the largest
+            thing on the screen and the only words the sheet and the prompt repeat (plan S19). */}
+        <Text style={s.title} accessibilityRole="header">
+          {detail.title}
+        </Text>
         {/* Always the signed copy of the text: `detail.action_text` is not under the hash, and
             verifyProposalIntegrity refuses a response whose two copies disagree. */}
         <Text
@@ -220,7 +232,7 @@ export default function DecisionScreen({ uuid, onBack }: { uuid: string; onBack:
               {expiry}
             </Text>
           ) : null}
-          <Text style={s.timing}>Raised {whenPhrase(detail.signing_inputs.created_at)}</Text>
+          <Text style={s.timing}>{whenAfter('Raised', detail.signing_inputs.created_at)}</Text>
         </Row>
 
         {outcome ? (
@@ -356,35 +368,39 @@ function ConfirmSheet({
   const approving = decision === 'approve';
   const completes = approving && detail.approvals + 1 >= detail.signing_inputs.policy.M;
 
+  // The text and the payment scroll; the consequence and the two buttons stay pinned under them,
+  // so however long the decision is, its title, its opening words and the choice are all on screen.
   return (
     <Sheet
       visible={decision !== null}
       onClose={onCancel}
       dismissible={!busy}
       title={approving ? 'Approve this decision' : 'Reject this decision'}
+      footer={
+        <>
+          <Text style={s.confirmNote}>
+            {approving && detail.signing_inputs.action
+              ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
+              : approving
+              ? completes
+                ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
+                : 'Your signature is recorded against this decision and cannot be withdrawn.'
+              : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
+          </Text>
+          <View style={{ gap: space.sm, marginTop: space.xs }}>
+            <Button
+              label={approving ? 'Sign approval' : 'Sign rejection'}
+              variant={approving ? 'primary' : 'danger'}
+              onPress={onConfirm}
+              busy={busy}
+            />
+            <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} />
+          </View>
+        </>
+      }
     >
       <Text style={s.confirmAction}>{detail.signing_inputs.action_text}</Text>
       {detail.signing_inputs.action ? <Payment action={detail.signing_inputs.action} /> : null}
-
-      <Text style={s.confirmNote}>
-        {approving && detail.signing_inputs.action
-          ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
-          : approving
-          ? completes
-            ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
-            : 'Your signature is recorded against this decision and cannot be withdrawn.'
-          : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
-      </Text>
-
-      <View style={{ gap: space.sm, marginTop: space.xs }}>
-        <Button
-          label={approving ? 'Sign approval' : 'Sign rejection'}
-          variant={approving ? 'primary' : 'danger'}
-          onPress={onConfirm}
-          busy={busy}
-        />
-        <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} />
-      </View>
     </Sheet>
   );
 }
@@ -559,6 +575,7 @@ const MISMATCH_REASON: Record<PayloadMismatchError['reason'], string> = {
 };
 
 const s = StyleSheet.create({
+  title: { fontFamily: font.sansSemi, fontSize: 14, lineHeight: 20, color: color.ink2, marginTop: space.sm },
   decision: { ...type.decision, marginTop: space.sm },
   decisionLong: { ...type.decisionSm, fontSize: 16.5, lineHeight: 26, marginTop: space.sm },
   quorum: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xl },

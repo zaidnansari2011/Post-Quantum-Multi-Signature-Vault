@@ -14,8 +14,12 @@
 //
 // Ordering is by deadline, not by recency. A queue sorted by when things were raised asks the
 // person to find the urgent item themselves, which is work the screen should be doing.
+//
+// The server's list can still hold a decision whose deadline has passed: it records the expiry
+// only when something reads the decision or its sweep runs. Such a decision can no longer take a
+// signature, so it leaves the queue here (`stillOpen`), and the badge on this tab counts the same
+// list.
 
-import { useMemo } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
@@ -38,6 +42,8 @@ import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
 import { offersRaise } from '../proposing.ts';
+import { stillOpen } from '../status.ts';
+import { parseInstant } from '../time.ts';
 
 export default function HomeScreen({
   onOpen,
@@ -66,7 +72,9 @@ export default function HomeScreen({
     void handleUnauthorized();
   }
 
-  const proposals = useMemo(() => byDeadline(query.data?.proposals ?? []), [query.data]);
+  // Worked out on every render rather than memoised on the data: a decision can pass its deadline
+  // while the list sits in the cache, and it should leave the queue the next time the screen draws.
+  const proposals = byDeadline(stillOpen(query.data?.proposals ?? []));
   const transportFailure =
     query.error && !(query.error instanceof ApiError && query.error.status === 401)
       ? query.error
@@ -148,8 +156,8 @@ export default function HomeScreen({
  */
 function byDeadline(proposals: ProposalSummary[]): ProposalSummary[] {
   return [...proposals].sort((a, b) => {
-    const ax = a.expires_at ? Date.parse(a.expires_at) : Number.POSITIVE_INFINITY;
-    const bx = b.expires_at ? Date.parse(b.expires_at) : Number.POSITIVE_INFINITY;
+    const ax = a.expires_at ? parseInstant(a.expires_at) : Number.POSITIVE_INFINITY;
+    const bx = b.expires_at ? parseInstant(b.expires_at) : Number.POSITIVE_INFINITY;
     if (ax === bx) return a.title.localeCompare(b.title);
     return ax - bx;
   });

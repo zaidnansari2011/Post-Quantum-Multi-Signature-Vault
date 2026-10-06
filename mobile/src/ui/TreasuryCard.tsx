@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { Banner, Button, Card, Chip, KeyValue, Section, StatusLine, feedback } from './index.tsx';
+import { Banner, Button, Card, Chip, Identifier, KeyValue, Section, StatusLine, feedback } from './index.tsx';
 import { color, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
@@ -114,7 +114,7 @@ export function TreasuryCard({ vaultId }: { vaultId: number }) {
         {error ? <Banner tone="broken" title={error.title} detail={error.detail} /> : null}
         {treasury ? (
           <View>
-            <KeyValue label="Address" mono value={treasury.address} />
+            <Identifier label="Address" value={treasury.address} />
             <KeyValue label="Network" value="Sepolia" />
             <KeyValue label="Balance" value={status?.balance ?? 'Unavailable'} />
             <KeyValue label="Approvals" value={`${treasury.threshold_m} of ${treasury.signer_count}`} />
