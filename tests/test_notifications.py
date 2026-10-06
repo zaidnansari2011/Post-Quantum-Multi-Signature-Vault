@@ -342,6 +342,19 @@ def test_a_payment_not_made_also_tells_the_vault_owner(world):  # noqa: F811
         assert item["body"].startswith("Pay the auditor, in Treasury. ")
 
 
+def test_a_payment_made_is_not_told_to_an_approver_removed_since(world):  # noqa: F811
+    ada, brij, chen = world.users
+    proposal = _approved_payment(world)  # raised by Ada, approved by Ada and Brij
+    vault_service.remove_member(world.vault, brij.id, actor_id=ada.id)
+    _tick(world)
+    world.node.mine()
+    _tick(world)
+    assert _execution(proposal).state == "confirmed"
+
+    assert _rows(ada, "payout_paid")
+    assert _rows(brij, "payout_paid") == []
+
+
 def test_a_treasury_reconfiguration_tells_every_member(rworld):  # noqa: F811
     dara = _dara(rworld)
     reconfiguration = _request(rworld)
@@ -635,6 +648,40 @@ def test_mark_all_read_can_be_limited_to_a_section(team):
     }
     assert notification_service.mark_all_read(team.brij) == 1
     assert notification_service.unread_counts(team.brij)["total"] == 0
+
+
+def test_a_removed_member_is_not_told_how_a_decision_ended_and_their_old_ones_go(team):
+    """A vote cast before its voter was removed keeps counting, but the voter no longer sees the
+    vault: they are not told how it ended, and what they were told before stops showing, because
+    its words are written from the decision as it is now (a later reason, a renamed vault)."""
+    voted_on = _raise(team, title="Voted on")
+    _raise(team, title="Never answered")
+    _vote(voted_on, team.brij, "reject", reason="Over budget")
+    key_service.change_password(team.brij, PW, "a-new-password-456")  # a security event
+    (added,) = _rows(team.brij, "vault_member_added")
+    notification_service.archive(team.brij, added.id)
+
+    vault_service.remove_member(team.vault, team.brij.id, actor_id=team.ada.id)
+    _vote(voted_on, team.chen, "reject", reason="Wrong supplier")
+    assert voted_on.status == "rejected"
+
+    assert _rows(team.brij, "decision_rejected") == []
+    assert _rows(team.ada, "decision_rejected")  # the requester, still in the vault, is told
+    # Only the security event is left, in every section and every count.
+    assert _section(team.brij, "needs_you") == []
+    assert [i["kind"] for i in _section(team.brij, "updates")] == ["password_changed"]
+    assert _section(team.brij, "archived") == []
+    assert notification_service.unread_counts(team.brij) == {
+        "needs_you": 0,
+        "updates": 1,
+        "total": 1,
+    }
+    # And an old one cannot be fetched by its id either.
+    raised, _ = _rows(team.brij, "decision_raised")
+    assert notification_service.mark_read(team.brij, raised.id) is None
+    assert notification_service.archive(team.brij, raised.id) is None
+    # A viewer is still a member, so still sees hers.
+    assert [i["kind"] for i in _section(team.dara, "updates")] == ["vault_member_added"]
 
 
 def test_another_persons_notification_cannot_be_read_or_archived(team):

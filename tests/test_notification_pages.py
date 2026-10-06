@@ -19,7 +19,12 @@ from test_notifications import team  # noqa: F401 - the fixture
 
 from qvault.extensions import db
 from qvault.models import Notification
-from qvault.services import approval_service, notification_service, proposal_service
+from qvault.services import (
+    approval_service,
+    notification_service,
+    proposal_service,
+    vault_service,
+)
 from qvault.services.notification_copy import PREFERENCE_GROUPS, when
 
 PW = "password-123"
@@ -219,6 +224,21 @@ def test_the_popover_does_not_carry_a_return_address_off_this_site(client, team,
     )
     assert "evil.example" not in html
     assert 'name="next" value="/notifications/"' in html
+
+
+def test_a_removed_member_no_longer_sees_the_vaults_notifications(client, team):
+    _raise(team)
+    vault_service.remove_member(team.vault, team.brij.id, actor_id=team.ada.id)
+    _login(client, team.brij)
+
+    assert "nbell__badge" not in client.get("/").get_data(as_text=True)
+    for section in ("needs_you", "updates", "archived"):
+        text = _text(client.get(f"/notifications/?section={section}").get_data(as_text=True))
+        assert "Ada Lovelace" not in text and "Treasury" not in text, section
+    popover = _text(client.get("/notifications/popover").get_data(as_text=True))
+    assert "Ada Lovelace" not in popover
+    note = Notification.query.filter_by(recipient_id=team.brij.id, kind="decision_raised").one()
+    assert client.get(f"/notifications/{note.id}/open").status_code == 404
 
 
 def test_mark_all_read_on_a_tab_leaves_the_other_tab_unread(client, team):

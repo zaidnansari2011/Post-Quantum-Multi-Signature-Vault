@@ -251,7 +251,10 @@ def decision_closed(
     proposal, outcome: str, *, actor_id: int | None = None, now: datetime | None = None
 ) -> None:
     """Approved, rejected or expired: the requester and the voters hear, except whoever cast the
-    deciding vote. A rejection carries the deciding reason, when a rejecting vote gave one."""
+    deciding vote. A rejection carries the deciding reason, when a rejecting vote gave one.
+
+    Only those still in the vault: a vote cast before its voter was removed keeps counting, but
+    the person who cast it no longer sees the vault's decisions, so is not told how this ended."""
     with _best_effort(f"decision {outcome}"):
         data = {}
         if outcome == "rejected":
@@ -265,7 +268,7 @@ def decision_closed(
                 }
         _send(
             f"decision_{outcome}",
-            _participants(proposal) - {actor_id},
+            (_participants(proposal) - {actor_id}) & _members(proposal.vault_id),
             key=f"decision_{outcome}:{proposal.proposal_uuid}",
             now=now or _utcnow(),
             vault_id=proposal.vault_id,
@@ -277,7 +280,9 @@ def decision_closed(
 
 def payout_finished(execution, *, now: datetime | None = None) -> None:
     """A payment carried out, or ended without being paid: the requester and its approvers hear,
-    and when it was not paid, so does the vault's owner, who looks after the treasury."""
+    and when it was not paid, so does the vault's owner, who looks after the treasury. Only those
+    still in the vault: the amount and the address are the vault's business, not a former
+    member's."""
     with _best_effort("payout finished"):
         proposal = execution.proposal
         approvers = {s.signer_id for s in proposal.signatures if s.decision == "approve"}
@@ -293,7 +298,7 @@ def payout_finished(execution, *, now: datetime | None = None) -> None:
             data["reason"] = execution.reason
         _send(
             kind,
-            recipients,
+            recipients & _members(proposal.vault_id),
             key=f"{kind}:{proposal.proposal_uuid}",
             now=now or _utcnow(),
             vault_id=proposal.vault_id,
@@ -649,7 +654,31 @@ def _waits(now: datetime):
     return and_(_live_open(now), not_(_voted()), _can_approve())
 
 
+def _still_member():
+    """The recipient is still in the notification's vault, or it belongs to no vault.
+
+    A notification's words are written when it is read, from the decision and the vault as they
+    are now: a later rejection reason, a payment's address, a renamed vault. Someone removed from
+    the vault can no longer open its decisions, so their notifications about it stop showing too,
+    rather than going on reporting what happens there. Security events have no vault and stay."""
+    member = (
+        select(VaultMember.id)
+        .where(
+            VaultMember.vault_id == Notification.vault_id,
+            VaultMember.user_id == Notification.recipient_id,
+        )
+        .exists()
+    )
+    return or_(Notification.vault_id.is_(None), member)
+
+
 def _in_section(section: str, now: datetime):
+    """Which notifications are in ``section``. Every section, and so every count and page built on
+    one, leaves out those about a vault the recipient has left (``_still_member``)."""
+    return and_(_still_member(), _section_condition(section, now))
+
+
+def _section_condition(section: str, now: datetime):
     unarchived = Notification.archived_at.is_(None)
     if section == "needs_you":
         return and_(unarchived, Notification.kind.in_(NEEDS_YOU_KINDS), _waits(now))
@@ -731,8 +760,15 @@ def unread_counts(user, *, now: datetime | None = None) -> dict[str, int]:
 
 
 def _own(user, notification_id: int) -> Notification | None:
-    """The notification, if it is this person's; anyone else's is indistinguishable from none."""
-    return Notification.query.filter_by(id=notification_id, recipient_id=user.id).one_or_none()
+    """The notification, if it is this person's and still shown to them; anyone else's, or one
+    about a vault they have left, is indistinguishable from none."""
+    return db.session.scalars(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.recipient_id == user.id,
+            _still_member(),
+        )
+    ).one_or_none()
 
 
 def view(notification, *, now: datetime | None = None) -> dict:
