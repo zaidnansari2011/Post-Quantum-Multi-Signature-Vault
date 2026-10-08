@@ -375,7 +375,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] Phone: workspace-aware API responses (no UI change beyond names) (2026-10-05): `workspace` {id, name, role, role_name} on `/me` and the enrolment challenge, and the workspace named on `/people`; additive, and the phone's schemas parse all three
 - **Done when:** a new person can be invited by link, join, enrol a key, and approve, end to end on web and phone, with every step in the audit log.
 - **Known gaps (R3 review, 2026-10-06).** Accepted for now; where a later phase closes one, it is named:
-  - (a) Open `/register` joins the default workspace, so the scoped people list protects nothing until R6 closes or gates registration.
+  - (a) ~~Open `/register` joins the default workspace, so the scoped people list protects nothing until R6 closes or gates registration.~~ Closed in R6: sign-up creates its own workspace.
   - (b) Suspending a vault's owner detaches their vaults from the workspace (a vault's workspace is its owner's active one) until vaults store `workspace_id` (R10).
   - (c) Two owners demoting each other at the same moment can leave no owner: the last-owner guard needs row locks (Postgres, R10).
   - (d) Any admin can reinstate someone an owner suspended; reinstatement follows the rank rules, not who suspended them.
@@ -407,7 +407,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 - [ ] Landing page (S22) with the live log strip and real product screenshots
 - [ ] Security page (levels ladder, threat model, offline verifier, honest audit status)
-- [ ] Sign-in polish; "Create your workspace" sign-up; honest password step; forgot-password page (S18 text); invite acceptance states
+- [x] Sign-in polish; "Create your workspace" sign-up; honest password step; forgot-password page (S18 text); invite acceptance states (2026-10-09, `rework/r6-public-face`): `/register` is `auth_service.sign_up`, a new account and a new workspace it owns, never an existing one; an invitation link is the only way into someone else's. The operator path (`register_user`, seed and scripts) joins the shared workspace, now found by its reserved slug `q-vault`, which no sign-up can take. Both sign-up forms state "This password also unlocks your signing key. We can't reset it." and need the box ticked. `/forgot-password` resets nothing: the paired phone and a new account are what works today; key replacement and the Recovery Kit are labelled not built (R9). The review found SYSTEM events recorded against a vault (expiry, scheduler approval, payouts, treasury changes) shown in every reader's Audit; now only to that vault's members
 - [ ] Pricing placeholder, changelog, status page, footer
 - **Done when:** a first-time visitor can go from the landing page to a working workspace without help, and nothing on the public pages claims what we cannot show.
 
