@@ -355,6 +355,18 @@ def test_i14_only_the_persister_touches_the_disk_and_only_through_the_allow_list
     )  # the store's own, and the call
 
 
+def test_restored_summaries_refetch_on_sight_and_never_land_late():
+    persist = (SRC / "persist.ts").read_text(encoding="utf-8")
+    restore = persist[persist.index("export async function restoreSummaries") :]
+    restore = restore[: restore.index("\n}\n")]
+    # Kept with their own fetch time, but invalid: a screen showing one refetches it at once.
+    assert "client.setQueryData(entry.key, entry.data, { updatedAt: entry.at });" in restore
+    assert "refetchType: 'none'" in restore
+    # Never over a query that already exists, and never after start-up stopped waiting.
+    assert "client.getQueryState(entry.key) !== undefined" in restore
+    assert "Date.now() > until" in restore
+
+
 def test_i14_the_cache_key_is_this_device_only():
     persist = (SRC / "persist.ts").read_text(encoding="utf-8")
     assert "keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY" in persist

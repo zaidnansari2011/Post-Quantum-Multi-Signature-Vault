@@ -750,7 +750,9 @@ already-proven setting rather than guessed.
    at …" should appear on the next refresh, the queue stays, and Approve on a decision says it needs
    a connection. Kill the app, reopen it offline, and confirm the queue paints from the encrypted
    cache. (Before the rework APK there is no NetInfo, so the bar appears after a failed request,
-   not the instant the radio drops.)
+   not the instant the radio drops.) If the queue does not paint offline after a restart, the APK
+   is missing expo-file-system's native module (it should come with `expo`); the app then simply
+   keeps no cache, and nothing else breaks.
 
 ## 4. Submission and delivery
 

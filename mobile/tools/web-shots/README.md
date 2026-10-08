@@ -16,6 +16,7 @@ never part of a normal `expo start` or EAS build: it takes effect only through
 | `shoot.py` | Drives the app like a person: enrols, raises, signs, and shoots each screen |
 | `gallery.py` | Shoots every gallery page in light and dark at 1.0 and 2.0 |
 | `states.py` | Every Approvals state and every decision state (phone-ux §6.3 to §6.7), by rewriting one real decision's UNSIGNED fields in the browser; the tampered states change a signed field on purpose |
+| `fresh.py` | The freshness states (phone-ux §2.6): the offline bar, the cold-start hint, the queue from the encrypted cache, a decision's summary offline, "Checking…" before a sheet, signed text that changed while open. Offline is every `/api/` request aborted; time moves with Playwright's clock |
 
 Both shooters run the touch-target audit (phone-ux §4.6): `ui/Touchable` writes its effective
 target to `data-hit-w` / `data-hit-h` (react-native-web ignores `hitSlop`), and any target under

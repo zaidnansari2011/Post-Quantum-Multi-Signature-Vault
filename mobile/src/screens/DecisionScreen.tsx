@@ -300,7 +300,7 @@ export default function DecisionScreen({
                 </Text>
                 {listed.due ? (
                   <Text role="caption" tone="muted">
-                    {`Due ${listed.due}`}
+                    {`Due ${listed.due.replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase())}`}
                   </Text>
                 ) : null}
               </View>

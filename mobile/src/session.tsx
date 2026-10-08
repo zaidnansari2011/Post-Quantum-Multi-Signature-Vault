@@ -124,8 +124,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const start = onStart({ identity: !!storedIdentity, token: !!storedToken, seed });
       if (start.status === 'enrolled' && storedIdentity) {
         // The queue paints at once from the summaries on disk (§2.6); a slow disk never holds the app.
+        const until = Date.now() + RESTORE_LIMIT_MS;
         await Promise.race([
-          restoreSummaries(queryClient, storedIdentity.userId),
+          restoreSummaries(queryClient, storedIdentity.userId, until),
           new Promise((resolve) => setTimeout(resolve, RESTORE_LIMIT_MS)),
         ]);
         if (cancelled) return;
