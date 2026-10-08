@@ -223,7 +223,8 @@ def test_the_operator_sees_the_relayer_the_work_and_the_failures(pw):
     execution.state, execution.reason = "failed", "the treasury would refuse this payment"
     db.session.commit()
     page = _get(pw, "/admin/chain")
-    assert "the treasury would refuse this payment" in page and "Treasury" in page
+    # The page starts the stored reason with a capital (rework R1b review, M1).
+    assert "The treasury would refuse this payment" in page and "Treasury" in page
     assert proposal is not None
 
 
