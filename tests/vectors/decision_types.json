@@ -1,0 +1,2007 @@
+{
+ "about": "Decision types (rework plan S13): fields in, the decision text out, or the first reason they write none. qvault/services/decision_types.py and mobile/src/logic/decisionTypes.ts must both give exactly these results (tests/test_decision_types.py, tests/test_mobile_decision_types.py). 'version' is passed only when present. A case with 'text' null and no 'problem' is a payment its generator refuses.",
+ "template_version": 1,
+ "cases": [
+  {
+   "name": "access_read",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_write_with_reference",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "write",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident.",
+    "reference": "INC-2041"
+   },
+   "text": "Grant Elif Kaya read and write access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read and write\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident.\nReference: INC-2041"
+  },
+  {
+   "name": "access_admin",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "payments-api (eu-west-1)",
+    "level": "admin",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Elif Kaya administrator access to payments-api (eu-west-1) until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: payments-api (eu-west-1)\nAccess: Administrator\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_reference_empty_is_left_out",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident.",
+    "reference": ""
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_reference_null_is_left_out",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident.",
+    "reference": null
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "unicode_precomposed_name",
+   "type": "access",
+   "fields": {
+    "person": "Zo\u00eb \u00c5ngstr\u00f6m-\u00d8berg",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Zo\u00eb \u00c5ngstr\u00f6m-\u00d8berg read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Zo\u00eb \u00c5ngstr\u00f6m-\u00d8berg\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "unicode_combining_name_kept_as_written",
+   "type": "access",
+   "fields": {
+    "person": "Zoe\u0308 Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Zoe\u0308 Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Zoe\u0308 Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "unicode_polish_name",
+   "type": "access",
+   "fields": {
+    "person": "\u0141ukasz \u017b\u00f3\u0142\u0107",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u0141ukasz \u017b\u00f3\u0142\u0107 read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \u0141ukasz \u017b\u00f3\u0142\u0107\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "unicode_cjk_name",
+   "type": "access",
+   "fields": {
+    "person": "\u738b\u5c0f\u660e",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u738b\u5c0f\u660e read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \u738b\u5c0f\u660e\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "unicode_astral_emoji",
+   "type": "access",
+   "fields": {
+    "person": "Sam \ud83d\ude80",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Sam \ud83d\ude80 read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Sam \ud83d\ude80\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "rtl_arabic_letters_are_letters",
+   "type": "access",
+   "fields": {
+    "person": "\u0645\u062d\u0645\u062f \u0639\u0644\u064a",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u0645\u062d\u0645\u062f \u0639\u0644\u064a read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \u0645\u062d\u0645\u062f \u0639\u0644\u064a\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "rtl_hebrew_system",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "\u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Elif Kaya read-only access to \u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: \u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "rtl_override_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u202eKaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "rtl_embedding_refused",
+   "type": "access",
+   "fields": {
+    "person": "\u202bElif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "rtl_isolate_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif \u2068Kaya\u2069",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "right_to_left_mark_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya\u200f",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "arabic_letter_mark_refused",
+   "type": "access",
+   "fields": {
+    "person": "\u0645\u062d\u0645\u062f\u061c \u0639\u0644\u064a",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "zero_width_space_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u200bKaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "zero_width_joiner_refused",
+   "type": "access",
+   "fields": {
+    "person": "\ud83d\udc69\u200d\ud83d\udcbb Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "word_joiner_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod\u2060db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "system",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "byte_order_mark_refused",
+   "type": "access",
+   "fields": {
+    "person": "\ufeffElif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "soft_hyphen_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod\u00addb",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "system",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "variation_selector_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif \u2764\ufe0f",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "tag_character_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\udb40\udc41",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "lone_surrogate_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\ud800",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "private_use_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\ue000",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "noncharacter_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\ufffe",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "astral_noncharacter_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\ud83f\udffe",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "replacement_character_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\ufffd",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "hangul_filler_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u3164",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "tab_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate\tthe incident."
+   },
+   "problem": {
+    "field": "reason",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "null_byte_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate\u0000"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "c1_control_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate\u009b the incident."
+   },
+   "problem": {
+    "field": "reason",
+    "code": "hidden_character"
+   }
+  },
+  {
+   "name": "newline_smuggles_a_line_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Read only.\nAccess: Administrator"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "line_break"
+   }
+  },
+  {
+   "name": "carriage_return_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Read only.\rAccess"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "line_break"
+   }
+  },
+  {
+   "name": "line_separator_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Read only.\u2028Access"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "line_break"
+   }
+  },
+  {
+   "name": "next_line_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Read only.\u0085Access"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "line_break"
+   }
+  },
+  {
+   "name": "leading_space_refused",
+   "type": "access",
+   "fields": {
+    "person": " Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "trailing_space_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya ",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "double_space_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif  Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "no_break_space_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u00a0Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "ideographic_space_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u3000Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "braille_blank_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u2800Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "thin_space_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif\u2009Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "spacing"
+   }
+  },
+  {
+   "name": "person_at_80",
+   "type": "access",
+   "fields": {
+    "person": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "person_over_80",
+   "type": "access",
+   "fields": {
+    "person": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "too_long"
+   }
+  },
+  {
+   "name": "person_80_astral_code_points",
+   "type": "access",
+   "fields": {
+    "person": "\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80 read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "person_81_astral_code_points",
+   "type": "access",
+   "fields": {
+    "person": "\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "too_long"
+   }
+  },
+  {
+   "name": "reason_at_280",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  },
+  {
+   "name": "reason_over_280",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "too_long"
+   }
+  },
+  {
+   "name": "person_absent",
+   "type": "access",
+   "fields": {
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "missing"
+   }
+  },
+  {
+   "name": "person_empty",
+   "type": "access",
+   "fields": {
+    "person": "",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "missing"
+   }
+  },
+  {
+   "name": "person_null",
+   "type": "access",
+   "fields": {
+    "person": null,
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "missing"
+   }
+  },
+  {
+   "name": "person_a_number",
+   "type": "access",
+   "fields": {
+    "person": 5,
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "not_text"
+   }
+  },
+  {
+   "name": "person_a_list",
+   "type": "access",
+   "fields": {
+    "person": [
+     "Elif"
+    ],
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "not_text"
+   }
+  },
+  {
+   "name": "reason_absent",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "missing"
+   }
+  },
+  {
+   "name": "level_capitalised",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "Read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "level",
+    "code": "choice"
+   }
+  },
+  {
+   "name": "level_unknown",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "owner",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "level",
+    "code": "choice"
+   }
+  },
+  {
+   "name": "level_proto",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "__proto__",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "level",
+    "code": "choice"
+   }
+  },
+  {
+   "name": "level_constructor",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "constructor",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "level",
+    "code": "choice"
+   }
+  },
+  {
+   "name": "until_leap_day",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2028-02-29 10:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2028-02-29 10:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2028-02-29 10:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "until_century_leap_day",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2000-02-29 00:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2000-02-29 00:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2000-02-29 00:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "until_end_of_day",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-12-31 23:59",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-12-31 23:59 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-12-31 23:59 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "until_not_a_leap_year",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-02-29 10:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_2100_is_not_leap",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2100-02-29 10:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_month_13",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-13-01 00:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_day_31_in_april",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-04-31 09:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_hour_24",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 24:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_minute_60",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 23:60",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_before_2000",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "1999-12-31 23:59",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_with_t",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04T17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_with_z",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00Z",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_with_offset",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 18:00+01:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_with_seconds",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_trailing_newline",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00\n",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_fullwidth_digits",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "\uff12\uff10\uff12\uff16-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_arabic_indic_digits",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "\u0662\u0660\u0662\u0666-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "until_date_only",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "until",
+    "code": "datetime"
+   }
+  },
+  {
+   "name": "unknown_field_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident.",
+    "note": "Also give her admin."
+   },
+   "problem": {
+    "field": null,
+    "code": "unknown_field"
+   }
+  },
+  {
+   "name": "proto_key_refused",
+   "type": "access",
+   "fields": {
+    "__proto__": "x",
+    "person": "Elif Kaya"
+   },
+   "problem": {
+    "field": null,
+    "code": "unknown_field"
+   }
+  },
+  {
+   "name": "fields_a_list",
+   "type": "access",
+   "fields": [],
+   "problem": {
+    "field": null,
+    "code": "not_an_object"
+   }
+  },
+  {
+   "name": "fields_null",
+   "type": "access",
+   "fields": null,
+   "problem": {
+    "field": null,
+    "code": "not_an_object"
+   }
+  },
+  {
+   "name": "fields_a_string",
+   "type": "access",
+   "fields": "Elif Kaya",
+   "problem": {
+    "field": null,
+    "code": "not_an_object"
+   }
+  },
+  {
+   "name": "type_unknown",
+   "type": "access2",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": null,
+    "code": "unknown_type"
+   }
+  },
+  {
+   "name": "type_general_has_no_fields",
+   "type": "general",
+   "fields": {
+    "text": "Hire a second auditor."
+   },
+   "problem": {
+    "field": null,
+    "code": "unknown_type"
+   }
+  },
+  {
+   "name": "type_null",
+   "type": null,
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": null,
+    "code": "unknown_type"
+   }
+  },
+  {
+   "name": "version_2",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "version": 2,
+   "problem": {
+    "field": null,
+    "code": "unknown_version"
+   }
+  },
+  {
+   "name": "version_string",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "version": "1",
+   "problem": {
+    "field": null,
+    "code": "unknown_version"
+   }
+  },
+  {
+   "name": "version_true",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "version": true,
+   "problem": {
+    "field": null,
+    "code": "unknown_version"
+   }
+  },
+  {
+   "name": "version_null",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "version": null,
+   "problem": {
+    "field": null,
+    "code": "unknown_version"
+   }
+  },
+  {
+   "name": "version_one_point_zero",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "version": 1.0,
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "version_1_explicit",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "version": 1,
+   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "contract_full",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 48,200.50.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 48,200.50\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "contract_minimal",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Office lease renewal."
+   },
+   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal."
+  },
+  {
+   "name": "contract_value_only",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Office lease renewal.",
+    "amount": "1200",
+    "currency": "EUR"
+   },
+   "text": "Sign the contract with Calderwood Mutual for EUR 1,200.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nValue: EUR 1,200"
+  },
+  {
+   "name": "contract_dates_only",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Office lease renewal.",
+    "starts": "2027-01-01",
+    "ends": "2027-01-01"
+   },
+   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nStarts: 2027-01-01\nEnds: 2027-01-01"
+  },
+  {
+   "name": "contract_optional_nulls",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Office lease renewal.",
+    "amount": null,
+    "currency": null,
+    "reference": ""
+   },
+   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal."
+  },
+  {
+   "name": "contract_rtl_counterparty",
+   "type": "contract",
+   "fields": {
+    "counterparty": "\u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd",
+    "subject": "Office lease renewal."
+   },
+   "text": "Sign the contract with \u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd.\nCounterparty: \u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd\nSubject: Office lease renewal."
+  },
+  {
+   "name": "contract_subject_with_colon",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Phase 2: data migration. Value: GBP 1"
+   },
+   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Phase 2: data migration. Value: GBP 1"
+  },
+  {
+   "name": "contract_subject_newline_refused",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Supply.\nValue: GBP 1"
+   },
+   "problem": {
+    "field": "subject",
+    "code": "line_break"
+   }
+  },
+  {
+   "name": "contract_counterparty_at_120",
+   "type": "contract",
+   "fields": {
+    "counterparty": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "subject": "Office lease renewal."
+   },
+   "text": "Sign the contract with cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.\nCounterparty: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nSubject: Office lease renewal."
+  },
+  {
+   "name": "contract_counterparty_over_120",
+   "type": "contract",
+   "fields": {
+    "counterparty": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "subject": "Office lease renewal."
+   },
+   "problem": {
+    "field": "counterparty",
+    "code": "too_long"
+   }
+  },
+  {
+   "name": "contract_subject_at_280",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+   },
+   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+  },
+  {
+   "name": "contract_subject_over_280",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+   },
+   "problem": {
+    "field": "subject",
+    "code": "too_long"
+   }
+  },
+  {
+   "name": "amount_grouped_millions",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "1234567.5",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 1,234,567.5.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 1,234,567.5\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_three_digits",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "999",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 999.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 999\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_four_digits",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "1000",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 1,000.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 1,000\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_below_one",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "0.5",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 0.5.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 0.5\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_six_decimals",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "0.000001",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 0.000001.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 0.000001\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_fifteen_digits",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "123456789012345",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 123,456,789,012,345.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 123,456,789,012,345\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_trailing_zeros_kept",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.00",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "text": "Sign the contract with Calderwood Mutual for GBP 48,200.00.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 48,200.00\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+  },
+  {
+   "name": "amount_sixteen_digits",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "1234567890123456",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_seven_decimals",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "1.1234567",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_with_commas",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48,200.50",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_zero",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "0",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_zero_decimals",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "0.00",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_leading_zero",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "01",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_trailing_point",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "1.",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_leading_point",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": ".5",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_exponent",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "1e3",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_negative",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "-5",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_spaced",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": " 5",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_arabic_indic",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "\u0661\u0662",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "amount"
+   }
+  },
+  {
+   "name": "amount_a_number",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": 48200.5,
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "not_text"
+   }
+  },
+  {
+   "name": "currency_lowercase",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "gbp",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "currency",
+    "code": "currency"
+   }
+  },
+  {
+   "name": "currency_four_letters",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "GBPX",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "currency",
+    "code": "currency"
+   }
+  },
+  {
+   "name": "currency_symbol",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "\u00a3",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "currency",
+    "code": "currency"
+   }
+  },
+  {
+   "name": "amount_without_currency",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "currency",
+    "code": "value_pair"
+   }
+  },
+  {
+   "name": "currency_without_amount",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "value_pair"
+   }
+  },
+  {
+   "name": "currency_without_amount_empty",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "amount",
+    "code": "value_pair"
+   }
+  },
+  {
+   "name": "contract_ends_before_starts",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "GBP",
+    "starts": "2027-06-01",
+    "ends": "2027-05-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "ends",
+    "code": "order"
+   }
+  },
+  {
+   "name": "contract_starts_not_padded",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "GBP",
+    "starts": "2027-1-1",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "starts",
+    "code": "date"
+   }
+  },
+  {
+   "name": "contract_ends_impossible",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "GBP",
+    "starts": "2027-01-01",
+    "ends": "2027-02-30",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "ends",
+    "code": "date"
+   }
+  },
+  {
+   "name": "contract_starts_with_time",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Commercial liability cover for 2027, cover unchanged.",
+    "amount": "48200.50",
+    "currency": "GBP",
+    "starts": "2027-01-01 00:00",
+    "ends": "2027-12-31",
+    "reference": "CW-2027-118"
+   },
+   "problem": {
+    "field": "starts",
+    "code": "date"
+   }
+  },
+  {
+   "name": "contract_ends_only",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Office lease renewal.",
+    "ends": "2027-12-31"
+   },
+   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nEnds: 2027-12-31"
+  },
+  {
+   "name": "payment_consistent",
+   "type": "payment",
+   "fields": {
+    "kind": "eth_transfer",
+    "chain_id": 11155111,
+    "treasury": "0x0000000000000000000000000000000000007EA5",
+    "to": "0xF590cEe84F86510555150F13Ca83AEc613f1676b",
+    "value_wei": "100000000000000",
+    "data": "0x",
+    "call_gas": 100000,
+    "valid_until": 1790467200,
+    "config_nonce": 0
+   },
+   "text": "Pay 0.0001 ETH from this vault's treasury 0x0000000000000000000000000000000000007EA5 to 0xF590cEe84F86510555150F13Ca83AEc613f1676b on Sepolia."
+  },
+  {
+   "name": "payment_big",
+   "type": "payment",
+   "fields": {
+    "kind": "eth_transfer",
+    "chain_id": 11155111,
+    "treasury": "0x0000000000000000000000000000000000007EA5",
+    "to": "0xF590cEe84F86510555150F13Ca83AEc613f1676b",
+    "value_wei": "123456789000000000000000001",
+    "data": "0x",
+    "call_gas": 100000,
+    "valid_until": 1790467200,
+    "config_nonce": 0
+   },
+   "text": "Pay 123456789.000000000000000001 ETH from this vault's treasury 0x0000000000000000000000000000000000007EA5 to 0xF590cEe84F86510555150F13Ca83AEc613f1676b on Sepolia."
+  },
+  {
+   "name": "payment_zero_padded_value",
+   "type": "payment",
+   "fields": {
+    "kind": "eth_transfer",
+    "chain_id": 11155111,
+    "treasury": "0x0000000000000000000000000000000000007EA5",
+    "to": "0xF590cEe84F86510555150F13Ca83AEc613f1676b",
+    "value_wei": "007",
+    "data": "0x",
+    "call_gas": 100000,
+    "valid_until": 1790467200,
+    "config_nonce": 0
+   },
+   "text": null
+  },
+  {
+   "name": "payment_unknown_network",
+   "type": "payment",
+   "fields": {
+    "kind": "eth_transfer",
+    "chain_id": 1,
+    "treasury": "0x0000000000000000000000000000000000007EA5",
+    "to": "0xF590cEe84F86510555150F13Ca83AEc613f1676b",
+    "value_wei": "100000000000000",
+    "data": "0x",
+    "call_gas": 100000,
+    "valid_until": 1790467200,
+    "config_nonce": 0
+   },
+   "text": null
+  },
+  {
+   "name": "payment_not_an_object",
+   "type": "payment",
+   "fields": null,
+   "text": null
+  }
+ ]
+}

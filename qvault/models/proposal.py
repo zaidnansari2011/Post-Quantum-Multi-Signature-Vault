@@ -9,6 +9,7 @@ display; the full canonical bytes are recomputed deterministically when needed.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from qvault.extensions import db
@@ -71,6 +72,11 @@ class Proposal(db.Model):
         foreign_keys="ProposalLifecycle.proposal_id",
         back_populates="proposal",
     )
+    # A Production access or Contract decision's type and fields (rework R5, plan S13). Unsigned:
+    # shown only when they write the signed text again (``decision_types.typed_view``).
+    typed = db.relationship(
+        "DecisionFields", uselist=False, cascade="all, delete-orphan", back_populates="proposal"
+    )
     # Its discussion (rework R5): unsigned, and never part of what is signed or exported.
     comments = db.relationship(
         "DecisionComment",
@@ -108,3 +114,34 @@ class ProposalLifecycle(db.Model):
     proposal = db.relationship("Proposal", foreign_keys=[proposal_id], back_populates="lifecycle")
     withdrawn_by = db.relationship("User", foreign_keys=[withdrawn_by_id])
     raised_again_from = db.relationship("Proposal", foreign_keys=[raised_again_from_id])
+
+
+class DecisionFields(db.Model):
+    """The type and fields that wrote a decision's text (rework plan S13), beside it, unsigned.
+
+    Only for the types whose text is generated from fields a person fills in (Production access,
+    Contract). A payment's fields are its signed action; a General decision has none. The signed
+    text is what binds (plan S9): these fields are a way to read it, shown only when
+    ``decision_types.decision_text`` writes exactly that text from them again, and a phone does
+    the same with its own twin before it signs. A table of its own, for the reason
+    ``ProposalLifecycle`` is.
+    """
+
+    __tablename__ = "decision_fields"
+
+    proposal_id = db.Column(db.Integer, db.ForeignKey("proposals.id"), primary_key=True)
+    decision_type = db.Column(db.String(16), nullable=False, index=True)
+    #: The version of the template that wrote the text (``decision_types.TEMPLATE_VERSION``).
+    template_version = db.Column(db.Integer, nullable=False)
+    #: The canonical fields, as JSON. Read with :meth:`fields`.
+    fields_json = db.Column(db.Text, nullable=False)
+
+    proposal = db.relationship("Proposal", back_populates="typed")
+
+    def fields(self) -> dict | None:
+        """The stored fields, or None when the stored JSON is not an object."""
+        try:
+            value = json.loads(self.fields_json)
+        except (TypeError, ValueError):
+            return None
+        return value if isinstance(value, dict) else None

@@ -10,7 +10,7 @@ signer_preference (on-chain execution, docs/plans/onchain-execution.md); workspa
 workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md S10, S11);
 notification and notification_preference (in-app notifications, plan R4); vault_rule and
 proposal_lifecycle (decision depth, plan R5); decision_comment (a decision's unsigned
-discussion, R5).
+discussion, R5); decision_fields (a typed decision's unsigned fields, R5).
 Added in later phases: rotation_event.
 """
 
@@ -26,7 +26,7 @@ from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
 from .notification import Notification, NotificationPreference
-from .proposal import Proposal, ProposalLifecycle
+from .proposal import DecisionFields, Proposal, ProposalLifecycle
 from .reconfiguration import (
     Reconfiguration,
     ReconfigurationSignature,
@@ -56,6 +56,7 @@ __all__ = [
     "VaultRule",
     "Proposal",
     "ProposalLifecycle",
+    "DecisionFields",
     "DecisionComment",
     "VaultFile",
     "Signature",
