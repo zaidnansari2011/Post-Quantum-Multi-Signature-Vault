@@ -267,6 +267,41 @@ def test_a_suspended_requester_cannot_withdraw(app):
     assert raised.status == "open"
 
 
+@pytest.mark.parametrize("how", ["suspended", "expired-unswept"])
+def test_withdraw_is_offered_only_where_the_service_would_take_it(client, how):
+    ada, brij, _chen, vault, _proposal = _team(f"offer{how[:4]}")
+    _b, _s, auth = _enrol_over_http(client, brij)
+    raised = proposal_service.create_proposal(vault, brij, "Brij's", "Buy a laptop.")
+    if how == "suspended":
+        workspace_service.suspend_member(
+            workspace_service.workspace_of_vault(vault), brij.id, actor=ada
+        )
+    else:
+        raised.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        db.session.commit()
+    assert approval_service.why_cannot_withdraw(raised, brij) is not None
+    with pytest.raises(ApprovalError):
+        approval_service.withdraw(raised, brij)
+
+    client.post("/login", data={"email": brij.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vault.id}/proposals/{raised.proposal_uuid}")
+    assert page.status_code == 200 and "Buy a laptop." in page.get_data(as_text=True)
+    assert "dlg-withdraw" not in page.get_data(as_text=True)
+    detail = client.get(f"/api/v1/proposals/{raised.proposal_uuid}", headers=auth)
+    assert detail.status_code == 200
+    assert detail.get_json()["proposal"]["can_withdraw"] is False
+
+
+def test_a_withdrawal_tells_nobody_who_is_suspended(app):
+    ada, brij, chen, vault, proposal = _team("withdrawsusp")
+    approval_service.cast_vote(proposal, chen, PASSWORD, "approve")  # a voter, then suspended
+    workspace = workspace_service.workspace_of_vault(vault)
+    workspace_service.suspend_member(workspace, chen.id, actor=ada)
+    approval_service.withdraw(proposal, ada)
+    assert "decision_withdrawn" in _kinds(brij)
+    assert "decision_withdrawn" not in _kinds(chen)
+
+
 def test_a_vote_racing_a_withdrawal_is_refused_not_recorded(app):
     """The gate read "open" from a copy loaded before the withdrawal committed elsewhere: the
     vote's own write re-reads the row and refuses, leaving nothing behind."""

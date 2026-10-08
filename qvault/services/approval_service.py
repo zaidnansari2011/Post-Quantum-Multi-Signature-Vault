@@ -38,6 +38,7 @@ from qvault.models.workspace import WorkspaceMember
 from qvault.services import (
     eligibility,
     execution_service,
+    inbox_service,
     key_service,
     ledger_service,
     notification_service,
@@ -733,6 +734,34 @@ def _still_entitled(proposal, signer) -> None:
 NOT_YOURS_TO_WITHDRAW = "Only the person who raised this decision can withdraw it."
 
 
+def _not_theirs_to_withdraw(proposal, actor) -> str | None:
+    if actor.id != proposal.creator_id:
+        return NOT_YOURS_TO_WITHDRAW
+    vault = proposal.vault
+    if not vault.is_member(actor.id):
+        return "You are no longer a member of this vault, so you can't withdraw this decision."
+    standing = workspace_service.signing_standing(vault, actor.id)
+    if standing is not None and standing != "auditors are read-only":
+        # An auditor raised it as an approver before their role changed: ending their own
+        # request takes nothing from anyone, so it is allowed. Suspended or gone is not.
+        return f"You can't withdraw this decision: {standing}."
+    return None
+
+
+def why_cannot_withdraw(proposal, actor, *, now: datetime | None = None) -> str | None:
+    """Why ``actor`` can't withdraw ``proposal`` now, or None when they can: exactly the rules
+    :func:`withdraw` applies, so no screen offers Withdraw where it would be refused. Reads only;
+    a deadline that passed is read as the sweep will write it (``inbox_service.effective_status``).
+    """
+    refusal = _not_theirs_to_withdraw(proposal, actor)
+    if refusal is not None:
+        return refusal
+    status = inbox_service.effective_status(proposal, now=now)
+    if status != "open":
+        return f"This decision is {status}, so it can't be withdrawn."
+    return None
+
+
 def withdraw(proposal, actor, *, now: datetime | None = None, commit: bool = True) -> None:
     """The person who raised an open decision ends it (plan S16): it becomes WITHDRAWN.
 
@@ -745,18 +774,9 @@ def withdraw(proposal, actor, *, now: datetime | None = None, commit: bool = Tru
     from its workspace (a suspended member acts on nothing), and for a decision that is no longer
     open, including one whose deadline passed before the sweep ran.
     """
-    if actor.id != proposal.creator_id:
-        raise ApprovalError(NOT_YOURS_TO_WITHDRAW)
-    vault = proposal.vault
-    if not vault.is_member(actor.id):
-        raise ApprovalError(
-            "You are no longer a member of this vault, so you can't withdraw this decision."
-        )
-    standing = workspace_service.signing_standing(vault, actor.id)
-    if standing is not None and standing != "auditors are read-only":
-        # An auditor raised it as an approver before their role changed: ending their own
-        # request takes nothing from anyone, so it is allowed. Suspended or gone is not.
-        raise ApprovalError(f"You can't withdraw this decision: {standing}.")
+    refusal = _not_theirs_to_withdraw(proposal, actor)
+    if refusal is not None:
+        raise ApprovalError(refusal)
 
     refresh_expiry(proposal, commit=commit)
     if proposal.status != "open":

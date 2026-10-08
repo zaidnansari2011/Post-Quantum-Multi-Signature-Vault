@@ -287,13 +287,16 @@ def decision_closed(
 
 def decision_withdrawn(proposal, *, actor_id: int, now: datetime | None = None) -> None:
     """Withdrawn by whoever raised it (plan S16): the approvers it asked, and anyone who voted,
-    hear it has ended, so nobody goes looking for something to sign. Only those still in the
-    vault; not the person who withdrew it."""
+    hear it has ended, so nobody goes looking for something to sign. Only those who can still
+    open it (in the vault, and not suspended from its workspace); not the person who withdrew it.
+    """
+    from qvault.services.discussion_service import reader_ids  # it imports this module
+
     with _best_effort("decision withdrawn"):
         asked = _snapshot(proposal) & _current_signers(proposal.vault_id)
         _send(
             "decision_withdrawn",
-            ((asked | _voters(proposal)) - {actor_id}) & _members(proposal.vault_id),
+            ((asked | _voters(proposal)) - {actor_id}) & reader_ids(proposal),
             key=f"decision_withdrawn:{proposal.proposal_uuid}",
             now=now or _utcnow(),
             vault_id=proposal.vault_id,
