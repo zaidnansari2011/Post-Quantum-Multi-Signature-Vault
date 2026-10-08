@@ -33,7 +33,8 @@ from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.proposal import Proposal, ProposalLifecycle
 from qvault.models.signature import Signature
-from qvault.models.vault import SIGNER_ROLES, VaultMember
+from qvault.models.vault import SIGNER_ROLES, VaultMember, VaultRule
+from qvault.models.workspace import WorkspaceMember
 from qvault.services import (
     eligibility,
     execution_service,
@@ -425,7 +426,9 @@ def _authorize_vote(
     9. a rejection carries a reason (plan S16), text of at most ``REASON_MAX`` characters. Not
        signed: ``vote_signing_bytes`` is unchanged (S9).
 
-    Every check here comes before a password is tried or a signature is verified.
+    Every check here comes before a password is tried or a signature is verified. Steps 5 to 7
+    are read again, fresh, when the vote is written (``_still_entitled``), since a password check
+    or a treasury's nonce takes seconds.
     """
     if decision not in ("approve", "reject"):
         raise ApprovalError("Decision must be 'approve' or 'reject'.")
@@ -592,6 +595,9 @@ def _record_vote(
         # decision that closed after the gate looked, and a withdrawal waiting on this lock then
         # finds the decision decided, or open with this vote in it. SQLite serialises writers.
         _hold_open(proposal)
+        # And still theirs to sign: a demotion, suspension or separation-of-duties switch can
+        # commit while a password is checked or a treasury's nonce is read (seconds).
+        _still_entitled(proposal, signer)
         #
         # Everything from the first row added to the session up to flush() is inside this mapped
         # block, because that is where a race with a concurrently-committed vote by the same signer
@@ -667,6 +673,60 @@ def _hold_open(proposal) -> None:
         db.session.rollback()
         db.session.refresh(proposal)
         raise ApprovalError(f"This proposal is {proposal.status}; no further votes can be cast.")
+
+
+def _still_entitled(proposal, signer) -> None:
+    """Gate steps 5 to 7 again, read fresh, after ``_hold_open``; refuse with nothing written.
+
+    The gate ran before the password was checked or the chain asked for a nonce, which takes
+    seconds; a demotion, a suspension or the vault's S15 rule committed in between would otherwise
+    still let the vote in. Columns are selected rather than rows, so nothing loaded earlier in
+    the request answers for them. On PostgreSQL each row is read FOR SHARE, so a change that
+    starts after this waits until the vote is written; SQLite serialises writers already.
+    """
+    shared = db.engine.dialect.name == "postgresql"
+
+    def fresh(stmt):
+        return db.session.execute(stmt.with_for_update(read=True) if shared else stmt).first()
+
+    refusal = None
+    role = fresh(
+        select(VaultMember.member_role).where(
+            VaultMember.vault_id == proposal.vault_id, VaultMember.user_id == signer.id
+        )
+    )
+    workspace_id = workspace_service.home_workspace_id(proposal.vault)
+    if role is None or role[0] not in SIGNER_ROLES:
+        refusal = (
+            "You are not an authorised signer for this proposal any more: you are no longer an "
+            "approver of this vault."
+        )
+    elif workspace_id is not None:
+        member = fresh(
+            select(WorkspaceMember.status, WorkspaceMember.role).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == signer.id,
+            )
+        )
+        if member is None:
+            refusal = "you are not a member of this vault's workspace"
+        elif member.status != "active":
+            refusal = "you are suspended from this vault's workspace"
+        elif member.role == "auditor":
+            refusal = "auditors are read-only"
+        if refusal is not None:
+            refusal = f"You are not an authorised signer for this proposal any more: {refusal}."
+    if refusal is None and signer.id == proposal.creator_id:
+        rule = fresh(
+            select(VaultRule.requester_can_approve).where(VaultRule.vault_id == proposal.vault_id)
+        )
+        lifecycle = proposal.lifecycle
+        frozen = lifecycle is None or lifecycle.requester_can_approve is not False
+        if not (frozen and (rule is None or bool(rule[0]))):
+            refusal = OWN_DECISION
+    if refusal is not None:
+        db.session.rollback()
+        raise ApprovalError(refusal)
 
 
 #: Plan S16's refusal, one sentence for the web and the API.

@@ -279,6 +279,68 @@ def test_a_suspended_vault_owner_does_not_unlock_or_lock_the_others(app):
     assert approval_service.tally(proposal) == (1, 0)
 
 
+def _during_the_password_check(monkeypatch, change):
+    """Commit ``change`` after the gate has passed and before the vote is written: what another
+    request can do while Argon2 unwraps a key or the chain is asked for a nonce."""
+    hold_open = approval_service._hold_open
+
+    def changed_then_held(proposal):
+        change()
+        approval_service.db.session.commit()
+        hold_open(proposal)
+
+    monkeypatch.setattr(approval_service, "_hold_open", changed_then_held)
+
+
+@pytest.mark.parametrize("what", ["demoted", "removed", "suspended", "made an auditor"])
+def test_a_change_committed_while_the_password_is_checked_still_stops_the_vote(
+    app, monkeypatch, what
+):
+    ada, brij, _chen, vault, proposal = _three(f"race{what.replace(' ', '')}")
+    workspace = workspace_service.workspace_of_vault(vault)
+    change = {
+        "demoted": lambda: vault_service.change_member_role(
+            vault, brij.id, "viewer", actor_id=ada.id
+        ),
+        "removed": lambda: vault_service.remove_member(vault, brij.id, actor_id=ada.id),
+        "suspended": lambda: workspace_service.suspend_member(workspace, brij.id, actor=ada),
+        "made an auditor": lambda: workspace_service.change_role(
+            workspace, brij.id, "auditor", actor=ada
+        ),
+    }[what]
+    _during_the_password_check(monkeypatch, change)
+
+    with pytest.raises(ApprovalError, match="not an authorised signer for this proposal any more"):
+        approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert _votes(proposal) == 0
+    assert _signed_entries(proposal) == 0
+    assert proposal.status == "open"
+
+
+def test_separation_switched_on_while_the_password_is_checked_still_stops_the_vote(
+    app, monkeypatch
+):
+    ada, _brij, _chen, vault, _p = _three("racesod", threshold_m=1)
+    vault_service.set_requester_can_approve(vault, True, actor_id=ada.id)
+    proposal = proposal_service.create_proposal(vault, ada, "Own", "Release 12,000.")
+    _during_the_password_check(
+        monkeypatch,
+        lambda: vault_service.set_requester_can_approve(vault, False, actor_id=ada.id),
+    )
+
+    with pytest.raises(ApprovalError, match="You raised this decision"):
+        approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
+    assert _votes(proposal) == 0
+    assert proposal.status == "open"
+
+
+def test_a_vote_with_nothing_changed_meanwhile_is_written(app, monkeypatch):
+    _ada, brij, _chen, _vault, proposal = _three("racenothing")
+    _during_the_password_check(monkeypatch, lambda: None)
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert _votes(proposal) == 1
+
+
 def test_a_suspended_members_phone_is_refused_over_the_api(app, client):
     ada, brij, _chen, vault, proposal = _three("apisuspended")
     _body, secret, auth = _enrol_over_http(client, brij)
