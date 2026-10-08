@@ -733,6 +733,8 @@ def describe(rows: list[dict], viewer) -> None:
                 f"{title[:1].upper()}{title[1:]} in {vault} expired before it had enough "
                 "approvals."
             )
+        elif e.event_type == "proposal_withdrawn":
+            sentence = f"{who} withdrew {title} in {vault}."
         elif e.event_type in ("member_added", "member_removed", "member_role_changed"):
             member = people.get(data.get("user_id"))
             if member is not None:
@@ -755,6 +757,7 @@ EVENT_LABELS = {
     "proposal_approved": "Decision approved",
     "proposal_rejected": "Decision rejected",
     "proposal_expired": "Decision expired",
+    "proposal_withdrawn": "Decision withdrawn",
     "proposal_executed": "Payment paid",
     "proposal_execution_failed": "Payment failed",
     "user_registered": "Person joined",

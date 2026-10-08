@@ -43,6 +43,7 @@ from qvault.forms import (
     VaultForm,
     VaultRuleForm,
     VoteForm,
+    WithdrawForm,
 )
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
@@ -603,6 +604,9 @@ def proposal_detail(vid: int, pid: str):
         can_approve=can_approve,
         payout=payout,
         vote_form=VoteForm(),
+        withdraw_form=WithdrawForm(),
+        # Plan S16: Withdraw is drawn only for whoever raised it, while it is open.
+        can_withdraw=proposal.status == "open" and proposal.creator_id == current_user.id,
         # Present only immediately after this member signed (or when someone follows a receipt
         # link). Scoped to this proposal inside the service, which is the authorisation check.
         receipt=receipt_service.for_signature_id(proposal, request.args.get("receipt")),
@@ -680,6 +684,28 @@ def export_proposal(vid: int, pid: str):
             )
         },
     )
+
+
+@bp.post("/<int:vid>/proposals/<pid>/withdraw")
+@login_required
+def withdraw_proposal(vid: int, pid: str):
+    """The person who raised an open decision withdraws it (plan S16). The service decides who
+    may; membership is checked first so another vault's decision is a 403 like any other."""
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    if not WithdrawForm().validate_on_submit():
+        abort(400)
+    try:
+        approval_service.withdraw(proposal, current_user)
+    except ApprovalError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash(
+            "Withdrawn. It has ended for everyone, and approvals already given no longer count. "
+            "You can raise it again from here.",
+            "success",
+        )
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
 
 @bp.post("/<int:vid>/proposals/<pid>/publish")

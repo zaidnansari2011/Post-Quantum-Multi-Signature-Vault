@@ -813,9 +813,31 @@ def _proposal_summary(proposal, user) -> dict:
             "name": proposal.creator.display_name if proposal.creator else None,
         },
         "separation_of_duties": not eligibility.requester_may_approve(proposal),
+        # Plan S16 (A11): who may withdraw it, and who did and when (personalStatus row 15).
+        "can_withdraw": proposal.creator_id == user.id
+        and inbox_service.effective_status(proposal) == "open",
+        **_lifecycle_view(proposal),
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
+    }
+
+
+def _lifecycle_view(proposal) -> dict:
+    """How it was withdrawn and raised again (plan S16); unsigned, shown only."""
+    lifecycle = proposal.lifecycle
+    withdrawn_by = lifecycle.withdrawn_by if lifecycle is not None else None
+    return {
+        "withdrawn_by": (
+            {"id": withdrawn_by.id, "name": withdrawn_by.display_name}
+            if withdrawn_by is not None
+            else None
+        ),
+        "withdrawn_at": (
+            lifecycle.withdrawn_at.isoformat()
+            if lifecycle is not None and lifecycle.withdrawn_at
+            else None
+        ),
     }
 
 
@@ -1204,6 +1226,27 @@ def archive_notification(nid: int):
     return jsonify(
         ok=True, notification=item, unread=notification_service.unread_counts(g.api_user)
     )
+
+
+@bp.post("/proposals/<uuid>/withdraw")
+@device_token_required
+def withdraw_proposal(uuid: str):
+    """The person who raised an open decision withdraws it (plan S16, A11). Nothing is signed: it
+    ends the decision, and the phone's own check of who raised it is only a display."""
+    user = g.api_user
+    proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
+    if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
+        return _error("unknown_proposal", "No such proposal.", 404)
+    try:
+        approval_service.withdraw(proposal, user)
+    except ApprovalError as exc:
+        message = str(exc)
+        if message == approval_service.NOT_YOURS_TO_WITHDRAW:
+            return _error("not_requester", message, 403)
+        if "can't be withdrawn" in message:
+            return _error("proposal_closed", message, 409)
+        return _error("withdraw_refused", message, 403)
+    return jsonify(ok=True, proposal=_proposal_summary(proposal, user))
 
 
 @bp.post("/proposals/<uuid>/remind")

@@ -171,7 +171,7 @@ def _live_open(now: datetime):
 def _settled(now: datetime):
     """Decided one way or another — including deadline-expired rows the sweep has not reached."""
     return or_(
-        Proposal.status.in_(("approved", "rejected", "expired")),
+        Proposal.status.in_(("approved", "rejected", "expired", "withdrawn")),
         and_(
             Proposal.status == "open", Proposal.expires_at.is_not(None), Proposal.expires_at <= now
         ),
@@ -403,7 +403,7 @@ def status_key(
             return PAYOUT_STATUS.get(payout_state, "queued"), None
         if treasuries_on:
             return "queued", None
-    if status in ("approved", "rejected", "expired"):
+    if status in ("approved", "rejected", "expired", "withdrawn"):
         return status, None
     raise ValueError(f"{status!r} has no word in the status vocabulary")
 

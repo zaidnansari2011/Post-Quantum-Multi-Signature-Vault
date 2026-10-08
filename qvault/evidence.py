@@ -324,6 +324,7 @@ EVENT_WORDS = {
     "proposal_approved": "Approved",
     "proposal_rejected": "Rejected",
     "proposal_expired": "Expired",
+    "proposal_withdrawn": "Withdrawn",
     "file_encrypted": "File attached",
     "decision_published": "Published",
     "decision_unpublished": "Public link revoked",

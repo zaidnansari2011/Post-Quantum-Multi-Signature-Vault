@@ -72,6 +72,8 @@
   {% set _ = facts.append(('Rejected', ui_absolute(proposal.rejected_at))) %}
 {% elif proposal.status == 'expired' and proposal.expires_at %}
   {% set _ = facts.append(('Expired', ui_absolute(proposal.expires_at))) %}
+{% elif proposal.status == 'withdrawn' and proposal.lifecycle and proposal.lifecycle.withdrawn_at %}
+  {% set _ = facts.append(('Withdrawn', ui_absolute(proposal.lifecycle.withdrawn_at))) %}
 {% endif %}
 {% set _ = facts.append(('Decision code', code)) %}
 
@@ -82,6 +84,7 @@
     {% if can_approve %}{{ button('Approve', 'primary', attrs={'data-dialog-open': 'dlg-approve'}) }}{% endif %}
   </span>
   {% endif %}
+  {% if can_withdraw %}{{ button('Withdraw', 'ghost', attrs={'data-dialog-open': 'dlg-withdraw'}) }}{% endif %}
   {% call menu('More actions', 'more', trigger='icon') %}
     {{ menu_item('Export for verification', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
     {{ menu_item('Download as JSON', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='json')) }}
@@ -105,13 +108,15 @@
 {% endif %}
 
 {% if cannot_pass %}
-{#- Approvers demoted, removed or suspended since it was raised: it is not rejected for them
-    (nobody rejected it), so it says why it can't pass and how it ends (eligibility.py). -#}
+{#- Too few people who can still approve it are left (approvers demoted, removed or suspended,
+    or, under S15, a rejection): it is not rejected early, since its signed rule says when it is,
+    so it says why it can't pass and how it ends (eligibility.py). -#}
 {% set k = still_ids | length %}
 <div class="q-dbanner">
+{% set who_ends = 'you withdraw it' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') ~ ' withdraws it' %}
 {{ banner('warning', 'This ' ~ noun ~ ' can no longer pass',
-  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left. Approvers were removed, made viewers or suspended after it was raised. Votes already cast still count. '
-  ~ ('It stays open until it expires ' ~ ui_absolute(proposal.expires_at) ~ '.' if proposal.expires_at else 'It stays open until it is withdrawn.')) }}
+  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can still approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left: since it was raised, approvers have rejected it, or been removed, made viewers or suspended. Votes already cast still count. '
+  ~ ('It stays open until it expires ' ~ ui_absolute(proposal.expires_at) ~ ', or until ' ~ who_ends ~ '.' if proposal.expires_at else 'It stays open until ' ~ who_ends ~ '.')) }}
 </div>
 {% endif %}
 
@@ -167,6 +172,8 @@
       Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.
     {%- elif proposal.status == 'rejected' %}
       Rejected by {{ rejections }} of the {{ proposal.required_n }} approvers, so it could no longer reach {{ proposal.required_m }} approvals.
+    {%- elif proposal.status == 'withdrawn' %}
+      Withdrawn by {{ names.get(proposal.creator_id, 'the person who raised it') }} with {{ approvals }} of the {{ proposal.required_m }} approvals it needed. Approvals already given no longer count.
     {%- else %}
       Expired with {{ approvals }} of the {{ proposal.required_m }} approvals it needed.
     {%- endif %}
@@ -228,11 +235,14 @@
           <p><b>Approved</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% elif proposal.status == 'rejected' %}
           <p><b>Rejected</b>. It can no longer be approved</p>
+          {% elif proposal.status == 'withdrawn' %}
+          <p><b>Withdrawn</b> by {{ names.get(proposal.creator_id, 'the person who raised it') }}. It can no longer be approved</p>
           {% else %}
           <p><b>Expired</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% endif %}
         </div>
-        <span class="q-tl__time">{{ ui_absolute(proposal.approved_at or proposal.rejected_at or proposal.expires_at) if (proposal.approved_at or proposal.rejected_at or proposal.expires_at) }}</span>
+        {% set ended = proposal.approved_at or proposal.rejected_at or (proposal.lifecycle.withdrawn_at if proposal.status == 'withdrawn' and proposal.lifecycle else none) or proposal.expires_at %}
+        <span class="q-tl__time">{{ ui_absolute(ended) if ended }}</span>
       </li>
       {% if payout and payout.state == 'confirmed' %}
       <li class="q-tl__i q-tl__i--end">
@@ -492,6 +502,22 @@
   {% endif %}
 </aside>
 </div>
+
+{#- ------------------------------------------------------------------ withdraw (S16) -#}
+{% if can_withdraw %}
+{% call(part) dialog('dlg-withdraw', 'Withdraw this ' ~ noun ~ '?') %}
+  {% if part == 'body' %}
+  <form id="withdraw-form" method="post" action="{{ url_for('vaults.withdraw_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+    {{ withdraw_form.hidden_tag() }}
+    <p class="q-conseq">Withdrawing ends it for everyone. Approvals already given stop counting, and nobody can sign it after this.</p>
+    <p class="q-conseq">To change it, withdraw it and raise it again: signatures bind the text, so an edited {{ noun }} is a new one.</p>
+  </form>
+  {% else %}
+  {{ button('Cancel', 'secondary', attrs={'data-dialog-close': True}) }}
+  {{ button('Withdraw', 'danger', type='submit', attrs={'form': 'withdraw-form', 'data-busy-on-submit': True}) }}
+  {% endif %}
+{% endcall %}
+{% endif %}
 
 {#- ------------------------------------------------------------------ phone: the actions stay in reach -#}
 {% if can_vote %}

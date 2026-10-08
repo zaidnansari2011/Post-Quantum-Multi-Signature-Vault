@@ -13,13 +13,24 @@ from __future__ import annotations
 
 import base64
 import inspect
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy.orm.attributes import set_committed_value
 from test_device_api import _enrol_over_http, _sign_vote
 from test_vote_eligibility import PASSWORD, WRONG
 
-from qvault.models import Key, Signature
-from qvault.services import approval_service, auth_service, proposal_service, vault_service
+from qvault.extensions import db
+from qvault.models import Key, LedgerEntry, Notification, Signature
+from qvault.services import (
+    approval_service,
+    auth_service,
+    ledger_service,
+    notification_service,
+    proposal_service,
+    vault_service,
+    workspace_service,
+)
 from qvault.services.approval_service import ApprovalError
 from qvault.services.signing import vote_signing_bytes
 
@@ -145,3 +156,180 @@ def test_the_web_form_refuses_an_overlong_reason_in_words(client):
     )
     assert "Keep the reason to 255 characters" in resp.get_data(as_text=True)
     assert _votes(proposal) == 0
+
+
+# --- withdraw ----------------------------------------------------------------------------------
+
+
+def _kinds(user):
+    return [n.kind for n in Notification.query.filter_by(recipient_id=user.id)]
+
+
+def test_the_requester_withdraws_an_open_decision(app):
+    ada, brij, chen, _vault, proposal = _team("withdraw")
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    approval_service.withdraw(proposal, ada)
+
+    assert proposal.status == "withdrawn"
+    assert proposal.lifecycle.withdrawn_by_id == ada.id
+    assert proposal.lifecycle.withdrawn_at is not None
+    entry = LedgerEntry.query.filter_by(event_type="proposal_withdrawn").one()
+    assert entry.ref_id == proposal.proposal_uuid and entry.actor_id == ada.id
+    assert ledger_service.verify_chain() == (True, None)
+    # Everyone it asked, and whoever voted, hears; the person who withdrew it does not.
+    assert "decision_withdrawn" in _kinds(brij) and "decision_withdrawn" in _kinds(chen)
+    assert "decision_withdrawn" not in _kinds(ada)
+    # The vote already cast stays, and still verifies; it decides nothing now.
+    assert approval_service.tally(proposal) == (1, 0)
+
+
+def test_a_withdrawn_decision_takes_no_further_votes_on_any_path(app, client):
+    ada, brij, chen, _vault, proposal = _team("novotes")
+    _body, secret, auth = _enrol_over_http(client, chen)
+    approval_service.withdraw(proposal, ada)
+
+    with pytest.raises(ApprovalError, match="withdrawn; no further votes"):
+        approval_service.cast_vote(proposal, brij, WRONG, "approve")
+    r = client.post(
+        f"/api/v1/proposals/{proposal.proposal_uuid}/vote",
+        headers=auth,
+        json={
+            "decision": "approve",
+            "signature_b64": _sign_vote(secret, proposal, "approve", chen),
+        },
+    )
+    assert r.status_code == 422 and r.get_json()["code"] == "proposal_closed"
+    assert _votes(proposal) == 0
+
+
+def test_only_the_requester_can_withdraw(app):
+    _ada, brij, _chen, _vault, proposal = _team("notyours")
+    with pytest.raises(ApprovalError, match="Only the person who raised this decision"):
+        approval_service.withdraw(proposal, brij)
+    assert proposal.status == "open"
+
+
+@pytest.mark.parametrize("how", ["approved", "rejected", "expired-unswept"])
+def test_a_decision_that_has_ended_cannot_be_withdrawn(app, how):
+    ada, brij, chen, _vault, proposal = _team(f"ended{how[:3]}")
+    if how == "approved":
+        approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+        approval_service.cast_vote(proposal, chen, PASSWORD, "approve")
+    elif how == "rejected":
+        approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="No.")
+        approval_service.cast_vote(proposal, chen, PASSWORD, "reject", reason="No.")
+    else:
+        proposal.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        db.session.commit()
+    with pytest.raises(ApprovalError, match="t be withdrawn"):
+        approval_service.withdraw(proposal, ada)
+    assert proposal.status == how.split("-")[0]
+
+
+def test_a_suspended_requester_cannot_withdraw(app):
+    ada, brij, _chen, vault, _proposal = _team("suspwithdraw")
+    raised = proposal_service.create_proposal(vault, brij, "Brij's", "Buy a laptop.")
+    workspace_service.suspend_member(
+        workspace_service.workspace_of_vault(vault), brij.id, actor=ada
+    )
+    with pytest.raises(ApprovalError, match="suspended"):
+        approval_service.withdraw(raised, brij)
+    assert raised.status == "open"
+
+
+def test_a_vote_racing_a_withdrawal_is_refused_not_recorded(app):
+    """The gate read "open" from a copy loaded before the withdrawal committed elsewhere: the
+    vote's own write re-reads the row and refuses, leaving nothing behind."""
+    _ada, brij, _chen, _vault, proposal = _team("racevote")
+    db.session.execute(
+        db.text("UPDATE proposals SET status = 'withdrawn' WHERE id = :id"), {"id": proposal.id}
+    )
+    db.session.commit()
+    set_committed_value(proposal, "status", "open")  # as another request committed it
+    assert proposal.status == "open"  # this request's copy has not seen it
+
+    with pytest.raises(ApprovalError, match="withdrawn; no further votes"):
+        approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert _votes(proposal) == 0
+    assert LedgerEntry.query.filter_by(event_type="proposal_signed").count() == 0
+
+
+def test_a_withdrawal_racing_the_deciding_vote_is_refused(app):
+    ada, _brij, _chen, _vault, proposal = _team("racewithdraw")
+    db.session.execute(
+        db.text("UPDATE proposals SET status = 'approved' WHERE id = :id"), {"id": proposal.id}
+    )
+    db.session.commit()
+    set_committed_value(proposal, "status", "open")  # as another request committed it
+    assert proposal.status == "open"  # stale
+
+    with pytest.raises(ApprovalError, match="approved, so it can"):
+        approval_service.withdraw(proposal, ada)
+    assert LedgerEntry.query.filter_by(event_type="proposal_withdrawn").count() == 0
+
+
+def test_withdraw_on_the_web(client):
+    ada, brij, _chen, vault, proposal = _team("webwithdraw")
+    vid, pid = vault.id, proposal.proposal_uuid
+
+    client.post("/login", data={"email": brij.email, "password": PASSWORD})
+    assert "dlg-withdraw" not in client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    resp = client.post(f"/vaults/{vid}/proposals/{pid}/withdraw", follow_redirects=True)
+    assert "Only the person who raised this decision" in resp.get_data(as_text=True)
+    assert proposal.status == "open"
+    client.post("/logout")
+
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    assert "dlg-withdraw" in page and 'name="csrf_token"' in page
+    resp = client.post(f"/vaults/{vid}/proposals/{pid}/withdraw", follow_redirects=True)
+    text = resp.get_data(as_text=True)
+    assert "Withdrawn. It has ended for everyone" in text
+    assert "Withdrawn by You with 0 of the 2 approvals" in text
+    assert "dlg-withdraw" not in text and "dlg-approve" not in text
+
+    # The lists say Withdrawn, in the closed vocabulary, and every page that lists it renders.
+    assert "Withdrawn" in client.get("/approvals/?tab=done").get_data(as_text=True)
+    assert client.get(f"/vaults/{vid}").status_code == 200
+    assert client.get("/").status_code == 200
+
+
+def test_withdraw_on_the_phone(app, client):
+    ada, brij, _chen, _vault, proposal = _team("apiwithdraw")
+    _b, _s, brij_auth = _enrol_over_http(client, brij, name="Brij's phone")
+    _b, _s, ada_auth = _enrol_over_http(client, ada)
+    uuid = proposal.proposal_uuid
+
+    summary = client.get(f"/api/v1/proposals/{uuid}", headers=ada_auth).get_json()["proposal"]
+    assert summary["can_withdraw"] is True and summary["withdrawn_by"] is None
+    theirs = client.get(f"/api/v1/proposals/{uuid}", headers=brij_auth).get_json()["proposal"]
+    assert theirs["can_withdraw"] is False
+
+    r = client.post(f"/api/v1/proposals/{uuid}/withdraw", headers=brij_auth)
+    assert r.status_code == 403 and r.get_json()["code"] == "not_requester"
+
+    r = client.post(f"/api/v1/proposals/{uuid}/withdraw", headers=ada_auth)
+    assert r.status_code == 200
+    body = r.get_json()["proposal"]
+    assert body["status"] == "withdrawn"
+    assert body["display_status"]["key"] == "withdrawn"
+    assert body["display_status"]["word"] == "Withdrawn"
+    assert body["withdrawn_by"] == {"id": ada.id, "name": "Ada"}
+    assert body["withdrawn_at"] and body["can_withdraw"] is False
+
+    r = client.post(f"/api/v1/proposals/{uuid}/withdraw", headers=ada_auth)
+    assert r.status_code == 409 and r.get_json()["code"] == "proposal_closed"
+    awaiting = client.get("/api/v1/proposals?state=awaiting", headers=brij_auth).get_json()
+    assert uuid not in [p["proposal_uuid"] for p in awaiting["proposals"]]
+
+
+def test_the_request_to_approve_leaves_needs_you_and_says_how_it_ended(app):
+    ada, brij, _chen, _vault, proposal = _team("inboxwithdraw")
+    assert notification_service.inbox(brij, "needs_you").total == 1
+    approval_service.withdraw(proposal, ada)
+
+    assert notification_service.inbox(brij, "needs_you").total == 0
+    items = {item["kind"]: item for item in notification_service.inbox(brij, "updates").items}
+    assert items["decision_withdrawn"]["title"] == "Ada withdrew a decision"
+    assert "nothing to sign" in items["decision_withdrawn"]["body"]
+    assert items["decision_raised"]["body"].endswith("Withdrawn without your vote.")
