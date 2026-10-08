@@ -228,19 +228,6 @@
       }, function () { announce('Copy failed. Select the text and copy it instead.'); });
       return;
     }
-
-    // The older hash chip: click it to copy its full value. A truncated hash you cannot retrieve
-    // in full is not evidence of anything.
-    el = t.closest('.hash[data-copy]');
-    if (el) {
-      var chip = el;
-      copyText(chip.getAttribute('data-copy')).then(function () {
-        var prev = chip.textContent;
-        chip.classList.add('copied');
-        chip.textContent = 'copied';
-        window.setTimeout(function () { chip.classList.remove('copied'); chip.textContent = prev; }, 1000);
-      }, function () {});
-    }
   });
 
   // A link followed inside the drawer closes it, so Back does not return to an open drawer.

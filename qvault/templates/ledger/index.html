@@ -127,7 +127,7 @@
 {% if demo_enabled %}
 <div class="q-dev q-gap-top">
   <p class="q-dev__t">Developer: tamper with the record to see the check catch it</p>
-  <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="q-line q-line--gap">
+  <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="q-line q-line--gap q-tamper">
     {{ tamper_form.hidden_tag() }}
     {{ number('target_seq', 'Entry', tamper_form.target_seq._value(), min=1, id=tamper_form.target_seq.id) }}
     {{ button('Edit an entry', 'ghost', type='submit', size='sm', name='edit', value=tamper_form.edit.label.text) }}

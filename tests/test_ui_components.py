@@ -146,7 +146,8 @@ def test_a_form_field_keeps_what_the_form_declares_and_ties_its_caption_and_erro
         form.validate()
         html = app.jinja_env.from_string(
             '{% from "ui/forms.html" import wtf_field %}'
-            "{{ wtf_field(form.email, caption='Your sign-in.', attrs={'autocomplete': 'username'}) }}"
+            "{{ wtf_field(form.email, caption='Your sign-in.',"
+            " attrs={'autocomplete': 'username'}) }}"
             "{{ wtf_field(form.display_name) }}"
         ).render(form=form)
     email = re.search(r"<input[^>]*name=\"email\"[^>]*>", html).group(0)
