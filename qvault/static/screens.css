@@ -197,6 +197,16 @@ p.q-panel__bd { margin: 0; }
 .q-atk-run .q-stats + .q-note { margin-top: var(--space-16); }
 .q-admin > .q-tech__t { margin-top: var(--space-24); }
 
+/* ================================================================ the audit log's developer row
+ * The tamper demonstration: an entry number and two buttons, on one baseline. The field has a label
+ * above it and the buttons do not, so the row aligns their bottom edges and gives the buttons the
+ * input's height (a touch target on a phone, where the stepper grows to one). */
+
+.q-tamper { align-items: flex-end; }
+.q-tamper .q-field { margin: 0; }
+.q-tamper .q-btn { --btn-h: var(--control-h); }
+@media (max-width: 767px) { .q-tamper .q-btn { --btn-h: var(--target-touch); } }
+
 /* ================================================================ the documentation */
 
 .q-docs { display: grid; gap: var(--space-24); align-items: start; }
@@ -328,4 +338,7 @@ p.q-panel__bd { margin: 0; }
   .q-link { flex-wrap: wrap; }
   .q-link .q-btn { --btn-h: var(--target-touch); }
   .q-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* A panel's meta line goes under its title rather than squeezing it into a column. */
+  .q-panel__hd:has(> .q-small) { flex-wrap: wrap; row-gap: var(--space-2); }
+  .q-panel__hd > .q-small { flex-basis: 100%; margin-left: 0; text-align: left; }
 }
