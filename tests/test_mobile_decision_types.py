@@ -109,7 +109,12 @@ def _boundaries() -> list[str]:
     points = set()
     for low, high in decision_types.HIDDEN_RANGES:
         points.update({low - 1, low, high, high + 1})
-    for cp in decision_types.LINE_BREAKS | decision_types.OTHER_SPACES:
+    for cp in (
+        decision_types.LINE_BREAKS
+        | decision_types.OTHER_SPACES
+        | decision_types.DOUBLE_QUOTES
+        | decision_types.SINGLE_QUOTES
+    ):
         points.update({cp - 1, cp, cp + 1})
     points.update({0x1FFFD, 0x1FFFE, 0x1FFFF, 0x20000, 0x10FFFE, 0x10FFFF})
     points.update(map(ord, "aZ09 :.,-/()'\u00e9\u0301\u0645\u05d0\u738b\uff10\u0661"))
@@ -135,8 +140,12 @@ def _mutate(rng: random.Random, value: str) -> str:
         # Around the length limits, in code points, some of them astral or combining.
         unit = rng.choice(["x", "\U0001f680", "\u00e9", "e\u0301"])
         return unit * rng.choice([79, 80, 81, 119, 120, 121, 279, 280, 281])
-    elif choice < 0.85:
+    elif choice < 0.82:
         return rng.choice([None, "", 5, ["x"], {"x": 1}, True])
+    elif choice < 0.85:
+        # A label of either type, with or without the ": " that makes it read as a line.
+        label = rng.choice(["Person", "Reason", "Value", "Ends", "Subject", "Access", "Until"])
+        return f"{value} {label}{rng.choice([': ', ':', ' '])}x"
     elif choice < 0.95:
         # The spacing rules: an ordinary space at either end, or two together.
         return rng.choice([value + " ", " " + value, value.replace(" ", "  ", 1), value + "  x"])
@@ -234,6 +243,8 @@ def test_the_twins_agree_on_thousands_of_generated_field_sets(results):
         "unknown_type",
         "unknown_version",
         "order",
+        "quote_mark",
+        "label_in_value",
     }
 
 

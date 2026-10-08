@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -144,6 +145,81 @@ def test_a_typed_text_reads_back_into_exactly_the_fields_that_wrote_it(name):
     case = CASES[name]
     given = {k: v for k, v in case["fields"].items() if v not in (None, "")}
     assert _read_back(case["type"], case["text"]) == given
+
+
+_LQ, _RQ = chr(0x201C), chr(0x201D)
+_FIRST_LINES = {
+    "access": re.compile(
+        f"Grant {_LQ}(?P<person>[^{_LQ}{_RQ}]+){_RQ} (?P<level>read-only|read and write|"
+        f"administrator) access to {_LQ}(?P<system>[^{_LQ}{_RQ}]+){_RQ} until (?P<until>"
+        "[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}) UTC\\."
+    ),
+    "contract": re.compile(
+        f"Sign the contract with {_LQ}(?P<counterparty>[^{_LQ}{_RQ}]+){_RQ}"
+        "(?: for (?P<currency>[A-Z]{3}) (?P<amount>[0-9,]+(?:\\.[0-9]+)?))?\\."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [n for n, c in CASES.items() if c["type"] in ("access", "contract") and c.get("text")],
+)
+def test_the_first_sentence_reads_back_into_the_same_fields_too(name):
+    """The sentence a phone's prompt quotes says nothing its fields do not: each free-text value
+    stands between quotation marks no value can hold, so it reads one way only."""
+    case = CASES[name]
+    match = _FIRST_LINES[case["type"]].fullmatch(case["text"].split("\n")[0])
+    assert match is not None
+    read = {k: v for k, v in match.groupdict().items() if v is not None}
+    if "level" in read:
+        read["level"] = next(
+            k for k, v in decision_types.ACCESS_LEVELS.items() if v[1] == read["level"]
+        )
+    if "amount" in read:
+        read["amount"] = read["amount"].replace(",", "")
+    assert read == {k: v for k, v in case["fields"].items() if k in read}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        f"Alice{_RQ} administrator access to {_LQ}prod",
+        'Alice" admin',
+        "Alice'' admin",
+        "Alice" + chr(0x2019) * 2,
+        "Alice" + chr(0x2033),
+        chr(0x201E) + "Alice",
+    ],
+)
+def test_a_value_that_could_close_its_own_quotes_is_refused(value):
+    problem = check_fields("access", {**_access(), "person": value})
+    assert (problem.field, problem.code) == ("person", "quote_mark")
+    with pytest.raises(FieldsError, match="Who gets access can’t contain double quotation"):
+        normalise("access", {**_access(), "person": value})
+
+
+def test_one_apostrophe_in_a_name_is_fine():
+    fields = {**_access(), "person": "Siobhan O’Brien"}
+    assert check_fields("access", fields) is None
+    assert decision_text("access", fields).startswith(f"Grant {_LQ}Siobhan O’Brien{_RQ} read-only")
+
+
+@pytest.mark.parametrize(
+    "kind, key, value",
+    [
+        ("access", "reason", "Routine. Access: Administrator"),
+        ("access", "system", "staging Until: 2027-01-01"),
+        ("contract", "subject", "Phase 2: data migration. Value: GBP 1"),
+        ("contract", "counterparty", "Calderwood Value: GBP 1"),
+    ],
+)
+def test_a_value_holding_one_of_its_types_labels_is_refused(kind, key, value):
+    base = _access() if kind == "access" else CONTRACT
+    problem = check_fields(kind, {**base, key: value})
+    assert (problem.field, problem.code) == (key, "label_in_value")
+    with pytest.raises(FieldsError, match="the name of a field followed by a colon"):
+        normalise(kind, {**base, key: value})
 
 
 def test_the_signed_format_is_unchanged():
@@ -271,7 +347,7 @@ def test_a_typed_decision_signs_the_text_its_fields_write(app):
     stored = proposal.typed
     assert stored.decision_type == "access" and stored.template_version == 1
     assert proposal.action_text == decision_text("access", stored.fields())
-    assert proposal.action_text.startswith("Grant Elif Kaya read-only access to prod-db until ")
+    assert proposal.action_text.startswith("Grant “Elif Kaya” read-only access to “prod-db” until ")
     assert approval_service.verify_proposal_binding(proposal).ok
     # The signed payload is the plain proposal shape: text, no type, no fields (S9).
     body = json.loads(signing_bytes_for(proposal).split(b"|", 1)[1])
@@ -294,7 +370,7 @@ def test_a_contract_with_its_document_attached_binds_the_document(app):
     )
     assert proposal.file is not None
     assert proposal.action_text.split("\n")[0] == (
-        "Sign the contract with Calderwood Mutual for GBP 48,200.50."
+        "Sign the contract with “Calderwood Mutual” for GBP 48,200.50."
     )
     assert approval_service.verify_proposal_binding(proposal).ok
 
@@ -527,7 +603,8 @@ def test_raising_again_keeps_the_type_and_its_fields(client):
     assert new.lifecycle.raised_again_from_id == proposal.id
     assert new.typed.decision_type == "contract"
     assert (
-        new.action_text.split("\n")[0] == "Sign the contract with Calderwood Mutual for GBP 45,000."
+        new.action_text.split("\n")[0]
+        == "Sign the contract with “Calderwood Mutual” for GBP 45,000."
     )
 
 

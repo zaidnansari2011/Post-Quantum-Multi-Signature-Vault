@@ -18,6 +18,11 @@ Unicode table, locale or date library can make them disagree:
   private-use or noncharacter code point (a fixed list below, not a Unicode category, so a newer
   Unicode database on either side changes nothing), only the ordinary space, never at either end
   and never two together. Letters of any script are allowed;
+* no free-text field holds a double quotation mark, or anything drawn like one (two single
+  quotation marks together among them), because the first line puts each free-text value between
+  “ and ”: a value can never close its own quotes and go on to say something its fields do not;
+* no free-text field holds one of its type's own labels followed by ``": "`` (``Reason: ``), so
+  a value never reads as a line of the text;
 * lengths are counted in code points;
 * dates are ``YYYY-MM-DD`` and times ``YYYY-MM-DD HH:MM`` in UTC, real calendar dates from 2000;
 * an amount is a plain decimal (``48200.50``), shown grouped (``48,200.50``), with a three-letter
@@ -125,6 +130,60 @@ HIDDEN_RANGES = (
     (0xF0000, 0x10FFFF),  # supplementary private use
 )
 
+#: Double quotation marks, and what draws like one: a free-text value never holds one, so the
+#: quotes the first line puts around it are always the template's own.
+DOUBLE_QUOTES = frozenset(
+    {
+        0x0022,  # quotation mark
+        0x00AB,  # left-pointing double angle quotation mark
+        0x00BB,  # right-pointing double angle quotation mark
+        0x02BA,  # modifier letter double prime
+        0x02DD,  # double acute accent
+        0x02EE,  # modifier letter double apostrophe
+        0x05F4,  # Hebrew punctuation gershayim
+        0x201C,  # left double quotation mark
+        0x201D,  # right double quotation mark
+        0x201E,  # double low-9 quotation mark
+        0x201F,  # double high-reversed-9 quotation mark
+        0x2033,  # double prime
+        0x2036,  # reversed double prime
+        0x275D,  # heavy double turned comma quotation mark ornament
+        0x275E,  # heavy double comma quotation mark ornament
+        0x2E42,  # double low-reversed-9 quotation mark
+        0x3003,  # ditto mark
+        0x301D,  # reversed double prime quotation mark
+        0x301E,  # double prime quotation mark
+        0x301F,  # low double prime quotation mark
+        0xFF02,  # fullwidth quotation mark
+        0x1F676,  # sans-serif heavy double turned comma quotation mark ornament
+        0x1F677,  # sans-serif heavy double comma quotation mark ornament
+        0x1F678,  # sans-serif heavy low double comma quotation mark ornament
+    }
+)
+
+#: Single quotation marks and apostrophes. One is allowed (O’Brien); two together draw as a
+#: double quotation mark, so they are refused.
+SINGLE_QUOTES = frozenset(
+    {
+        0x0027,  # apostrophe
+        0x0060,  # grave accent
+        0x00B4,  # acute accent
+        0x02B9,  # modifier letter prime
+        0x02BB,  # modifier letter turned comma
+        0x02BC,  # modifier letter apostrophe
+        0x02BD,  # modifier letter reversed comma
+        0x2018,  # left single quotation mark
+        0x2019,  # right single quotation mark
+        0x201A,  # single low-9 quotation mark
+        0x201B,  # single high-reversed-9 quotation mark
+        0x2032,  # prime
+        0x2035,  # reversed prime
+        0x2039,  # single left-pointing angle quotation mark
+        0x203A,  # single right-pointing angle quotation mark
+        0xFF07,  # fullwidth apostrophe
+    }
+)
+
 #: Spaces other than U+0020: they look like one and are not.
 #: The Braille blank is not a space, but draws as one.
 OTHER_SPACES = frozenset({0x00A0, 0x1680, 0x202F, 0x205F, 0x2800, 0x3000, *range(0x2000, 0x200B)})
@@ -163,7 +222,8 @@ def _real_date(text: str) -> bool:
     return 1 <= day <= days
 
 
-def _text_problem(value: str, max_len: int) -> str | None:
+def _text_problem(value: str, max_len: int, labels: tuple[str, ...]) -> str | None:
+    after_single = False
     for ch in value:
         cp = ord(ch)
         if cp in LINE_BREAKS:
@@ -172,16 +232,21 @@ def _text_problem(value: str, max_len: int) -> str | None:
             return "hidden_character"
         if cp in OTHER_SPACES:
             return "spacing"
+        if cp in DOUBLE_QUOTES or (after_single and cp in SINGLE_QUOTES):
+            return "quote_mark"
+        after_single = cp in SINGLE_QUOTES
     if value.startswith(" ") or value.endswith(" ") or "  " in value:
         return "spacing"
     if len(value) > max_len:
         return "too_long"
+    if any(f"{label}: " in value for label in labels):
+        return "label_in_value"
     return None
 
 
-def _value_problem(spec: Spec, value: str) -> str | None:
+def _value_problem(spec: Spec, value: str, labels: tuple[str, ...]) -> str | None:
     if spec.kind == "text":
-        return _text_problem(value, spec.max_len)
+        return _text_problem(value, spec.max_len, labels)
     if spec.kind == "choice":
         return None if value in ACCESS_LEVELS else "choice"
     if spec.kind == "datetime":
@@ -214,6 +279,7 @@ def check_fields(decision_type: object, fields: object, version: object = TEMPLA
     known = {spec.key for spec in specs}
     if any(key not in known for key in fields):
         return Problem(None, "unknown_field")
+    labels = tuple(spec.label for spec in specs)
     for spec in specs:
         value = fields.get(spec.key)
         if value is None or value == "":
@@ -222,7 +288,7 @@ def check_fields(decision_type: object, fields: object, version: object = TEMPLA
             continue
         if not isinstance(value, str):
             return Problem(spec.key, "not_text")
-        code = _value_problem(spec, value)
+        code = _value_problem(spec, value, labels)
         if code is not None:
             return Problem(spec.key, code)
     if decision_type == "contract":
@@ -275,16 +341,18 @@ def field_rows(decision_type: str, fields: dict) -> list[tuple[str, str]]:
 
 
 def _first_line(decision_type: str, fields: dict) -> str:
+    """The sentence a phone's prompt quotes. Each free-text value in it stands between “ and
+    ”, which no value can hold, so where a value ends is never in doubt."""
     if decision_type == "access":
         phrase = ACCESS_LEVELS[fields["level"]][1]
         return (
-            f"Grant {fields['person']} {phrase} access to {fields['system']} "
+            f"Grant “{fields['person']}” {phrase} access to “{fields['system']}” "
             f"until {fields['until']} UTC."
         )
     value = ""
     if _given(fields, "amount"):
         value = f" for {fields['currency']} {_grouped(fields['amount'])}"
-    return f"Sign the contract with {fields['counterparty']}{value}."
+    return f"Sign the contract with “{fields['counterparty']}”{value}."
 
 
 def decision_text(
@@ -316,6 +384,14 @@ MESSAGES = {
         "direction character). Type it again without it."
     ),
     "spacing": "{label} has extra or unusual spaces. Use single ordinary spaces between words.",
+    "quote_mark": (
+        "{label} can’t contain double quotation marks, or two single ones together: the "
+        "decision’s text puts quotation marks around it."
+    ),
+    "label_in_value": (
+        "{label} can’t contain the name of a field followed by a colon (like “Reason: ”), "
+        "because it would read as a line of its own."
+    ),
     "choice": "Choose read-only, read and write, or administrator.",
     "datetime": "Type it as 2026-11-04 17:00, in UTC.",
     "date": "Type it as 2027-01-31.",
