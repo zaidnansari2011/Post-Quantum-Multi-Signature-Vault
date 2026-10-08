@@ -869,9 +869,10 @@ def _proposal_summary(proposal, user) -> dict:
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
-        # Plan S13, as stored and unsigned: the phone writes the text again from the detail's
-        # `fields` and refuses when it differs; nothing here is trusted over the signed text.
-        "decision_type": _type_facts(proposal)[0],
+        # Plan S13: the type its signed text bears out (``decision_types.typed_view``), as the
+        # web's rows show it, so a row edited behind the decision's back lists as General. The
+        # detail sends the stored type and fields, for the phone to check against the signed text.
+        "decision_type": decision_types.typed_view(proposal).type,
         # A3: everyone in its signed signer set, by id, with a name and whether they hold a key.
         "signers": _signers_view(proposal),
         # A4: when it was decided (approved, rejected, withdrawn or expired); null while open.
@@ -1136,8 +1137,11 @@ def proposal_detail(uuid: str):
     _type, fields, version = _type_facts(proposal)
     detail.update(
         {
-            # Plan S13 (A13): a typed decision's fields and the template version that wrote its
-            # text. Unsigned; null for General and Payment (a payment's are signing_inputs.action).
+            # Plan S13 (A13): a typed decision's stored type, its fields and the template version
+            # that wrote its text. Unsigned; fields are null for General and Payment (a payment's
+            # are signing_inputs.action). As stored, unlike the summary's type: the phone writes
+            # the text again from them and refuses when it differs (``type_text``).
+            "decision_type": _type,
             "fields": fields,
             "template_version": version,
             "action_text": proposal.action_text,
