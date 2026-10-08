@@ -16,11 +16,12 @@ from qvault.chain import action as chain_action
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.file import VaultFile
-from qvault.models.proposal import Proposal, ProposalLifecycle
+from qvault.models.proposal import DecisionFields, Proposal, ProposalLifecycle
 from qvault.models.treasury import ProposalAction, Treasury
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault
 from qvault.services import (
+    decision_types,
     eligibility,
     file_crypto_service,
     ledger_service,
@@ -40,6 +41,15 @@ class NotAllowedToPropose(ProposalError):
     A ``ProposalError``, so a caller that treats every refusal alike still refuses. The web and the
     API answer it with 403 rather than as a bad request: it is about who is asking, not what.
     """
+
+
+class FieldsRefused(ProposalError):
+    """A typed decision's fields write no text (plan S13), with the field to mark on the form
+    (None for the fields as a whole)."""
+
+    def __init__(self, field: str | None, text: str):
+        super().__init__(text)
+        self.field = field
 
 
 #: Why a viewer is refused. One sentence for the service and the API, whose ``error`` the phone
@@ -87,6 +97,11 @@ def raise_again_prefill(source: Proposal) -> dict:
     new decision gets a new id, nonce, signer set, rule and deadline when it is raised."""
     action = source.action
     if action is None:
+        # A typed decision starts from its fields, but only fields that write its signed text:
+        # otherwise it is raised again from the signed text, as a General decision.
+        view = decision_types.typed_view(source)
+        if view.type in decision_types.STORED_TYPES:
+            return {"kind": view.type, "title": source.title, "fields": dict(view.fields)}
         return {"kind": "general", "title": source.title, "action_text": source.action_text}
     value = action.value_wei
     amount = None
@@ -116,6 +131,16 @@ class PaymentRequest:
 
     to: str
     value_wei: int
+
+
+@dataclass(frozen=True)
+class TypedRequest:
+    """A Production access or Contract decision: its type and the fields a person filled in
+    (plan S13). The decision's text is written from the fields (``decision_types``), and the
+    fields are stored beside it, unsigned."""
+
+    decision_type: str
+    fields: dict
 
 
 # --- Deliberate tamper demonstration (dev/demo only) -------------------------------------------
@@ -170,6 +195,7 @@ def create_proposal(
     file_bytes: bytes | None = None,
     filename: str | None = None,
     payment: PaymentRequest | None = None,
+    typed: TypedRequest | None = None,
     raised_again_from: str | None = None,
     commit: bool = True,
 ) -> Proposal:
@@ -185,6 +211,11 @@ def create_proposal(
     ``creator`` must be the vault's owner or one of its signers (:func:`may_propose`). Checked
     here because every path to a decision comes through this function: the routes check first
     only so they can refuse before reading a request.
+
+    With ``typed``, the proposal is a Production access or Contract decision (plan S13):
+    ``action_text`` must be empty, because the text is written from the fields
+    (``decision_types.decision_text``), and the canonical fields are stored beside it, unsigned. A
+    refusal of the fields is :class:`FieldsRefused`, naming the field.
 
     ``raised_again_from`` is the id (uuid) of a closed decision in this vault that this one
     replaces (plan S16, :func:`raise_again_source`). It is recorded beside the decision, never in
@@ -220,6 +251,12 @@ def create_proposal(
             vault, payment, required_m, required_n, action_text, now, deadline
         )
         action_text = action.describe()
+    typed_fields = None
+    if typed is not None:
+        if payment is not None:
+            raise ProposalError("A payment's fields are its payment; it has no other type.")
+        typed_fields = _typed_fields(typed, action_text, now)
+        action_text = decision_types.decision_text(typed.decision_type, typed_fields)
 
     proposal_uuid = str(uuid.uuid4())
     nonce = os.urandom(16)
@@ -269,6 +306,14 @@ def create_proposal(
         requester_can_approve=requester_can_approve,
         raised_again_from_id=source.id if source is not None else None,
     )
+
+    if typed_fields is not None:
+        # In the type's order, as normalised: what the decision page and the phone read back.
+        proposal.typed = DecisionFields(
+            decision_type=typed.decision_type,
+            template_version=decision_types.TEMPLATE_VERSION,
+            fields_json=json.dumps(typed_fields, ensure_ascii=False),
+        )
 
     if action is not None:
         signed = action.canonical()
@@ -342,6 +387,25 @@ def create_proposal(
             file_crypto_service.remove_ciphertext(file_meta["ciphertext_path"])
         raise
     return proposal
+
+
+def _typed_fields(typed: TypedRequest, action_text: str, now: datetime) -> dict:
+    """The canonical fields for a typed decision, or a refusal a person can act on."""
+    if typed.decision_type not in decision_types.STORED_TYPES:
+        raise ProposalError("Choose General, Payment, Production access or Contract.")
+    label = decision_types.LABELS[typed.decision_type].lower()
+    if action_text:
+        raise ProposalError(
+            f"A {label} decision's text is written from its fields; leave the text empty."
+        )
+    try:
+        fields = decision_types.normalise(typed.decision_type, typed.fields)
+    except decision_types.FieldsError as exc:
+        raise FieldsRefused(exc.field, str(exc)) from None
+    if typed.decision_type == "access" and not decision_types.until_in_future(fields, now):
+        # Access that has already ended grants nothing; raised again, it needs a new end.
+        raise FieldsRefused("until", "Choose an end time in the future.")
+    return fields
 
 
 def _payment_action(vault, payment, required_m, required_n, action_text, now, deadline):
