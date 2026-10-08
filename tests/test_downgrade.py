@@ -168,6 +168,8 @@ def _login_admin(client):
             "email": "admin@e.com",
             "password": PASSWORD,
             "confirm": PASSWORD,
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )

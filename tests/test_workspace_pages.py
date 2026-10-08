@@ -543,7 +543,7 @@ def test_a_new_person_creates_an_account_from_the_link_and_joins(app, client, in
 
     r = client.post(
         f"/invite/{token}/register",
-        data={"display_name": "Sam", "password": PW, "confirm": PW},
+        data={"display_name": "Sam", "password": PW, "confirm": PW, "understood": "y"},
     )
 
     assert r.status_code == 302
@@ -560,7 +560,7 @@ def test_a_bad_sign_up_form_shows_its_errors_and_creates_nothing(app, client, in
 
     r = client.post(
         f"/invite/{token}/register",
-        data={"display_name": "Sam", "password": PW, "confirm": "different"},
+        data={"display_name": "Sam", "password": PW, "confirm": "different", "understood": "y"},
     )
 
     assert r.status_code == 400 and "Passwords must match" in _text(r)
@@ -616,7 +616,8 @@ def test_the_wrong_account_cannot_accept_by_posting_either(app, client, invited)
 def test_an_accepted_link_says_so(app, client, invited):
     _, token, _ = invited
     client.post(
-        f"/invite/{token}/register", data={"display_name": "Sam", "password": PW, "confirm": PW}
+        f"/invite/{token}/register",
+        data={"display_name": "Sam", "password": PW, "confirm": PW, "understood": "y"},
     )
 
     assert "You joined Q-Vault" in _text(client.get(f"/invite/{token}"))

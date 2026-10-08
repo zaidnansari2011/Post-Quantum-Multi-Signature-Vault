@@ -392,6 +392,7 @@ def signed_out_pages(client, w) -> dict[str, tuple[str, int]]:
         "landing": "/",
         "sign in": "/login",
         "register": "/register",
+        "forgot password": "/forgot-password",
         "verify": "/verify/",
         "not found": "/no-such-page",
         "docs": "/docs/",
@@ -422,6 +423,7 @@ def signed_in_pages(client, w) -> dict[str, str]:
         "chain": "/admin/chain",
         "account": "/account/",
         "account security": "/account/security",
+        "forgot password": "/forgot-password",
         "notification preferences": "/account/notifications",
         "notifications": "/notifications/",
         "docs": "/docs/",
@@ -478,7 +480,7 @@ def _posted(client, w) -> dict[str, str]:
     return {key: r.get_data(as_text=True) for key, r in sent.items()}
 
 
-def _refused_signed_out(client) -> dict[str, str]:
+def _refused_signed_out(client, w) -> dict[str, str]:
     """The signed-out forms, sent back refused."""
     sent = {
         "sign in, refused": client.post(
@@ -489,9 +491,20 @@ def _refused_signed_out(client) -> dict[str, str]:
             "/register",
             data={"display_name": "", "email": "ada", "password": "short", "confirm": "other"},
         ),
+        "invitation sign up, refused": client.post(
+            f"/invite/{w['token']}/register",
+            data={"display_name": "", "password": "short", "confirm": "other"},
+        ),
         "register, taken": client.post(
             "/register",
-            data={"display_name": "Ada", "email": "ada@e.com", "password": PW, "confirm": PW},
+            data={
+                "display_name": "Ada",
+                "email": "ada@e.com",
+                "workspace_name": "Ada Co",
+                "password": PW,
+                "confirm": PW,
+                "understood": "y",
+            },
         ),
     }
     for key, r in sent.items():
@@ -570,7 +583,7 @@ def _report(rendered: dict[str, str]) -> set[tuple[str, str]]:
 
 def test_every_signed_out_page_passes_the_structural_checks(app, client, world):
     rendered = _render(client, signed_out_pages(client, world))
-    refused = _refused_signed_out(client)
+    refused = _refused_signed_out(client, world)
     rendered.update(refused)
     rendered.update(_error_pages(app, client))
     assert sorted(_report(rendered)) == []

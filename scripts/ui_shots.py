@@ -34,6 +34,7 @@ ANON = [
     ("05_not_found", "/no-such-page"),
     ("06_docs_page_anon", "/docs/approvals"),
     ("07_invite_unknown", "/invite/not-a-real-invitation"),
+    ("08_forgot_password", "/forgot-password"),
 ]
 AUTHED = [
     ("10_home", "/"),

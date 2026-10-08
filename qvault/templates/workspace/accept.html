@@ -2,6 +2,7 @@
 {% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/feedback.html" import banner %}
+{% from "_password_step.html" import password_step %}
 {% block title %}{{ {'unknown': 'Invalid invitation link', 'accepted': 'Invitation used', 'revoked': 'Invitation withdrawn',
   'expired': 'Invitation expired', 'void': 'Invitation no longer valid'}.get(state) or 'Join ' ~ invitation.workspace.name }} — Invitation — Q-Vault{% endblock %}
 
@@ -89,9 +90,7 @@
       <form method="post" action="{{ url_for('workspace.register', token=token) }}" novalidate>
         {{ form.hidden_tag() }}
         {{ wtf_field(form.display_name, attrs={'autocomplete': 'name'}) }}
-        {% set pw_caption %}Unlocks your signing key, which is created with your account. It can't be reset for you.{% endset %}
-        {{ wtf_field(form.password, caption=pw_caption, attrs={'autocomplete': 'new-password'}) }}
-        {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}
+        {{ password_step(form) }}
         {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
       </form>
       <p class="q-auth__foot">

@@ -182,6 +182,8 @@ def _register(client, email="led@e.com"):
             "email": email,
             "password": "password-123",
             "confirm": "password-123",
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )
