@@ -282,6 +282,36 @@ def test_a_shared_first_name_names_nobody_but_the_email_handle_still_does(app):
     assert len(_mentions(other)) == 1
 
 
+def test_a_handle_that_is_one_readers_first_name_and_anothers_email_names_neither(app):
+    """Brij Patel's first name and Zed Quinn's email name are both "brij": offered as Brij's, it
+    resolved to Zed and told Zed. Now it names nobody, and each keeps a handle of their own."""
+    ada, brij, _chen, _dev, vault, proposal = _team("cross")
+    zed = auth_service.register_user("brij@cross.example", "Zed Quinn", PASSWORD)
+    vault_service.add_member(vault, zed.email, "viewer", actor_id=ada.id)
+
+    people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
+    assert "brij" not in people[brij.id] and "brij" not in people[zed.id]
+    assert people[brij.id] == ["cross-brij"] and people[zed.id] == ["zed"]
+
+    comment = discussion_service.post(proposal, ada, "Thoughts @brij?")
+    assert comment.mentions is None
+    assert _mentions(zed) == [] and _mentions(brij) == []
+    comment = discussion_service.post(proposal, ada, "Thoughts @zed and @cross-brij?")
+    assert json.loads(comment.mentions) == {"cross-brij": brij.id, "zed": zed.id}
+
+
+def test_a_name_with_an_accent_gives_its_plain_handle_and_never_a_mangled_one(app):
+    ada, _brij, _chen, _dev, vault, proposal = _team("accent")
+    elif_ = auth_service.register_user("accent-e1@e.com", "Élif Kaya", PASSWORD)
+    lukasz = auth_service.register_user("accent-l1@e.com", "Łukasz Nowak", PASSWORD)
+    for user in (elif_, lukasz):
+        vault_service.add_member(vault, user.email, "viewer", actor_id=ada.id)
+    people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
+    assert people[elif_.id] == ["elif", "accent-e1"]
+    # L with a stroke has no plain form: no first-name handle rather than "@ukasz".
+    assert people[lukasz.id] == ["accent-l1"]
+
+
 def test_an_email_address_in_the_text_is_not_a_mention(app):
     _ada, brij, chen, _dev, _vault, proposal = _team("email")
     comment = discussion_service.post(proposal, brij, "Write to someone@chen and billing@ada.com")
@@ -361,6 +391,25 @@ def test_a_decision_holds_a_bounded_number_of_comments(app, monkeypatch):
     discussion_service.post(proposal, chen, "Two")
     with pytest.raises(CommentError, match="takes no more"):
         discussion_service.post(proposal, brij, "Three")
+
+
+def test_deleted_comments_never_fill_a_discussion(app, monkeypatch):
+    """One member posting and deleting could close a discussion for good while deleted comments
+    counted. They don't count towards the decision's limit; each person's own limit counts every
+    comment they posted, deleted or not, so what one person can store stays bounded."""
+    _ada, brij, chen, _dev, _vault, proposal = _team("churn")
+    monkeypatch.setattr(discussion_service, "MAX_PER_DECISION", 2)
+    monkeypatch.setattr(discussion_service, "MAX_PER_AUTHOR", 3)
+    start = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
+    for i in range(3):
+        comment = discussion_service.post(
+            proposal, brij, f"Spam {i}", now=start + timedelta(minutes=i)
+        )
+        discussion_service.delete(comment, brij, now=start + timedelta(minutes=i))
+    with pytest.raises(CommentError, match="as many as one person can"):
+        discussion_service.post(proposal, brij, "Again", now=start + timedelta(minutes=5))
+    # Everyone else can still take part.
+    assert discussion_service.post(proposal, chen, "Still open.", now=start + timedelta(minutes=5))
 
 
 # --- the audit log -------------------------------------------------------------------------------
