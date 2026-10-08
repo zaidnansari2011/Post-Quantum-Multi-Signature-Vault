@@ -21,14 +21,14 @@
     <form method="post" action="{{ url_for('notifications.read', nid=n.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="next" value="{{ back }}">
-      <button class="btn btn--quiet btn--sm" type="submit">Mark read</button>
+      <button class="q-btn q-btn--ghost q-btn--sm" type="submit">Mark read</button>
     </form>
     {% endif %}
     {% if not n.archived_at %}
     <form method="post" action="{{ url_for('notifications.archive', nid=n.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="next" value="{{ back }}">
-      <button class="btn btn--quiet btn--sm" type="submit">Archive</button>
+      <button class="q-btn q-btn--ghost q-btn--sm" type="submit">Archive</button>
     </form>
     {% endif %}
   </div>

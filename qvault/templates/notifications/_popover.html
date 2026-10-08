@@ -3,10 +3,10 @@
 <div class="npop__head">
   <span class="npop__title">Notifications</span>
   {% if unread.total %}
-  <form method="post" action="{{ url_for('notifications.read_all') }}" class="push">
+  <form method="post" action="{{ url_for('notifications.read_all') }}" class="npop__act">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ back }}">
-    <button class="btn btn--quiet btn--sm" type="submit">Mark all read</button>
+    <button class="q-btn q-btn--ghost q-btn--sm" type="submit">Mark all read</button>
   </form>
   {% endif %}
 </div>

@@ -1,65 +1,65 @@
 {% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
 {% block title %}Notification preferences — Q-Vault{% endblock %}
-
-{% block chrome %}
-<div class="head">
-  <div>
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('account.index') }}">Account</a><span>/</span>
-    </nav>
-    <div class="head__title">Notifications</div>
-    <div class="head__sub">Choose what Q-Vault tells you about, and where.</div>
-  </div>
-  <div class="head__actions">
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('notifications.inbox') }}">Open the inbox</a>
-  </div>
-</div>
-{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Account', url_for('account.index')), ('Notifications', None)]) }}{% endblock %}
 
 {% block content %}
+{{ page_header('Account', facts=[('Signed in as', current_user.email)]) }}
 {% set account_tab = 'notifications' %}{% include "account/_tabs.html" %}
-<form method="post" action="{{ url_for('notifications.preferences') }}" class="measure npref">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="panel">
-    <div class="scroll-x">
-      <table class="dt npref__grid">
-        <thead>
-          <tr>
-            <th>Event</th>
-            <th class="npref__col">In-app</th>
-            <th class="npref__col">Email <span class="npref__off">Not set up</span></th>
-            <th class="npref__col">Phone push <span class="npref__off">Not set up</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for group, kinds in groups %}
-          <tr class="npref__group"><td colspan="4">{{ group }}</td></tr>
-          {% for kind, label in kinds %}
-          {% set row = grid[kind] %}
-          <tr>
-            <td>
-              <label for="in_app-{{ kind }}">{{ label }}</label>
-              {% if row.locked %}
-              <span class="dt__sub" id="locked-{{ kind }}">Always on, so you hear at once if someone else gets into your account.</span>
-              {% endif %}
-            </td>
-            <td class="npref__col">
-              <input class="q-cb" type="checkbox" id="in_app-{{ kind }}" name="in_app" value="{{ kind }}"
-                     {% if row.channels.in_app %}checked{% endif %}
-                     {% if row.locked %}disabled aria-describedby="locked-{{ kind }}"{% endif %}>
-            </td>
-            <td class="npref__col"><span class="npref__none" title="Email is not set up">–</span></td>
-            <td class="npref__col"><span class="npref__none" title="Phone push is not set up">–</span></td>
-          </tr>
-          {% endfor %}
-          {% endfor %}
-        </tbody>
-      </table>
+
+<div class="q-acct">
+  <section class="q-panel" aria-labelledby="np-t">
+    <div class="q-panel__hd">
+      <h2 class="q-panel__t" id="np-t">Notifications</h2>
+      {{ button('Open the inbox', 'secondary', size='sm', href=url_for('notifications.inbox')) }}
     </div>
-  </div>
-  <p class="field__help">Switching an event off removes it from the bell and the
-    inbox from now on. Decisions waiting on you still appear on Approvals. Email and phone push
-    arrive in a later release; until then nothing is sent by either.</p>
-  <button class="btn btn--primary btn--sm" type="submit">Save preferences</button>
-</form>
+    <div class="q-panel__bd">
+      <p class="q-gap">Choose what Q-Vault tells you about, and where.</p>
+      <form method="post" action="{{ url_for('notifications.preferences') }}" class="npref">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="q-table-wrap">
+          <table class="q-table q-table--compact npref__grid">
+            <caption class="visually-hidden">Where each event reaches you</caption>
+            <thead>
+              <tr>
+                <th scope="col">Event</th>
+                <th scope="col" class="npref__col">In-app</th>
+                <th scope="col" class="npref__col npref__later">Email <span class="npref__off">Not set up</span></th>
+                <th scope="col" class="npref__col npref__later">Phone push <span class="npref__off">Not set up</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for group, kinds in groups %}
+              <tr class="npref__group"><td colspan="4">{{ group }}</td></tr>
+              {% for kind, label in kinds %}
+              {% set row = grid[kind] %}
+              <tr>
+                <td>
+                  <label for="in_app-{{ kind }}">{{ label }}</label>
+                  {% if row.locked %}
+                  <span class="q-cap" id="locked-{{ kind }}">Always on, so you hear at once if someone else gets into your account.</span>
+                  {% endif %}
+                </td>
+                <td class="npref__col">
+                  <input class="q-cb" type="checkbox" id="in_app-{{ kind }}" name="in_app" value="{{ kind }}"
+                         {% if row.channels.in_app %}checked{% endif %}
+                         {% if row.locked %}disabled aria-describedby="locked-{{ kind }}"{% endif %}>
+                </td>
+                <td class="npref__col npref__later"><span class="npref__none" title="Email is not set up">–</span></td>
+                <td class="npref__col npref__later"><span class="npref__none" title="Phone push is not set up">–</span></td>
+              </tr>
+              {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="q-note q-gap">Switching an event off removes it from the bell and the
+          inbox from now on. Decisions waiting on you still appear on Approvals. Email and phone push
+          arrive in a later release; until then nothing is sent by either.</p>
+        {{ button('Save preferences', 'primary', type='submit') }}
+      </form>
+    </div>
+  </section>
+</div>
 {% endblock %}

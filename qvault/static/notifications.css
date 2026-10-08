@@ -1,6 +1,7 @@
 /* Notifications (plan R4): the bell, its popover, the inbox list and the preferences grid.
    Loaded by the bell include, so it is on every signed-in page and the shell stays untouched.
-   Only the design system's tokens are used, so light and dark follow whatever the shell sets. */
+   Only the design system's tokens are used (rework R1: colours, the type scale, radius by role,
+   the popover's elevation), so light and dark follow whatever the shell sets. */
 
 .nvh {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
@@ -11,15 +12,15 @@
 
 .nbell { position: relative; }
 .nbell__button {
-  display: flex; align-items: center; gap: .55rem;
-  padding: .4rem .55rem; border-radius: var(--radius);
-  color: inherit; font-size: .84rem; font-weight: 500;
+  display: flex; align-items: center; gap: var(--space-8);
+  padding: var(--space-6) var(--space-8); border-radius: var(--radius-control);
+  color: inherit; font-weight: var(--weight-medium); text-decoration: none;
 }
 .nbell__button:hover,
 .nbell__button[aria-expanded="true"] {
   background: color-mix(in srgb, currentColor 12%, transparent); text-decoration: none;
 }
-.nbell__button[aria-current="page"] { font-weight: 600; }
+.nbell__button[aria-current="page"] { font-weight: var(--weight-strong); }
 .nbell__button svg { flex: 0 0 auto; }
 /* In the top bar the bell is an icon button like Help beside it: the word is for screen readers,
    and the count sits on the icon's corner. */
@@ -36,97 +37,108 @@
 }
 .q-top .nbell__badge { position: absolute; top: 1px; right: 0; margin: 0; }
 .nbell__badge {
-  margin-left: auto; font-family: var(--mono); font-size: .68rem; font-weight: 600;
-  border-radius: 9px; padding: 0 .35rem; min-width: 17px; text-align: center; line-height: 17px;
+  margin-left: auto; min-width: 16px; height: 16px; padding: 0 var(--space-4);
+  border-radius: var(--radius-full); text-align: center;
+  font-size: var(--text-caption-size); line-height: 16px; font-weight: var(--weight-strong);
+  font-variant-numeric: tabular-nums;
   background: color-mix(in srgb, currentColor 18%, transparent);
 }
 /* Loud only when something unread waits on you: the one count that means you are blocking. */
 /* --surface is light on the light theme's dark warning and dark on the dark theme's light one,
  * so the count reads in both (white on the dark theme's #EFBE77 was 1.6:1). */
-.nbell__badge--needs { background: var(--waiting); color: var(--surface); }
+.nbell__badge--needs { background: var(--status-warning-fg); color: var(--surface); }
 
 /* Fixed, and placed by the script: the rail scrolls, and would clip anything absolute in it. */
 .nbell__pop {
-  position: fixed; z-index: 50; width: min(24rem, calc(100vw - 16px));
+  position: fixed; z-index: var(--z-popover); width: min(24rem, calc(100vw - 16px));
   max-height: calc(100vh - 16px); overflow: auto;
-  background: var(--surface); color: var(--ink);
-  border: 1px solid var(--rule); border-radius: calc(var(--radius) + 2px);
-  box-shadow: 0 10px 30px rgb(0 0 0 / .18), 0 1px 3px rgb(0 0 0 / .08);
+  background: var(--surface-raised); color: var(--text);
+  border-radius: var(--radius-card); box-shadow: var(--shadow-e2);
+  --av-ring: var(--surface-raised);
 }
 .nbell__pop[hidden] { display: none; }
 .npop__head {
-  display: flex; align-items: center; gap: .5rem;
-  padding: .6rem .85rem; border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: var(--space-8);
+  padding: var(--space-8) var(--space-12); border-bottom: var(--border-width) solid var(--border);
 }
-.npop__title { font-weight: 600; }
-.npop__section + .npop__section { border-top: 1px solid var(--rule); }
+.npop__title { font-weight: var(--text-body-strong-weight); }
+.npop__act { margin: 0 0 0 auto; }
+.npop__section + .npop__section { border-top: var(--border-width) solid var(--border); }
 .npop__label {
-  padding: .55rem .85rem .2rem; font-size: .66rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .1em; color: var(--ink-3);
+  padding: var(--space-8) var(--space-12) var(--space-2);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  color: var(--text-subtle);
 }
-.npop__n { font-family: var(--mono); letter-spacing: 0; margin-left: .2rem; }
-.npop__empty { margin: 0; padding: .2rem .85rem .7rem; font-size: .8rem; color: var(--ink-3); }
+.npop__n { margin-left: var(--space-2); font-variant-numeric: tabular-nums; }
+.npop__empty { margin: 0; padding: var(--space-2) var(--space-12) var(--space-12); color: var(--text-subtle); }
 .npop__foot {
-  display: flex; justify-content: space-between; gap: 1rem;
-  padding: .6rem .85rem; border-top: 1px solid var(--rule); background: var(--sunk);
-  font-size: .8rem;
+  display: flex; justify-content: space-between; gap: var(--space-16);
+  padding: var(--space-8) var(--space-12); border-top: var(--border-width) solid var(--border);
 }
 
 /* ---- A list of notifications: the inbox, and compact in the popover. ---- */
 
 .nlist { list-style: none; margin: 0; padding: 0; }
 .nitem {
-  display: flex; align-items: flex-start; gap: .5rem;
-  border-bottom: 1px solid var(--rule-2); background: var(--surface);
+  display: flex; align-items: flex-start; gap: var(--space-8);
+  background: var(--surface);
 }
-.nlist--compact .nitem:last-child { border-bottom: 0; }
-.nitem:hover { background: var(--sunk); }
+.nitem + .nitem { border-top: var(--border-width) solid var(--border); }
+.nitem:hover { background: var(--fill); }
+.nlist--compact .nitem { background: transparent; }
+.nlist--compact .nitem:hover { background: var(--fill-raised-hover); }
 .nitem__link {
-  flex: 1 1 auto; min-width: 0; display: flex; gap: .65rem;
-  padding: .7rem 1.5rem; color: var(--ink);
+  flex: 1 1 auto; min-width: 0; display: flex; gap: var(--space-12);
+  padding: var(--space-12) var(--space-16); color: var(--text); text-decoration: none;
 }
-.nlist--compact .nitem__link { padding: .5rem .85rem; }
-.nitem__link:hover { text-decoration: none; }
+.nlist--compact .nitem__link { padding: var(--space-8) var(--space-12); }
+.nitem__link:hover { text-decoration: none; color: var(--text); }
 .nitem__link:hover .nitem__title { text-decoration: underline; }
+.nitem__link:focus-visible { outline-offset: -2px; }
 .nitem__dot {
-  flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; margin-top: .45rem;
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: var(--radius-full); margin-top: 6px;
   background: transparent;
 }
-.nitem.is-unread .nitem__dot { background: var(--ink-2); }
-.nitem.is-unread.is-needs .nitem__dot { background: var(--waiting); }
-.nitem__text { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
-.nitem__title { color: var(--ink-2); }
-.nitem.is-unread .nitem__title { color: var(--ink); font-weight: 600; }
-.nitem__body { font-size: .8rem; color: var(--ink-2); overflow-wrap: anywhere; }
+.nitem.is-unread .nitem__dot { background: var(--text-muted); }
+.nitem.is-unread.is-needs .nitem__dot { background: var(--status-warning-fg); }
+.nitem__text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.nitem__title { color: var(--text-muted); }
+.nitem.is-unread .nitem__title { color: var(--text); font-weight: var(--text-body-strong-weight); }
+.nitem__body { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); overflow-wrap: anywhere; }
 .nlist--compact .nitem__body {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.nitem__meta { font-size: .72rem; color: var(--ink-3); }
-.nitem__lock { font-weight: 600; }
+.nitem__meta { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.nitem__lock { font-weight: var(--weight-medium); }
 .nitem__actions {
-  flex: 0 0 auto; display: flex; gap: .25rem; padding: .55rem 1.5rem .55rem 0;
+  flex: 0 0 auto; display: flex; gap: var(--space-4); padding: var(--space-8) var(--space-16) var(--space-8) 0;
 }
+.nitem__actions form { margin: 0; }
 
-@media (max-width: 60rem) {
+@media (max-width: 767px) {
   .nitem { flex-wrap: wrap; }
-  .nitem__link { padding-left: 1rem; padding-right: 1rem; }
-  .nitem__actions { padding: 0 1rem .5rem 1.85rem; }
+  .nitem__actions { padding: 0 var(--space-16) var(--space-8) var(--space-32); }
 }
 
 /* ---- Preferences grid ---- */
 
-.npref { max-width: 46rem; }
-.npref .panel { margin-bottom: .75rem; }
-.npref__grid td { height: auto; padding-top: .5rem; padding-bottom: .5rem; }
+.npref { margin: 0; }
+.npref__grid td { height: auto; }
 .npref__col { width: 7.5rem; text-align: center; }
-.dt th.npref__col { text-align: center; }
+.q-table th.npref__col { text-align: center; }
 .npref__off {
-  display: block; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-3);
+  display: block; font-weight: var(--weight-regular); color: var(--text-subtle);
 }
 .npref__group td {
-  background: var(--sunk); font-size: .72rem; font-weight: 700; color: var(--ink-2);
-  padding-top: .4rem; padding-bottom: .4rem;
+  background: var(--bg-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+  font-weight: var(--weight-medium); color: var(--text-muted);
 }
-.dt tbody tr.npref__group:hover td { background: var(--sunk); }
-.npref__none { color: var(--ink-3); }
-.npref input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--ink); }
+.q-table tbody tr.npref__group:hover > * { background: var(--bg-subtle); }
+.npref__none { color: var(--text-subtle); }
+.npref .q-cb { margin: 0; vertical-align: middle; }
+/* On a phone the two channels that are not set up yet give the events their width back; the
+ * note under the grid says they are not sent. */
+@media (max-width: 560px) {
+  .npref__later { display: none; }
+  .npref__col { width: 4.5rem; }
+}
