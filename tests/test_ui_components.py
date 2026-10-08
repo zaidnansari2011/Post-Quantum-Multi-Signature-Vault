@@ -136,6 +136,50 @@ def test_a_field_without_an_error_is_not_marked_invalid(app):
     assert "aria-invalid" not in html and "aria-describedby" not in html
 
 
+def test_a_form_field_keeps_what_the_form_declares_and_ties_its_caption_and_error(app):
+    """wtf_field draws a WTForms field as a field without re-declaring it: the id, name, value and
+    the validators' attributes come from the form, so a converted form posts what it did."""
+    from qvault.forms import RegisterForm
+
+    with app.test_request_context("/", method="POST", data={"email": "not-an-email"}):
+        form = RegisterForm(meta={"csrf": False})
+        form.validate()
+        html = app.jinja_env.from_string(
+            '{% from "ui/forms.html" import wtf_field %}'
+            "{{ wtf_field(form.email, caption='Your sign-in.', attrs={'autocomplete': 'username'}) }}"
+            "{{ wtf_field(form.display_name) }}"
+        ).render(form=form)
+    email = re.search(r"<input[^>]*name=\"email\"[^>]*>", html).group(0)
+    assert '<label class="q-field__label" for="email">Email</label>' in html
+    for attr in (
+        'id="email"',
+        'value="not-an-email"',
+        'maxlength="255"',
+        "required",
+        'autocomplete="username"',
+        'class="q-input"',
+        'aria-invalid="true"',
+        'aria-describedby="email-cap email-err"',
+    ):
+        assert attr in email, attr
+    assert '<p class="q-field__cap" id="email-cap">Your sign-in.</p>' in html
+    assert re.search(r'<div id="email-err"><p class="q-field__err">.*?Invalid email', html, re.S)
+    # A field with an error but no caption names only its error.
+    name = re.search(r"<input[^>]*name=\"display_name\"[^>]*>", html).group(0)
+    assert 'aria-describedby="display_name-err"' in name
+
+
+def test_a_form_field_without_an_error_is_not_marked_invalid(app):
+    from qvault.forms import LoginForm
+
+    with app.test_request_context("/"):
+        html = app.jinja_env.from_string(
+            '{% from "ui/forms.html" import wtf_field %}{{ wtf_field(form.password) }}'
+        ).render(form=LoginForm(meta={"csrf": False}))
+    assert 'type="password"' in html and 'class="q-input"' in html
+    assert "aria-invalid" not in html and "aria-describedby" not in html
+
+
 def test_a_select_marks_the_current_option(app):
     html = render(
         app,
@@ -338,6 +382,16 @@ def test_tabs_are_links_and_the_current_one_is_marked(app):
     assert '<a class="q-tab" href="?tab=members" aria-current="page">' in html
     assert '<a class="q-tab" href="?tab=decisions">' in html
     assert '<span class="q-count">3</span>' in html
+
+
+def test_a_tab_count_can_say_what_it_counts_to_a_screen_reader(app):
+    html = render(
+        app,
+        '{% from "ui/navigation.html" import tabs %}'
+        "{{ tabs([{'key': 'needs_you', 'label': 'Needs you', 'href': '?section=needs_you',"
+        " 'count': 2, 'count_sr': 'unread'}], 'needs_you', 'Notification sections') }}",
+    )
+    assert '<span class="q-count">2<span class="visually-hidden"> unread</span></span>' in html
 
 
 def test_a_page_header_has_one_title_labelled_facts_and_one_action(app):

@@ -1,45 +1,35 @@
 {% extends "base.html" %}
 {% from "ui/mark.html" import mark %}
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
 {% block title %}Sign in — Q-Vault{% endblock %}
 {% block anon_content %}
-<div class="auth">
-  <div class="auth__mark">
+<div class="q-auth">
+  <div class="q-auth__brand">
     {{ mark(22) }}
     <span>Q-Vault</span>
   </div>
-  <h1 class="auth__title">Sign in</h1>
+  <h1 class="q-auth__t">Sign in</h1>
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
-    <div class="field">
-      {{ form.email.label(class="field__label") }}
-      {{ form.email(class="input", autocomplete="username") }}
-      {% for e in form.email.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-    </div>
-    <div class="field">
-      {{ form.password.label(class="field__label") }}
-      {{ form.password(class="input", autocomplete="current-password") }}
-      {% for e in form.password.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-    </div>
-    {{ form.submit(class="btn btn--primary btn--block") }}
+    {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
+    {{ wtf_field(form.password, attrs={'autocomplete': 'current-password'}) }}
+    {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
   </form>
 
   {# The credentials belong on the form that needs them, not on the landing page one navigation
      step away. Someone demonstrating this live should never have to go back for them. #}
   {% if demo_enabled %}
-  <div class="panel dev" style="margin-top:1rem">
-    <div class="panel__body" style="padding:.6rem .7rem">
-      <button class="btn btn--ghost btn--sm btn--block" type="button"
-              data-fill-email="ada@qvault.demo" data-fill-password="demo-password-2026">
-        Use the demonstration account
-      </button>
-      <p class="tiny muted" style="margin:.45rem 0 0">
-        <code class="mono">ada@qvault.demo</code> · <code class="mono">demo-password-2026</code>
-      </p>
-    </div>
+  <div class="q-dev">
+    {{ button('Use the demonstration account', 'secondary', size='sm', block=True,
+              attrs={'data-fill-email': 'ada@qvault.demo', 'data-fill-password': 'demo-password-2026'}) }}
+    <p class="q-small">
+      <code class="q-mono">ada@qvault.demo</code> · <code class="q-mono">demo-password-2026</code>
+    </p>
   </div>
   {% endif %}
 
-  <p class="small muted auth__foot">
+  <p class="q-auth__foot">
     No account? <a href="{{ url_for('auth.register') }}">Create one</a>
   </p>
 </div>

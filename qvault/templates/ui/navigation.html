@@ -3,8 +3,9 @@
    tabs(items, current, label)
      Tabs routed in the URL (?tab=...): each tab is a link, so back, reload and a shared link all
      land on the same tab, and the page works without JavaScript. items is a list of dicts with
-     key, label, href and optionally count. The current tab has aria-current="page". label names
-     the strip for screen readers ("Vault sections").
+     key, label, href and optionally count, and count_sr: words read after the count but not
+     shown ("unread"). The current tab has aria-current="page". label names the strip for screen
+     readers ("Vault sections").
 
    page_header(title, description=None, status=None, facts=[], action=None)
      The top of a screen: the title with its status trailing it, an optional one-line description,
@@ -24,7 +25,7 @@
 <nav class="q-tabs" aria-label="{{ label }}">
   {%- for item in items %}
   <a class="q-tab" href="{{ item.href }}"{% if item.key == current %} aria-current="page"{% endif %}>
-    <span class="q-tab__l">{{ item.label }}{% if item.count is defined and item.count is not none %}<span class="q-count">{{ item.count }}</span>{% endif %}</span>
+    <span class="q-tab__l">{{ item.label }}{% if item.count is defined and item.count is not none %}<span class="q-count">{{ item.count }}{% if item.count_sr %}<span class="visually-hidden"> {{ item.count_sr }}</span>{% endif %}</span>{% endif %}</span>
   </a>
   {%- endfor %}
 </nav>

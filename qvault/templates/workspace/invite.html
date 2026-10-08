@@ -1,77 +1,66 @@
 {% extends "base.html" %}
-{% from "ui/forms.html" import select, radio_group %}
+{% from "ui/forms.html" import field, select, radio_group %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
 {% block title %}Invite people — Q-Vault{% endblock %}
-
-{% block chrome %}
-<div class="head">
-  <div>
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('workspace.members') }}">Members</a>
-    </nav>
-    <div class="head__title">Invite someone to {{ workspace.name }}</div>
-    <div class="head__sub">You'll get a link to send them. It works once and expires after {{ ttl_days }} days.</div>
-  </div>
-</div>
-{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Invite people', None)]) }}{% endblock %}
 
 {% block content %}
-<div class="split">
-  <form method="post" class="stack">
+{% set lead %}You'll get a link to send them. It works once and expires after {{ ttl_days }} days.{% endset %}
+{{ page_header('Invite someone to ' ~ workspace.name, description=lead) }}
+
+<div class="q-invite">
+  <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-    <div class="panel">
-      <div class="panel__head"><span class="label">Who</span></div>
-      <div class="panel__body">
-        <div class="field">
-          <label class="field__label" for="email">Email</label>
-          <input class="input" id="email" name="email" type="email" value="{{ email }}" autocomplete="off" required>
-          <p class="field__help">Only an account with this address can accept the invitation.</p>
-        </div>
+    <section class="q-panel" aria-labelledby="inv-who">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-who">Who</h2></div>
+      <div class="q-panel__bd">
+        {{ field('email', 'Email', type='email', value=email, id='email', required=True,
+                 caption='Only an account with this address can accept the invitation.', attrs={'autocomplete': 'off'}) }}
         {%- set role_options = [] %}{% for r in roles %}{% set _ = role_options.append((r, role_name(r), role_help[r])) %}{% endfor %}
         {{ radio_group('role', 'Workspace role', role_options, selected=role) }}
       </div>
-    </div>
+    </section>
 
-    <div class="panel">
-      <div class="panel__head"><span class="label">Vaults (optional)</span></div>
-      <div class="panel__body">
+    <section class="q-panel" aria-labelledby="inv-vaults">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-vaults">Vaults (optional)</h2></div>
+      <div class="q-panel__bd">
         {% if vaults %}
-        <p class="field__help" style="margin-top:0">
-          They join these vaults when they accept. You can only add people to vaults you own.
-        </p>
+        <p class="q-note q-gap">They join these vaults when they accept. You can only add people to vaults you own.</p>
         {% for v in vaults %}
         {{ select('vault_' ~ v.id, v.name, [('', 'Not added'), ('signer', 'Approver'), ('viewer', 'Viewer')],
                   chosen.get(v.id) or '', id='vault_' ~ v.id) }}
         {% endfor %}
-        <p class="field__help">
+        <p class="q-note">
           An approver counts towards the vault's threshold for decisions raised after they join.
           Decisions already open keep the approvers they started with.
         </p>
         {% else %}
-        <p class="small muted" style="margin:0">
+        <p class="q-empty-line">
           You don't own a vault yet. Vault owners add people from the vault's Members tab once they've joined.
         </p>
         {% endif %}
       </div>
-    </div>
+    </section>
 
-    <div class="hstack">
-      <button class="btn btn--primary btn--sm" type="submit">Create invitation link</button>
-      <a class="btn btn--quiet btn--sm" href="{{ url_for('workspace.members') }}">Cancel</a>
+    <div class="q-btnrow">
+      {{ button('Create invitation link', 'primary', type='submit') }}
+      {{ button('Cancel', 'ghost', href=url_for('workspace.members')) }}
     </div>
   </form>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">How it arrives</span></div>
-    <div class="panel__body">
-      <p class="small" style="margin-top:0">
+  <section class="q-panel" aria-labelledby="inv-how">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-how">How it arrives</h2></div>
+    <div class="q-panel__bd">
+      <p>
         Q-Vault doesn't send email yet, so nothing is sent for you. Copy the link from the next page
         and send it to them yourself, by email or chat.
       </p>
-      <p class="small muted" style="margin-bottom:0">
+      <p class="q-note">
         The link is shown once. If it's lost, get a new one from the Invited tab; the old link then stops working.
       </p>
     </div>
-  </div>
+  </section>
 </div>
 {% endblock %}

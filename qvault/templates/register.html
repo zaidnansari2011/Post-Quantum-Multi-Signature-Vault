@@ -1,39 +1,24 @@
 {% extends "base.html" %}
 {% from "ui/mark.html" import mark %}
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
 {% block title %}Create account — Q-Vault{% endblock %}
 {% block anon_content %}
-<div class="auth">
-  <div class="auth__mark">
+<div class="q-auth">
+  <div class="q-auth__brand">
     {{ mark(22) }}
     <span>Q-Vault</span>
   </div>
-  <h1 class="auth__title">Create account</h1>
+  <h1 class="q-auth__t">Create account</h1>
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
-    <div class="field">
-      {{ form.display_name.label(class="field__label") }}
-      {{ form.display_name(class="input", autocomplete="name") }}
-      {% for e in form.display_name.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-    </div>
-    <div class="field">
-      {{ form.email.label(class="field__label") }}
-      {{ form.email(class="input", autocomplete="username") }}
-      {% for e in form.email.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-    </div>
-    <div class="field">
-      {{ form.password.label(class="field__label") }}
-      {{ form.password(class="input", autocomplete="new-password") }}
-      <p class="field__help">Unlocks your signing key. It cannot be reset for you.</p>
-      {% for e in form.password.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-    </div>
-    <div class="field">
-      {{ form.confirm.label(class="field__label") }}
-      {{ form.confirm(class="input", autocomplete="new-password") }}
-      {% for e in form.confirm.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-    </div>
-    {{ form.submit(class="btn btn--primary btn--block") }}
+    {{ wtf_field(form.display_name, attrs={'autocomplete': 'name'}) }}
+    {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
+    {{ wtf_field(form.password, caption='Unlocks your signing key. It cannot be reset for you.', attrs={'autocomplete': 'new-password'}) }}
+    {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}
+    {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
   </form>
-  <p class="small muted auth__foot">
+  <p class="q-auth__foot">
     Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a>
   </p>
 </div>
