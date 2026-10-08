@@ -538,23 +538,10 @@ with sync_playwright() as p:
         extra_routes=[(r".*/vote$", closing_vote)],
     )
 
-    # Approvals: payments this phone can't sign, grouped by where they can be approved.
-    pay_password = summary(payment, 20)
-    pay_none = summary(payment, 26, proposal_uuid="00000000-0000-4000-8000-00000000a002")
-    pay_none["title"] = "Refund the hosting deposit"
-
-    def clone_payment(uuid, seat):
-        def handle(route):
-            real = api_get(ada, f"/api/v1/proposals/{payment['proposal_uuid']}")
-            d = real["proposal"]
-            open_now(d, hours=26)
-            d["proposal_uuid"] = uuid
-            d["title"] = "Refund the hosting deposit"
-            d["execution"]["seat_fingerprint"] = seat
-            route.fulfill(json=real)
-
-        return handle
-
+    # Approvals: a payment this phone can't sign whose treasury holds no key of this person's: its
+    # own group, which claims nothing about where else it could be approved. (The "Approve on the
+    # web" group is a01's. The demo database holds one payment, and a second can't be made by
+    # cloning it under another uuid: the uuid is signed into it, and the phone refuses the clone.)
     def approvals_groups(page):
         page.wait_for_timeout(1500)
         quiet(page)
@@ -565,10 +552,9 @@ with sync_playwright() as p:
         ada,
         "a09_approvals_cant_sign_here",
         payment,
-        pay(PASSWORD_KEY),
+        pay(None),
         approvals_groups,
-        awaiting=[summary(general, 3), pay_password, pay_none],
-        extra_routes=[(r".*/api/v1/proposals/" + pay_none["proposal_uuid"] + "$", clone_payment(pay_none["proposal_uuid"], None))],
+        awaiting=[summary(general, 3), summary(payment, 26)],
     )
 
     # Session ended: every request answered 401, as the server does for an expired token.

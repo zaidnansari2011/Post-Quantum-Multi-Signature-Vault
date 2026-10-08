@@ -282,14 +282,15 @@ with sync_playwright() as p:
         ctx.close()
 
     def approvals_restored_offline(name):
-        # A restart with no connection: the queue paints from the encrypted cache, says it could
-        # not check, and when what is shown was fetched.
+        # A restart with no connection: the queue paints from the encrypted cache with its own
+        # headline, and the offline bar says when what is shown was fetched (§6.3).
         ctx, page = new_page(browser, warm)
         go_offline(page)
         page.goto(BASE + "/" + QUERY)
         tabs_up(page)
         # After the one retry, two seconds on.
-        page.get_by_text("Can't check your approvals").first.wait_for(timeout=30000)
+        page.get_by_text(re.compile("^Offline. Showing what was here")).first.wait_for(timeout=30000)
+        page.wait_for_timeout(2500)
         shot(page, name)
         ctx.close()
 
