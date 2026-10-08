@@ -195,7 +195,7 @@
 
     // Flash messages rendered as inline alerts.
     el = t.closest('[data-dismiss]');
-    if (el) { el.closest('.alert').remove(); return; }
+    if (el) { el.closest('[data-flash]').remove(); return; }
 
     // The theme: paint the choice at once, then let the form post it so the server remembers.
     el = t.closest('.themepick button[name="theme"]');

@@ -1,54 +1,48 @@
 {% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
 {% block title %}Invitation link — Q-Vault{% endblock %}
-
-{% block chrome %}
-<div class="head">
-  <div>
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('workspace.members', tab='invited') }}">Members</a>
-    </nav>
-    <div class="head__title">{{ 'New link' if resent else 'Invitation created' }} for {{ invitation.email }}</div>
-    <div class="head__sub">Expires {{ invitation.expires_at | ws_when }}</div>
-  </div>
-</div>
-{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members', tab='invited')), ('Invitation link', None)]) }}{% endblock %}
 
 {% block content %}
-<div class="measure stack">
-  <div class="panel">
-    <div class="panel__head"><span class="label">Send them this link</span></div>
-    <div class="panel__body">
-      <div style="display:flex;gap:.5rem;align-items:center">
-        <input class="input mono" style="flex:1;min-width:0" id="invite-link" value="{{ link }}" readonly aria-label="Invitation link"
+{{ page_header(('New link' if resent else 'Invitation created') ~ ' for ' ~ invitation.email,
+               description='Expires ' ~ (invitation.expires_at | ws_when)) }}
+
+<div class="q-acct">
+  <section class="q-panel" aria-labelledby="link-send">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="link-send">Send them this link</h2></div>
+    <div class="q-panel__bd">
+      <div class="q-link">
+        <input class="q-input q-input--mono" id="invite-link" value="{{ link }}" readonly aria-label="Invitation link"
                data-select-on-focus>
-        <button class="btn btn--primary btn--sm" type="button" data-copy-link="invite-link">Copy</button>
+        {{ button('Copy', 'primary', attrs={'data-copy-link': 'invite-link'}) }}
       </div>
-      <p class="small" style="margin-bottom:0">
+      <p>
         <strong>This is the only time the link is shown.</strong>
         Q-Vault keeps only a fingerprint of it, so it can't show it again.
         {% if resent %}The previous link no longer works.{% endif %}
         Email isn't sent for you yet: send it yourself.
       </p>
     </div>
-  </div>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">What it grants</span></div>
-    <div class="panel__body">
-      <dl class="meta">
-        <dt>Email</dt><dd>{{ invitation.email }}</dd>
-        <dt>Role</dt><dd>{{ role_name(invitation.role) }}</dd>
-        <dt>Vaults</dt>
-        <dd>{% for g in grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}{% else %}None{% endfor %}</dd>
-        <dt>Expires</dt><dd>{{ invitation.expires_at | ws_when }}</dd>
-      </dl>
+  <section class="q-panel" aria-labelledby="link-grants">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="link-grants">What it grants</h2></div>
+    <dl class="q-kv">
+      <div><dt>Email</dt><dd>{{ invitation.email }}</dd></div>
+      <div><dt>Role</dt><dd>{{ role_name(invitation.role) }}</dd></div>
+      <div><dt>Vaults</dt>
+      <dd>{% for g in grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}{% else %}None{% endfor %}</dd></div>
+      <div><dt>Expires</dt><dd>{{ invitation.expires_at | ws_when }}</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="q-btnrow">
+      {{ button('Back to invitations', 'secondary', href=url_for('workspace.members', tab='invited')) }}
+      {{ button('Invite someone else', 'ghost', href=url_for('workspace.invite')) }}
     </div>
-  </div>
-
-  <div class="hstack">
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('workspace.members', tab='invited') }}">Back to invitations</a>
-    <a class="btn btn--quiet btn--sm" href="{{ url_for('workspace.invite') }}">Invite someone else</a>
-  </div>
+  </section>
 </div>
 
 <script>
@@ -56,11 +50,12 @@
     var button = e.target.closest('[data-copy-link]');
     if (!button) return;
     var field = document.getElementById(button.getAttribute('data-copy-link'));
+    var label = button.querySelector('span') || button;
     field.select();
     if (navigator.clipboard) navigator.clipboard.writeText(field.value);
     else document.execCommand('copy');
-    button.textContent = 'Copied';
-    setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+    label.textContent = 'Copied';
+    setTimeout(function () { label.textContent = 'Copy'; }, 1500);
   });
 </script>
 {% endblock %}
