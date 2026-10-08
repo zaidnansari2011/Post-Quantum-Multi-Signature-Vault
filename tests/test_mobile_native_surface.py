@@ -36,6 +36,13 @@ NATIVE_AT_RUNTIME_2 = {
     "react-native-screens",
 }
 
+# The rework's runtime (phone-ux §10.2, N2): its own runtimeVersion, so neither branch's
+# over-the-air update can land on the other's APK. Until the rework APK's native additions land
+# (N5 to N18), it carries runtime 2's modules plus react-native-worklets, which the runtime-2 APK
+# already links through Reanimated and the rework declares at that same version (§5.9).
+NATIVE_AT_REWORK_1 = NATIVE_AT_RUNTIME_2 | {"react-native-worklets"}
+PINNED = {RUNTIME_VERSION: NATIVE_AT_RUNTIME_2, "rework-1": NATIVE_AT_REWORK_1}
+
 # react-native-web is the browser renderer: it ships no native code.
 NATIVE = re.compile(r"^(expo|expo-.+|react-native|react-native-(?!web$).+|@react-native/.+)$")
 
@@ -51,9 +58,17 @@ def _runtime_version() -> str:
 
 
 def test_a_native_module_is_added_or_removed_only_with_a_new_runtime_version():
-    if _runtime_version() != RUNTIME_VERSION:
+    runtime = _runtime_version()
+    if runtime not in PINNED:
         return  # A bump: the new APK carries whatever native surface ships with it.
-    assert _native_dependencies() == NATIVE_AT_RUNTIME_2
+    assert _native_dependencies() == PINNED[runtime]
+
+
+def test_the_rework_declares_worklets_at_the_version_the_apk_links():
+    """§5.9: declared at the exact version the runtime-2 APK already contains (0.10.4)."""
+    package = json.loads((MOBILE_DIR / "package.json").read_text(encoding="utf-8"))
+    if "react-native-worklets" in package["dependencies"]:
+        assert package["dependencies"]["react-native-worklets"] == "0.10.4"
 
 
 def test_the_app_imports_no_clipboard_module_at_runtime_2():

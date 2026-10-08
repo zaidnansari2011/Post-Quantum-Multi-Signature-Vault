@@ -1,48 +1,38 @@
 // Creating a vault.
 //
-// A vault is a governance arrangement, not a folder, so the screen is built around the one
-// decision that actually matters: how many signatures it takes. Everything else is labelling.
+// A vault is a governance arrangement, not a folder, so the screen is built around the one choice
+// that matters: how many signatures it takes. The threshold is chosen AFTER the signers and in
+// their terms ("any one of 3", "2 of 3", "all 3"), so the choice reads as the policy it becomes.
 //
-// THE THRESHOLD IS CHOSEN AFTER THE SIGNERS, AND IN THEIR TERMS. Asking for a number first means
-// asking "how many of how many?" before the second number exists, and a stepper showing "3" tells
-// nobody whether that is everyone or half. Here the signers are added first and the threshold is
-// picked from the arrangements that are actually possible given them -- "any one of 3", "2 of 3",
-// "all 3" -- so the choice reads as the policy it will become.
-//
-// MEMBERS GO IN THE CREATE CALL. A vault of one signer cannot approve anything above 1-of-1, and
-// the server refuses to raise a decision whose policy exceeds the signer set. Creating the vault
-// and then adding people would leave a window in which the thing exists and does not work, and a
-// dropped connection in that window leaves it there permanently.
+// Members go in the create call: creating the vault and then adding people would leave a window in
+// which it exists and cannot approve anything, and a dropped connection there leaves it so.
+// (Phone-ux §6.17 trims this further in P3: rule chips, a review sheet, the rest on the web.)
 
 import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   ActionBar,
   Banner,
   Button,
-  Card,
-  Divider,
-  Empty,
+  CheckboxRow,
+  ChipGroup,
+  ContentWidth,
+  EmptyState,
   Field,
-  Loading,
+  IconButton,
+  List,
+  ListRow,
   NavBar,
-  Row,
   Screen,
+  Sheet,
+  Skeleton,
+  Text,
   feedback,
 } from '../ui/index.tsx';
-import { Sheet } from '../ui/Sheet.tsx';
+import { makeStyles } from '../theme/index.ts';
 import type { Person } from '../api/schemas.ts';
-import { color, radius, space, type } from '../theme.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
@@ -54,6 +44,7 @@ export default function NewVaultScreen({
   onBack: () => void;
   onCreated: (vaultId: number) => void;
 }) {
+  const s = useStyles();
   const { token, identity } = useEnrolledSession();
   const queryClient = useQueryClient();
 
@@ -77,9 +68,7 @@ export default function NewVaultScreen({
 
   function toggle(person: Person) {
     const already = picked.some((p) => p.user_id === person.user_id);
-    const next = already
-      ? picked.filter((p) => p.user_id !== person.user_id)
-      : [...picked, person];
+    const next = already ? picked.filter((p) => p.user_id !== person.user_id) : [...picked, person];
     setPicked(next);
     // Keep the policy meetable: dropping a signer can strand a threshold above the new N.
     if (thresholdM > next.length + 1) setThresholdM(next.length + 1);
@@ -109,124 +98,107 @@ export default function NewVaultScreen({
     <Screen>
       <NavBar onBack={onBack} title="New vault" />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
-          style={{ flex: 1 }}
+          style={s.flex}
           contentContainerStyle={s.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {error ? <Banner tone="broken" title={error.title} detail={error.detail} /> : null}
+          <ContentWidth style={s.stack}>
+            {error ? <Banner tone="critical" title={error.title} detail={error.detail} /> : null}
 
-          <Field
-            label="Name"
-            value={name}
-            onChangeText={setName}
-            placeholder="Treasury"
-            autoCapitalize="sentences"
-            maxLength={120}
-            editable={!create.isPending}
-          />
+            <View>
+              <Field
+                label="Name"
+                value={name}
+                onChangeText={setName}
+                placeholder="Treasury"
+                autoCapitalize="sentences"
+                maxLength={120}
+                editable={!create.isPending}
+              />
+              <Field
+                label="What it is for"
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Payments above the delegated limit"
+                autoCapitalize="sentences"
+                editable={!create.isPending}
+              />
+            </View>
 
-          <Field
-            label="What it is for"
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Payments above the delegated limit"
-            autoCapitalize="sentences"
-            editable={!create.isPending}
-          />
+            <View style={s.group}>
+              <Text role="caption" tone="muted">
+                Signers
+              </Text>
+              <List>
+                <ListRow title={identity.displayName} value="you, owner" />
+                {picked.map((person) => (
+                  <ListRow
+                    key={person.user_id}
+                    title={person.name}
+                    trailing={
+                      <View style={s.remove}>
+                        <IconButton
+                          icon="x-circle"
+                          label={`Remove ${person.name}`}
+                          onPress={() => toggle(person)}
+                          disabled={create.isPending}
+                          size={20}
+                        />
+                      </View>
+                    }
+                  />
+                ))}
+              </List>
+              {/* Chosen, not typed: the server only accepts people who already have an account,
+                  so a typed address is right by luck or wrong by one character. */}
+              <Button
+                label="Choose signers"
+                variant="secondary"
+                onPress={() => setPicking(true)}
+                disabled={create.isPending}
+                full
+              />
+            </View>
 
-          <View style={{ gap: space.sm }}>
-            <Text style={s.label}>Signers</Text>
-
-            <Card>
-              <View style={s.signer}>
-                <Text style={s.signerName} numberOfLines={1}>
-                  {identity.displayName}
-                </Text>
-                <Text style={s.owner}>you, owner</Text>
-              </View>
-              {picked.map((person) => (
-                <View key={person.user_id}>
-                  <Divider />
-                  <View style={s.signer}>
-                    <Text style={s.signerName} numberOfLines={1}>
-                      {person.name}
-                    </Text>
-                    <Pressable
-                      onPress={() => toggle(person)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${person.name}`}
-                      hitSlop={10}
-                      disabled={create.isPending}
-                    >
-                      <Text style={s.remove}>Remove</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </Card>
-
-            {/* Chosen, not typed. The server only accepts people who already have an account, so
-                a free-text address can only ever be right by luck or wrong by one character -- and
-                on a phone it is usually the second. */}
-            <Button
-              label="Choose signers"
-              variant="secondary"
-              onPress={() => setPicking(true)}
-              disabled={create.isPending}
-            />
-          </View>
-
-          <View style={{ gap: space.sm }}>
-            <Text style={s.label}>How many signatures approve a decision</Text>
-            <Row gap={space.sm} style={{ flexWrap: 'wrap' }}>
-              {Array.from({ length: signerCount }, (_, i) => i + 1).map((m) => {
-                const active = m === thresholdM;
-                return (
-                  <Pressable
-                    key={m}
-                    onPress={() => setThresholdM(m)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: active }}
-                    disabled={create.isPending}
-                    style={({ pressed }) => [
-                      s.preset,
-                      active && s.presetActive,
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <Text style={[s.presetText, active && s.presetTextActive]}>
-                      {policyWord(m, signerCount)}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </Row>
-            <Text style={s.hint}>{policySentence(thresholdM, signerCount)}</Text>
-          </View>
+            <View style={s.group}>
+              <Text role="caption" tone="muted">
+                How many signatures approve a decision
+              </Text>
+              <ChipGroup
+                label="How many signatures approve a decision"
+                value={thresholdM}
+                onChange={setThresholdM}
+                disabled={create.isPending}
+                options={Array.from({ length: signerCount }, (_, i) => i + 1).map((m) => ({
+                  value: m,
+                  label: policyWord(m, signerCount),
+                }))}
+              />
+              <Text role="caption" tone="subtle">
+                {policySentence(thresholdM, signerCount)}
+              </Text>
+            </View>
+          </ContentWidth>
         </ScrollView>
 
-        <ActionBar>
-          <Button
-            label="Create vault"
-            onPress={() => {
+        <ActionBar
+          primary={{
+            label: 'Create vault',
+            onPress: () => {
               setError(null);
               create.mutate();
-            }}
-            disabled={!ready}
-            busy={create.isPending}
-          />
-        </ActionBar>
+            },
+            disabled: !ready,
+            busy: create.isPending,
+          }}
+        />
       </KeyboardAvoidingView>
 
-      {/* Multi-select and stays open: adding four people should be four taps, not four round trips
-          through a sheet that closes itself each time. The tick is the state, so nothing has to be
-          remembered between them. */}
+      {/* Multi-select and stays open: adding four people is four taps, not four trips through a
+          sheet that closes itself each time. */}
       <Sheet
         visible={picking}
         onClose={() => setPicking(false)}
@@ -241,42 +213,32 @@ export default function NewVaultScreen({
                   : `Done, ${picked.length} signers added`
             }
             onPress={() => setPicking(false)}
+            full
           />
         }
       >
-        {/* The sheet scrolls a long list itself and keeps Done in view under it. */}
         {peopleQuery.isLoading ? (
-          <Loading />
+          <View style={s.skeleton}>
+            <Skeleton width="60%" height={16} />
+            <Skeleton width="45%" height={16} />
+            <Skeleton width="55%" height={16} />
+          </View>
         ) : (peopleQuery.data?.people.length ?? 0) === 0 ? (
-          <Empty
+          <EmptyState
             title="Nobody else has an account yet."
             detail="Signers must already be registered on this Q-Vault."
           />
         ) : (
-          <Card>
-            {(peopleQuery.data?.people ?? []).map((person, i) => {
-              const on = picked.some((p) => p.user_id === person.user_id);
-              return (
-                <View key={person.user_id}>
-                  {i > 0 ? <Divider /> : null}
-                  <Pressable
-                    onPress={() => toggle(person)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: on }}
-                    accessibilityLabel={person.name}
-                    style={({ pressed }) => [s.pickRow, pressed && { opacity: 0.6 }]}
-                  >
-                    <Text style={s.pickName} numberOfLines={1}>
-                      {person.name}
-                    </Text>
-                    <View style={[s.check, on && s.checkOn]}>
-                      {on ? <Text style={s.checkGlyph}>✓</Text> : null}
-                    </View>
-                  </Pressable>
-                </View>
-              );
-            })}
-          </Card>
+          <List>
+            {(peopleQuery.data?.people ?? []).map((person) => (
+              <CheckboxRow
+                key={person.user_id}
+                label={person.name}
+                checked={picked.some((p) => p.user_id === person.user_id)}
+                onToggle={() => toggle(person)}
+              />
+            ))}
+          </List>
         )}
       </Sheet>
     </Screen>
@@ -317,51 +279,11 @@ function describe(err: unknown): { title: string; detail?: string } {
   return { title: err instanceof Error ? err.message : 'Something went wrong.' };
 }
 
-const s = StyleSheet.create({
-  content: { paddingHorizontal: space.lg, paddingBottom: space.xxl, paddingTop: space.md, gap: space.lg },
-  label: { ...type.micro, color: color.ink2 },
-  hint: { ...type.micro, lineHeight: 17 },
-
-  signer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space.md,
-    paddingVertical: space.md,
-  },
-  signerName: { ...type.body, flex: 1 },
-  owner: { ...type.micro, color: color.ink4 },
-  remove: { ...type.micro, color: color.broken },
-
-  pickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space.md,
-    paddingVertical: space.md,
-  },
-  pickName: { ...type.body, flex: 1 },
-  check: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: color.rule,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkOn: { backgroundColor: color.sealed, borderColor: color.sealed },
-  checkGlyph: { color: '#FFFFFF', fontSize: 12, lineHeight: 15, fontWeight: '700' },
-
-  preset: {
-    borderWidth: 1,
-    borderColor: color.rule,
-    borderRadius: radius.control,
-    backgroundColor: color.surface,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  presetActive: { borderColor: color.chrome, backgroundColor: color.chrome },
-  presetText: { ...type.meta, color: color.ink2 },
-  presetTextActive: { color: color.chromeInk },
-});
+const useStyles = makeStyles((t) => ({
+  flex: { flex: 1 },
+  content: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32], paddingTop: t.space[8] },
+  stack: { gap: t.space[16] },
+  group: { gap: t.space[8] },
+  remove: { paddingRight: t.space[4] },
+  skeleton: { gap: t.space[12], paddingVertical: t.space[8] },
+}));
