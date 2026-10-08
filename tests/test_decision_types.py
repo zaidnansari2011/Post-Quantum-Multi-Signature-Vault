@@ -696,6 +696,16 @@ def test_a_general_and_a_payment_decision_carry_no_fields(app, client):
         ({"type": "lease", "fields": {}}, "unknown_type", None),
         ({"type": "payment", "fields": {}}, "payment_invalid", None),
         ({"type": "access", "decision_type": "contract", "fields": {}}, "bad_request", None),
+        # Present but null is not absent: the two names disagree.
+        ({"type": "access", "decision_type": None, "fields": {}}, "bad_request", None),
+        ({"type": None, "decision_type": "access", "fields": {}}, "bad_request", None),
+        # Fields with a decision that has none are refused, not ignored.
+        (
+            {"type": "general", "action_text": "Hire.", "fields": {"person": "Elif"}},
+            "unknown_field",
+            None,
+        ),
+        ({"action_text": "Hire.", "fields": {}}, "unknown_field", None),
     ],
 )
 def test_the_api_refuses_typed_fields_with_a_stable_code(app, client, body, code, field):

@@ -700,8 +700,12 @@ def create_proposal(vid: int):
     action_text = (body.get("action_text") or "").strip()
     payment = body.get("payment")
     # Plan S13 (A13): a Production access or Contract decision, its text written from `fields`.
-    # `type` is the name phone-ux gives it; `decision_type` matches what the detail returns.
-    decision_type = body.get("decision_type", body.get("type"))
+    # `type` is the name phone-ux gives it; `decision_type` matches what the detail returns. Sent
+    # under both names they must agree, null included: {"type": "access", "decision_type": null}
+    # is a contradiction, not a General decision.
+    if "type" in body and "decision_type" in body and body["type"] != body["decision_type"]:
+        return _error("bad_request", "Send the type once, as decision_type.", 422)
+    decision_type = body["decision_type"] if "decision_type" in body else body.get("type")
     if "action" in body:
         # The signed action is built by the server from `payment` (plan D23); a client never
         # supplies it. Accepting and ignoring it would create a text-only decision that reads like
@@ -714,9 +718,15 @@ def create_proposal(vid: int):
     if not title:
         return _error("title_required", "A title is required.", 422)
     typed = None
+    if decision_type in (None, "general") and body.get("fields") is not None:
+        # A General decision is the words its requester wrote: fields would be ignored, and a
+        # client that sent them meant something else.
+        return _error(
+            "unknown_field",
+            "Only a Production access or Contract decision takes fields.",
+            422,
+        )
     if decision_type not in (None, "general"):
-        if "type" in body and "decision_type" in body and body["type"] != body["decision_type"]:
-            return _error("bad_request", "Send the type once, as decision_type.", 422)
         if decision_type == "payment":
             return _error(
                 "payment_invalid", "Send a payment's recipient and amount as 'payment'.", 422
