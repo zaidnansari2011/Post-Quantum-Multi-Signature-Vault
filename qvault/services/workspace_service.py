@@ -139,14 +139,32 @@ def home_workspace_id(vault: Vault) -> int | None:
     with no answer. Who may sign in the vault must not depend on that, so this falls back to the
     owner's earliest membership of any status.
     """
-    home = workspace_of_vault(vault)
+    return owners_workspace_id(vault.owner_id)
+
+
+def owners_workspace_id(owner_id: int) -> int | None:
+    """``home_workspace_id`` for every vault ``owner_id`` owns."""
+    home = current_workspace(owner_id)
     if home is not None:
         return home.id
     return db.session.scalar(
         select(WorkspaceMember.workspace_id)
-        .where(WorkspaceMember.user_id == vault.owner_id)
+        .where(WorkspaceMember.user_id == owner_id)
         .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
         .limit(1)
+    )
+
+
+def standing_workspace_ids(user_id: int) -> set[int]:
+    """The workspaces where ``user_id`` is in good standing to sign (``signing_standing``)."""
+    return set(
+        db.session.scalars(
+            select(WorkspaceMember.workspace_id).where(
+                WorkspaceMember.user_id == user_id,
+                WorkspaceMember.status == "active",
+                WorkspaceMember.role != "auditor",
+            )
+        )
     )
 
 
@@ -1008,8 +1026,8 @@ def rename_workspace(
 def set_vault_defaults(
     workspace: Workspace, *, sod_default: bool, actor: User, commit: bool = True
 ) -> Workspace:
-    """Store the separation-of-duties default for new vaults (plan S15). Nothing enforces it until
-    vaults gain the setting (phase R5), and it never changes a vault that already exists."""
+    """Store the separation-of-duties default for new vaults (plan S15). ``create_vault`` reads it
+    into the new vault's own rule; it never changes a vault that already exists."""
     _require_manager(workspace, actor)
     sod_default = bool(sod_default)
     if workspace.sod_default == sod_default:

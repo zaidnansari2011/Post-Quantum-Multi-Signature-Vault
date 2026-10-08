@@ -7,7 +7,8 @@ witness_cosignature (transparency log, ADR-0015); device (device-held signing ke
 treasury, treasury_signer, proposal_action, execution_signature, treasury_job and
 signer_preference (on-chain execution, docs/plans/onchain-execution.md); workspace,
 workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md S10, S11);
-notification and notification_preference (in-app notifications, plan R4).
+notification and notification_preference (in-app notifications, plan R4); vault_rule and
+proposal_lifecycle (decision depth, plan R5).
 Added in later phases: rotation_event.
 """
 
@@ -22,7 +23,7 @@ from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
 from .notification import Notification, NotificationPreference
-from .proposal import Proposal
+from .proposal import Proposal, ProposalLifecycle
 from .reconfiguration import (
     Reconfiguration,
     ReconfigurationSignature,
@@ -34,7 +35,7 @@ from .treasury import ExecutionSignature, ProposalAction, Treasury, TreasurySign
 from .treasury_job import TreasuryJob, TreasuryJobTransaction
 from .user import User
 from .user_setting import UserSetting
-from .vault import Vault, VaultMember, VaultPolicy
+from .vault import Vault, VaultMember, VaultPolicy, VaultRule
 from .workspace import Invitation, Workspace, WorkspaceMember
 
 __all__ = [
@@ -48,7 +49,9 @@ __all__ = [
     "Vault",
     "VaultMember",
     "VaultPolicy",
+    "VaultRule",
     "Proposal",
+    "ProposalLifecycle",
     "VaultFile",
     "Signature",
     "Device",

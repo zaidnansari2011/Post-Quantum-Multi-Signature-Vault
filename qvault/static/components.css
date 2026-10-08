@@ -893,6 +893,8 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 .q-preview__facts dt { color: var(--text-subtle); }
 .q-preview__facts dd { margin: 0; color: var(--text); }
 .q-preview__cap { margin: 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+/* S15 with a threshold of every approver: the decision could never pass (R5). */
+.q-preview__warn { display: flex; gap: var(--space-8); margin: 0; padding: var(--space-8) var(--space-12); color: var(--status-warning-fg); background: var(--status-warning-bg); border: var(--border-width) solid var(--status-warning-border); border-radius: var(--radius-control); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
 
 /* An input with a unit inside its right edge ("ETH"). */
 .q-inwrap { position: relative; display: block; }

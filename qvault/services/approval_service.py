@@ -32,6 +32,7 @@ from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
 from qvault.models.vault import SIGNER_ROLES, VaultMember
 from qvault.services import (
+    eligibility,
     execution_service,
     key_service,
     ledger_service,
@@ -43,6 +44,13 @@ from qvault.services.signing import payment_text, signing_bytes_for, vote_signin
 
 class ApprovalError(ValueError):
     """Raised when a vote cannot be cast (closed proposal, not a signer, already voted, ...)."""
+
+
+#: Plan S15's refusal. The API maps "you raised this" to the code ``own_decision``.
+OWN_DECISION = (
+    "You raised this decision, and in this vault the person who raises a decision can't approve "
+    "or reject it."
+)
 
 
 @dataclass(frozen=True)
@@ -398,7 +406,10 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
        it either. Votes they cast while they were an approver keep counting;
     6. their standing in the vault's workspace: an active member, and not an auditor
        (``workspace_service.signing_standing``). A suspended member signs nothing;
-    7. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
+    7. separation of duties (plan S15): the person who raised it cannot approve or reject it when
+       the rule it was raised under, or the vault's rule now, says so
+       (``eligibility.requester_may_approve``);
+    8. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
        and a concurrent vote may not be visible here yet.
 
     Every check here comes before a password is tried or a signature is verified.
@@ -424,6 +435,8 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
         raise ApprovalError(
             f"You are not an authorised signer for this proposal any more: {standing}."
         )
+    if signer.id == proposal.creator_id and not eligibility.requester_may_approve(proposal):
+        raise ApprovalError(OWN_DECISION)
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
 

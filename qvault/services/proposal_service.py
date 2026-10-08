@@ -16,11 +16,16 @@ from qvault.chain import action as chain_action
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.file import VaultFile
-from qvault.models.proposal import Proposal
+from qvault.models.proposal import Proposal, ProposalLifecycle
 from qvault.models.treasury import ProposalAction, Treasury
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault
-from qvault.services import file_crypto_service, ledger_service, notification_service
+from qvault.services import (
+    eligibility,
+    file_crypto_service,
+    ledger_service,
+    notification_service,
+)
 from qvault.services.signing import proposal_signing_bytes
 from qvault.ui import first_name
 
@@ -149,6 +154,10 @@ def create_proposal(
             f"This vault's policy requires {required_m} signatures but only {required_n} "
             "eligible signer(s) exist. Add more signer members first."
         )
+    # Plan S15, frozen with the decision (``eligibility``): whether its requester may approve it.
+    requester_can_approve = eligibility.vault_allows_requester(vault)
+    if eligibility.impossible_to_pass(vault, signers=required_n):
+        raise ProposalError(eligibility.CANNOT_PASS_UNDER_SOD)
 
     now = datetime.now(UTC)
     action = None
@@ -203,6 +212,7 @@ def create_proposal(
     )
     db.session.add(proposal)
     db.session.flush()  # assign proposal.id
+    proposal.lifecycle = ProposalLifecycle(requester_can_approve=requester_can_approve)
 
     if action is not None:
         signed = action.canonical()
@@ -340,9 +350,11 @@ def who_approves(vault: Vault, user) -> dict:
 
     The approvers are the vault's signer set as ``create_proposal`` snapshots it, so the preview
     names exactly the people whose approvals will count. ``asked`` is who the R4 notification asks
-    when it is raised (every eligible approver but the requester). Nothing here claims separation
-    of duties: until S15 (R5) the person raising a decision who is an approver can approve it too,
-    and the preview says so.
+    when it is raised (every eligible approver but the requester).
+
+    ``separation`` is plan S15: the person raising it can't approve it, so they leave ``names``
+    (the rule reads "Any 2 of Brij and Chen") and the preview says so. ``impossible`` is the
+    threshold that rule makes unreachable; raising is then refused (``eligibility``).
     """
     ids = vault.signer_ids()
     people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()} if ids else {}
@@ -352,6 +364,7 @@ def who_approves(vault: Vault, user) -> dict:
         return first_name(person.display_name or person.email) if person else "Someone"
 
     others = [uid for uid in ids if uid != user.id]
+    separation = not eligibility.vault_allows_requester(vault)
     return {
         "m": vault.policy.threshold_m,
         "n": len(ids),
@@ -363,7 +376,10 @@ def who_approves(vault: Vault, user) -> dict:
             }
             for uid in sorted(ids, key=lambda i: (i == user.id, name(i)))
         ],
-        "names": [name(uid) for uid in others] + (["you"] if user.id in ids else []),
+        "names": [name(uid) for uid in others]
+        + (["you"] if user.id in ids and not separation else []),
         "includes_you": user.id in ids,
+        "separation": separation,
+        "impossible": eligibility.impossible_to_pass(vault, signers=len(ids)),
         "asked": [name(uid) for uid in others],
     }

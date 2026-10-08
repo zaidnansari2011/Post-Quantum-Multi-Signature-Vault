@@ -807,6 +807,12 @@ def _proposal_summary(proposal, user) -> dict:
         # pass; it stays open until its deadline rather than being rejected for them.
         "can_still_approve": list(outlook.still),
         "can_still_pass": inbox_service.effective_status(proposal) != "open" or outlook.reachable,
+        # A1 and plan S15, for the phone's personal status (mobile/src/logic/personalStatus.ts).
+        "raised_by": {
+            "id": proposal.creator_id,
+            "name": proposal.creator.display_name if proposal.creator else None,
+        },
+        "separation_of_duties": not eligibility.requester_may_approve(proposal),
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
@@ -1059,6 +1065,7 @@ def cast_vote(uuid: str):
 _VOTE_STATUS = {
     "already_voted": 409,
     "not_a_signer": 403,
+    "own_decision": 403,
     "proposal_closed": 422,
     "signature_invalid": 422,
     "device_key_not_active": 422,
@@ -1079,6 +1086,9 @@ def _vote_code(message: str) -> str:
         return "execution_signature_required"
     if "could not be asked" in lowered:
         return "chain_unavailable"
+    # Plan S15, before the generic "approve ... reject" test below, which its sentence would match.
+    if "you raised this" in lowered:
+        return "own_decision"
     if "already voted" in lowered:
         return "already_voted"
     if "not an authorised signer" in lowered:

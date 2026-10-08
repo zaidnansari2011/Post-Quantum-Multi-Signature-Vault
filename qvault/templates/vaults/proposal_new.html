@@ -78,7 +78,9 @@
     </ul>
     <dl class="q-preview__facts">
       <div><dt>Due</dt><dd data-due-echo="f-deadline">{{ '7 days after you raise it.' if is_payment else 'No due date: it stays open until it’s decided.' }}</dd></div>
-      {%- if preview.includes_you %}
+      {%- if preview.includes_you and preview.separation %}
+      <div><dt>You</dt><dd>You can’t approve your own decision. In {{ vault.name }}, the {{ preview.m }} approval{{ '' if preview.m == 1 else 's' }} must come from other people.</dd></div>
+      {%- elif preview.includes_you %}
       <div><dt>You</dt><dd>You’re one of the approvers, so your own approval counts towards the {{ preview.m }}.</dd></div>
       {%- endif %}
       {%- if preview.asked %}
@@ -88,6 +90,9 @@
       <div><dt>Then</dt><dd>Once {{ preview.m }} approve, the vault’s treasury pays it on Sepolia.</dd></div>
       {%- endif %}
     </dl>
+    {%- if preview.impossible %}
+    <p class="q-preview__warn" role="alert">{{ icon('warning') }}It can’t pass: it would need all {{ preview.n }} approvers, and you can’t approve your own decision. Ask the vault’s owner to lower the threshold or add an approver.</p>
+    {%- endif %}
     <p class="q-preview__cap">Approvers are fixed when you raise it. People added to {{ vault.name }} later can’t approve it.</p>
   </aside>
 
