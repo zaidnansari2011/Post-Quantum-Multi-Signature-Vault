@@ -4,21 +4,16 @@
 
 {% block content %}
 {{ page_header('Documentation', description='How the product works and what protects it') }}
+{#- A list, not a table: one column of links has no headers to read, so a table would announce
+    rows and columns that mean nothing (S24). It is drawn as the table was. -#}
 <div class="q-doclist">
-  <div class="q-table-wrap">
-    <table class="q-table">
-      <caption class="visually-hidden">Documentation pages</caption>
-      <tbody>
-        {% for slug, title, summary in pages %}
-        <tr>
-          <td>
-            <a href="{{ url_for('docs.page', slug=slug) }}">{{ title }}</a>
-            <span class="q-cap">{{ summary }}</span>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <ul class="q-doclist__l">
+    {% for slug, title, summary in pages %}
+    <li>
+      <a href="{{ url_for('docs.page', slug=slug) }}">{{ title }}</a>
+      <span class="q-cap">{{ summary }}</span>
+    </li>
+    {% endfor %}
+  </ul>
 </div>
 {% endblock %}

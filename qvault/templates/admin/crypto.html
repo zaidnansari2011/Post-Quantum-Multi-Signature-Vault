@@ -5,7 +5,7 @@
 {% from "ui/feedback.html" import banner %}
 {% from "ui/status.html" import badge %}
 {% from "ui/data.html" import hash %}
-{% block title %}Algorithms — Q-Vault{% endblock %}
+{% block title %}Algorithms — Security — Q-Vault{% endblock %}
 {% set max_sig = sig_metas | map(attribute='sizes.signature') | max %}
 {% set max_pk = sig_metas | map(attribute='sizes.public_key') | max %}
 
@@ -23,7 +23,7 @@
 {% include "admin/_nav.html" %}
 
 {% if verify.total and not verify.all_pass %}
-{{ banner('critical', 'Verification failure', 'A stored signature or seal no longer verifies under the algorithm pinned to it. Stored data has been altered.') }}
+{{ banner('critical', 'Verification failure', 'A stored signature or seal no longer verifies under the algorithm pinned to it. Stored data has been altered.', announce=True) }}
 {% endif %}
 
 {# Full width, not a split: these tables carry six columns including byte counts, and a
@@ -32,7 +32,7 @@
   <section class="q-panel q-panel--table" aria-labelledby="sig-t">
     <div class="q-panel__hd"><h2 class="q-panel__t" id="sig-t">Signature algorithms</h2></div>
     <div class="q-table-wrap">
-      <table class="q-table">
+      <table class="q-table" aria-labelledby="sig-t">
         <thead>
           <tr><th scope="col" style="width:26%">Algorithm</th><th scope="col">Standard</th><th scope="col" class="is-num">Cat.</th>
               <th scope="col" style="width:22%">Public key</th><th scope="col" style="width:22%">Signature</th><th scope="col" class="is-num">In use</th></tr>
@@ -73,7 +73,7 @@
       </span>
     </div>
     <div class="q-table-wrap">
-      <table class="q-table">
+      <table class="q-table" aria-labelledby="art-t">
         <thead>
           <tr><th scope="col" style="width:34%">Artefact</th><th scope="col">Algorithm</th><th scope="col">Signing key</th>
               <th scope="col" class="is-num">Bytes</th><th scope="col">Verified</th><th scope="col" class="is-num">Created</th></tr>
@@ -107,7 +107,7 @@
   <section class="q-panel q-panel--table" aria-labelledby="kem-t">
     <div class="q-panel__hd"><h2 class="q-panel__t" id="kem-t">Key encapsulation</h2></div>
     <div class="q-table-wrap">
-      <table class="q-table">
+      <table class="q-table" aria-labelledby="kem-t">
         <thead>
           <tr><th scope="col" style="width:30%">Algorithm</th><th scope="col">Standard</th><th scope="col" class="is-num">Cat.</th>
               <th scope="col" class="is-num">Public key</th><th scope="col" class="is-num">Ciphertext</th></tr>
@@ -159,7 +159,7 @@
     <section class="q-panel q-panel--table" aria-labelledby="byalg-t">
       <div class="q-panel__hd"><h2 class="q-panel__t" id="byalg-t">Verification by algorithm</h2></div>
       <div class="q-table-wrap">
-        <table class="q-table">
+        <table class="q-table" aria-labelledby="byalg-t">
           <thead><tr><th scope="col">Algorithm</th><th scope="col" class="is-num">Verified</th></tr></thead>
           <tbody>
             {% for alg, c in verify.by_alg.items() %}

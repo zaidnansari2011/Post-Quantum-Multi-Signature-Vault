@@ -2,7 +2,7 @@
 {% from "ui/buttons.html" import button %}
 {% from "ui/navigation.html" import page_header %}
 {% from "ui/status.html" import badge %}
-{% block title %}Adversary lab — Q-Vault{% endblock %}
+{% block title %}Adversary lab — Developer — Q-Vault{% endblock %}
 
 {#
   The page's whole job is to put two runs of the same attack next to each other. A column of
@@ -153,7 +153,7 @@
 <section class="q-panel q-panel--table q-atk-run" aria-labelledby="cost-t">
   <div class="q-panel__hd"><h2 class="q-panel__t" id="cost-t">The same attack at real parameters</h2></div>
   <div class="q-table-wrap">
-    <table class="q-table">
+    <table class="q-table" aria-labelledby="cost-t">
       <thead>
         <tr><th scope="col">Target</th><th scope="col">Classically</th><th scope="col">Quantumly</th><th scope="col">Source</th></tr>
       </thead>

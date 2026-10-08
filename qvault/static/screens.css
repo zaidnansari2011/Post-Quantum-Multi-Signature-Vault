@@ -220,8 +220,8 @@ p.q-panel__bd { margin: 0; }
 
 /* Prose: the one place with a reading measure. */
 .q-prose { max-width: 68ch; min-width: 0; line-height: var(--text-title-sm-line); }
-.q-prose h2 { margin: 0 0 var(--space-12); font-size: var(--text-title-size); line-height: var(--text-title-line); letter-spacing: var(--text-title-tracking); }
-.q-prose h3 { margin: var(--space-32) 0 var(--space-8); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); }
+/* A page's sections are h2 under its h1 (no level skipped, S24), drawn at the small title size. */
+.q-prose h2 { margin: var(--space-32) 0 var(--space-8); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); }
 .q-prose p, .q-prose ul, .q-prose ol { margin: 0 0 var(--space-16); }
 .q-prose ul, .q-prose ol { padding-left: var(--space-20); }
 .q-prose li { margin-bottom: var(--space-4); }
@@ -235,6 +235,13 @@ p.q-panel__bd { margin: 0; }
 .q-prose .q-table { line-height: var(--text-body-line); }
 .q-prose .q-table td { vertical-align: top; }
 .q-doclist { max-width: 720px; }
+.q-doclist__l {
+  margin: 0; padding: 0; list-style: none; overflow: hidden;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface);
+}
+.q-doclist__l > li { padding: var(--space-8) var(--space-16); }
+.q-doclist__l > li + li { border-top: var(--border-width) solid var(--border); }
+.q-doclist__l > li:hover { background: var(--fill); }
 .q-doclist a { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; }
 .q-doclist a:hover { text-decoration: underline; }
 
@@ -316,6 +323,7 @@ p.q-panel__bd { margin: 0; }
 .q-val__check { margin-top: var(--space-4); }
 .q-val__check summary { cursor: pointer; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 .q-val__check summary:hover { color: var(--text); }
+@media (pointer: coarse) { .q-val__check summary { padding-block: 14px; } }
 .q-val__check pre {
   margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-8); overflow-x: auto;
   border-radius: var(--radius-badge); background: var(--chrome-bg); color: var(--chrome-text);

@@ -39,7 +39,7 @@
   {%- elif not report.anchor_ok %}The seal over the end of the record doesn’t verify.
   {%- elif not report.anchor_covers_head %}The record was rewritten. The seal still covers entry #{{ report.anchor_seq }} and no longer matches the newest entry.{% endif -%}
 {% endset %}
-<div class="q-gap">{{ banner('critical', 'Tamper detected', why) }}</div>
+<div class="q-gap">{{ banner('critical', 'Tamper detected', why, announce=True) }}</div>
 {% endif %}
 
 <div class="q-audit-sum q-audit-sum--log">

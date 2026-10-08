@@ -3,15 +3,16 @@
 {% from "ui/buttons.html" import button %}
 {% from "ui/navigation.html" import page_header %}
 {% from "ui/feedback.html" import banner %}
-{% block title %}Performance — Q-Vault{% endblock %}
+{% block title %}Performance — Security — Q-Vault{% endblock %}
 
-{% macro sig_table(rows) %}
+{% macro sig_table(rows, caption) %}
   {% if rows %}
   {# `or 1` guards the bar-width division: an all-zero report must not 500 the page. #}
   {% set max_sign = (rows | map(attribute='ops.sign.median_ms') | max) or 1 %}
   {% set max_size = (rows | map(attribute='measured_sizes.signature') | max) or 1 %}
   <div class="q-table-wrap">
     <table class="q-table">
+      <caption class="visually-hidden">{{ caption }}</caption>
       <thead>
         <tr><th scope="col" style="width:20%">Algorithm</th><th scope="col" class="is-num">Cat.</th><th scope="col" class="is-num">Keygen</th>
             <th scope="col" style="width:16%">Sign</th><th scope="col" class="is-num">Verify</th><th scope="col" class="is-num">Verify/s</th>
@@ -44,9 +45,10 @@
   {% endif %}
 {% endmacro %}
 
-{% macro kem_table(rows) %}
+{% macro kem_table(rows, caption) %}
 <div class="q-table-wrap">
   <table class="q-table">
+    <caption class="visually-hidden">{{ caption }}</caption>
     <thead>
       <tr><th scope="col" style="width:24%">Algorithm</th><th scope="col" class="is-num">Cat.</th><th scope="col" class="is-num">Keygen</th>
           <th scope="col" class="is-num">Encapsulate</th><th scope="col" class="is-num">Decapsulate</th>
@@ -98,8 +100,8 @@
     <span class="q-small">{{ live.elapsed_s }} s · capped at {{ max_iterations }} iterations</span>
   </div>
   {{ run_meta(live) }}
-  {{ sig_table(live.signatures) }}
-  {% if live.kems %}{{ kem_table(live.kems) }}{% endif %}
+  {{ sig_table(live.signatures, 'Signature algorithms, live run') }}
+  {% if live.kems %}{{ kem_table(live.kems, 'Key encapsulation, live run') }}{% endif %}
 </section>
 {% endif %}
 
@@ -107,13 +109,13 @@
 <section class="q-panel q-panel--table" aria-labelledby="ref-t">
   <div class="q-panel__hd"><h2 class="q-panel__t" id="ref-t">Signatures</h2></div>
   {{ run_meta(report) }}
-  {{ sig_table(report.signatures) }}
+  {{ sig_table(report.signatures, 'Signature algorithms, reference run') }}
 </section>
 
 {% if report.kems %}
 <section class="q-panel q-panel--table" aria-labelledby="kem-t">
   <div class="q-panel__hd"><h2 class="q-panel__t" id="kem-t">Key encapsulation</h2></div>
-  {{ kem_table(report.kems) }}
+  {{ kem_table(report.kems, 'Key encapsulation, reference run') }}
 </section>
 {% endif %}
 

@@ -4,7 +4,7 @@
 {% from "ui/status.html" import status, badge %}
 {% from "ui/data.html" import hash %}
 {% from "ui/icons.html" import icon %}
-{% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
+{% block title %}{{ proposal.title }} — Public record — Q-Vault{% endblock %}
 
 {# Rendered identically signed in or out, like /verify: the reader this page is written for has
    no account, and a member following the same link must see exactly what they are sharing. #}
@@ -34,7 +34,7 @@
       were checked when this page loaded.
     {%- else %}This record did not pass verification. The detail is in the checks below.{% endif -%}
   {% endset %}
-  {{ banner('success' if report.ok else 'critical', verdict, verdict_body) }}
+  {{ banner('success' if report.ok else 'critical', verdict, verdict_body, announce=not report.ok) }}
 
   <section class="q-panel" aria-labelledby="r-dec">
     <div class="q-panel__hd">
@@ -64,7 +64,7 @@
       </span>
     </div>
     <div class="q-table-wrap">
-      <table class="q-table">
+      <table class="q-table" aria-labelledby="r-sig">
         <thead>
           <tr><th scope="col">Signer</th><th scope="col">Decision</th><th scope="col">Custody</th>
               <th scope="col">Algorithm</th><th scope="col" class="is-num">Bytes</th><th scope="col" class="is-num">Signed</th></tr>

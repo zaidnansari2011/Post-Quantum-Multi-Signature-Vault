@@ -3,7 +3,7 @@
 {% from "ui/navigation.html" import page_header %}
 {% from "ui/status.html" import badge %}
 {% from "ui/data.html" import hash %}
-{% block title %}Keys — Q-Vault{% endblock %}
+{% block title %}Keys — Security — Q-Vault{% endblock %}
 {% set active = rows | selectattr('key.status', 'equalto', 'active') | list %}
 {% set retired = rows | rejectattr('key.status', 'equalto', 'active') | list %}
 {% set due = rows | selectattr('due') | list %}
@@ -30,7 +30,7 @@
   <section class="q-panel q-panel--table" aria-labelledby="keys-t">
     <div class="q-panel__hd"><h2 class="q-panel__t" id="keys-t">Keys</h2></div>
     <div class="q-table-wrap">
-      <table class="q-table q-table--compact">
+      <table class="q-table q-table--compact" aria-labelledby="keys-t">
         <thead>
           <tr><th scope="col" class="is-num" style="width:50px">#</th><th scope="col">Scope</th><th scope="col">Purpose</th>
               <th scope="col">Algorithm</th><th scope="col">Status</th><th scope="col">Custody</th><th scope="col">Replace by</th><th scope="col">Fingerprint</th></tr>
@@ -71,7 +71,7 @@
     <section class="q-panel q-panel--table" aria-labelledby="await-t">
       <div class="q-panel__hd"><h2 class="q-panel__t" id="await-t">Awaiting their owner</h2></div>
       <div class="q-table-wrap">
-        <table class="q-table q-table--compact">
+        <table class="q-table q-table--compact" aria-labelledby="await-t">
           <thead><tr><th scope="col">Owner</th><th scope="col">Algorithm</th></tr></thead>
           <tbody>
             {% for k in user_keys_due %}

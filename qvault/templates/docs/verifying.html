@@ -7,9 +7,10 @@
   decision page, use <strong>Export for verification</strong>.
 </p>
 
-<h3>Three ways to check one</h3>
+<h2>Three ways to check one</h2>
 <div class="q-table-wrap"><table class="q-table">
-  <thead><tr><th style="width:12rem">Method</th><th>Trusts</th></tr></thead>
+  <caption class="visually-hidden">Three ways to check a decision</caption>
+  <th scope="col"ead><tr><th scope="col" style="width:12rem">Method</th><th scope="col">Trusts</th></tr></thead>
   <tbody>
     <tr>
       <td><a href="{{ url_for('verify.index') }}">The verify page</a>
@@ -31,7 +32,7 @@
   </tbody>
 </table></div>
 
-<h3>What gets checked</h3>
+<h2>What gets checked</h2>
 <p>
   Each step closes a gap the one before it leaves open, so the order is the argument:
 </p>
@@ -58,7 +59,7 @@
   you are checking up on.
 </p>
 
-<h3>Pinning the keys</h3>
+<h2>Pinning the keys</h2>
 <p>
   A bundle names its own keys, so on its own it proves only that <em>some</em> log signed it. To
   make it prove that <em>this</em> log signed it, get the fingerprints from somewhere other than
@@ -69,7 +70,7 @@
     --expect-log 4f2a9c1e77b30d85 \
     --expect-witness 8c1d05fa2b6e4470</code></pre>
 
-<h3>Algorithms the browser cannot check</h3>
+<h2>Algorithms the browser cannot check</h2>
 <p>
   The offline verifier checks ML-DSA-65 and ML-DSA-87. It does not check SLH-DSA, because the
   implementation here is the SPHINCS+ round-3 submission and the browser library implements FIPS
