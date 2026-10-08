@@ -1,51 +1,40 @@
-// The moment the signature lands.
-//
-// This is the single orchestrated animation in the product, and it earns that status: it marks the
-// only irreversible thing a person can do here. Everything else in the app either answers a tap or
-// stays still.
-//
-// The first version of this screen reported a successful signature with an inline banner and a
-// quorum mark quietly filling in. That was wrong, and the author said so: after a biometric prompt
-// the person has physically committed something, and the interface answering with a line of text
-// makes the act feel unacknowledged. A signature is not a form submission.
-//
-// The sequence, ~1.2s end to end:
+// The moment the signature lands: the one orchestrated animation in the product (phone-ux §6.11).
 //
 //   1. The ground dims.                                   the page is still there, underneath
 //   2. The disc springs in and a ring expands off it.     something has been pressed onto the page
 //   3. The tick draws, short arm then long arm.           it is being written, not switched on
-//   4. Haptic fires as the tick completes.                the physical world agrees
+//   4. The haptic fires as the tick completes.            the physical world agrees
 //   5. The words fade up.                                 read after the event, not during it
 //
-// The tick is drawn from two bars rather than an SVG path: `react-native-svg` is a native module,
-// and adding one would mean this change could not ship over the air. Two bars anchored at a shared
-// corner inside a 45-degree rotation give the same read for no native surface at all.
+// Rejection gets the same ceremony in the critical tone, with a cross: rejecting is as deliberate
+// and as irreversible, and celebrating only approval would lean on a decision the product has no
+// business influencing. Reduced motion jumps to the end state, and the haptic still fires.
 //
-// REJECTION GETS THE SAME CEREMONY, in `broken` rather than `sealed`, with a cross instead of a
-// tick. Rejecting is equally irreversible and equally deliberate, and celebrating only approval
-// would put a thumb on the scale of a decision the product has no business influencing.
+// The tick and cross are two bars each, scaled rather than resized (a scale is composited off the
+// JS thread; animating width re-runs layout every frame), so no SVG module is needed.
 
 import { useEffect } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withDelay,
-  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Seal } from './Seal.tsx';
+import { makeStyles, useTheme } from '../theme/index.ts';
+import { Button } from './Button.tsx';
 import { feedback } from './feedback.ts';
-import { color, motion, radius, space, type } from '../theme.ts';
+import { Seal } from './Seal.tsx';
+import { Text } from './Text.tsx';
+import { Touchable } from './Touchable.tsx';
 
 const DISC = 72;
 const STROKE = 4;
-// A tick is an ASYMMETRIC V: a short arm down into the corner, a long one sweeping up out of it.
-// Equal arms give a chevron, which is what the first version drew.
+// A tick is an ASYMMETRIC V: a short arm into the corner, a long one sweeping out of it.
 const TICK_SHORT = 13;
 const TICK_LONG = 27;
 
@@ -57,13 +46,16 @@ export function SignedOverlay({
   onDone,
 }: {
   visible: boolean;
-  /** False for a rejection. Changes the hue, the glyph and the words -- not the ceremony. */
+  /** False for a rejection: the hue, the glyph and the words change, not the ceremony. */
   approved: boolean;
   filled: number;
   required: number;
   onDone: () => void;
 }) {
+  const t = useTheme();
+  const s = useStyles();
   const reduced = useReducedMotion();
+  const insets = useSafeAreaInsets();
 
   const dim = useSharedValue(0);
   const disc = useSharedValue(0);
@@ -73,37 +65,30 @@ export function SignedOverlay({
   const words = useSharedValue(0);
 
   const complete = approved && filled >= required;
-  const hue = approved ? color.sealed : color.broken;
+  const tone = approved ? t.color.status.success : t.color.status.critical;
 
   useEffect(() => {
     if (!visible) {
       [dim, disc, ring, armA, armB, words].forEach((v) => (v.value = 0));
       return;
     }
-
     if (reduced) {
-      // Reduced motion gets the destination, not a faster journey. The haptic still fires: it is
-      // confirmation, not decoration, and someone who suppresses animation has not asked to be
-      // told less.
       [dim, disc, armA, armB, words].forEach((v) => (v.value = 1));
       complete ? feedback.sealed() : feedback.signed();
       return;
     }
-
-    dim.value = withTiming(1, { duration: motion.quick });
-    disc.value = withDelay(60, withSpring(1, motion.emphatic));
-    ring.value = withDelay(120, withTiming(1, { duration: motion.seal }));
+    dim.value = withTiming(1, { duration: t.motion.popover });
+    disc.value = withDelay(60, withSpring(1, t.motion.emphatic));
+    ring.value = withDelay(120, withTiming(1, { duration: t.motion.seal }));
     armA.value = withDelay(260, withTiming(1, { duration: 130 }));
     armB.value = withDelay(390, withTiming(1, { duration: 190 }));
-    words.value = withDelay(560, withTiming(1, { duration: motion.settle }));
-
-    // Timed to the tick finishing rather than to the request returning. The signature was accepted
-    // a moment ago; this is the instant the person is told, and the two should agree.
+    words.value = withDelay(560, withTiming(1, { duration: t.motion.dialog }));
+    // Timed to the tick finishing, so what the hand feels and what the eye sees are one event.
     const at = setTimeout(() => (complete ? feedback.sealed() : feedback.signed()), 580);
     return () => clearTimeout(at);
-  }, [visible, reduced, complete, dim, disc, ring, armA, armB, words]);
+  }, [visible, reduced, complete, dim, disc, ring, armA, armB, words, t.motion]);
 
-  const dimStyle = useAnimatedStyle(() => ({ opacity: dim.value * 0.5 }));
+  const dimStyle = useAnimatedStyle(() => ({ opacity: dim.value }));
   const cardStyle = useAnimatedStyle(() => ({
     opacity: dim.value,
     transform: [{ translateY: (1 - dim.value) * 24 }],
@@ -117,81 +102,60 @@ export function SignedOverlay({
     opacity: words.value,
     transform: [{ translateY: (1 - words.value) * 8 }],
   }));
-
-  // SCALE, NEVER WIDTH OR HEIGHT. The first version animated the arms' extents, which makes React
-  // Native re-run layout on every frame of a 300ms draw -- that was the jank. A scale is composited
-  // on the UI thread and touches no layout at all. `transformOrigin` pins each arm to the corner
-  // the two share, so scaling grows it along its own length instead of out from its middle.
   const armAStyle = useAnimatedStyle(() => ({ transform: [{ scaleX: armA.value }] }));
   const armBStyle = useAnimatedStyle(() => ({ transform: [{ scaleY: armB.value }] }));
+  const crossAStyle = useAnimatedStyle(() => ({ transform: [{ rotate: '45deg' }, { scaleX: armA.value }] }));
+  const crossBStyle = useAnimatedStyle(() => ({ transform: [{ rotate: '-45deg' }, { scaleX: armB.value }] }));
 
-  const crossAStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: '45deg' }, { scaleX: armA.value }],
-  }));
-  const crossBStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: '-45deg' }, { scaleX: armB.value }],
-  }));
-
-  const insets = useSafeAreaInsets();
+  const head = headline(approved, complete);
+  const body = detail(approved, complete, filled, required);
+  // The glyph is drawn in the tone's own tint: white on the light-green disc of the dark theme
+  // would be about 1.6:1.
+  const glyph = { backgroundColor: tone.bg };
 
   return (
-    // hardwareAccelerated: an Android modal window is composited in software unless asked
-    // otherwise, so every frame of the draw goes through the CPU. It costs nothing to ask.
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onDone}
-      statusBarTranslucent
-      hardwareAccelerated
-    >
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onDone} statusBarTranslucent hardwareAccelerated>
       <View style={s.root}>
-        <Animated.View style={[s.dim, dimStyle]} />
-        <Pressable style={s.dismissArea} accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDone} />
-
+        <Animated.View style={[s.dim, dimStyle]} pointerEvents="none" />
+        <Touchable style={s.dismissArea} accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDone} />
         <Animated.View
-          style={[s.card, { marginBottom: insets.bottom }, cardStyle]}
+          style={[s.card, t.elevation.sheet, { paddingBottom: t.space[16] + insets.bottom }, cardStyle]}
+          accessibilityViewIsModal
           accessibilityLiveRegion="assertive"
-          accessibilityLabel={`${headline(approved, complete)}. ${detail(approved, complete, filled, required)}`}
+          accessibilityLabel={`${head}. ${body}`}
         >
           <View style={s.discWrap}>
-            <Animated.View
-              pointerEvents="none"
-              style={[s.ring, { borderColor: hue }, ringStyle]}
-            />
-            <Animated.View style={[s.disc, { backgroundColor: hue }, discStyle]}>
+            <Animated.View pointerEvents="none" style={[s.ring, { borderColor: tone.fg }, ringStyle]} />
+            <Animated.View style={[s.disc, { backgroundColor: tone.fg }, discStyle]}>
               {approved ? (
                 <View style={s.tickBox}>
-                  <Animated.View style={[s.armShort, armAStyle]} />
-                  <Animated.View style={[s.armLong, armBStyle]} />
+                  <Animated.View style={[s.armShort, glyph, armAStyle]} />
+                  <Animated.View style={[s.armLong, glyph, armBStyle]} />
                 </View>
               ) : (
                 <View style={s.crossBox}>
-                  <Animated.View style={[s.crossBar, crossAStyle]} />
-                  <Animated.View style={[s.crossBar, crossBStyle]} />
+                  <Animated.View style={[s.crossBar, glyph, crossAStyle]} />
+                  <Animated.View style={[s.crossBar, glyph, crossBStyle]} />
                 </View>
               )}
             </Animated.View>
           </View>
 
           <Animated.View style={[s.words, wordsStyle]}>
-            <Text style={s.headline}>{headline(approved, complete)}</Text>
-            <Text style={s.detail}>{detail(approved, complete, filled, required)}</Text>
-
+            <Text role="title" align="center" accessibilityRole="header">
+              {head}
+            </Text>
+            <Text role="body" tone="muted" align="center" style={s.detail}>
+              {body}
+            </Text>
             {approved ? (
               <View style={s.sealRow}>
-                <Seal filled={filled} required={required} size={12} />
+                <Seal filled={filled} required={required} size={20} />
               </View>
             ) : null}
           </Animated.View>
 
-          <Pressable
-            onPress={onDone}
-            accessibilityRole="button"
-            style={({ pressed }) => [s.done, pressed && { opacity: 0.6 }]}
-          >
-            <Text style={s.doneText}>Done</Text>
-          </Pressable>
+          <Button label="Done" onPress={onDone} variant="secondary" full />
         </Animated.View>
       </View>
     </Modal>
@@ -212,48 +176,29 @@ function detail(approved: boolean, complete: boolean, filled: number, required: 
     : `${left} more signatures are needed before this is approved.`;
 }
 
-const s = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   root: { flex: 1, justifyContent: 'flex-end' },
-  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0E1729' },
+  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: t.color.backdrop },
   dismissArea: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-
   card: {
-    backgroundColor: color.surface,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
-    paddingHorizontal: space.xl,
-    paddingTop: space.xl,
-    paddingBottom: space.lg,
+    width: '100%',
+    maxWidth: t.layout.maxContent,
+    alignSelf: 'center',
+    backgroundColor: t.color.surfaceRaised,
+    borderTopLeftRadius: t.radius.sheet,
+    borderTopRightRadius: t.radius.sheet,
+    borderTopWidth: t.scheme === 'dark' ? 1 : 0,
+    borderColor: t.color.border,
+    paddingHorizontal: t.layout.gutter,
+    paddingTop: t.space[24],
     alignItems: 'center',
-    gap: space.lg,
+    gap: t.space[16],
   },
-
   discWrap: { width: DISC, height: DISC, alignItems: 'center', justifyContent: 'center' },
-  ring: {
-    position: 'absolute',
-    width: DISC,
-    height: DISC,
-    borderRadius: DISC / 2,
-    borderWidth: 2,
-  },
-  disc: {
-    width: DISC,
-    height: DISC,
-    borderRadius: DISC / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // An L sharing a BOTTOM-RIGHT corner, turned 45 degrees clockwise. That lands the short arm
-  // pointing up-left and the long arm sweeping up-right, which is a tick. The first version put
-  // the corner bottom-left and turned it the other way, which mirrors the glyph: short arm to the
-  // right, long arm to the left, and the whole thing reads as a chevron.
-  tickBox: {
-    width: TICK_SHORT,
-    height: TICK_LONG,
-    transform: [{ rotate: '45deg' }],
-    marginLeft: -3,
-  },
+  ring: { position: 'absolute', width: DISC, height: DISC, borderRadius: DISC / 2, borderWidth: 2 },
+  disc: { width: DISC, height: DISC, borderRadius: DISC / 2, alignItems: 'center', justifyContent: 'center' },
+  // An L sharing its bottom-right corner, turned 45 degrees: short arm up-left, long arm up-right.
+  tickBox: { width: TICK_SHORT, height: TICK_LONG, transform: [{ rotate: '45deg' }], marginLeft: -3 },
   armShort: {
     position: 'absolute',
     right: 0,
@@ -261,7 +206,6 @@ const s = StyleSheet.create({
     width: TICK_SHORT,
     height: STROKE,
     borderRadius: STROKE / 2,
-    backgroundColor: '#FFFFFF',
     transformOrigin: 'right center',
   },
   armLong: {
@@ -271,32 +215,11 @@ const s = StyleSheet.create({
     width: STROKE,
     height: TICK_LONG,
     borderRadius: STROKE / 2,
-    backgroundColor: '#FFFFFF',
     transformOrigin: 'center bottom',
   },
-
   crossBox: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  crossBar: {
-    position: 'absolute',
-    width: 28,
-    height: STROKE,
-    borderRadius: STROKE / 2,
-    backgroundColor: '#FFFFFF',
-  },
-
-  words: { alignItems: 'center', gap: space.xs },
-  headline: { ...type.title, fontSize: 21, textAlign: 'center' },
-  detail: { ...type.bodyMuted, textAlign: 'center', maxWidth: 300 },
-  sealRow: { marginTop: space.md },
-
-  done: {
-    alignSelf: 'stretch',
-    minHeight: 50,
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: color.rule,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  doneText: { ...type.action },
-});
+  crossBar: { position: 'absolute', width: 28, height: STROKE, borderRadius: STROKE / 2 },
+  words: { alignItems: 'center', gap: t.space[4], alignSelf: 'stretch' },
+  detail: { maxWidth: 320 },
+  sealRow: { marginTop: t.space[8] },
+}));

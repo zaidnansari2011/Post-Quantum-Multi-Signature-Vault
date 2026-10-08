@@ -1,62 +1,48 @@
-// The tab bar.
+// The tab bar (phone-ux §2.2).
 //
-// Dark, because the product needs a spine. The web client puts its navigation rail on the same
-// achromatic dark surface for the same reason: it separates "where you are in the product" from
-// "what you are looking at", and it does so without introducing a brand hue that would then be
-// competing with the status colours for meaning.
+// Navy in light mode, part of the app's identity; in dark it becomes the second neutral, so it is
+// no longer a separate slab. The tile's own icons: filled when active (the HIG asks for filled
+// active tab icons), outline otherwise. Inactive labels are `chrome.textMuted` at full opacity: the
+// old 55% opacity measured about 2.9:1, and this is 5.6:1 light and 4.6:1 dark.
 //
-// A custom bar rather than the default one, for two reasons. The default renders a coloured active
-// tint, and a saturated accent on a navigation control is exactly what rule one forbids -- so the
-// active state here is expressed as weight and opacity instead. And the badge on Home carries a
-// real count that has to match the queue, which means it needs the query, not a static option.
-//
-// Motion: the active tab's label and icon settle rather than jump, and there is no haptic. Moving
-// between tabs is not an event in the world -- nothing became true because someone looked at their
-// history -- so it gets the quietest response the system has.
+// The badge counts what this phone can sign, read from the same query as the queue, and is part of
+// the tab's spoken name ("Approvals, 3 need your signature").
 
-import Feather from '@expo/vector-icons/Feather';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import Animated, {
-  useAnimatedStyle,
-  useDerivedValue,
-  useReducedMotion,
-  withTiming,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { color, motion, space, type } from '../theme.ts';
+import { makeStyles, scaleCap, useTheme } from '../theme/index.ts';
+import { Icon, type IconName } from './Icon.tsx';
+import { Text } from './Text.tsx';
+import { Touchable } from './Touchable.tsx';
 
-type IconName = React.ComponentProps<typeof Feather>['name'];
-
-const ICONS: Record<string, IconName> = {
-  Home: 'inbox',
-  Vaults: 'shield',
-  Activity: 'clock',
-  Account: 'user',
+const ICONS: Record<string, [IconName, IconName]> = {
+  Home: ['inbox', 'inbox-fill'],
+  Vaults: ['vault', 'vault-fill'],
+  Activity: ['pulse', 'pulse-fill'],
+  Account: ['user', 'user-fill'],
 };
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const s = useStyles();
   const insets = useSafeAreaInsets();
-
   return (
-    <View style={[s.bar, { paddingBottom: Math.max(space.sm, insets.bottom) }]}>
+    <View style={[s.bar, { paddingBottom: insets.bottom }]} accessibilityRole="tablist">
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const focused = state.index === index;
         const label =
-          typeof options.tabBarLabel === 'string' ? options.tabBarLabel : options.title ?? route.name;
-
-        function onPress() {
+          typeof options.tabBarLabel === 'string' ? options.tabBarLabel : (options.title ?? route.name);
+        const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
-        }
-
+        };
         return (
           <Tab
             key={route.key}
             label={label}
-            icon={ICONS[route.name] ?? 'circle'}
+            icons={ICONS[route.name] ?? ['inbox', 'inbox-fill']}
             focused={focused}
             badge={options.tabBarBadge}
             onPress={onPress}
@@ -67,76 +53,99 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
 }
 
-function Tab({
+export function Tab({
   label,
-  icon,
+  icons,
   focused,
   badge,
+  dot,
   onPress,
 }: {
   label: string;
-  icon: IconName;
+  icons: [IconName, IconName];
   focused: boolean;
   badge?: number | string;
+  /** Activity's unread dot: a cue, never a number. */
+  dot?: boolean;
   onPress: () => void;
 }) {
-  const reduced = useReducedMotion();
-  const active = useDerivedValue(() =>
-    reduced ? (focused ? 1 : 0) : withTiming(focused ? 1 : 0, { duration: motion.quick }),
-  );
-
-  const animated = useAnimatedStyle(() => ({ opacity: 0.55 + active.value * 0.45 }));
-
+  const t = useTheme();
+  const s = useStyles();
+  const count = typeof badge === 'number' ? (badge > 99 ? '99+' : String(badge)) : badge;
+  const spoken =
+    label === 'Approvals' && count
+      ? `${label}, ${count} need${count === '1' ? 's' : ''} your signature`
+      : dot
+        ? `${label}, new updates`
+        : label;
   return (
-    <Pressable
+    <Touchable
       onPress={onPress}
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
-      accessibilityLabel={label}
+      accessibilityLabel={spoken}
+      ringRadius={8}
       style={s.tab}
-      hitSlop={6}
     >
-      <Animated.View style={[s.tabInner, animated]}>
-        <View>
-          <Feather name={icon} size={20} color={focused ? color.chromeInk : color.chromeInk2} />
-          {badge ? (
-            <View style={s.badge}>
-              <Text style={s.badgeText}>{badge}</Text>
-            </View>
-          ) : null}
-        </View>
-        <Text style={[s.label, focused && s.labelActive]}>{label}</Text>
-      </Animated.View>
-    </Pressable>
+      <View>
+        <Icon
+          name={focused ? icons[1] : icons[0]}
+          size={24}
+          scales={false}
+          color={focused ? t.color.chrome.text : t.color.chrome.textMuted}
+        />
+        {count ? (
+          <View style={s.badge}>
+            <Text role="label" color={t.color.chrome.badgeText} maxScale={scaleCap.tab} style={s.badgeText} tabular>
+              {count}
+            </Text>
+          </View>
+        ) : dot ? (
+          <View style={s.dot} />
+        ) : null}
+      </View>
+      <Text
+        role="label"
+        maxScale={scaleCap.tab}
+        color={focused ? t.color.chrome.text : t.color.chrome.textMuted}
+        style={focused ? s.labelActive : null}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Touchable>
   );
 }
 
-const s = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   bar: {
     flexDirection: 'row',
-    backgroundColor: color.chrome,
+    backgroundColor: t.color.chrome.bg,
     borderTopWidth: 1,
-    borderTopColor: color.chromeRule,
-    paddingTop: space.sm,
+    borderTopColor: t.color.chrome.border,
   },
-  tab: { flex: 1 },
-  tabInner: { alignItems: 'center', gap: 4 },
-  label: { ...type.micro, fontSize: 11, color: color.chromeInk2 },
-  labelActive: { color: color.chromeInk },
-
-  // `waiting` rather than a red dot: work you have not done is not an error, and this app should
-  // not greet someone by telling them something is wrong.
+  tab: { flex: 1, minHeight: 49, alignItems: 'center', justifyContent: 'center', gap: 2, paddingTop: 6, paddingBottom: 4 },
+  labelActive: { fontFamily: t.type.bodyStrong.fontFamily },
   badge: {
     position: 'absolute',
-    top: -5,
-    right: -10,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    backgroundColor: color.waiting,
+    top: -4,
+    left: 14,
+    minWidth: 18,
+    minHeight: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: t.color.chrome.badgeBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { fontSize: 10, lineHeight: 13, color: '#FFFFFF', fontWeight: '700' },
-});
+  badgeText: { fontFamily: t.type.bodyStrong.fontFamily },
+  dot: {
+    position: 'absolute',
+    top: -1,
+    right: -3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: t.color.chrome.dot,
+  },
+}));

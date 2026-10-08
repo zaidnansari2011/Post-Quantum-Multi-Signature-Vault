@@ -5,7 +5,7 @@
     "owner": "zaid7864",
     "scheme": "qvault",
     "version": "1.0.0",
-    "runtimeVersion": "2",
+    "runtimeVersion": "rework-1",
     "updates": {
       "url": "https://u.expo.dev/abfa50c5-38c5-4fd7-a01d-7c0d0dd9c028",
       "fallbackToCacheTimeout": 0,
@@ -15,7 +15,7 @@
     },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "extra": {
       "apiBaseUrl": "https://project4.zaidansari.tech",
       "eas": {

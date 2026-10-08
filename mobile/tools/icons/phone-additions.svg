@@ -1,0 +1,31 @@
+<!--
+  Phone additions to the style tile's icon sprite (phone-ux §2.2), drawn in the tile's grammar:
+  a 16-unit grid, one 1.5 stroke, round caps and joins, currentColor.
+
+  These belong in the tile's sprite as well, so the web draws the same glyphs; they are kept here
+  until the next tile revision so this stream does not edit web files other streams are changing.
+
+  Paint, for tools/icons_from_tile.ts:
+    (no attribute)                       stroke, 1.5 (or data-stroke="w")
+    fill="currentColor" stroke="none"    fill only, as the tile writes its dots
+    data-paint="fill"                    fill only
+    data-paint="knockout"                a hole cut out of the fill underneath it (simple shapes)
+
+  The four -fill glyphs are the active tab icons (the HIG asks for filled active tab icons).
+-->
+<svg xmlns="http://www.w3.org/2000/svg">
+<symbol id="i-inbox-fill" viewBox="0 0 16 16"><path data-paint="fill" d="M2.25 9.25h3.1l.9 1.75h3.5l.9-1.75h3.1v3.25a.75.75 0 0 1-.75.75H3a.75.75 0 0 1-.75-.75Z"/><path d="M2.25 9.25h3.1l.9 1.75h3.5l.9-1.75h3.1"/><path d="M4.1 3.25h7.8a.75.75 0 0 1 .7.5l1.15 3.4a.8.8 0 0 1 .05.26v4.84a.75.75 0 0 1-.75.75H3a.75.75 0 0 1-.75-.75V7.4a.8.8 0 0 1 .05-.26l1.15-3.4a.75.75 0 0 1 .65-.49Z"/></symbol>
+<symbol id="i-pulse-fill" viewBox="0 0 16 16"><path data-stroke="2.25" d="M1.75 8.25h2.8l1.7-4 3 8 1.7-4h3.3"/></symbol>
+<symbol id="i-vault-fill" viewBox="0 0 16 16"><rect data-paint="fill" x="2.25" y="2.75" width="11.5" height="10" rx="1.5"/><rect x="2.25" y="2.75" width="11.5" height="10" rx="1.5"/><circle data-paint="knockout" cx="7.25" cy="7.75" r="2.75"/><circle data-paint="fill" cx="7.25" cy="7.75" r="1.35"/><rect data-paint="knockout" x="10.6" y="5.75" width="1.5" height="4" rx=".75"/><path d="M4.5 12.75v1M11.5 12.75v1"/></symbol>
+<symbol id="i-user-fill" viewBox="0 0 16 16"><circle data-paint="fill" cx="8" cy="5.5" r="2.75"/><circle cx="8" cy="5.5" r="2.75"/><path data-paint="fill" d="M2.75 13.75c.5-2.6 2.6-4 5.25-4s4.75 1.4 5.25 4Z"/><path d="M2.75 13.75c.5-2.6 2.6-4 5.25-4s4.75 1.4 5.25 4Z"/></symbol>
+<symbol id="i-key" viewBox="0 0 16 16"><circle cx="5.5" cy="10.5" r="2.75"/><path d="m7.45 8.55 5.8-5.8M11.25 4.75 13 6.5M9.5 6.5l1.25 1.25"/></symbol>
+<symbol id="i-fingerprint" viewBox="0 0 16 16"><path d="M2.5 10V8a5.5 5.5 0 0 1 9.4-3.9M13.4 6.5c.07.3.1.65.1 1v1"/><path d="M4.75 12.75c.5-1 .75-2.2.75-3.5V8a2.5 2.5 0 0 1 5 0v.75"/><path d="M8 8v1.25c0 1.6-.4 3.1-1.1 4.5M10.5 11c-.1.85-.3 1.7-.6 2.5"/></symbol>
+<symbol id="i-phone" viewBox="0 0 16 16"><rect x="4.25" y="1.75" width="7.5" height="12.5" rx="1.5"/><path d="M7.25 11.75h1.5"/></symbol>
+<symbol id="i-document" viewBox="0 0 16 16"><path d="M4 2.25h5.5L12.75 5.5v7.75a.75.75 0 0 1-.75.75H4a.75.75 0 0 1-.75-.75V3A.75.75 0 0 1 4 2.25Z"/><path d="M9.25 2.5v3.25h3.25"/></symbol>
+<symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z"/><circle cx="8" cy="8" r="2"/></symbol>
+<symbol id="i-eye-off" viewBox="0 0 16 16"><path d="M6.6 3.9A6.6 6.6 0 0 1 8 3.75c4 0 6.25 4.25 6.25 4.25a11 11 0 0 1-1.5 2.05M10.2 11.85a6.3 6.3 0 0 1-2.2.4C4 12.25 1.75 8 1.75 8a11.3 11.3 0 0 1 2.4-2.9"/><path d="M6.6 6.6a2 2 0 0 0 2.8 2.8M2.75 2.75l10.5 10.5"/></symbol>
+<symbol id="i-share" viewBox="0 0 16 16"><path d="M8 9.5V2.25M5.25 4.75 8 2l2.75 2.75"/><path d="M5.25 6.75h-1.5a.75.75 0 0 0-.75.75v5.75a.75.75 0 0 0 .75.75h8.5a.75.75 0 0 0 .75-.75V7.5a.75.75 0 0 0-.75-.75h-1.5"/></symbol>
+<symbol id="i-scan" viewBox="0 0 16 16"><path d="M2.25 5.5V3a.75.75 0 0 1 .75-.75h2.5M10.5 2.25H13a.75.75 0 0 1 .75.75v2.5M13.75 10.5V13a.75.75 0 0 1-.75.75h-2.5M5.5 13.75H3a.75.75 0 0 1-.75-.75v-2.5M4.75 8h6.5"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 16 16"><path d="M13 8H3M7.25 3.75 3 8l4.25 4.25"/></symbol>
+<symbol id="i-more-vertical" viewBox="0 0 16 16"><circle cx="8" cy="3.5" r="1.15" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="8" cy="12.5" r="1.15" fill="currentColor" stroke="none"/></symbol>
+</svg>
