@@ -95,9 +95,9 @@ def test_the_rejection_that_crosses_the_line_ends_it_for_everyone(m, n, rejectio
 
 def test_the_approve_consequence_counts_what_is_left():
     assert "Yours completes" in evidence.approve_consequence(approvals=1, required_m=2)[0]
-    assert (
-        "still needs 1 more approval." in evidence.approve_consequence(approvals=0, required_m=2)[0]
-    )
+    assert "still needs 1 more approval." in evidence.approve_consequence(
+        approvals=0, required_m=2
+    )[0]
     payment = evidence.approve_consequence(approvals=1, required_m=2, payment="0.25 ETH")
     assert "pay 0.25 ETH" in payment[0] and "can’t be reversed" in payment[1]
 
