@@ -175,6 +175,20 @@ def test_a_witness_that_keeps_presenting_the_wrong_key_costs_one_row(app, witnes
     assert WitnessKeyRefusal.query.one().attempts == 3
 
 
+def test_a_witness_that_presents_a_new_key_each_time_costs_bounded_rows(app, monkeypatch):
+    monkeypatch.setattr(checkpoint_service, "MAX_REFUSALS", 3)
+    app.config["WITNESS_KEY_FINGERPRINT"] = "0000000000000000"
+    pin = checkpoint_service.witness_pin()
+    for i in range(6):
+        checkpoint_service._refuse_key(
+            name="w", alg_id="ML-DSA-65", fingerprint=f"{i:016x}", pin=pin, tree_size=i
+        )
+        db.session.commit()
+    rows = WitnessKeyRefusal.query.all()
+    assert len(rows) == 3
+    assert {r.fingerprint for r in rows} == {f"{i:016x}" for i in (3, 4, 5)}
+
+
 def test_a_setting_that_is_not_a_fingerprint_refuses_every_key(app, witness):
     app.config["WITNESS_KEY_FINGERPRINT"] = _fingerprint(witness)[:8]  # a prefix, not a pin
     _grow()

@@ -49,7 +49,7 @@
     <p class="q-figure__s q-brief__bad">The witness co-signed with a key this log doesn’t trust, so its co-signatures are refused and not stored.</p>
     <p class="q-figure__s q-line">Presented {{ hash(m.fingerprint, 'presented witness key fingerprint', 16, 0) }}</p>
     {% if pin.state == 'pinned' %}<p class="q-figure__s q-line">Expected {{ hash(pin.value, 'pinned witness key fingerprint', 16, 0) }}</p>{% endif %}
-    <p class="q-figure__s">Last refused {{ ev_precise(m.last_seen) }}, {{ m.attempts }} time{{ '' if m.attempts == 1 else 's' }} in all. Entries after the last co-signature below aren’t witnessed until this is resolved.</p>
+    <p class="q-figure__s">Last refused {{ ev_precise(m.last_seen) }}, {{ m.attempts }} time{{ '' if m.attempts == 1 else 's' }} in all. No new checkpoint is witnessed until this is resolved.</p>
     {% if is_admin %}
     <p class="q-figure__s">If the witness’s key was replaced on purpose, set <code>WITNESS_KEY_FINGERPRINT</code> to the new fingerprint, which the witness prints when it starts, and restart. If it wasn’t, something other than your witness is answering at <code>{{ witness.url }}</code>.</p>
     {% endif %}
@@ -60,7 +60,7 @@
       {% elif pin.state == 'invalid' %}
       <p class="q-figure__s q-brief__bad"><code>WITNESS_KEY_FINGERPRINT</code> isn’t a fingerprint (16 hexadecimal characters), so every co-signature is refused.</p>
       {% else %}
-      <p class="q-figure__s q-line">{{ res(false, '', 'Key not pinned') }}</p>
+      <p class="q-figure__s q-line"><span class="q-res q-res--warn">{{ icon('warning') }}Key not pinned</span></p>
       <p class="q-figure__s">A co-signature from any key is accepted. Set <code>WITNESS_KEY_FINGERPRINT</code> to the fingerprint the witness prints when it starts, so a different key is refused.</p>
       {% endif %}
     {% endif %}

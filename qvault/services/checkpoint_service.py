@@ -447,11 +447,28 @@ def newest_trusted_cosignature() -> WitnessCosignature | None:
     )
 
 
+#: Refusal rows kept per expected key (``_refuse_key``).
+MAX_REFUSALS = 20
+
+
 def _refuse_key(*, name: str, alg_id: str, fingerprint: str, pin: WitnessPin, tree_size: int):
-    """Record a co-signature refused for its key: one row per (key presented, key expected)."""
+    """Record a co-signature refused for its key: one row per (key presented, key expected).
+
+    Whoever answers at ``WITNESS_URL`` chooses the key, and a fresh key costs them nothing, so
+    the rows per expected key are capped: past the cap the oldest row is reused for the new key.
+    """
     expected = pin.value or ""
     now = datetime.now(UTC)
     row = WitnessKeyRefusal.query.filter_by(fingerprint=fingerprint, expected=expected).first()
+    if row is None and WitnessKeyRefusal.query.filter_by(expected=expected).count() >= (
+        MAX_REFUSALS
+    ):
+        row = (
+            WitnessKeyRefusal.query.filter_by(expected=expected)
+            .order_by(WitnessKeyRefusal.last_seen.asc(), WitnessKeyRefusal.id.asc())
+            .first()
+        )
+        row.fingerprint, row.attempts, row.first_seen = fingerprint, 0, now
     if row is None:
         db.session.add(
             WitnessKeyRefusal(
