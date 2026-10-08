@@ -19,7 +19,10 @@ circular and is worth being precise about: an adversary with write access can de
 or substitute a key of their own. What they cannot do is *produce* a co-signature that verifies
 under a witness public key they do not hold. So the security comes from the verifier knowing which
 public key to expect — the fingerprint is published and pinnable, and ``qvault-verify
---expect-witness`` enforces it. Storage here is a cache of evidence, never the trust root.
+--expect-witness`` enforces it. Storage here is a cache of evidence, never the trust root. The
+server pins it too when ``WITNESS_KEY_FINGERPRINT`` is set: a co-signature from another key is
+refused before it is stored (``WitnessKeyRefusal`` records the attempt), and a stored row whose
+key is not the pinned one is never shown or exported as the witness's.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from qvault.extensions import db
+from qvault.models._types import AwareDateTime
 
 
 def _utcnow() -> datetime:
@@ -113,3 +117,33 @@ class WitnessCosignature(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<WitnessCosignature {self.witness_name} cp={self.checkpoint_id}>"
+
+
+class WitnessKeyRefusal(db.Model):
+    """A co-signature refused because its key is not the pinned one (``WITNESS_KEY_FINGERPRINT``).
+
+    The co-signature itself is never stored: a row here is the alarm, not evidence for any
+    checkpoint. One row per (key presented, key expected), counted, so a witness that keeps
+    presenting the wrong key every minute costs one row, not one per attempt. ``expected`` is the
+    configured value as it was, so correcting the setting leaves the old alarms behind.
+    """
+
+    __tablename__ = "witness_key_refusals"
+    __table_args__ = (
+        db.UniqueConstraint("fingerprint", "expected", name="uq_witness_key_refusal"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    witness_name = db.Column(db.String(64), nullable=False)
+    alg_id = db.Column(db.String(64), nullable=False)
+    #: The presented key's fingerprint, by the same rule as ``WitnessCosignature.key_fingerprint``.
+    fingerprint = db.Column(db.String(16), nullable=False)
+    expected = db.Column(db.String(64), nullable=False)
+    #: The size of the newest checkpoint it was offered.
+    tree_size = db.Column(db.Integer, nullable=False)
+    attempts = db.Column(db.Integer, nullable=False, default=1)
+    first_seen = db.Column(AwareDateTime, nullable=False, default=_utcnow)
+    last_seen = db.Column(AwareDateTime, nullable=False, default=_utcnow)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"<WitnessKeyRefusal {self.fingerprint} expected={self.expected}>"

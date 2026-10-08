@@ -71,6 +71,14 @@ class Proposal(db.Model):
         foreign_keys="ProposalLifecycle.proposal_id",
         back_populates="proposal",
     )
+    # Its discussion (rework R5): unsigned, and never part of what is signed or exported.
+    comments = db.relationship(
+        "DecisionComment",
+        back_populates="proposal",
+        cascade="all, delete-orphan",
+        order_by="DecisionComment.id",
+        lazy="dynamic",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<Proposal {self.proposal_uuid} {self.status}>"

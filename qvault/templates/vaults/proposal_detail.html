@@ -10,7 +10,7 @@
 {% from "ui/status.html" import status, quorum, badge %}
 {% from "ui/avatars.html" import avatar, avatar_stack %}
 {% from "ui/buttons.html" import button %}
-{% from "ui/data.html" import hash, reltime %}
+{% from "ui/data.html" import hash, reltime, rule_diff %}
 {% from "ui/feedback.html" import banner, dialog %}
 {% from "ui/forms.html" import field %}
 {% from "ui/menus.html" import menu, menu_item, menu_sep %}
@@ -304,6 +304,56 @@
     <a class="q-brief__a" href="{{ here }}?tab=evidence">See the evidence</a>
   </div>
 </section>
+
+{#- ------------------------------------------------------------------ 5. discussion (R5)
+    Unsigned, and drawn so it can't pass for the decision: the interface face in plain rows, each
+    labelled as a comment, never the serif of the text people sign. Bodies are escaped by Jinja;
+    a mention is drawn only where the server resolved one (discussion_service.segments). -#}
+<section class="q-dblk q-disc" id="discussion" aria-labelledby="disc-t">
+  <h2 class="q-dblk__t" id="disc-t">Discussion</h2>
+  <p class="q-disc__note">{{ icon('info') }}<span>Comments aren’t signed and aren’t part of the {{ noun }}. Everyone in {{ vault.name }} can read them.</span></p>
+  {% if comments %}
+  <ol class="q-disc__l">
+    {% for c in comments %}
+    <li class="q-cmt" id="comment-{{ c.id }}">
+      <span class="q-cmt__who">{{ avatar(c.author, 24, decorative=True) }}</span>
+      <div class="q-cmt__b">
+        <p class="q-cmt__hd"><b>{{ 'You' if c.mine else c.author }}</b><span class="q-cmt__tag">Comment</span><time class="q-cmt__time" datetime="{{ c.created_at.isoformat() if c.created_at }}">{{ ui_absolute(c.created_at) }}</time></p>
+        {% if c.deleted %}
+        <p class="q-cmt__gone">Comment deleted by {{ 'you' if c.mine else 'its author' }}.</p>
+        {% else %}
+        <p class="q-cmt__t">{% for part in c.segments %}{% if part.mention %}<span class="q-mention"{% if part.name %} title="{{ part.name }}"{% endif %}>{{ part.text }}</span>{% else %}{{ part.text }}{% endif %}{% endfor %}</p>
+        {% if c.mine %}
+        <details class="q-cmt__del">
+          <summary>Delete</summary>
+          <form method="post" action="{{ url_for('vaults.delete_comment', vid=vault.id, pid=proposal.proposal_uuid, cid=c.id) }}">
+            {{ delete_comment_form.hidden_tag() }}
+            <span class="q-cap">Deleting removes what it says for everyone. The audit log records that you deleted a comment.</span>
+            {{ button('Delete comment', 'danger', type='submit', size='sm', name='submit', value='Delete') }}
+          </form>
+        </details>
+        {% endif %}
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="q-empty-line">No comments yet.</p>
+  {% endif %}
+  {% if cannot_comment %}
+  <p class="q-note">{{ cannot_comment }}</p>
+  {% else %}
+  <form class="q-disc__form" method="post" action="{{ url_for('vaults.post_comment', vid=vault.id, pid=proposal.proposal_uuid) }}">
+    {{ comment_form.hidden_tag() }}
+    {% set handles = [] %}{% for p in mentionable[:8] %}{% set _ = handles.append('@' ~ p.handles[0]) %}{% endfor %}
+    {{ field('body', 'Add a comment', type='textarea', id='f-comment', required=True,
+             caption=('Mention someone who can see this ' ~ noun ~ ' to tell them: ' ~ handles|join(', ') ~ ('…' if mentionable|length > 8 else '') ~ '. ' if handles else '') ~ 'Up to 2,000 characters. Not signed.',
+             attrs={'maxlength': 2000, 'rows': 3}) }}
+    {{ button('Post comment', 'secondary', type='submit', name='submit', value='Post comment') }}
+  </form>
+  {% endif %}
+</section>
 {% endif %}
 
 {#- ------------------------------------------------------------------ Evidence: layers 1 and 2 -#}
@@ -399,7 +449,7 @@
         {% set cp = ev.checkpoint.row %}
         <div><dt>Checkpoint</dt><dd><span class="q-line">{{ '{:,}'.format(cp.tree_size) }} entries, root {{ hash(cp.root_hash, 'root hash') }}</span><span class="q-cap q-line">Signed by the log key, {{ cp.alg_id }}{% if ev.checkpoint.key_fingerprint %}, fingerprint {{ hash(ev.checkpoint.key_fingerprint, 'log key fingerprint', 16, 0) }}{% endif %}</span><span class="q-line">{{ result(ev.checkpoint.valid) }}</span></dd></div>
         {% for w in ev.witnesses %}
-        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap q-line">Key fingerprint {{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ result(w.valid) }}</span></dd></div>
+        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap q-line">Key fingerprint {{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ result(w.valid, 'Valid', 'Didn’t verify' if w.key_pinned else 'Not the pinned witness key') }}</span></dd></div>
         {% else %}
         <div><dt>Witness</dt><dd>No witness has co-signed this checkpoint.</dd></div>
         {% endfor %}
@@ -440,6 +490,23 @@
     <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
     <div><dt>Type</dt><dd>{{ 'Payment' if is_payment else 'General' }}</dd></div>
     <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the vault’s rule don’t apply to this decision.</span></dd></div>
+    {% if changes_since %}
+    {#- R5: the vault's rule changes since this was raised, and which of them reach it: its
+        threshold and signer set are frozen, but who may sign is checked again at signing. -#}
+    <div><dt>Changed since raised</dt><dd>
+      <ul class="q-since">
+      {% for c in changes_since %}
+        <li>{{ rule_diff(c.diff) }}<span class="q-cap">
+          {%- if c.event == 'vault_threshold_changed' %}Doesn’t apply here: this {{ noun }} keeps the rule it was raised with.
+          {%- elif c.event == 'vault_rule_changed' and c.diff.after == 'No' %}Applies here too: whoever raised it can’t approve it.
+          {%- elif c.event == 'vault_rule_changed' %}Doesn’t reopen this {{ noun }} to whoever raised it.
+          {%- elif c.event == 'member_added' or c.diff.after == 'Approver' %}Doesn’t apply here: only its approvers when it was raised can sign it.
+          {%- else %}Applies here: only someone who is still an approver can sign it.{% endif %}
+          {{ c.who }}, {{ ui_absolute(c.when) if c.when }}.</span></li>
+      {% endfor %}
+      </ul>
+    </dd></div>
+    {% endif %}
     <div><dt>Raised</dt><dd>{{ ui_absolute(proposal.created_at) }}</dd></div>
     {% if raised_again_from %}
     <div><dt>Raised again from</dt><dd><a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=raised_again_from.proposal_uuid) }}">{{ raised_again_from.title }}</a><span class="q-cap">A new decision: nothing signed there counts here.</span></dd></div>

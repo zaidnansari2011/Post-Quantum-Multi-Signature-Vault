@@ -620,6 +620,41 @@ History of this database, for the record:
 held a lock `drop_all` waited on — SQLite never shows it), and the image workflow did not rebuild
 when only `scripts/` changed, though the image ships `scripts/`. Both fixed (`68a4ab7`, `6923a39`).
 
+### 2.10 Pin the live witness key when the rework goes live — `TODO` (added 2026-10-08)
+
+*Why it's yours:* it is a setting on the live deployment, and the value has to be one you checked
+against the witness yourself, not one I wrote into the repo the log ships from (§2.5).
+
+From the SaaS rework on (owner decision 2026-10-08), Q-Vault can pin the witness key with
+`WITNESS_KEY_FINGERPRINT`. Set, a co-signature from any other key is refused, not stored, and
+**Audit → Transparency** says *Key mismatch*; unset, it accepts any key as today and shows admins
+*Key not pinned*. It is the same 16-character value `python -m qvault.verify --expect-witness`
+takes. Details: `witness/README.md`, "Pin its key".
+
+*What to do at the switch to the rework branch:*
+
+1. Read the live witness's ML-DSA-87 fingerprint off the witness itself. Its startup line in the
+   `qvault-witness` container log reads `witness 'witness-1' — ML-DSA-87, fingerprint …`
+   (Portal → `qvault-witness` → Log stream, or
+   `az containerapp logs show -n qvault-witness -g rg-qvault --subscription 4e995e2f… --tail 200`),
+   and its root page shows `key fingerprint …`. On 2026-10-04 it was `810fb51e5e2f75a8` (§2.5);
+   if it is anything else now, stop and find out why before pinning.
+2. Set it on the app and let it restart:
+
+   ```powershell
+   az containerapp update -n qvault -g rg-qvault --subscription 4e995e2f-... --set-env-vars WITNESS_KEY_FINGERPRINT=810fb51e5e2f75a8
+   ```
+
+3. Open **Audit → Transparency** as an admin: the witness card should say *Key pinned* with that
+   value, and the next checkpoint should still be co-signed within a minute. *Key mismatch* means
+   the value is wrong or something else answers at `WITNESS_URL`: remove the setting
+   (`--remove-env-vars WITNESS_KEY_FINGERPRINT`) to go back to accepting any key while you look.
+
+If the witness is ever given a new key on purpose, change this setting to the new fingerprint at
+the same time; nothing re-pins it automatically, by design.
+
+*Your effort:* one command and one look at a page.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
@@ -871,3 +906,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-09-17 | Added §2.8: on-chain execution on Sepolia. Keys received, relayer wallet generated, funding outstanding. |
 | 2026-09-17 | §2.8: Phases 1–2 committed; the Phase 3 broadcast was blocked by the session's permission system and needs your approval (command recorded). |
 | 2026-09-27 | Added §2.9: the system rebuilt on a teammate's Azure subscription (`rg-qvault`, Central India), `project4.zaidansari.tech` kept; new fingerprints to republish; master key to back up; old deployment to delete. |
+| 2026-10-08 | Added §2.10: pin the live witness key (`WITNESS_KEY_FINGERPRINT`) at the switch to the rework. |

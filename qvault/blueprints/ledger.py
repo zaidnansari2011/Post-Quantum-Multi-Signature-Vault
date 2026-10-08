@@ -115,13 +115,21 @@ def transparency():
         current_root=checkpoint_service.current_root(),
         witness=checkpoint_service.witness_state(),
         witness_check=evidence_service.witness_check(),
-        # Each listed co-signature verified again, so a row is marked witnessed only if it holds.
+        # Each listed co-signature verified again, so a row is marked witnessed only if it holds,
+        # and only from a key the pin accepts (WITNESS_KEY_FINGERPRINT); the others are named.
         valid_cosignatures={
             c.id
             for cp in checkpoints
             for c in cp.cosignatures
             if evidence_service.verify_cosignature(c)
         },
+        unpinned_cosignatures={
+            c.id
+            for cp in checkpoints
+            for c in cp.cosignatures
+            if not checkpoint_service.accepted(c)
+        },
+        is_admin=current_user.role == "admin",
         log=checkpoint_service.log_summary(),
         verified=checkpoint_service.verify_checkpoint(latest) if latest else False,
         origin=checkpoint_service.origin(),

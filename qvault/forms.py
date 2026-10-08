@@ -266,6 +266,19 @@ class WithdrawForm(FlaskForm):
     submit = SubmitField("Withdraw")
 
 
+class CommentForm(FlaskForm):
+    """Post to a decision's discussion. The limits are ``discussion_service``'s, checked there."""
+
+    body = TextAreaField("Comment")
+    submit = SubmitField("Post comment")
+
+
+class DeleteCommentForm(FlaskForm):
+    """Delete your own comment. A POST with a CSRF token."""
+
+    submit = SubmitField("Delete")
+
+
 class PublishForm(FlaskForm):
     """Share a decided decision at a public URL.
 

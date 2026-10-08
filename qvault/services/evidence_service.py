@@ -26,7 +26,7 @@ from qvault.models.checkpoint import LogCheckpoint, WitnessCosignature
 from qvault.models.ledger import LedgerEntry
 from qvault.models.treasury import ExecutionSignature
 from qvault.models.user import User
-from qvault.services import approval_service, checkpoint_service, receipt_service
+from qvault.services import approval_service, audit_service, checkpoint_service, receipt_service
 from qvault.services.ledger_service import compute_entry_hash
 from qvault.services.signing import (
     DS_PROPOSAL,
@@ -127,10 +127,13 @@ def verify_cosignature(cosignature: WitnessCosignature) -> bool:
 
     It was verified before it was stored (``checkpoint_service.sync_witness``); this repeats the
     check so an edited signature or statement cannot be shown as Valid. It is checked against the
-    key stored with the row, which the server does not pin: a row whose key and signature were
-    both replaced would still verify, which is why every screen shows the witness's key
-    fingerprint beside the result, for comparison with the witness's own.
+    key stored with the row, and that key must be one the pin accepts (``WITNESS_KEY_FINGERPRINT``):
+    a row whose key and signature were both replaced verifies over its own key, so without a pin
+    every screen shows the witness's key fingerprint beside the result, for comparison with the
+    witness's own, and with one the row is not Valid. ``key_pinned`` says which of the two failed.
     """
+    if not checkpoint_service.accepted(cosignature):
+        return False
     registry = current_app.extensions["crypto"]
     if not registry.has_signature(cosignature.alg_id):
         return False
@@ -243,7 +246,12 @@ def decision_evidence(
         }
         ev.inclusion = _inclusion(highest, checkpoint)
         ev.witnesses = [
-            {"row": c, "valid": verify_cosignature(c), "fingerprint": c.key_fingerprint()}
+            {
+                "row": c,
+                "valid": verify_cosignature(c),
+                "fingerprint": c.key_fingerprint(),
+                "key_pinned": checkpoint_service.accepted(c),
+            }
             for c in checkpoint.cosignatures
         ]
     ev.log = checkpoint_service.log_summary()
@@ -440,6 +448,17 @@ def decision_evidence(
                 "Witnessed",
             )
         )
+    elif ev.witnesses and not ev.witnesses[0]["key_pinned"]:
+        checks.append(
+            Check(
+                "witness",
+                "Witnessed",
+                f"{ev.witnesses[0]['row'].witness_name} co-signed with the key "
+                f"{ev.witnesses[0]['fingerprint']}, which isn’t the witness key this log trusts.",
+                "failed",
+                "Not the pinned witness",
+            )
+        )
     elif ev.witnesses:
         checks.append(
             Check(
@@ -596,11 +615,8 @@ def witness_check() -> dict:
     exactly the tree the witness saw. Done once per page, not per row.
     """
     configured = bool(checkpoint_service.witness_url())
-    cosignature = (
-        WitnessCosignature.query.join(LogCheckpoint)
-        .order_by(LogCheckpoint.tree_size.desc(), WitnessCosignature.id.desc())
-        .first()
-    )
+    # From a key the pin accepts: a newer row under another key is not the witness speaking.
+    cosignature = checkpoint_service.newest_trusted_cosignature()
     if cosignature is None:
         return {"configured": configured, "size": None, "ok": False, "row": None}
     checkpoint = cosignature.checkpoint
@@ -652,7 +668,12 @@ def entry_proof(entry: LedgerEntry, report: dict) -> dict:
         }
         proof = _inclusion(entry.seq, checkpoint)
         witnesses = [
-            {"row": c, "valid": verify_cosignature(c), "fingerprint": c.key_fingerprint()}
+            {
+                "row": c,
+                "valid": verify_cosignature(c),
+                "fingerprint": c.key_fingerprint(),
+                "key_pinned": checkpoint_service.accepted(c),
+            }
             for c in checkpoint.cosignatures
         ]
     return {
@@ -694,6 +715,12 @@ def describe(rows: list[dict], viewer) -> None:
     mine = {m.vault_id for m in VaultMember.query.filter_by(user_id=viewer.id).all()}
     visible = [r for r in rows if r["entry"].vault_id in mine]
     uuids = {r["entry"].ref_id for r in visible if r["entry"].ref_type == "proposal"}
+    # A comment's entry names its decision in its payload, not its ref (that is the comment).
+    uuids |= {
+        _payload(r["entry"]).get("proposal_uuid")
+        for r in visible
+        if r["entry"].ref_type == "comment"
+    } - {None}
     proposals = (
         {p.proposal_uuid: p for p in Proposal.query.filter(Proposal.proposal_uuid.in_(uuids))}
         if uuids
@@ -714,7 +741,13 @@ def describe(rows: list[dict], viewer) -> None:
         e = row["entry"]
         who, vault = row["who"], row["vault"]
         data = _payload(e)
-        proposal = proposals.get(e.ref_id) if e.ref_type == "proposal" else None
+        if e.ref_type == "comment":
+            proposal = proposals.get(data.get("proposal_uuid"))
+            # Only a decision of the vault the entry is in: a payload can't point elsewhere.
+            if proposal is not None and proposal.vault_id != e.vault_id:
+                proposal = None
+        else:
+            proposal = proposals.get(e.ref_id) if e.ref_type == "proposal" else None
         title = f"“{proposal.title}”" if proposal is not None else "a decision"
         if proposal is not None:
             row["href"] = (proposal.vault_id, proposal.proposal_uuid)
@@ -735,6 +768,10 @@ def describe(rows: list[dict], viewer) -> None:
             )
         elif e.event_type == "proposal_withdrawn":
             sentence = f"{who} withdrew {title} in {vault}."
+        elif e.event_type == "comment_posted":
+            sentence = f"{who} commented on {title} in {vault}."
+        elif e.event_type == "comment_deleted":
+            sentence = f"{who} deleted their comment on {title} in {vault}."
         elif e.event_type in ("member_added", "member_removed", "member_role_changed"):
             member = people.get(data.get("user_id"))
             if member is not None:
@@ -748,6 +785,10 @@ def describe(rows: list[dict], viewer) -> None:
                     sentence = f"{who} made {member} {role} in {vault}."
         if sentence:
             row["sentence"] = sentence
+        # A vault rule change, as before -> after (R5), naming only members named above.
+        diff = audit_service.rule_diff(e, people)
+        if diff is not None:
+            row["diff"] = diff
 
 
 #: The audit filter's options, in plain words. Unknown event types fall back to their name.
@@ -758,6 +799,9 @@ EVENT_LABELS = {
     "proposal_rejected": "Decision rejected",
     "proposal_expired": "Decision expired",
     "proposal_withdrawn": "Decision withdrawn",
+    "comment_posted": "Comment posted",
+    "comment_deleted": "Comment deleted",
+    "vault_rule_changed": "Raiser approval rule changed",
     "proposal_executed": "Payment paid",
     "proposal_execution_failed": "Payment failed",
     "user_registered": "Person joined",

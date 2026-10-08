@@ -363,7 +363,7 @@ def set_requester_can_approve(
     else:
         rule.requester_can_approve = allowed
         rule.updated_at = datetime.now(UTC)
-    ledger_service.append(
+    entry = ledger_service.append(
         "vault_rule_changed",
         {
             "vault_id": vault.id,
@@ -377,6 +377,9 @@ def set_requester_can_approve(
         ref_type="vault",
         ref_id=str(vault.id),
         commit=False,
+    )
+    notification_service.requester_rule_changed(
+        vault, allowed=allowed, actor_id=actor_id, entry=entry
     )
     if commit:
         db.session.commit()
