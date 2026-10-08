@@ -168,7 +168,9 @@ const useStyles = makeStyles((t) => ({
   wrap: { gap: t.space[2] },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[4] },
   rowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 0 },
-  valueStacked: { flex: 0 },
+  // Sized by its content: react-native-web reads `flex: 0` as a zero basis, which held a whole
+  // address to the 32pt minimum and drew it over the label above and the controls below.
+  valueStacked: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
   controls: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
   // The controls are 32pt, so the value's first line is centred on them and the row costs 32.
   value: { flex: 1, minHeight: 32, justifyContent: 'center', paddingVertical: 6 },

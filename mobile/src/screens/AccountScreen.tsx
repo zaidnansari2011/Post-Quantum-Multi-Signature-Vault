@@ -11,7 +11,7 @@
 // (src/logic/session.ts). If a treasury holds this phone's key, the sheet says what that costs and
 // asks for "I understand" first. (The rest of this page is reshaped in P3, §6.18.)
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -124,6 +124,8 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   const [failure, setFailure] = useState<string | null>(null);
   const [offerLocal, setOfferLocal] = useState(false);
   const [localOnly, setLocalOnly] = useState(false);
+  // One removal at a time: a second tap in the same frame does nothing.
+  const inFlight = useRef(false);
 
   // Which treasuries hold this phone's key for this person (§6.19): from /me's key choice and each
   // vault's treasury, read only while the sheet is open.
@@ -166,7 +168,8 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   };
 
   const remove = async () => {
-    if (busy || (needsConsent && !understood)) return;
+    if (inFlight.current || busy || (needsConsent && !understood)) return;
+    inFlight.current = true;
     setBusy(true);
     setFailure(null);
     try {
@@ -180,6 +183,7 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
         setOfferLocal(plan.offerLocalOnly);
       }
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };

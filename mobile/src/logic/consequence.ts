@@ -26,10 +26,19 @@ export function approveConsequence(input: {
   isPayment: boolean;
   /** "0.25 ETH", exactly as signed; payments only. */
   amount: string | null;
+  /**
+   * Payments only: the signed "valid until" has passed, so the treasury refuses to pay it however
+   * many approve. The sentence must not promise a payment that cannot happen.
+   */
+  pastPayBy?: boolean;
 }): string {
   const { M, approvals, isPayment } = input;
   const yours = approvals + 1;
   const completes = yours >= M;
+  if (isPayment && input.pastPayBy) {
+    const lead = completes ? 'Yours is the last approval' : `Yours will be approval ${yours} of ${M}`;
+    return `${lead}, but the time the treasury allows for this payment has passed, so it won't be paid.`;
+  }
   if (isPayment) {
     if (completes) {
       return `Yours is the last approval, so the treasury pays ${input.amount ?? 'it'} to the address above within a few minutes, and a payment can't be reversed.`;
@@ -78,6 +87,8 @@ export function acknowledgement(input: {
   isPayment: boolean;
   /** A3's names of who can still approve, less the viewer; null while unknown. */
   stillToApprove: string[] | null;
+  /** Payments only: the signed "valid until" has passed, so the treasury will not pay. */
+  pastPayBy?: boolean;
 }): Acknowledgement {
   const { decision, M, N, approvals, rejections, isPayment } = input;
   const outcome = ruleOutcome(M, N, approvals, rejections);
@@ -85,9 +96,11 @@ export function acknowledgement(input: {
     if (outcome === 'approved') {
       return {
         headline: isPayment ? 'Payment approved' : 'Decision approved',
-        line: isPayment
-          ? 'The treasury pays at its next check, usually within a few minutes.'
-          : 'Yours was the approval that met the rule.',
+        line: !isPayment
+          ? 'Yours was the approval that met the rule.'
+          : input.pastPayBy
+            ? "The time the treasury allows for this payment has passed, so it won't be paid."
+            : 'The treasury pays at its next check, usually within a few minutes.',
         mark: 'tick',
         sealed: true,
       };

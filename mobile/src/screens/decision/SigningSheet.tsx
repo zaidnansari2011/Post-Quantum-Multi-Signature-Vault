@@ -11,7 +11,9 @@
 // rejection authorises nothing to happen.
 //
 // The consequence and the code sit in the fixed footer, so a long decision scrolls under them and
-// the person never signs without the consequence in view.
+// the person never signs without the consequence in view. At large text (1.6x and up) a footer that
+// tall would leave no room for what is signed, so they close the scrolling body instead, in the
+// same order (§6.8's screen-reader order: what you sign, consequence, code, button).
 
 import { useEffect, useRef, useState } from 'react';
 import { Linking, View } from 'react-native';
@@ -30,7 +32,7 @@ import {
   Text,
   TextLink,
 } from '../../ui/index.tsx';
-import { makeStyles } from '../../theme/index.ts';
+import { makeStyles, useTheme } from '../../theme/index.ts';
 import { REASON_MAX, type SigningProblem, type Snapshot } from '../../signingSheet.ts';
 
 export function SigningSheet({
@@ -43,6 +45,8 @@ export function SigningSheet({
   onCancel,
   onReasonChange,
   onOpenWeb,
+  balanceWei,
+  balanceText,
 }: {
   /** Kept by the caller while the sheet animates out, so it never flashes to another state. */
   snapshot: Snapshot | null;
@@ -56,8 +60,13 @@ export function SigningSheet({
   onCancel: () => void;
   onReasonChange: () => void;
   onOpenWeb: () => void;
+  /** The treasury's balance now, for the card's "more than the treasury holds" line. Not signed, and
+   * not part of the snapshot: a warning only, never a reason the sheet shows something else. */
+  balanceWei?: string | null;
+  balanceText?: string | null;
 }) {
   const s = useStyles();
+  const t = useTheme();
   const [reason, setReason] = useState('');
   const [about, setAbout] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -90,7 +99,13 @@ export function SigningSheet({
 
   const what = action ? (
     // The recipient in full, never collapsed, in a signing sheet (§1.4 rule 8).
-    <PaymentCard action={action} place="sheet" sentence={m.signedText} />
+    <PaymentCard
+      action={action}
+      place="sheet"
+      sentence={m.signedText}
+      balanceWei={approve ? balanceWei : null}
+      balanceText={approve ? balanceText : null}
+    />
   ) : approve ? (
     <SignedText text={m.signedText} size="decision" />
   ) : (
@@ -100,6 +115,20 @@ export function SigningSheet({
     </View>
   );
 
+  const consequence = (
+    <>
+      <Text role="body">{m.consequence}</Text>
+      {m.code ? (
+        m.code.form === 'block' ? (
+          <CodeBlock code={m.code.value} />
+        ) : (
+          <CodeLine code={m.code.value} onAbout={() => setAbout(true)} />
+        )
+      ) : null}
+    </>
+  );
+  const inBody = t.stacked;
+
   return (
     <Sheet
       visible={visible}
@@ -108,14 +137,7 @@ export function SigningSheet({
       title={m.title}
       footer={
         <>
-          <Text role="body">{m.consequence}</Text>
-          {m.code ? (
-            m.code.form === 'block' ? (
-              <CodeBlock code={m.code.value} />
-            ) : (
-              <CodeLine code={m.code.value} onAbout={() => setAbout(true)} />
-            )
-          ) : null}
+          {inBody ? null : consequence}
           {problem?.text ? (
             <View style={s.problem}>
               <InlineMessage tone={problem.tone} text={problem.text} />
@@ -174,6 +196,7 @@ export function SigningSheet({
           <TextLink label="Read it on the web" onPress={onOpenWeb} />
         </View>
       ) : null}
+      {inBody ? consequence : null}
     </Sheet>
   );
 }

@@ -116,6 +116,7 @@ export function openSigningSheet(input: {
   method: Method | null;
   /** Opened from the web's "Approve on your phone" handoff: the code becomes a comparison block. */
   via?: 'web';
+  now?: number;
 }): { ok: true; snapshot: Snapshot } | { ok: false; refusal: OpenRefusal } {
   const { kind, actions } = input;
   const offered = kind === 'approve' ? actions.kind === 'sign' : actions.kind === 'sign' || actions.kind === 'web';
@@ -150,7 +151,13 @@ export function openSigningSheet(input: {
       : null,
     consequence:
       kind === 'approve'
-        ? approveConsequence({ M, approvals: detail.approvals, isPayment, amount })
+        ? approveConsequence({
+            M,
+            approvals: detail.approvals,
+            isPayment,
+            amount,
+            pastPayBy: action !== undefined && action.valid_until * 1000 <= (input.now ?? Date.now()),
+          })
         : rejectConsequence({ M, N, approvals: detail.approvals, rejections: detail.rejections }),
     code: kind === 'approve' ? { value: code, form: input.via === 'web' ? 'block' : 'line' } : null,
     button: methodButton(kind === 'approve' ? 'Sign' : 'Sign rejection', input.method),
@@ -229,6 +236,8 @@ export type SigningProblem = {
   refetch: boolean;
   /** It closed before the signature arrived: the status line says so (§6.6 row 16). */
   closedBeforeSigned: boolean;
+  /** For `action: 'setup'`: the seed has gone, or the server refused the key. */
+  setupCause: 'key_missing' | 'key_unusable' | null;
 };
 
 const problem = (p: Partial<SigningProblem> & Pick<SigningProblem, 'place'>): SigningProblem => ({
@@ -238,6 +247,7 @@ const problem = (p: Partial<SigningProblem> & Pick<SigningProblem, 'place'>): Si
   action: null,
   refetch: false,
   closedBeforeSigned: false,
+  setupCause: null,
   ...p,
 });
 
@@ -264,8 +274,11 @@ export function signingProblem(err: unknown, method: Method | null): SigningProb
   if (err instanceof NoScreenLockError) {
     return problem({ place: 'sheet', text: 'Set a screen lock to sign with this phone.', action: 'settings' });
   }
-  if (err instanceof SelfVerificationError || err instanceof KeyMissingError) {
-    return problem({ place: 'banner', text: KEY_GONE, action: 'setup' });
+  if (err instanceof KeyMissingError) {
+    return problem({ place: 'banner', text: KEY_GONE, action: 'setup', setupCause: 'key_missing' });
+  }
+  if (err instanceof SelfVerificationError) {
+    return problem({ place: 'banner', text: KEY_GONE, action: 'setup', setupCause: 'key_unusable' });
   }
   if (err instanceof ServerRecordMismatchError) {
     return problem({
@@ -312,7 +325,7 @@ export function signingProblem(err: unknown, method: Method | null): SigningProb
         return problem({ place: 'bar', tone: 'neutral', text: "You're not an approver on this decision.", refetch: true });
       case 'device_key_not_active':
       case 'signature_invalid':
-        return problem({ place: 'banner', text: KEY_GONE, action: 'setup' });
+        return problem({ place: 'banner', text: KEY_GONE, action: 'setup', setupCause: 'key_unusable' });
       default:
         return problem({ place: 'sheet', text: 'Something went wrong, so nothing was signed.', action: 'retry' });
     }

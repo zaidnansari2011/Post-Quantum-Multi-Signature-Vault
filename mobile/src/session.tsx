@@ -55,8 +55,9 @@ interface SessionValue {
   /** A request came back 401. Never deletes the key. */
   markUnauthorized(code: string | null): void;
   /** The key cannot sign (missing, or refused by the server): show the ended screen for it. */
-  markKeyUnusable(): void;
-  /** "Try again" on Session ended: back to the app, which asks the server again. */
+  markKeyUnusable(cause: 'key_missing' | 'key_unusable'): void;
+  /** "Try again" on the ended screen: back to the app, which asks the server again. Not offered when
+   * the seed itself has gone. */
   retrySession(): void;
   /** "Set up this phone again", from the ended screen. */
   setUpAgain(): Promise<void>;
@@ -138,15 +139,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, [markUnauthorized]);
 
-  const markKeyUnusable = useCallback(() => {
+  const markKeyUnusable = useCallback((cause: 'key_missing' | 'key_unusable') => {
     if (statusRef.current !== 'enrolled') return;
     statusRef.current = 'ended';
-    setEnded('key_unusable');
+    setEnded(cause);
     setStatus('ended');
   }, []);
 
   const retrySession = useCallback(() => {
-    if (statusRef.current !== 'ended' || ended !== 'session' || !identity || !token) return;
+    const retriable = ended === 'session' || ended === 'key_unusable';
+    if (statusRef.current !== 'ended' || !retriable || !identity || !token) return;
     setEnded(null);
     setStatus('enrolled');
   }, [ended, identity, token]);
