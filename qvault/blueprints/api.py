@@ -1199,6 +1199,9 @@ def cast_vote(uuid: str):
         )
     except DeviceError as exc:
         return _error(exc.code, exc.message, 400)
+    reason = body.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        return _error("reason_required", approval_service.REASON_NOT_TEXT, 422)
 
     # The key comes from the authenticated device, never from the request body. That is an
     # authorisation property, not a convenience: a token can only ever vote with its own key.
@@ -1209,7 +1212,7 @@ def cast_vote(uuid: str):
             device.key,
             body.get("decision", ""),
             sig_bytes,
-            reason=body.get("reason"),
+            reason=reason,
             execution=execution,
         )
     except ApprovalError as exc:

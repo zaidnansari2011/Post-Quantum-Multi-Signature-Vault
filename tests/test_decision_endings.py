@@ -114,6 +114,32 @@ def test_a_phone_rejection_without_a_reason_is_refused_with_a_stable_code(app, c
     assert detail["proposal"]["reject_reason_required"] is True
 
 
+@pytest.mark.parametrize("reason", [5, ["Duplicate."], {"text": "Duplicate."}, True])
+@pytest.mark.parametrize("decision", ["reject", "approve"])
+def test_a_reason_that_is_not_text_is_refused_with_a_stable_code(app, client, reason, decision):
+    _ada, brij, _chen, _vault, proposal = _team("apireasontype")
+    _body, secret, auth = _enrol_over_http(client, brij)
+    r = client.post(
+        f"/api/v1/proposals/{proposal.proposal_uuid}/vote",
+        headers=auth,
+        json={
+            "decision": decision,
+            "signature_b64": _sign_vote(secret, proposal, decision, brij),
+            "reason": reason,
+        },
+    )
+    assert r.status_code == 422
+    assert r.get_json()["code"] == "reason_required"
+    assert _votes(proposal) == 0
+
+
+def test_the_gate_refuses_a_reason_that_is_not_text(app):
+    _ada, brij, _chen, _vault, proposal = _team("gatereasontype")
+    with pytest.raises(ApprovalError, match="Keep the reason to plain text"):
+        approval_service.cast_vote(proposal, brij, WRONG, "reject", reason=5)
+    assert _votes(proposal) == 0
+
+
 def test_the_device_path_needs_a_reason_too(app, client):
     _ada, brij, _chen, _vault, proposal = _team("devicereason")
     _body, secret, _auth = _enrol_over_http(client, brij)
