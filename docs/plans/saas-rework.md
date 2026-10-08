@@ -348,21 +348,21 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] Error pages for 400/403/404/405/413/500 and CSRF failure, signed in or out, with a next step
 - [ ] Styled controls replacing every native date, file, select, number, radio and checkbox listed in research 05 §3
 - [ ] Every existing screen converted to the new components, same content and behaviour
-- [ ] Defect fixes: signed-out docs; add-member tab; info flashes; `.visually-hidden`; verify paste box; POST-renders-instead-of-redirects
+- [x] Defect fixes: signed-out docs; add-member tab; info flashes; `.visually-hidden`; verify paste box; POST-renders-instead-of-redirects (2026-10-06: defects commit, R1 flashes and `.visually-hidden`, R2b paste box)
 - [ ] Accessibility pass (S24) with the token test green
 - **Done when:** every baseline screen has an "after" twin at both widths **and in both themes**, the owner has reviewed them, and no test was weakened (every changed HTML assertion is listed in the log with its reason, §9).
 
 ### Phase R2: The core screens
 
-- [ ] Home, work-first (§5), with log figures moved to Audit
-- [ ] Approvals inbox: tabs, columns, filters in the URL, avatar stacks, absolute expiry
-- [ ] Vault: overview header, decisions table with type and amount, members with custody and "last signed"
-- [ ] Decision page: personalised status, signer timeline, decision code (S17), Details panel, Evidence tab in three layers (S5), consequence copy on approve and reject
-- [ ] New decision: styled form and the "who approves" preview (S14)
-- [ ] Audit and Transparency: sentences, absolute timestamps with zone, integrity column with proof drawer, witness status card
-- [ ] Verify: coverage line and per-check meanings
-- [ ] Account split into Profile / Notifications (placeholder until R4) / Security
-- [ ] Expiry consistency (S20) and the closed status vocabulary (S6) across web and API
+- [x] Home, work-first (§5), with log figures moved to Audit
+- [x] Approvals inbox: tabs, columns, filters in the URL, avatar stacks, absolute expiry
+- [x] Vault: overview header, decisions table with type and amount, members with custody and "last signed"
+- [x] Decision page: personalised status, signer timeline, decision code (S17), Details panel, Evidence tab in three layers (S5), consequence copy on approve and reject
+- [x] New decision: styled form and the "who approves" preview (S14)
+- [x] Audit and Transparency: sentences, absolute timestamps with zone, integrity column with proof drawer, witness status card
+- [x] Verify: coverage line and per-check meanings
+- [x] Account split into Profile / Notifications (placeholder until R4) / Security
+- [x] Expiry consistency (S20) and the closed status vocabulary (S6) across web and API (2026-10-06/08, R2a `07a124b` / R2b `ec7b7c3`)
 - **Done when:** the customer journey from sign-in to an audited decision runs with no prototype moment, judged on the screenshot set by the owner.
 
 ### Phase R3: Workspace and people · Alembic migration
@@ -394,6 +394,8 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R5: Decision depth
 
+- [ ] **Owner decision 2026-10-08:** a vote checks the signer is an approver **now**, not only in the decision's frozen signer set (a demoted approver can no longer sign older decisions). Adversarial review; also fixed on `onchain-execution` (local commit, the owner pushes)
+- [ ] **Owner decision 2026-10-08:** pin the witness key with `WITNESS_KEY_FINGERPRINT`; a mismatched witness is refused, unset warns as today
 - [ ] Decision types with generated text (S13), each type's text re-derived and checked on the phone, with vectors
 - [ ] Separation-of-duties setting (S15)
 - [ ] Reject with required reason; withdraw; raise again (S16)
@@ -414,11 +416,11 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 - [x] S19 display fix: done on the working branch (`d0cae74`) and carried here
 - [x] The defects in §3 (time zones, title on decision page, expired queue, role chip colour, "Just now", Expired vs Open)
 - [x] The confirm sheet scrolls: a long decision (the form allows 4,000 characters) currently pushes the sheet's title and the opening of the text off the top of the screen. The text and payment block scroll; the title and the Sign/Cancel buttons stay fixed. Found in the S19 review; it predates the fix
-- [ ] Shared tokens (type scale, colours, radius) aligned with §6, light and dark
+- [x] Shared tokens (type scale, colours, radius) aligned with §6, light and dark (2026-10-08, P1: `theme/tokens.generated.ts` generated from `tokens.css`, held by `tests/test_mobile_tokens.py`)
 - [ ] Dark mode on the phone: `userInterfaceStyle: "automatic"`, theme-aware components, **`runtimeVersion` bump and a new APK** (a native config change; owner builds it, §2.3 of OWNER-ACTIONS)
 - [ ] Notification inbox (from R4's API), decision types (R5), decision code in the approve sheet (S17), workspace and invitation acceptance
 - [x] **Phone UX specification (S26):** `docs/plans/saas-rework/phone-ux.md` and research 06, reviewed adversarially before any screen is rebuilt: navigation model, every screen with its states, the theme architecture, components, motion and haptics, accessibility (font scaling, screen readers), and the implementation waves
-- [ ] Theme architecture: one theme provider with light and dark tokens whose values are the web's (`tokens.css`), every component theme-aware
+- [x] Theme architecture: one theme provider with light and dark tokens whose values are the web's (`tokens.css`), every component theme-aware (2026-10-08, P1)
 - [ ] Every screen rebuilt to the specification, in both themes
 - [ ] Web-harness screenshots of every screen against the baseline, light and dark
 - **Done when:** the phone parity checklist for every R2–R5 feature is ticked on a handset (owner), and every screen has passed the same design review as the web.
@@ -531,3 +533,4 @@ integration (P2 if time allows), i18n, a public API for third parties, mainnet.
 | 2026-10-05 | R1, R7 | **The owner approved the style tile's direction** on the draft (S1 confirmed in detail). **New decision S26: the phone is the primary surface** (owner: "I'll probably make it my main app"); R7 grows into a full phone track with its own UX specification. To pick up pace (owner, same night) the work now runs as parallel streams, each in its own worktree and branch, merged here after review: R1 foundation, R3 workspaces, R4 notifications, R7 phone fixes, plus the phone UX specification. Owner decided the viewer-role fix stays in the rework only (no viewers on the live site) | — |
 | 2026-10-05 | R1.1 | **Style tile revised after a three-lens critique** (craft, spec, truth): Home's three lists share one column template; the decision page gets header tabs (Overview, Evidence, Technical) with the seal and signer timeline straight under the decision text; addresses in the decision text in mono; Waiting on N moved to neutral; strong text at 560; loading is quorum marks, not a ring; the technical layer now names what each signature actually covers (the `QVAULT-SIG-v1:VOTE` message, plus the treasury digest for payment approvals) and keeps log numbering honest after you sign. Fixed: clipped tab underline, invisible dark menu hover, copy fallback selecting shortened text, phone targets under 44px. §5 and §6 amended to match | — |
 | 2026-10-06 | R1, R3, R4, R7 | **Four streams reviewed, fixed and merged** (r7 → r3 → r4 → r1), each after a correctness and security review (r3: 4 medium, r4: 2 medium incl. an open redirect via `/	/` and removed members still reading decision content, r1: 5 medium incl. a session cookie on every public page), every finding fixed with a regression test or recorded under Known gaps. Integration: `0003` re-chained after `0002`; one `safe_next` for every handed-in redirect; the bell in the top bar and Members in the sidebar; the theme stored per person (`0004_user_settings`). Also: web defects (viewers raise nothing, signed-out docs, add-member tab, no re-run on refresh), the style tile, the phone UX spec with the owner's §12 answers, and **I-9 (no screen lock, no signing)** fixed here and on `onchain-execution` (`ae267ed`, local). Full suite green after each merge (~1,900 passed). | `7a3a1a5`, `42be334` |
+| 2026-10-08 | R2, R7 | **R2b pushed and phone P1 merged.** R2b's seven failures were the offline verifier CLI timing out under machine load (the file passes alone in 24 s). The rerun found two real ones: notification tests raised decisions at a fixed 2026-10-05 but voted on the real clock, so from 10-08 the votes were refused as expired; votes now run on the test's clock (three 30-day tests would have broken on 11-04). P1: the phone's theme is generated from `tokens.css`, every §5 component rebuilt, the tile's icon font, `src/logic` with `personalStatus`, and the harness gallery with theme, font-scale and target audits. **Owner decided the two pending security questions** (R5): role checked at vote time, witness key pinned | `9ee1224`, `be7e611` |
