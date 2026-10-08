@@ -8,28 +8,28 @@
 </p>
 
 <h3>Three ways to check one</h3>
-<table class="dt">
+<div class="q-table-wrap"><table class="q-table">
   <thead><tr><th style="width:12rem">Method</th><th>Trusts</th></tr></thead>
   <tbody>
     <tr>
-      <td><a class="dt__link" href="{{ url_for('verify.index') }}">The verify page</a>
-          <span class="dt__sub">Drop the file in. No account needed.</span></td>
+      <td><a href="{{ url_for('verify.index') }}">The verify page</a>
+          <span class="q-cap">Drop the file in. No account needed.</span></td>
       <td>This server. Convenient, but it is the same server that produced the file, so it is a
           convenience rather than evidence.</td>
     </tr>
     <tr>
       <td><code>python -m qvault.verify</code>
-          <span class="dt__sub">Exit code 0 verified, 1 not verified, 2 unreadable.</span></td>
+          <span class="q-cap">Exit code 0 verified, 1 not verified, 2 unreadable.</span></td>
       <td>Nothing of ours at run time. Suitable as a gate in a pipeline.</td>
     </tr>
     <tr>
-      <td><a class="dt__link" href="{{ url_for('static', filename='verifier.html') }}" download>The offline verifier</a>
-          <span class="dt__sub">One HTML file. Save it, open it anywhere.</span></td>
+      <td><a href="{{ url_for('static', filename='verifier.html') }}" download>The offline verifier</a>
+          <span class="q-cap">One HTML file. Save it, open it anywhere.</span></td>
       <td>Nothing. It runs in the browser from a local file, with the post-quantum library bundled
           inside it.</td>
     </tr>
   </tbody>
-</table>
+</table></div>
 
 <h3>What gets checked</h3>
 <p>
@@ -65,7 +65,7 @@
   the file — they are on <strong>Audit → Transparency</strong>, and the witness prints its own on
   startup — and require them:
 </p>
-<pre class="pre"><code>python -m qvault.verify decision.qvault.json \
+<pre><code>python -m qvault.verify decision.qvault.json \
     --expect-log 4f2a9c1e77b30d85 \
     --expect-witness 8c1d05fa2b6e4470</code></pre>
 

@@ -18,13 +18,13 @@
 </p>
 <p>
   Each approver chooses which of their keys the treasury holds for them, on their
-  <a class="dt__link" href="{{ url_for('account.index') }}">account page</a> or from their phone:
+  <a href="{{ url_for('account.index') }}">account page</a> or from their phone:
   the password key they use here, or their phone's own key. One key per person: the contract counts
   keys, so this is what stops one person counting twice.
 </p>
 
 <h3>Paying</h3>
-<table class="dt">
+<div class="q-table-wrap"><table class="q-table">
   <thead><tr><th style="width:12rem">Step</th><th>What happens</th></tr></thead>
   <tbody>
     <tr>
@@ -46,7 +46,7 @@
           network, the payment carries the decision's own hash, so anyone can match the two.</td>
     </tr>
   </tbody>
-</table>
+</table></div>
 <p>
   Approvals expire: a payment decision is open for up to 30 days (7 unless you choose), and has
   72 hours after that to be paid. Rejecting works exactly as for any decision and authorises

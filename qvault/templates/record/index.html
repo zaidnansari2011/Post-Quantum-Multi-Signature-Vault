@@ -1,183 +1,165 @@
 {% extends "base.html" %}
-{% from "_macros.html" import status_chip, tally %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/feedback.html" import banner %}
+{% from "ui/status.html" import status, badge %}
+{% from "ui/data.html" import hash %}
+{% from "ui/icons.html" import icon %}
 {% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
 
 {# Rendered identically signed in or out, like /verify: the reader this page is written for has
    no account, and a member following the same link must see exactly what they are sharing. #}
 {% macro page() %}
-<div class="verify">
+<div class="q-verify q-record">
 
-  <div class="verify__head">
-    <h1 class="verify__title">{{ proposal.title }}</h1>
-    <p class="verify__lead">
+  <header>
+    <h1 class="q-ph__t">{{ proposal.title }}</h1>
+    <p class="q-verify__lead">
       {{ vault.name }} · {{ bundle.decision.created_at_iso[:10] }}
     </p>
-  </div>
+  </header>
 
   {# The verdict, computed here and now by running the same code a stranger runs offline. The one
      place on this page that carries status colour. #}
-  <div class="banner {% if report.ok %}banner--sealed{% else %}banner--broken{% endif %}">
-    <div>
-      <div class="banner__title">
-        {# Counted against the authorised signer set, NOT against the threshold. "2 of 2 required"
-           beside a "2 of 3 must approve" policy row states two denominators for one fact and
-           reads as though the threshold were 2 of 2. #}
-        {% if report.ok %}
-          {% if proposal.status == 'approved' %}Approved by {{ approvals }} of {{ proposal.required_n }} authorised signers
-          {% else %}Rejected by {{ rejections }} of {{ proposal.required_n }} authorised signers{% endif %}
-        {% else %}{{ report.summary }}{% endif %}
-      </div>
-      <div class="banner__body">
-        {% if report.ok %}
-          Every signature, the audit entries behind them and the log's commitment to those entries
-          were checked when this page loaded.
-        {% else %}
-          This record did not pass verification. The detail is in the checks below.
-        {% endif %}
-      </div>
-    </div>
-  </div>
+  {# Counted against the authorised signer set, NOT against the threshold. "2 of 2 required"
+     beside a "2 of 3 must approve" policy row states two denominators for one fact and
+     reads as though the threshold were 2 of 2. #}
+  {% set verdict %}
+    {%- if report.ok %}
+      {%- if proposal.status == 'approved' %}Approved by {{ approvals }} of {{ proposal.required_n }} authorised signers
+      {%- else %}Rejected by {{ rejections }} of {{ proposal.required_n }} authorised signers{% endif %}
+    {%- else %}{{ report.summary }}{% endif -%}
+  {% endset %}
+  {% set verdict_body %}
+    {%- if report.ok %}Every signature, the audit entries behind them and the log's commitment to those entries
+      were checked when this page loaded.
+    {%- else %}This record did not pass verification. The detail is in the checks below.{% endif -%}
+  {% endset %}
+  {{ banner('success' if report.ok else 'critical', verdict, verdict_body) }}
 
-  <div class="panel">
-    <div class="panel__head">
-      <span class="label">Decision</span>
-      <span class="push">{{ status_chip(proposal.status) }}</span>
+  <section class="q-panel" aria-labelledby="r-dec">
+    <div class="q-panel__hd">
+      <h2 class="q-panel__t" id="r-dec">Decision</h2>
+      {% if proposal.status in ('approved', 'rejected', 'expired') %}{{ status(proposal.status) }}{% else %}{{ badge('Open', 'warning') }}{% endif %}
     </div>
-    <div class="panel__body">
-      <p style="white-space:pre-wrap;margin:0 0 .75rem">{{ proposal.action_text }}</p>
-      <dl class="meta">
-        <dt>Policy</dt>
-        <dd class="mono">{{ proposal.required_m }} of {{ proposal.required_n }} must approve</dd>
-        <dt>Approvals</dt><dd class="mono">{{ approvals }}</dd>
-        {% if rejections %}<dt>Rejections</dt><dd class="mono">{{ rejections }}</dd>{% endif %}
-        <dt>Opened</dt><dd class="mono">{{ bundle.decision.created_at_iso }}</dd>
-        <dt>Payload hash</dt>
-        <dd><code class="hash" data-copy="{{ proposal.payload_hash }}">{{ proposal.payload_hash[:24] }}…</code></dd>
-        {% if bundle.decision.file_sha256 %}
-        <dt>Attachment</dt>
-        <dd><code class="hash" data-copy="{{ bundle.decision.file_sha256 }}">{{ bundle.decision.file_sha256[:24] }}…</code>
-            <span class="tiny muted">hash only — the file itself stays encrypted</span></dd>
-        {% endif %}
-      </dl>
-    </div>
-  </div>
+    <div class="q-panel__bd"><p class="q-dtext">{{ proposal.action_text }}</p></div>
+    <dl class="q-kv">
+      <div><dt>Policy</dt><dd>{{ proposal.required_m }} of {{ proposal.required_n }} must approve</dd></div>
+      <div><dt>Approvals</dt><dd>{{ approvals }}</dd></div>
+      {% if rejections %}<div><dt>Rejections</dt><dd>{{ rejections }}</dd></div>{% endif %}
+      <div><dt>Opened</dt><dd>{{ bundle.decision.created_at_iso }}</dd></div>
+      <div><dt>Payload hash</dt><dd>{{ hash(proposal.payload_hash, 'payload hash', 24, 0) }}</dd></div>
+      {% if bundle.decision.file_sha256 %}
+      <div><dt>Attachment</dt>
+      <dd>{{ hash(bundle.decision.file_sha256, 'attachment hash', 24, 0) }}
+          <span class="q-cap">hash only — the file itself stays encrypted</span></dd></div>
+      {% endif %}
+    </dl>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head">
-      <span class="label">Signatures</span>
-      <span class="push tiny muted">
+  <section class="q-panel q-panel--table" aria-labelledby="r-sig">
+    <div class="q-panel__hd">
+      <h2 class="q-panel__t" id="r-sig">Signatures</h2>
+      <span class="q-small">
         {{ signatures|length }} recorded{% if device_signed %} · {{ device_signed }} device-held{% endif %}
       </span>
     </div>
-    <div class="scroll-x">
-      <table class="dt">
+    <div class="q-table-wrap">
+      <table class="q-table">
         <thead>
-          <tr><th style="width:26%">Signer</th><th>Decision</th><th>Custody</th>
-              <th>Algorithm</th><th class="num">Bytes</th><th class="num" style="width:6rem">Signed</th></tr>
+          <tr><th scope="col">Signer</th><th scope="col">Decision</th><th scope="col">Custody</th>
+              <th scope="col">Algorithm</th><th scope="col" class="is-num">Bytes</th><th scope="col" class="is-num">Signed</th></tr>
         </thead>
         <tbody>
           {% for s in signatures %}
           <tr>
             <td>
-              <span class="dt__link truncate">{{ s.signer_name or s.signer_email or 'Signer ' ~ s.signer_id }}</span>
-              {% if s.reason %}<span class="dt__sub truncate">{{ s.reason }}</span>{% endif %}
+              <span class="q-strong">{{ s.signer_name or s.signer_email or 'Signer ' ~ s.signer_id }}</span>
+              {% if s.reason %}<span class="q-cap">{{ s.reason }}</span>{% endif %}
             </td>
             <td>
-              {% if s.decision == 'approve' %}<span class="chip chip--sealed">Approve</span>
-              {% else %}<span class="chip chip--broken">Reject</span>{% endif %}
+              {% if s.decision == 'approve' %}{{ badge('Approve', 'success') }}
+              {% else %}{{ badge('Reject', 'critical') }}{% endif %}
             </td>
             {# ADR-0016 in one column. "Device" is the claim no operator of a hosted signing
                service can make about their own operators, so it is stated where a stranger reads
                it, not only where a member does. #}
             <td>
-              {% if s.custody == 'device' %}<span class="chip chip--sealed">Device</span>
-              {% else %}<span class="tag">Server</span>{% endif %}
+              {% if s.custody == 'device' %}{{ badge('Device', 'success') }}
+              {% else %}<span class="q-tag">Server</span>{% endif %}
             </td>
-            <td><span class="tag">{{ s.alg_id }}</span></td>
-            <td class="num">{{ s.size_bytes }}</td>
-            <td class="num tiny muted nowrap">{{ (s.signed_at or '')[:10] }}</td>
+            <td><span class="q-tag">{{ s.alg_id }}</span></td>
+            <td class="is-num">{{ s.size_bytes }}</td>
+            <td class="is-num q-small q-nowrap">{{ (s.signed_at or '')[:10] }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">Checks</span></div>
-    <ol class="checks">
+  <section class="q-panel q-checks" aria-labelledby="r-chk">
+    <div class="q-checks__hd">
+      <span class="q-chk__i q-chk__i--{{ 'passed' if report.ok else 'failed' }}">{{ icon('success' if report.ok else 'critical') }}</span>
+      <h2 id="r-chk">Checks</h2>
+    </div>
+    <ol class="q-checks__l">
       {% for c in report.checks %}
-      <li class="checks__row {% if c.skipped %}is-skipped{% elif c.ok %}is-ok{% else %}is-bad{% endif %}">
-        <span class="checks__mark" aria-hidden="true">
-          {%- if c.skipped %}—{% elif c.ok %}&check;{% else %}&times;{% endif -%}
-        </span>
-        <span class="checks__text">
-          <span class="checks__title">{{ c.title }}</span>
-          <span class="checks__detail">{{ c.detail }}</span>
-        </span>
+      {% set state = 'unavailable' if c.skipped else ('passed' if c.ok else 'failed') %}
+      <li class="q-chk">
+        <span class="q-chk__i q-chk__i--{{ state }}">{{ icon({'passed': 'success', 'failed': 'critical', 'unavailable': 'info'}[state]) }}</span>
+        <div class="q-chk__b"><p class="q-chk__t">{{ c.title }}</p><p class="q-chk__l">{{ c.detail }}</p></div>
+        <span class="q-chk__w q-chk__w--{{ state }}">{{ ev_check_word(state) }}</span>
       </li>
       {% endfor %}
     </ol>
-  </div>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head">
-      <span class="label">Transparency log</span>
-      <span class="push">
-        {% if witnesses %}<span class="chip chip--sealed">Witnessed</span>
-        {% else %}<span class="chip chip--waiting">Unwitnessed</span>{% endif %}
-      </span>
+  <section class="q-panel" aria-labelledby="r-log">
+    <div class="q-panel__hd">
+      <h2 class="q-panel__t" id="r-log">Transparency log</h2>
+      {% if witnesses %}{{ badge('Witnessed', 'success') }}{% else %}{{ badge('Unwitnessed', 'warning') }}{% endif %}
     </div>
-    <div class="panel__body">
-      <dl class="meta">
-        <dt>Origin</dt><dd class="mono">{{ log.origin }}</dd>
-        <dt>Entries</dt><dd class="mono">{{ log.checkpoint.tree_size }}</dd>
-        <dt>Root</dt>
-        <dd><code class="hash" data-copy="{{ log.checkpoint.root_hash }}">{{ log.checkpoint.root_hash[:24] }}…</code></dd>
-        <dt>Signed by</dt>
-        <dd><span class="tag">{{ log.checkpoint_signature.alg_id }}</span>
-            {% if report.fingerprints.log %}
-            <code class="hash" data-copy="{{ report.fingerprints.log }}">{{ report.fingerprints.log }}</code>
-            {% endif %}</dd>
-        {% for w in witnesses %}
-        <dt>Witness</dt>
-        <dd>{{ w.witness }} <span class="tag">{{ w.alg_id }}</span></dd>
-        {% endfor %}
-      </dl>
-      {% if witnesses %}
-      <p class="tiny muted" style="margin:.75rem 0 0">
-        A witness is an independent process that co-signs this log's checkpoints. Its signature is
-        the part of this record the operator of this server cannot produce.
-      </p>
-      {% endif %}
-    </div>
-  </div>
+    <dl class="q-kv">
+      <div><dt>Origin</dt><dd><code class="q-mono">{{ log.origin }}</code></dd></div>
+      <div><dt>Entries</dt><dd>{{ log.checkpoint.tree_size }}</dd></div>
+      <div><dt>Root</dt><dd>{{ hash(log.checkpoint.root_hash, 'root hash', 24, 0) }}</dd></div>
+      <div><dt>Signed by</dt>
+      <dd><span class="q-tag">{{ log.checkpoint_signature.alg_id }}</span>
+          {% if report.fingerprints.log %}
+          <span class="q-line">{{ hash(report.fingerprints.log, 'log key fingerprint', 16, 0) }}</span>
+          {% endif %}</dd></div>
+      {% for w in witnesses %}
+      <div><dt>Witness</dt>
+      <dd>{{ w.witness }} <span class="q-tag">{{ w.alg_id }}</span></dd></div>
+      {% endfor %}
+    </dl>
+    {% if witnesses %}
+    <p class="q-sigrec__note">
+      A witness is an independent process that co-signs this log's checkpoints. Its signature is
+      the part of this record the operator of this server cannot produce.
+    </p>
+    {% endif %}
+  </section>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">Check this yourself</span></div>
-    <div class="panel__body">
-      <div class="hstack">
-        <a class="btn btn--primary btn--sm"
-           href="{{ url_for('record.public_record', uuid=proposal.proposal_uuid, format='html') }}">
-          Download record
-        </a>
-        <a class="btn btn--ghost btn--sm"
-           href="{{ url_for('record.public_record', uuid=proposal.proposal_uuid, format='json') }}">
-          Download bundle
-        </a>
-        <a class="btn btn--quiet btn--sm" href="{{ url_for('verify.index') }}">Verify a file →</a>
+  <section class="q-panel" aria-labelledby="r-self">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="r-self">Check this yourself</h2></div>
+    <div class="q-panel__bd">
+      <div class="q-btnrow">
+        {{ button('Download record', 'primary', href=url_for('record.public_record', uuid=proposal.proposal_uuid, format='html')) }}
+        {{ button('Download bundle', 'secondary', href=url_for('record.public_record', uuid=proposal.proposal_uuid, format='json')) }}
+        {{ button('Verify a file →', 'ghost', href=url_for('verify.index')) }}
       </div>
       {# The honesty constraint /verify already holds to. A verdict rendered by the server that
          produced the bundle is a convenience, not evidence, and saying so is the difference
          between a transparency log and a badge. #}
-      <p class="tiny muted" style="margin:.75rem 0 0">
+      <p class="q-note">
         The result above was computed on this server, so it is a convenience rather than evidence.
         The downloaded record re-checks its own signatures when you open it in a browser, offline,
         with nothing installed — or run
-        <code class="mono">python -m qvault.verify decision-{{ proposal.proposal_uuid.split('-')[0] }}.qvault.json</code>.
+        <code class="q-mono">python -m qvault.verify decision-{{ proposal.proposal_uuid.split('-')[0] }}.qvault.json</code>.
       </p>
     </div>
-  </div>
+  </section>
 
 </div>
 {% endmacro %}

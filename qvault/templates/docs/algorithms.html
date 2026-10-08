@@ -27,22 +27,22 @@
   below are measured on the development machine by the same harness &mdash; the classical schemes
   are registered providers here, not numbers quoted from a specification:
 </p>
-<table class="dt" style="margin-bottom:1rem">
+<div class="q-table-wrap"><table class="q-table">
   <thead>
-    <tr><th>Scheme</th><th class="num">Sign</th><th class="num">Verify</th>
-        <th class="num">Public key</th><th class="num">Signature</th></tr>
+    <tr><th>Scheme</th><th class="is-num">Sign</th><th class="is-num">Verify</th>
+        <th class="is-num">Public key</th><th class="is-num">Signature</th></tr>
   </thead>
   <tbody>
-    <tr><td>RSA-2048 <span class="tiny muted">classical</span></td>
-        <td class="num">0.97 ms</td><td class="num">0.06 ms</td><td class="num">294 B</td><td class="num">256 B</td></tr>
-    <tr><td>ECDSA P-256 <span class="tiny muted">classical</span></td>
-        <td class="num">0.10 ms</td><td class="num">0.09 ms</td><td class="num">91 B</td><td class="num">64 B</td></tr>
-    <tr><td><span class="tag">ML-DSA-65</span></td>
-        <td class="num">1.73 ms</td><td class="num">0.63 ms</td><td class="num">1,952 B</td><td class="num">3,309 B</td></tr>
-    <tr><td><span class="tag">SLH-DSA-SHAKE-256f</span></td>
-        <td class="num">47.96 ms</td><td class="num">3.03 ms</td><td class="num">64 B</td><td class="num">49,856 B</td></tr>
+    <tr><td>RSA-2048 <span class="q-small">classical</span></td>
+        <td class="is-num">0.97 ms</td><td class="is-num">0.06 ms</td><td class="is-num">294 B</td><td class="is-num">256 B</td></tr>
+    <tr><td>ECDSA P-256 <span class="q-small">classical</span></td>
+        <td class="is-num">0.10 ms</td><td class="is-num">0.09 ms</td><td class="is-num">91 B</td><td class="is-num">64 B</td></tr>
+    <tr><td><span class="q-tag">ML-DSA-65</span></td>
+        <td class="is-num">1.73 ms</td><td class="is-num">0.63 ms</td><td class="is-num">1,952 B</td><td class="is-num">3,309 B</td></tr>
+    <tr><td><span class="q-tag">SLH-DSA-SHAKE-256f</span></td>
+        <td class="is-num">47.96 ms</td><td class="is-num">3.03 ms</td><td class="is-num">64 B</td><td class="is-num">49,856 B</td></tr>
   </tbody>
-</table>
+</table></div>
 <p>
   ML-DSA's signature is about 13&times; RSA's and 52&times; ECDSA's, and that is where the cost of
   migration actually falls: on bandwidth and storage, not on processor time. SLH-DSA's signature is
