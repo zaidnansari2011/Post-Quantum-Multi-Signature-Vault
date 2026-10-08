@@ -297,6 +297,11 @@ def problems(html: str) -> list[str]:
             for th in heads:
                 if th.get("scope") not in ("col", "row", "colgroup", "rowgroup"):
                     found.append(f'th without scope: "{text_of(th, ids)[:30]}"')
+            # A cell outside a row is a broken table (a mangled <thead> reads as a <th>): a screen
+            # reader's table navigation then lands on the wrong headers.
+            for cell in cells:
+                if cell.tag in ("th", "td") and cell.parent.tag != "tr":
+                    found.append(f"{cell.tag} outside a row: {_describe(cell)}")
         # Nothing focusable where a screen reader is told there is nothing.
         if node.get("aria-hidden") == "true":
             for inner in [node, *node.walk()]:
@@ -502,6 +507,8 @@ def test_signed_in_page_titles_are_unique_and_name_the_screen(app, client, world
          "focusable inside aria-hidden"),  # fmt: skip
         ("<html lang=en><main><h1>A</h1><table><tr><td>1</td></tr></table></main>",
          "table without header cells"),  # fmt: skip
+        ('<html lang=en><main><h1>A</h1><table><caption>T</caption><th scope="col"ead><tr>'
+         '<th scope="col">A</th></tr></table></main>', "th outside a row"),  # fmt: skip
         (
             '<html lang=en><main><h1>A</h1><input aria-describedby="gone"></main>',
             "names no element",
