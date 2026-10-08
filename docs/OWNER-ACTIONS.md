@@ -742,6 +742,13 @@ already-proven setting rather than guessed.
    `biometricsSecurityLevel: 'strong'` (or gate it on `Platform.Version >= 30`), approve and reject
    once with a fingerprint and once with the PIN, and confirm the prompt opens on both. Then decide
    whether to keep the confirm after a face match.
+   *The change to make once that passes* (a JavaScript change, over the air), in
+   `confirmPresence` in `mobile/src/keystore.ts`: pass
+   `biometricsSecurityLevel: Platform.OS === 'android' && Number(Platform.Version) < 30 ? undefined : 'strong'`
+   and remove `requireConfirmation: false`; then phone-ux §5.13 and I-9 say "strong" again, and the
+   button label of a phone with only Class 2 face unlock can go back from "Sign with your screen
+   lock" to "Sign with your phone's PIN" (its prompt would then show only the PIN). Until then that
+   phone's prompt may offer the face first, which is why the label is neutral.
 2. **The decision's 20-second refresh and the biometric prompt.** The app ignores the app going to
    the background while its own prompt is up (the PIN screen on Android is a separate activity).
    *To check:* open a decision, approve with the PIN fallback, take 30 seconds over the PIN, and
