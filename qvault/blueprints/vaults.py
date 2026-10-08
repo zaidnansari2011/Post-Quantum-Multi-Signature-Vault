@@ -418,9 +418,14 @@ def new_proposal(vid: int):
         # A viewer is read-only. The service refuses too; this keeps the form from being offered
         # and answers before the request is read, for either kind of decision.
         abort(403)
-    if request.args.get("kind") == "payment":
-        return _new_payment(vault)
+    again = _raise_again(vault)
+    if request.args.get("kind") == "payment" or (again and again.action is not None):
+        return _new_payment(vault, again)
     form = ProposalForm()
+    if again is not None and request.method == "GET":
+        prefill = proposal_service.raise_again_prefill(again)
+        form.title.data, form.action_text.data = prefill["title"], prefill["action_text"]
+        form.raised_again_from.data = again.proposal_uuid
     if form.validate_on_submit():
         file_bytes = None
         filename = None
@@ -435,7 +440,7 @@ def new_proposal(vid: int):
             # It would be expired the moment it was raised. Payments are refused the same way by
             # the D23 policy; a general decision had no check.
             flash("Choose a due time in the future.", "danger")
-            return _new_decision_page(form, vault, "general")
+            return _new_decision_page(form, vault, "general", again)
         try:
             proposal = proposal_service.create_proposal(
                 vault,
@@ -445,16 +450,31 @@ def new_proposal(vid: int):
                 deadline=deadline,
                 file_bytes=file_bytes,
                 filename=filename,
+                raised_again_from=form.raised_again_from.data or None,
             )
         except ProposalError as exc:
             flash(str(exc), "danger")
-            return _new_decision_page(form, vault, "general")
+            return _new_decision_page(form, vault, "general", again)
         flash("Proposal created.", "success")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=proposal.proposal_uuid))
-    return _new_decision_page(form, vault, "general")
+    return _new_decision_page(form, vault, "general", again)
 
 
-def _new_decision_page(form, vault, kind: str):
+def _raise_again(vault):
+    """The closed decision being raised again (plan S16), from ``?again=`` on the way in or the
+    form's hidden field on the way back; None when there is none, or it can't be (said once)."""
+    uuid = request.args.get("again") or request.form.get("raised_again_from")
+    if not uuid:
+        return None
+    try:
+        return proposal_service.raise_again_source(vault, uuid)
+    except ProposalError as exc:
+        if request.method == "GET":  # a POST is refused by create_proposal, in these words
+            flash(str(exc), "danger")
+        return None
+
+
+def _new_decision_page(form, vault, kind: str, again=None):
     """New decision, either type, with the "who approves" preview (plan S14) beside the form."""
     payments = kind == "payment" or _payments_possible(vault)
     now = datetime.now(UTC)
@@ -465,6 +485,7 @@ def _new_decision_page(form, vault, kind: str):
         payments=payments,
         kind=kind,
         preview=proposal_service.who_approves(vault, current_user),
+        again=again,
         treasury=treasury_service.linked_treasury(vault) if kind == "payment" else None,
         # The date field's range: from now, and for a payment at most 30 days out (D23).
         due_min=now,
@@ -472,11 +493,16 @@ def _new_decision_page(form, vault, kind: str):
     )
 
 
-def _new_payment(vault):
+def _new_payment(vault, again=None):
     """A payment decision (plan Phase 8): recipient and amount; the server writes the rest."""
     if not _payments_possible(vault):
         abort(404)
     form = PaymentProposalForm()
+    if again is not None and request.method == "GET":
+        prefill = proposal_service.raise_again_prefill(again)
+        form.title.data, form.to.data = prefill["title"], prefill.get("to")
+        form.amount.data = prefill.get("amount")
+        form.raised_again_from.data = again.proposal_uuid
     if form.validate_on_submit():
         deadline = form.deadline.data
         if deadline is not None and deadline.tzinfo is None:
@@ -490,6 +516,7 @@ def _new_payment(vault):
                 "",
                 deadline=deadline,
                 payment=PaymentRequest(to=form.to.data.strip(), value_wei=value),
+                raised_again_from=form.raised_again_from.data or None,
             )
         except (ProposalError, ActionError) as exc:
             flash(f"{str(exc)[:1].upper()}{str(exc)[1:]}.", "danger")
@@ -498,7 +525,7 @@ def _new_payment(vault):
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )
-    return _new_decision_page(form, vault, "payment")
+    return _new_decision_page(form, vault, "payment", again)
 
 
 @bp.get("/<int:vid>/proposals/<pid>")
@@ -605,6 +632,14 @@ def proposal_detail(vid: int, pid: str):
         payout=payout,
         vote_form=VoteForm(),
         withdraw_form=WithdrawForm(),
+        # Plan S16: where it came from and what replaced it, both in this vault.
+        raised_again_from=(
+            proposal.lifecycle.raised_again_from if proposal.lifecycle is not None else None
+        ),
+        raised_again_as=proposal_service.raised_again_as(proposal),
+        can_raise_again=inbox_service.effective_status(proposal)
+        in proposal_service.RAISE_AGAIN_FROM
+        and proposal_service.may_propose(vault, current_user),
         # Plan S16: Withdraw is drawn only for whoever raised it, while it is open.
         can_withdraw=proposal.status == "open" and proposal.creator_id == current_user.id,
         # Present only immediately after this member signed (or when someone follows a receipt

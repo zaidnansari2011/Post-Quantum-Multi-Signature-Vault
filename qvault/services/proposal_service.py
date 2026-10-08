@@ -26,7 +26,7 @@ from qvault.services import (
     ledger_service,
     notification_service,
 )
-from qvault.services.signing import proposal_signing_bytes
+from qvault.services.signing import format_wei, proposal_signing_bytes
 from qvault.ui import first_name
 
 
@@ -56,6 +56,53 @@ def may_propose(vault: Vault, user) -> bool:
     """
     member = vault.member_for(user.id)
     return member is not None and member.member_role in SIGNER_ROLES
+
+
+#: Plan S16: the decisions "Raise again" starts from. An approved one is done, an open one can
+#: be withdrawn first; a payment that was approved and then not paid is left to R5's later steps.
+RAISE_AGAIN_FROM = ("withdrawn", "rejected", "expired")
+
+
+def raise_again_source(vault: Vault, proposal_uuid: str | None) -> Proposal:
+    """The closed decision in ``vault`` that a new one replaces, or a refusal a person can act on.
+
+    Signatures bind the content, so a decision is never edited in place: it is withdrawn (or
+    rejected, or it expired) and raised again as a new decision that links back to it. Only the
+    vault's own decisions qualify, so the link never names a decision the reader cannot open.
+    """
+    from qvault.services.inbox_service import effective_status
+
+    source = None
+    if isinstance(proposal_uuid, str) and proposal_uuid:
+        source = Proposal.query.filter_by(vault_id=vault.id, proposal_uuid=proposal_uuid).first()
+    if source is None:
+        raise ProposalError("The decision to raise again isn't in this vault.")
+    if effective_status(source) not in RAISE_AGAIN_FROM:
+        raise ProposalError("Only a withdrawn, rejected or expired decision can be raised again.")
+    return source
+
+
+def raise_again_prefill(source: Proposal) -> dict:
+    """What New decision starts with when raising ``source`` again. Nothing signed is reused: the
+    new decision gets a new id, nonce, signer set, rule and deadline when it is raised."""
+    action = source.action
+    if action is None:
+        return {"kind": "general", "title": source.title, "action_text": source.action_text}
+    value = action.value_wei
+    amount = None
+    if isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 78:
+        amount = format_wei(int(value)).removesuffix(" ETH")
+    return {"kind": "payment", "title": source.title, "to": action.to_address, "amount": amount}
+
+
+def raised_again_as(source: Proposal) -> list[Proposal]:
+    """The decisions raised again from ``source``, oldest first: its forward links."""
+    return (
+        Proposal.query.join(ProposalLifecycle, ProposalLifecycle.proposal_id == Proposal.id)
+        .filter(ProposalLifecycle.raised_again_from_id == source.id)
+        .order_by(Proposal.id.asc())
+        .all()
+    )
 
 
 @dataclass(frozen=True)
@@ -123,6 +170,7 @@ def create_proposal(
     file_bytes: bytes | None = None,
     filename: str | None = None,
     payment: PaymentRequest | None = None,
+    raised_again_from: str | None = None,
     commit: bool = True,
 ) -> Proposal:
     """Create a proposal in ``vault``. If ``file_bytes`` is given, it is encrypted at rest and
@@ -137,10 +185,15 @@ def create_proposal(
     ``creator`` must be the vault's owner or one of its signers (:func:`may_propose`). Checked
     here because every path to a decision comes through this function: the routes check first
     only so they can refuse before reading a request.
+
+    ``raised_again_from`` is the id (uuid) of a closed decision in this vault that this one
+    replaces (plan S16, :func:`raise_again_source`). It is recorded beside the decision, never in
+    what is signed.
     """
     if not may_propose(vault, creator):
         # First, before anything is encrypted, hashed or written.
         raise NotAllowedToPropose(NOT_A_PROPOSER)
+    source = raise_again_source(vault, raised_again_from) if raised_again_from else None
     # Normalised once, before hashing: the signed text must be exactly the stored text. Hashing
     # the submitted text and storing it stripped made any proposal with surrounding whitespace
     # (a browser textarea's trailing newline) fail its own binding check the moment it existed.
@@ -212,7 +265,10 @@ def create_proposal(
     )
     db.session.add(proposal)
     db.session.flush()  # assign proposal.id
-    proposal.lifecycle = ProposalLifecycle(requester_can_approve=requester_can_approve)
+    proposal.lifecycle = ProposalLifecycle(
+        requester_can_approve=requester_can_approve,
+        raised_again_from_id=source.id if source is not None else None,
+    )
 
     if action is not None:
         signed = action.canonical()

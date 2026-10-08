@@ -39,6 +39,9 @@
 <form class="q-compose" method="post" novalidate
       {%- if is_payment %} action="{{ url_for('vaults.new_proposal', vid=vault.id, kind='payment') }}"{% else %} enctype="multipart/form-data"{% endif %}>
   {{ form.hidden_tag() }}
+  {%- if again %}
+  <p class="q-preview__cap">Replaces <a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=again.proposal_uuid) }}">{{ again.title }}</a>. Signatures don’t carry over: everyone signs this one afresh{% if again.file %}, and the attachment needs adding again{% endif %}.</p>
+  {%- endif %}
   <div class="q-compose__fields">
     {{ field('title', 'Title', value=form.title.data, error=form.title.errors, required=True,
              caption='A label for lists. It isn’t part of what’s signed.', attrs={'maxlength': 255, 'autocomplete': 'off'}) }}
