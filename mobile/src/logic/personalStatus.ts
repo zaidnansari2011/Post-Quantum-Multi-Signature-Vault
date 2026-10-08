@@ -35,7 +35,9 @@ export type Integrity = { ok: true } | { ok: false; reason: MismatchReason };
 export type Seat =
   | { kind: 'this_device' }
   | { kind: 'password' }
-  | { kind: 'other_device'; deviceName: string | null };
+  | { kind: 'other_device'; deviceName: string | null }
+  /** The treasury holds no key of this person's: an approval from this phone would not count. */
+  | { kind: 'none' };
 
 export type DecisionFacts = {
   /** The server's status word. */
@@ -270,6 +272,15 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
         NEEDS_YOU,
         "This vault's treasury holds your password key, so approve this payment on the web.",
         { kind: 'web', line: 'Approve this on the web, where your password key is.', fix: true },
+      );
+    }
+    if (seat.kind === 'none') {
+      // Not "approve on the web": nothing says the web can either. Only what the phone knows.
+      return done(
+        7,
+        NEEDS_YOU,
+        "This vault's treasury doesn't hold a key of yours, so an approval from this phone wouldn't be paid.",
+        { kind: 'web', line: "This phone can't approve this payment.", fix: false },
       );
     }
     const device = seat.deviceName ?? 'your other device';

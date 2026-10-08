@@ -249,6 +249,15 @@ CASES = {
         "This vault's treasury holds the key of Zaid's Pixel 8. Approve this payment there.",
         "web",
     ),
+    "7_no_key_on_the_treasury": (
+        _case(PAYMENT, seat={"kind": "none"}),
+        7,
+        "Needs your signature",
+        "warning",
+        "This vault's treasury doesn't hold a key of yours, so an approval from this phone "
+        "wouldn't be paid.",
+        "web",
+    ),
     # Row 8: the signed set and the server disagree (I-10).
     "8_in_set_but_server_says_no": (
         _case({"can_sign": False}),
@@ -600,6 +609,12 @@ def test_the_password_key_case_offers_the_one_time_fix(results):
         "fix": True,
     }
     assert results["7_other_device"]["actions"]["fix"] is False
+    # No key of theirs on the treasury: no claim that the web, or anywhere, can approve it.
+    assert results["7_no_key_on_the_treasury"]["actions"] == {
+        "kind": "web",
+        "line": "This phone can't approve this payment.",
+        "fix": False,
+    }
 
 
 def test_raise_again_sits_in_the_bar_only_for_expired_and_withdrawn(results):
