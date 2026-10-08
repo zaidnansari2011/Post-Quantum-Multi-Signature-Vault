@@ -11,7 +11,13 @@ import { parseInstant } from '../time.ts';
 import type { MismatchReason, Seat } from './personalStatus.ts';
 
 export type CheckTone = 'success' | 'critical' | 'neutral';
-export type CheckLine = { key: string; tone: CheckTone; text: string };
+export type CheckLine = {
+  key: string;
+  tone: CheckTone;
+  text: string;
+  /** A place this check is made instead, opened from the line (the web's transparency log). */
+  link?: { label: string; target: 'log' };
+};
 
 /** The failed check, in the words the tampered panel leads with (§6.6). */
 export const TAMPER_REASON: Record<MismatchReason, string> = {
@@ -21,7 +27,19 @@ export const TAMPER_REASON: Record<MismatchReason, string> = {
   display_policy: "The approval rule sent to show you isn't the one that would be signed.",
   type_text: "The fields shown don't produce the text that would be signed.",
   changed: 'The text changed while you were reading it.',
+  other_decision: 'Q-Vault sent a different decision from the one you opened.',
 };
+
+/**
+ * The caption over a tampered decision's text (§6.6 Tampered, `tamper.labelText`), by the check that
+ * failed: it says the text doesn't match only when a check about the text failed. Text that matched
+ * its hash, under an approval rule that didn't, is not called wrong.
+ */
+export function tamperedTextLabel(reason: string): string {
+  if (reason === 'display_policy') return "This text checks out. The approval rule shown with it doesn't.";
+  if (reason === 'type_text') return "This is the text that would be signed. The fields shown don't produce it.";
+  return "This is the text the server sent. It doesn't match what would be signed.";
+}
 
 /** A reason this app does not know is still a failure, in plain words; never a raw code. */
 export function tamperReason(reason: string): string {
@@ -44,9 +62,10 @@ export type EvidenceInput = {
 const ORDER: MismatchReason[] = ['hash', 'payment_text', 'display_text', 'display_policy', 'type_text'];
 
 export function evidenceChecks(e: EvidenceInput): CheckLine[] {
-  if (e.failed === 'changed') {
-    // Each fetch held on its own; the two disagree, so neither is the decision.
-    return [{ key: 'changed', tone: 'critical', text: TAMPER_REASON.changed }];
+  if (e.failed === 'changed' || e.failed === 'other_decision') {
+    // Each fetch held on its own; the two disagree, or the answer was for another decision, so
+    // neither is the decision that was opened.
+    return [{ key: e.failed, tone: 'critical', text: TAMPER_REASON[e.failed] }];
   }
   const failedAt = e.failed === null ? Number.POSITIVE_INFINITY : ORDER.indexOf(e.failed);
   const state = (check: MismatchReason): CheckTone | 'skipped' => {
@@ -100,8 +119,14 @@ export function evidenceChecks(e: EvidenceInput): CheckLine[] {
           : { key: 'seat', tone: 'neutral', text: "The treasury's key for you is checked again when you approve." },
     );
   }
-  // A7 (a per-decision log status) does not exist yet, so the phone says where it is checked.
-  lines.push({ key: 'log', tone: 'neutral', text: 'The transparency log is checked on the web. Open the log there.' });
+  // A7 (a per-decision log status) does not exist yet, so the phone says where it is checked, and
+  // the line opens it.
+  lines.push({
+    key: 'log',
+    tone: 'neutral',
+    text: 'The transparency log is checked on the web.',
+    link: { label: 'Open the log', target: 'log' },
+  });
   return lines;
 }
 

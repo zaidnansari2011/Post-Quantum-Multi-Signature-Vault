@@ -107,7 +107,9 @@ def test_the_approve_consequence_follows_the_rule(r):
 def test_a_payment_past_its_limit_is_never_promised_to_be_paid(r):
     for c in r["grid"]:
         text = c["approve_payment_past_limit"]
-        assert text.endswith("the time the treasury allows for this payment has passed, so it won't be paid.")
+        assert text.endswith(
+            "the time the treasury allows for this payment has passed, so it won't be paid."
+        )
         assert "pays" not in text
     assert r["ack_past_limit"]["line"] == (
         "The time the treasury allows for this payment has passed, so it won't be paid."
@@ -124,7 +126,9 @@ def test_you_cant_withdraw_appears_only_where_it_matters(r):
     for c in r["grid"]:
         completes = c["a"] + 1 >= c["M"]
         assert ("can't withdraw" in c["approve_general"]) == completes, c
-        assert "can't withdraw" in c["approve_payment"] or "can't be reversed" in c["approve_payment"]
+        assert (
+            "can't withdraw" in c["approve_payment"] or "can't be reversed" in c["approve_payment"]
+        )
 
 
 def test_the_reject_consequence_follows_the_rule(r):
@@ -203,7 +207,13 @@ def test_the_acknowledgement_names_who_can_still_approve(r):
 
 
 @pytest.mark.parametrize(
-    "name", ["honest_general_approve", "honest_general_reject", "honest_payment_approve", "honest_payment_reject"]
+    "name",
+    [
+        "honest_general_approve",
+        "honest_general_reject",
+        "honest_payment_approve",
+        "honest_payment_reject",
+    ],
 )
 def test_the_key_is_derived_only_after_the_prompt(r, name):
     flow = r["flow"][name]
@@ -350,14 +360,23 @@ def test_signing_needs_the_signed_set_and_the_server_to_agree(r):
     a = r["agreement"]
     assert a["agree"] == {"row": 2, "actions": "sign", "approve": "opened", "reject": "opened"}
     for name in ("signer_but_server_says_no", "server_says_yes_but_not_a_signer"):
-        assert a[name] == {"row": 8, "actions": "none", "approve": "not_offered", "reject": "not_offered"}
+        assert a[name] == {
+            "row": 8,
+            "actions": "none",
+            "approve": "not_offered",
+            "reject": "not_offered",
+        }
 
 
 def test_a_seat_on_a_removed_phone_never_sends_the_person_there(r):
     seat = r["agreement"]["removed_phone_seat"]
     assert seat["row"] == 7
     assert "removed" in seat["line"] and "there" not in seat["line"]
-    assert seat["actions"] == {"kind": "web", "line": "This phone can't approve this payment.", "fix": False}
+    assert seat["actions"] == {
+        "kind": "web",
+        "line": "This phone can't approve this payment.",
+        "fix": False,
+    }
 
 
 # -- I-9: no lock, no key, no signature ----------------------------------------------------------
@@ -371,7 +390,9 @@ def test_with_no_screen_lock_each_flow_refuses_before_the_prompt(r, name):
     assert case["prompt"] is None
 
 
-@pytest.mark.parametrize("name", ["vote_lock_removed_at_prompt", "treasury_change_lock_removed_at_prompt"])
+@pytest.mark.parametrize(
+    "name", ["vote_lock_removed_at_prompt", "treasury_change_lock_removed_at_prompt"]
+)
 def test_a_lock_removed_while_the_sheet_was_open_still_signs_nothing(r, name):
     case = r["no_lock"][name]
     assert case["result"] == "no_screen_lock"
@@ -394,7 +415,12 @@ def test_a_treasury_change_with_a_lock_reaches_the_key_only_after_the_prompt(r):
 
 def test_no_401_deletes_the_key_token_or_identity(r):
     for code, plan in r["session"]["unauthorized"].items():
-        assert plan["deletes"] == {"seed": False, "token": False, "identity": False, "cache": True}, code
+        assert plan["deletes"] == {
+            "seed": False,
+            "token": False,
+            "identity": False,
+            "cache": True,
+        }, code
     assert r["session"]["unauthorized"]["device_revoked"]["cause"] == "revoked"
     assert r["session"]["unauthorized"]["token_invalid"]["cause"] == "session"
 
@@ -429,10 +455,12 @@ def test_the_key_is_deleted_only_once_the_server_no_longer_counts_it(r):
     assert r["session"]["remove_local_only"]["seed"] is True
 
 
-def test_setting_up_again_after_a_session_ended_keeps_the_key_until_enrolment(r):
+def test_setting_up_again_deletes_the_old_key_with_its_identity(r):
+    # The person chose it, told it makes a new key (§6.20). A seed left without its identity could
+    # never sign again and would sit in the keystore unnamed, so whatever deletes one deletes both.
     again = r["session"]["set_up_again"]
-    assert again["session"]["seed"] is False
-    assert again["revoked"]["seed"] is True and again["key_missing"]["seed"] is True
+    everything = {"seed": True, "token": True, "identity": True, "cache": True}
+    assert again == {"session": everything, "revoked": everything, "key_missing": everything}
 
 
 def test_the_session_deletes_only_what_the_policy_says():
@@ -453,7 +481,11 @@ HOST = "project4.zaidansari.tech"
 def test_links_are_parsed_defensively(r):
     p = r["links"]["parsed"]
     assert p[f"qvault://decision/{UUID}"] == {"kind": "decision", "uuid": UUID}
-    assert p[f"qvault://decision/{UUID}?via=web"] == {"kind": "decision", "uuid": UUID, "via": "web"}
+    assert p[f"qvault://decision/{UUID}?via=web"] == {
+        "kind": "decision",
+        "uuid": UUID,
+        "via": "web",
+    }
     assert p[f"qvault://decision/{UUID.upper()}"] == {"kind": "decision", "uuid": UUID}
     assert p["qvault://vault/12"] == {"kind": "vault", "vaultId": 12}
     assert p["qvault://vault/12/treasury-change/3"] == {
@@ -504,6 +536,8 @@ def test_a_link_follows_the_seven_rules_and_never_interrupts_a_signature(r):
         "r2_signing_in_flight_same_decision": "hold",
         "r2_acknowledging": "hold",
         "r3_sheet_idle": "closeSheetThenOpen",
+        # Rule 3 before rule 1: no refetch lands under an open sheet, even for its own decision.
+        "r3_sheet_idle_same_decision": "closeSheetThenRefetch",
         "r4_form_open": "pushOver",
         "r5_anything_else": "open",
         "r6_locked": "store",
@@ -517,21 +551,36 @@ def test_a_link_follows_the_seven_rules_and_never_interrupts_a_signature(r):
 
 def test_each_failure_says_what_happened_where(r):
     p = r["problems"]
-    stays = {"no_lock", "cancelled", "lockout", "unavailable", "chain_unavailable", "transport", "other_api", "other"}
+    stays = {
+        "no_lock",
+        "cancelled",
+        "lockout",
+        "unavailable",
+        "chain_unavailable",
+        "transport",
+        "other_api",
+        "other",
+    }
     for name, problem in p.items():
         assert problem["closeSheet"] is (name not in stays), name
     assert p["no_lock"]["action"] == "settings" and p["no_lock"]["tone"] == "critical"
     assert p["cancelled"]["text"] == "Face ID was cancelled. Nothing was signed."
     assert p["cancelled"]["tone"] == "neutral"
-    assert p["lockout"]["text"] == "Face ID is locked. Unlock your phone with its PIN, then try again."
+    assert (
+        p["lockout"]["text"] == "Face ID is locked. Unlock your phone with its PIN, then try again."
+    )
     assert p["proposal_closed"]["closedBeforeSigned"] is True
     assert p["already_voted"]["place"] == "none" and p["already_voted"]["refetch"] is True
     assert p["key_missing"]["action"] == "setup" and p["device_key_not_active"]["action"] == "setup"
     # The ended screen says which: the seed has gone, or the server refused the key.
     assert p["key_missing"]["setupCause"] == "key_missing"
     assert p["device_key_not_active"]["setupCause"] == "key_unusable"
-    assert p["transport"]["text"] == (
-        "Not signed. Q-Vault didn't receive your signature, so nothing changed."
+    # Sent, with no answer the phone could read: neither "signed" nor "not signed" until Q-Vault's
+    # own record says which (test_a_signature_with_no_readable_answer_is_checked_before_any_claim).
+    assert p["transport"]["text"] == "Q-Vault may have received your signature. Checking…"
+    assert p["transport"]["settle"] is True and p["transport"]["tone"] == "neutral"
+    assert p["proposal_closed"]["text"] == (
+        "Your signature wasn't counted, because this was already decided."
     )
 
 
@@ -548,3 +597,177 @@ def test_the_servers_own_words_are_never_shown(r):
 
 def test_nothing_here_claims_to_prove_anything(r):
     assert not re.search(r"\bprov(e|es|en|ing)\b", json.dumps(r).lower())
+
+
+def test_no_failure_after_the_signature_left_the_phone_says_nothing_was_signed(r):
+    # The phone signed and sent these; the server refused, decided first, or no answer was read.
+    for name in ("record_mismatch", "proposal_closed", "chain_unavailable", "transport"):
+        assert "nothing was signed" not in (r["problems"][name]["text"] or "").lower(), name
+
+
+# -- I-16 under the route: the answer must be the decision that was opened -----------------------
+
+
+def test_an_answer_for_another_decision_is_refused_and_stays_refused(r):
+    route = r["route"]
+    # Honest B, then honest C, served for route A: each refused, and no sheet opens over either.
+    assert route["first"] == "other_decision" and route["second"] == "other_decision"
+    assert route["sheet"] == "tampered" and route["reject_sheet"] == "tampered"
+    # The field names the route, but the uuid signed into it is another decision's.
+    assert route["signed_elsewhere"] == "other_decision"
+    # Once a route was answered with another decision, its own answer is not trusted in this run.
+    assert route["honest_after_other"] == "changed"
+    assert route["own"] == ["ok", "ok"]
+
+
+# -- §6.10: what a tap on the sign button may do ------------------------------------------------
+
+
+def test_only_the_frozen_snapshot_is_handed_to_the_flow(r):
+    c = r["begin_confirm"]
+    assert c["sign"] == "sign"
+    assert c["signs_the_snapshot"] is True and c["signs_the_page"] is False and c["frozen"] is True
+
+
+def test_a_second_tap_or_a_closed_sheet_signs_nothing(r):
+    c = r["begin_confirm"]
+    assert c["in_flight"] == "ignore" and c["closed"] == "ignore" and c["no_snapshot"] == "ignore"
+
+
+def test_a_signature_the_page_no_longer_offers_is_never_prompted(r):
+    c = r["begin_confirm"]
+    assert c["approve_no_longer_offered"] == "not_offered"
+    assert c["approve_now_web_only"] == "not_offered"
+    assert c["reject_reported"] == "not_offered"
+    # Row 7 keeps Reject: a rejection carries no treasury signature.
+    assert c["reject_with_web_actions"] == "sign"
+    assert c["reject_without_reason"] == "reason_missing"
+    # A page that offers no signing (row 1) opens no sheet, approve or reject, whatever the detail.
+    assert c["open_on_report"] == ["tampered", "tampered"]
+
+
+def test_an_idle_sheet_closes_when_its_decision_moves_and_never_mid_signature(r):
+    assert r["idle_close"] == {
+        "same": False,
+        "moved": True,
+        "failed": True,
+        "busy_moved": False,
+        "closed_moved": False,
+        "no_check_yet": False,
+    }
+
+
+def test_the_decision_screen_signs_only_through_begin_confirm():
+    text = (MOBILE_DIR / "src" / "screens" / "DecisionScreen.tsx").read_text(encoding="utf-8")
+    # One call to the flow, and the detail it is given is the step's, which is the snapshot's own.
+    assert text.count("voteOnProposal(") == 1
+    call = text[text.index("voteOnProposal({") :]
+    call = call[: call.index("});")]
+    assert re.findall(r"\bdetail\b[^,\n]*", call) == ["detail: step.detail"]
+    assert "reason: step.reason" in call
+    # The step is worked out with the ref that guards a second tap, and the page's actions now.
+    confirm = text[text.index("const confirm = async") :]
+    confirm = confirm[: confirm.index("voteOnProposal({")]
+    assert re.search(
+        r"beginConfirm\(\{\s*inFlight: inFlight\.current,\s*snapshot,"
+        r"\s*open: signingOpen,\s*actions,",
+        confirm,
+    )
+    assert "if (step.step === 'ignore' || !snapshot) return;" in confirm
+    assert confirm.index("inFlight.current = true;") > confirm.index("if (step.step === 'refused')")
+    # A fetch under an idle sheet closes it through the tested rule, and nothing else decides it.
+    assert (
+        "if (closesIdleSheet({ open: signingOpen, busy, snapshot, checked })) closeSigning();"
+        in text
+    )
+    # The checks run under the route's uuid, for the page and for its sheet.
+    assert "checkInRun(detail, uuid)" in text
+    assert "openSigningSheet({ detail, route: uuid," in text
+
+
+# -- §6.6: a signature sent with no readable answer ----------------------------------------------
+
+
+def test_a_signature_with_no_readable_answer_is_checked_before_any_claim(r):
+    client = r["client"]
+    for name in ("no_answer", "ok_not_json", "ok_wrong_shape", "bad_gateway_html"):
+        problem = client[name]["problem"]
+        assert client[name]["error"] == "TransportError", name
+        assert problem["settle"] is True and problem["place"] == "sheet", name
+        assert problem["text"] == "Q-Vault may have received your signature. Checking…", name
+    assert client["no_answer"]["answer"] == "none"
+    assert (
+        client["ok_not_json"]["answer"] == "unreadable" and client["ok_not_json"]["status"] == 200
+    )
+    assert client["ok_wrong_shape"]["answer"] == "unreadable"
+    settle = r["settle"]
+    assert settle["recorded"] == [True, True, True, False]
+    assert settle["counted"] == "counted"
+    # Only Q-Vault's own record, fetched since, holding no vote of theirs, says it never arrived.
+    assert settle["not_received"]["text"] == (
+        "Q-Vault didn't receive your signature, so nothing changed."
+    )
+    assert settle["unchecked"]["text"].startswith(
+        "This phone couldn't check whether Q-Vault received your signature."
+    )
+    for name in ("not_received", "unchecked"):
+        assert settle[name]["action"] == "retry" and settle[name]["closeSheet"] is False
+
+
+# -- §6.19: Remove this phone when the session is gone --------------------------------------------
+
+
+def test_a_401_to_remove_this_phone_is_the_sheets_to_explain(r):
+    client = r["client"]
+    # Asked quietly, the 401 never reaches the session (which would end it under the sheet).
+    assert client["quiet_401_reported"] == 0 and client["loud_401_reported"] == 1
+    assert client["quiet_401"]["remove"] == "unauthorized"
+    plan = r["session"]["remove"]["unauthorized"]
+    assert plan["offerLocalOnly"] is True and plan["deletes"]["seed"] is False
+    assert "remove it from this phone only" in plan["message"]
+
+
+def test_a_garbled_reply_to_a_removal_that_succeeded_is_a_removal(r):
+    client = r["client"]
+    assert client["ok_not_json"]["remove"] == "removed"
+    assert client["ok_wrong_shape"]["remove"] == "removed"
+    # No answer, or an error page: not known to be removed, so nothing is deleted.
+    assert client["no_answer"]["remove"] == "unreachable"
+    assert client["bad_gateway_html"]["remove"] == "unreachable"
+    assert r["remove_errors"] == {
+        "already_revoked": "already_revoked",
+        "not_found": "not_found",
+        "unauthorized": "unauthorized",
+        "refused": "refused",
+        "plain_error": "unreachable",
+    }
+
+
+def test_remove_this_phone_asks_the_server_quietly():
+    session = (MOBILE_DIR / "src" / "session.tsx").read_text(encoding="utf-8")
+    assert "api.revokeDevice(token, identity.deviceId, { quietUnauthorized: true })" in session
+    assert "result = removeResult(err);" in session
+
+
+# -- a payment past its signed limit --------------------------------------------------------------
+
+
+def test_a_rejection_never_says_a_payment_past_its_limit_passes(r):
+    for row in r["grid"]:
+        assert "passes" not in row["reject_payment_past_limit"], row
+    assert r["sheets"]["payment_past_limit_reject"]["consequence"] == (
+        "This is rejected only if one more rejects it."
+    )
+
+
+def test_a_link_never_lands_on_a_sheet_that_did_not_close():
+    links = (MOBILE_DIR / "src" / "links.ts").read_text(encoding="utf-8")
+    # The sheet says whether it closed; a signature started in the same frame holds the link.
+    assert "closeSheet: (() => boolean) | null;" in links
+    assert re.search(r"if \(!closeIdleSheet\(\)\) \{\s*pending = target;\s*return;", links)
+    # A handoff link to the decision already on top brings its comparison block.
+    assert "CommonActions.setParams({ via: target.via })" in links
+    screen = (MOBILE_DIR / "src" / "screens" / "DecisionScreen.tsx").read_text(encoding="utf-8")
+    close = screen[screen.index("const closeSigning = useCallback((): boolean => {") :]
+    close = close[: close.index("}, []);")]
+    assert "if (inFlight.current) return false;" in close and "return true;" in close

@@ -23,7 +23,18 @@ import { tamperReason } from '../../logic/evidence.ts';
 import { exactly } from '../../time.ts';
 
 /** Who decided (§6.5 item 8): a compact list, no card. More than four collapse to three. */
-export function WhoDecided({ votes, viewerId, now }: { votes: VoteFacts[]; viewerId: number; now: number }) {
+export function WhoDecided({
+  votes,
+  viewerId,
+  viewerName,
+  now,
+}: {
+  votes: VoteFacts[];
+  viewerId: number;
+  /** For the viewer's own avatar: their initials, not "Y". */
+  viewerName: string | null;
+  now: number;
+}) {
   const s = useStyles();
   const [all, setAll] = useState(false);
   const lines = decidedLines(votes, viewerId, now);
@@ -35,7 +46,7 @@ export function WhoDecided({ votes, viewerId, now }: { votes: VoteFacts[]; viewe
         Who decided
       </Text>
       {shown.map((line) => (
-        <DecidedRow key={line.key} line={line} />
+        <DecidedRow key={line.key} line={line} avatar={line.you && viewerName ? viewerName : line.name} />
       ))}
       {shown.length < lines.length ? (
         <TextLink label={`See all ${lines.length}`} onPress={() => setAll(true)} />
@@ -44,14 +55,14 @@ export function WhoDecided({ votes, viewerId, now }: { votes: VoteFacts[]; viewe
   );
 }
 
-function DecidedRow({ line }: { line: ReturnType<typeof decidedLines>[number] }) {
+function DecidedRow({ line, avatar }: { line: ReturnType<typeof decidedLines>[number]; avatar: string }) {
   const t = useTheme();
   const s = useStyles();
   const [whole, setWhole] = useState(false);
   return (
     <View style={s.decidedRow}>
       <View style={s.decidedHead} accessible accessibilityLabel={[line.text, line.when].filter(Boolean).join(', ')}>
-        <Avatar name={line.name} />
+        <Avatar name={avatar} />
         <Text role="body" style={s.flex}>
           {line.text}
         </Text>

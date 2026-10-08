@@ -9,11 +9,11 @@
 //
 //   - a 401, from any request anywhere (the API client reports it here): Session ended. The cached
 //     data goes at once, in memory and on disk; the key, the token and the identity stay.
-//   - "Set up this phone again": after a session that merely ended, the token and identity go and
-//     the seed stays until a new enrolment replaces it; after a removal, everything goes.
+//   - "Set up this phone again": everything goes (the screen has said it makes a new key).
 //   - "Remove this phone": the server is asked first, and the key is deleted only once it no
 //     longer counts this device as active (or already did not). On a failure nothing is deleted,
-//     unless the person then chooses "Remove from this phone only".
+//     unless the person then chooses "Remove from this phone only". A 401 to that request is the
+//     sheet's to explain: it does not end the session under the sheet.
 //
 // The persisted summaries (src/persist.ts, I-14) are restored at start-up before any screen shows,
 // saved while enrolled, and wiped with the in-memory cache, and before every enrolment.
@@ -26,13 +26,14 @@ import * as keystore from './keystore.ts';
 import type { Custody, StoredIdentity } from './custody.ts';
 import { enrolThisDevice } from './flows.ts';
 import * as api from './api/endpoints.ts';
-import { ApiError, setUnauthorizedHandler } from './api/client.ts';
+import { setUnauthorizedHandler } from './api/client.ts';
 import { signedContent } from './checks.ts';
 import { networkFetches } from './queries.ts';
 import { restoreSummaries, startSavingSummaries, stopSavingSummaries, wipeSummaries } from './persist.ts';
 import {
   onRemoveLocalOnly,
   onRemoveResult,
+  removeResult,
   onSetUpAgain,
   onStart,
   onUnauthorized,
@@ -217,20 +218,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let result: RemoveResult = 'removed';
     if (token && identity) {
       try {
-        await api.revokeDevice(token, identity.deviceId);
+        await api.revokeDevice(token, identity.deviceId, { quietUnauthorized: true });
       } catch (err) {
-        if (err instanceof ApiError) {
-          result =
-            err.code === 'already_revoked'
-              ? 'already_revoked'
-              : err.status === 404
-                ? 'not_found'
-                : err.status === 401
-                  ? 'unauthorized'
-                  : 'refused';
-        } else {
-          result = 'unreachable';
-        }
+        result = removeResult(err);
       }
     }
     const plan = onRemoveResult(result);

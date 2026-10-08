@@ -112,6 +112,8 @@ export type LinkStep =
   | { step: 'refetch' }
   /** Rule 3: close the idle sheet as Cancel would, then rule 5. */
   | { step: 'closeSheetThenOpen' }
+  /** Rules 3 then 1: the link is for the decision under the idle sheet. Close it, then refetch. */
+  | { step: 'closeSheetThenRefetch' }
   /** Rule 4: push the target over the form, keeping the form underneath. */
   | { step: 'pushOver' }
   /** Rule 5: switch tab, pop to its root, push the target. Back lands on the queue. */
@@ -130,15 +132,19 @@ function sameTarget(target: LinkTarget, top: Situation['top']): boolean {
 }
 
 /**
- * §2.4's rules, in order, with one change of order: a signature in flight (rule 2) is checked
- * before "already on top" (rule 1), so nothing at all happens to the screen while it signs.
+ * §2.4's rules, in their table's order: a signature in flight (rule 2) comes before "already on top"
+ * (rule 1), so nothing at all happens to the screen while it signs; and an idle sheet (rule 3) is
+ * closed before anything else, even for a link to the decision under it, so no refetch ever lands
+ * under an open sheet (§2.6) and a handoff link can bring its comparison block.
  */
 export function routeLink(target: LinkTarget, s: Situation): LinkStep {
   if (!s.enrolled) return { step: 'store' };
   if (s.locked) return { step: 'store' };
   if (s.sheet === 'busy' || s.acknowledging) return { step: 'hold' };
+  if (s.sheet === 'idle') {
+    return sameTarget(target, s.top) ? { step: 'closeSheetThenRefetch' } : { step: 'closeSheetThenOpen' };
+  }
   if (sameTarget(target, s.top)) return { step: 'refetch' };
-  if (s.sheet === 'idle') return { step: 'closeSheetThenOpen' };
   if (s.formOpen) return { step: 'pushOver' };
   return { step: 'open' };
 }

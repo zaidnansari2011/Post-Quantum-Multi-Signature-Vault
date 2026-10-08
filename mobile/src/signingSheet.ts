@@ -28,7 +28,7 @@ import {
   SelfVerificationError,
   ServerRecordMismatchError,
 } from './flows.ts';
-import { approveConsequence, rejectConsequence } from './logic/consequence.ts';
+import { approveConsequence, pastPayBy, rejectConsequence } from './logic/consequence.ts';
 import { decisionCode } from './logic/decisionCode.ts';
 import { methodButton, type Method } from './logic/methodLabel.ts';
 import type { Actions } from './logic/personalStatus.ts';
@@ -109,6 +109,8 @@ const CHIPS = {
  */
 export function openSigningSheet(input: {
   detail: ProposalDetail;
+  /** The uuid the person opened (the screen's route). An answer for any other decision is refused. */
+  route?: string;
   kind: SheetKind;
   /** `personalStatus()`'s actions for the page as it stands. */
   actions: Actions;
@@ -119,11 +121,11 @@ export function openSigningSheet(input: {
   now?: number;
 }): { ok: true; snapshot: Snapshot } | { ok: false; refusal: OpenRefusal } {
   const { kind, actions } = input;
-  const offered = kind === 'approve' ? actions.kind === 'sign' : actions.kind === 'sign' || actions.kind === 'web';
+  const offered = stillOffered(kind, actions);
   if (!offered) return { ok: false, refusal: actions.kind === 'report' ? 'tampered' : 'not_offered' };
 
   const detail = frozenCopy(input.detail);
-  const checked = checkInRun(detail);
+  const checked = checkInRun(detail, input.route ?? detail.proposal_uuid);
   if (!checked.ok) return { ok: false, refusal: 'tampered' };
   if (kind === 'approve') {
     try {
@@ -141,6 +143,7 @@ export function openSigningSheet(input: {
   const code = decisionCode(checked.hash);
   const noun = isPayment ? 'payment' : 'decision';
   const raiser = detail.raised_by?.name ?? null;
+  const passed = pastPayBy(action?.valid_until, input.now ?? Date.now());
 
   const model: SheetModel = {
     title: kind === 'approve' ? `Approve this ${noun}` : `Reject this ${noun}`,
@@ -156,9 +159,9 @@ export function openSigningSheet(input: {
             approvals: detail.approvals,
             isPayment,
             amount,
-            pastPayBy: action !== undefined && action.valid_until * 1000 <= (input.now ?? Date.now()),
+            pastPayBy: passed,
           })
-        : rejectConsequence({ M, N, approvals: detail.approvals, rejections: detail.rejections }),
+        : rejectConsequence({ M, N, approvals: detail.approvals, rejections: detail.rejections, pastPayBy: passed }),
     code: kind === 'approve' ? { value: code, form: input.via === 'web' ? 'block' : 'line' } : null,
     button: methodButton(kind === 'approve' ? 'Sign' : 'Sign rejection', input.method),
     attachment: kind === 'approve' && inputs.file_sha256 !== null,
@@ -207,7 +210,7 @@ export function confirmSigning(
 ): { ok: true; detail: ProposalDetail; reason: string | null } | { ok: false; refusal: ConfirmRefusal } {
   if (live) {
     if (live.proposal_uuid !== snapshot.uuid) return { ok: false, refusal: 'changed' };
-    const now = checkInRun(live);
+    const now = checkInRun(live, snapshot.uuid);
     if (!now.ok) return { ok: false, refusal: 'changed' };
     if (signedContentKey(live.signing_inputs, now.hash) !== snapshot.contentKey) {
       return { ok: false, refusal: 'changed' };
@@ -224,6 +227,61 @@ export function confirmSigning(
   return { ok: true, detail: snapshot.detail, reason: text };
 }
 
+/** Whether the page, as it stands now, still offers this sheet's signature (`personalStatus`). */
+export function stillOffered(kind: SheetKind, actions: Actions): boolean {
+  return kind === 'approve' ? actions.kind === 'sign' : actions.kind === 'sign' || actions.kind === 'web';
+}
+
+export type ConfirmStep =
+  /** A signature is already in flight, or no sheet is open: the tap does nothing. */
+  | { step: 'ignore' }
+  /** The page no longer offers this signature (it closed, or this person can no longer sign it). */
+  | { step: 'not_offered' }
+  /** Refused before any prompt; `reason_*` stay in the sheet, the rest close it. */
+  | { step: 'refused'; refusal: ConfirmRefusal }
+  /** Sign this: the frozen snapshot's own detail, and the reason to send. */
+  | { step: 'sign'; detail: ProposalDetail; reason: string | null };
+
+/**
+ * The sign button was tapped (§6.10). Everything the decision screen checks before it may prompt, in
+ * order, so tools/signing_probe.ts can run it: one signature at a time; the page must still offer
+ * it; then `confirmSigning` over the frozen snapshot and the page's latest fetch. Only `sign` may
+ * lead to a prompt, and it carries the snapshot's detail, never the page's (I-6).
+ */
+export function beginConfirm(input: {
+  /** A signature is in flight (the screen's ref, set before React re-renders). */
+  inFlight: boolean;
+  snapshot: Snapshot | null;
+  open: boolean;
+  /** `personalStatus()`'s actions for the page as it stands now. */
+  actions: Actions;
+  /** The page's latest fetch of the decision, from the cache. */
+  live: ProposalDetail | null | undefined;
+  reason: string;
+}): ConfirmStep {
+  if (input.inFlight || !input.snapshot || !input.open) return { step: 'ignore' };
+  if (!stillOffered(input.snapshot.kind, input.actions)) return { step: 'not_offered' };
+  const ready = confirmSigning(input.snapshot, input.live, input.reason);
+  if (!ready.ok) return { step: 'refused', refusal: ready.refusal };
+  return { step: 'sign', detail: ready.detail, reason: ready.reason };
+}
+
+/**
+ * A fetch landed while a sheet was open and idle (§2.6, I-16): close it before any prompt when the
+ * page's decision failed a check or its signed content is no longer the snapshot's. Never while a
+ * signature is in flight: that one is over the frozen snapshot and cannot be recalled.
+ */
+export function closesIdleSheet(input: {
+  open: boolean;
+  busy: boolean;
+  snapshot: Snapshot | null;
+  checked: { ok: true; hash: string } | { ok: false } | null;
+}): boolean {
+  const { open, busy, snapshot, checked } = input;
+  if (!open || busy || !snapshot || !checked) return false;
+  return !checked.ok || checked.hash !== snapshot.hash;
+}
+
 /** Where a failure shows, and what it does (§6.6's errors table). */
 export type SigningProblem = {
   /** 'sheet': inline, the sheet stays open for a one-tap retry. 'bar': the action bar's message
@@ -238,6 +296,11 @@ export type SigningProblem = {
   closedBeforeSigned: boolean;
   /** For `action: 'setup'`: the seed has gone, or the server refused the key. */
   setupCause: 'key_missing' | 'key_unusable' | null;
+  /**
+   * The signature left the phone and no answer could be read: Q-Vault may have it. The sheet stays,
+   * says so, and the page asks Q-Vault again; `settledProblem` then says which it was.
+   */
+  settle: boolean;
 };
 
 const problem = (p: Partial<SigningProblem> & Pick<SigningProblem, 'place'>): SigningProblem => ({
@@ -248,10 +311,21 @@ const problem = (p: Partial<SigningProblem> & Pick<SigningProblem, 'place'>): Si
   refetch: false,
   closedBeforeSigned: false,
   setupCause: null,
+  settle: false,
   ...p,
 });
 
 const KEY_GONE = "This phone's key can't sign any more. Nothing was signed.";
+
+/** A signature sent with no answer the phone could read (§6.6). Neither "signed" nor "not signed". */
+export const SIGN_UNCERTAIN = 'Q-Vault may have received your signature. Checking…';
+/** Q-Vault's own record, fetched since, holds no vote of this person's: it never arrived. */
+export const SIGN_NOT_RECEIVED = "Q-Vault didn't receive your signature, so nothing changed.";
+/** Q-Vault could not be asked either. Trying again cannot count twice: one vote per person. */
+export const SIGN_UNCHECKED =
+  "This phone couldn't check whether Q-Vault received your signature. Trying again won't count it twice.";
+/** It closed before the signature arrived: the signature was received and not counted. */
+export const SIGN_ALREADY_DECIDED = "Your signature wasn't counted, because this was already decided.";
 
 /** What a failed signature says, and where. The server's own wording is never shown. */
 export function signingProblem(err: unknown, method: Method | null): SigningProblem {
@@ -296,7 +370,7 @@ export function signingProblem(err: unknown, method: Method | null): SigningProb
       place: 'sheet',
       tone: 'warning',
       text: /lockout/.test(reason)
-        ? `${title} is locked. Unlock your phone with its PIN, then try again.`
+        ? `${method?.locked ?? 'Too many tries.'} Unlock your phone with its PIN, then try again.`
         : "This phone couldn't check it was you, so nothing was signed. Check that a screen lock is set up.",
     });
   }
@@ -310,7 +384,7 @@ export function signingProblem(err: unknown, method: Method | null): SigningProb
         return problem({
           place: 'bar',
           tone: 'neutral',
-          text: 'This was decided before your signature arrived. Nothing was signed.',
+          text: SIGN_ALREADY_DECIDED,
           refetch: true,
           closedBeforeSigned: true,
         });
@@ -318,7 +392,7 @@ export function signingProblem(err: unknown, method: Method | null): SigningProb
         return problem({
           place: 'sheet',
           tone: 'warning',
-          text: "Sepolia didn't answer, so nothing was signed. Try again in a minute.",
+          text: "Sepolia didn't answer, so your signature wasn't counted. Try again in a minute.",
           action: 'retry',
         });
       case 'not_a_signer':
@@ -331,12 +405,26 @@ export function signingProblem(err: unknown, method: Method | null): SigningProb
     }
   }
   if (err instanceof TransportError) {
-    return problem({
-      place: 'sheet',
-      tone: 'warning',
-      text: "Not signed. Q-Vault didn't receive your signature, so nothing changed.",
-      action: 'retry',
-    });
+    // The vote was signed and sent; a reset, a timeout or an unreadable reply says nothing about
+    // whether Q-Vault recorded it. Never "nothing was signed": ask Q-Vault, then say which.
+    return problem({ place: 'sheet', tone: 'neutral', text: SIGN_UNCERTAIN, refetch: true, settle: true });
   }
   return problem({ place: 'sheet', text: 'Something went wrong, so nothing was signed.', action: 'retry' });
+}
+
+/** Whether Q-Vault's record of the decision holds a vote of this person's. */
+export function voteRecorded(detail: ProposalDetail, userId: number): boolean {
+  return detail.signed_by_me || detail.votes.some((v) => v.signer_id === userId);
+}
+
+/**
+ * After `SIGN_UNCERTAIN`: what Q-Vault's own record, fetched since, says happened. `after` is that
+ * fetch, or null when it failed. 'counted': the sheet closes and the page shows the vote.
+ */
+export function settledProblem(after: ProposalDetail | null, userId: number): 'counted' | SigningProblem {
+  if (after && voteRecorded(after, userId)) return 'counted';
+  if (after) {
+    return problem({ place: 'sheet', tone: 'warning', text: SIGN_NOT_RECEIVED, action: 'retry' });
+  }
+  return problem({ place: 'sheet', tone: 'warning', text: SIGN_UNCHECKED, action: 'retry' });
 }

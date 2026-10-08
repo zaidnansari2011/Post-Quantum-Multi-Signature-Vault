@@ -15,7 +15,9 @@
 // Freshness (§2.6): the list polls every 60 s while this tab is focused, refetches when it comes back
 // into focus, and paints at once from the summaries kept on disk. A list that is only the copy from
 // disk is never taken as an all-clear: until this run has an answer, an empty copy reads "Checking
-// for decisions", and a failed check "Can't check your approvals" over whatever was kept.
+// for decisions", and a failed check "Can't check your approvals" with Try again. A copy from disk
+// that does hold decisions is shown as itself: its headline is worked out from it, as for any list
+// shown with the offline bar, and the offline bar (with the copy's time) is the one offline signal.
 
 import { View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
@@ -78,9 +80,11 @@ export default function HomeScreen({
   // The copy from disk says nothing needs your signature: not said until this run has checked
   // (research 06 §2's false all-clear), so it reads as still checking.
   const restoredEmpty = hasList && !confirmed && needsYou.length === 0;
-  const failed = q.awaiting.isError && !confirmed;
-  const loading = (!hasList || restoredEmpty) && !failed;
   const showList = hasList && !restoredEmpty;
+  // Only with no list to show: a list shown from disk keeps its own headline, and the offline bar
+  // says the rest (§6.3, "Refresh failed, cache shown").
+  const failed = q.awaiting.isError && !confirmed && !showList;
+  const loading = (!hasList || restoredEmpty) && !failed;
   const removed = me.data?.workspace === null;
   const coldStart = useColdStart(!confirmed && q.awaiting.isFetching);
 
@@ -138,7 +142,7 @@ export default function HomeScreen({
           {removed ? null : <ColdStartHint stage={coldStart} onRetry={refresh} />}
 
           {removed ? null : failed ? (
-            <View style={[s.retry, showList ? s.retryAbove : null]}>
+            <View style={s.retry}>
               <Button label="Try again" onPress={refresh} />
             </View>
           ) : null}
@@ -207,6 +211,5 @@ export default function HomeScreen({
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   retry: { alignItems: 'flex-start' },
-  retryAbove: { marginBottom: t.space[24] },
   after: { marginTop: t.space[24] },
 }));

@@ -40,6 +40,7 @@ import type { ProtectionLevel } from '../custody.ts';
 import { OfflineNotice, useRefreshOnFocus } from '../freshness.tsx';
 import { devicesQuery, keys, meQuery, vaultsQuery } from '../queries.ts';
 import type { Device } from '../api/schemas.ts';
+import { andList } from '../logic/words.ts';
 
 const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
   biometric: 'Biometric',
@@ -125,6 +126,9 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   const [failure, setFailure] = useState<string | null>(null);
   const [offerLocal, setOfferLocal] = useState(false);
   const [localOnly, setLocalOnly] = useState(false);
+  // Pressed without "I understand" ticked: said under it, and nothing is removed (§1.4 rule 6: the
+  // button stays live and says why, rather than greying out).
+  const [unticked, setUnticked] = useState(false);
   // One removal at a time: a second tap in the same frame does nothing.
   const inFlight = useRef(false);
 
@@ -158,6 +162,7 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   const close = () => {
     if (busy) return;
     setUnderstood(false);
+    setUnticked(false);
     setFailure(null);
     setOfferLocal(false);
     setLocalOnly(false);
@@ -165,7 +170,11 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   };
 
   const remove = async () => {
-    if (inFlight.current || busy || (needsConsent && !understood)) return;
+    if (inFlight.current || busy) return;
+    if (needsConsent && !understood) {
+      setUnticked(true);
+      return;
+    }
     inFlight.current = true;
     setBusy(true);
     setFailure(null);
@@ -199,7 +208,6 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
             variant="danger"
             onPress={() => void remove()}
             busy={busy}
-            disabled={needsConsent && !understood}
             full
           />
           {offerLocal && !localOnly ? (
@@ -220,7 +228,9 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
       </Text>
       {holding.length > 0 ? (
         <Text role="body">
-          {`The ${names.join(' and ')} ${names.length === 1 ? 'treasury holds' : 'treasuries hold'} this phone's key for you. After removing it, you can't approve ${names.join(' or ')} payments until an owner updates the treasury.`}
+          {names.length === 1
+            ? `The treasury of the ${names[0]} vault holds this phone's key for you. After removing it, you can't approve that vault's payments until an owner updates its treasury.`
+            : `The treasuries of the ${andList(names)} vaults hold this phone's key for you. After removing it, you can't approve their payments until an owner updates them.`}
         </Text>
       ) : needsConsent ? (
         <Text role="body">
@@ -228,7 +238,20 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
         </Text>
       ) : null}
       {needsConsent ? (
-        <CheckboxRow label="I understand" checked={understood} onToggle={() => setUnderstood((v) => !v)} />
+        <View>
+          <CheckboxRow
+            flush
+            label="I understand"
+            checked={understood}
+            onToggle={() => {
+              setUnderstood((v) => !v);
+              setUnticked(false);
+            }}
+          />
+          {unticked && !understood ? (
+            <InlineMessage tone="warning" text="Tick 'I understand' to remove this phone." />
+          ) : null}
+        </View>
       ) : null}
       {localOnly ? (
         <InlineMessage

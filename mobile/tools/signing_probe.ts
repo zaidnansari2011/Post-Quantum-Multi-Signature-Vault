@@ -18,7 +18,9 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { ApiError, TransportError } from '../src/api/client.ts';
+import { ApiError, request, setUnauthorizedHandler, TransportError } from '../src/api/client.ts';
+import { proposalDetailResponse } from '../src/api/schemas.ts';
+import { setApiBaseUrl } from '../src/config.ts';
 import type { ProposalDetail, ReconfigurationView } from '../src/api/schemas.ts';
 import { checkInRun, signedContent } from '../src/checks.ts';
 import { toHex } from '../src/crypto/bytes.ts';
@@ -46,10 +48,19 @@ import {
   onSetUpAgain,
   onStart,
   onUnauthorized,
+  removeResult,
   type RemoveResult,
 } from '../src/logic/session.ts';
 import { detectSignedContentChange, SignedContentMemory, signedContentKey } from '../src/logic/signedContent.ts';
-import { confirmSigning, openSigningSheet, signingProblem } from '../src/signingSheet.ts';
+import {
+  beginConfirm,
+  closesIdleSheet,
+  confirmSigning,
+  openSigningSheet,
+  settledProblem,
+  signingProblem,
+  voteRecorded,
+} from '../src/signingSheet.ts';
 
 const out: Record<string, unknown> = {};
 const FP = '0123456789abcdef';
@@ -99,12 +110,17 @@ function inputs(over: Partial<SigningInputs> = {}, payment = false): SigningInpu
 }
 
 let serial = 0;
-/** An honest detail: its stated hash is the hash of its inputs, its copies agree, its digest is right. */
-function detail(over: Partial<ProposalDetail> = {}, signing: SigningInputs = inputs()): ProposalDetail {
+/**
+ * An honest detail: its stated hash is the hash of its inputs, its copies agree, its digest is right,
+ * and the uuid signed into it is its own (the server signs `proposal_id` as the decision's uuid).
+ */
+function detail(over: Partial<ProposalDetail> = {}, signed: SigningInputs = inputs()): ProposalDetail {
   serial += 1;
+  const uuid = over.proposal_uuid ?? `00000000-0000-4000-8000-${String(serial).padStart(12, '0')}`;
+  const signing = { ...signed, proposal_id: uuid };
   const hash = signingInputsToPayloadHash(signing);
   const d = {
-    proposal_uuid: `00000000-0000-4000-8000-${String(serial).padStart(12, '0')}`,
+    proposal_uuid: uuid,
     title: 'Approve the team lunch',
     vault_id: signing.vault_id,
     vault_name: 'Operations',
@@ -194,6 +210,7 @@ for (let N = 1; N <= 5; N++) {
           approve_payment: approveConsequence({ M, approvals: a, isPayment: true, amount: '0.25 ETH' }),
           approve_payment_past_limit: approveConsequence({ M, approvals: a, isPayment: true, amount: '0.25 ETH', pastPayBy: true }),
           reject: rejectConsequence({ M, N, approvals: a, rejections: r }),
+          reject_payment_past_limit: rejectConsequence({ M, N, approvals: a, rejections: r, pastPayBy: true }),
           ack_approve_general: acknowledgement({ decision: 'approve', M, N, approvals: a + 1, rejections: r, isPayment: false, stillToApprove: null }),
           ack_approve_payment: acknowledgement({ decision: 'approve', M, N, approvals: a + 1, rejections: r, isPayment: true, stillToApprove: null }),
           ack_reject: acknowledgement({ decision: 'reject', M, N, approvals: a, rejections: r + 1, isPayment: false, stillToApprove: null }),
@@ -241,6 +258,12 @@ for (const [reason, make] of Object.entries(TAMPERED)) {
 }
 out.tampered = tampered;
 
+/** An honest payment whose treasury seat for this person is another key (its own digest kept). */
+function seatElsewhere(): ProposalDetail {
+  const d = detail({}, inputs({}, true));
+  return { ...d, execution: { digest: d.execution!.digest, seat_fingerprint: 'fedcba9876543210' } };
+}
+
 function sheetModel(d: ProposalDetail, kind: 'approve' | 'reject', via?: 'web') {
   const opened = openSigningSheet({ detail: d, kind, actions: SIGN, identity: IDENTITY, method: FACE_ID, via });
   return opened.ok ? { ...opened.snapshot.model, hash: opened.snapshot.hash } : { refused: opened.refusal };
@@ -253,12 +276,16 @@ out.sheets = {
   general_approve_web: sheetModel(detail(), 'approve', 'web'),
   general_reject: sheetModel(detail(), 'reject'),
   with_file: sheetModel(detail({}, inputs({ file_sha256: 'cd'.repeat(32) })), 'approve'),
-  seat_elsewhere: sheetModel(detail({ execution: { digest: payment.execution!.digest, seat_fingerprint: 'fedcba9876543210' } }, inputs({}, true)), 'approve'),
-  seat_elsewhere_reject: sheetModel(detail({ execution: { digest: payment.execution!.digest, seat_fingerprint: 'fedcba9876543210' } }, inputs({}, true)), 'reject'),
+  seat_elsewhere: sheetModel(seatElsewhere(), 'approve'),
+  seat_elsewhere_reject: sheetModel(seatElsewhere(), 'reject'),
   // The signed "valid until" has passed: the treasury won't pay, and the sheet must not say it will.
   payment_past_limit: (() => {
     const late = { ...ACTION, valid_until: 1_000_000_000 };
     return sheetModel(detail({ approvals: 1 }, inputs({ action: late, action_text: paymentText(late)! }, true)), 'approve');
+  })(),
+  payment_past_limit_reject: (() => {
+    const late = { ...ACTION, valid_until: 1_000_000_000 };
+    return sheetModel(detail({ approvals: 0 }, inputs({ action: late, action_text: paymentText(late)! }, true)), 'reject');
   })(),
     digest_wrong: sheetModel(detail({ execution: { digest: 'ee'.repeat(32), seat_fingerprint: FP } }, inputs({}, true)), 'approve'),
 };
@@ -512,6 +539,8 @@ out.treasury_prompt = treasuryChangePrompt({ add: 1, remove: 0, threshold: 2 });
     r2_signing_in_flight_same_decision: { ...base, top: { name: 'Decision', id: UUID }, sheet: 'busy' },
     r2_acknowledging: { ...base, top: { name: 'Decision', id: 'other' }, acknowledging: true },
     r3_sheet_idle: { ...base, top: { name: 'Decision', id: 'other' }, sheet: 'idle' },
+    // The link is for the decision under the idle sheet: the sheet closes first, then it refetches.
+    r3_sheet_idle_same_decision: { ...base, top: { name: 'Decision', id: UUID }, sheet: 'idle' },
     r4_form_open: { ...base, top: { name: 'NewDecision' }, formOpen: true },
     r5_anything_else: base,
     r6_locked: { ...base, locked: true },
@@ -549,6 +578,164 @@ out.treasury_prompt = treasuryChangePrompt({ add: 1, remove: 0, threshold: 2 });
     other: new Error('raw words'),
   };
   out.problems = Object.fromEntries(Object.entries(errors).map(([n, e]) => [n, signingProblem(e, FACE_ID)]));
+}
+
+// -- I-16 under a route: an answer for another decision is never this one ------------------------
+
+{
+  signedContent.clear();
+  // A compromised server answers GET /proposals/<route> with honest decision B, then (on the 20 s
+  // poll) with honest decision C. Each passes on its own, and each uuid is seen once.
+  const route = '00000000-0000-4000-8000-00000000000a';
+  const b = detail({}, inputs({ action_text: 'Hire a second auditor.' }));
+  const c = detail({}, inputs({ action_text: 'Fire the first auditor.' }));
+  const first = checkInRun(b, route);
+  const second = checkInRun(c, route);
+  const sheet = openSigningSheet({ detail: c, route, kind: 'approve', actions: SIGN, identity: IDENTITY, method: FACE_ID });
+  const rejectSheet = openSigningSheet({ detail: c, route, kind: 'reject', actions: SIGN, identity: IDENTITY, method: FACE_ID });
+  // The answer names the route in its own field, but the uuid signed into it is another's.
+  const route2 = '00000000-0000-4000-8000-00000000000b';
+  const signedElsewhere = { ...detail(), proposal_uuid: route2 } as ProposalDetail;
+  const signedLie = checkInRun(signedElsewhere, route2);
+  // The honest decision of a route, after the route was answered with another: still refused.
+  const honestLate = checkInRun(detail({ proposal_uuid: route }), route);
+  // Control: an honest decision under its own route passes, twice.
+  const own = detail();
+  const ownFirst = checkInRun(own, own.proposal_uuid);
+  const ownAgain = checkInRun(own, own.proposal_uuid);
+  const reason = (x: { ok: boolean; reason?: string }) => (x.ok ? 'ok' : x.reason);
+  out.route = {
+    first: reason(first),
+    second: reason(second),
+    sheet: sheet.ok ? 'opened' : sheet.refusal,
+    reject_sheet: rejectSheet.ok ? 'opened' : rejectSheet.refusal,
+    signed_elsewhere: reason(signedLie),
+    honest_after_other: reason(honestLate),
+    own: [reason(ownFirst), reason(ownAgain)],
+  };
+}
+
+// -- §6.10: what a tap on the sign button may do, before any prompt -----------------------------
+
+{
+  signedContent.clear();
+  const page = detail({}, inputs({}, true));
+  const opened = openSigningSheet({ detail: page, kind: 'approve', actions: SIGN, identity: IDENTITY, method: FACE_ID });
+  const rej = openSigningSheet({ detail: detail(), kind: 'reject', actions: SIGN, identity: IDENTITY, method: FACE_ID });
+  if (!opened.ok || !rej.ok) throw new Error('honest sheets refused');
+  const snap = opened.snapshot;
+  const base: Parameters<typeof beginConfirm>[0] = { inFlight: false, snapshot: snap, open: true, actions: SIGN, live: page, reason: '' };
+  const step = (over: Partial<typeof base>) => beginConfirm({ ...base, ...over });
+  const signed = step({});
+  const web: Actions = { kind: 'web', line: 'x', fix: true };
+  out.begin_confirm = {
+    sign: signed.step,
+    // The detail handed to the flow is the snapshot's own frozen object, never the page's.
+    signs_the_snapshot: signed.step === 'sign' && signed.detail === snap.detail,
+    signs_the_page: signed.step === 'sign' && signed.detail === page,
+    frozen: signed.step === 'sign' && Object.isFrozen(signed.detail),
+    in_flight: step({ inFlight: true }).step,
+    closed: step({ open: false }).step,
+    no_snapshot: step({ snapshot: null }).step,
+    // The page stopped offering it while the sheet was open: no prompt.
+    approve_no_longer_offered: step({ actions: { kind: 'none' } }).step,
+    approve_now_web_only: step({ actions: web }).step,
+    reject_with_web_actions: beginConfirm({ ...base, snapshot: rej.snapshot, actions: web, live: null, reason: 'Wrong amount' }).step,
+    reject_reported: beginConfirm({ ...base, snapshot: rej.snapshot, actions: { kind: 'report' }, live: null, reason: 'Wrong amount' }).step,
+    // The page offers no signing at all (D7): even over a detail that passes, no sheet opens.
+    open_on_report: ['approve', 'reject'].map((kind) => {
+      const o = openSigningSheet({ detail: detail(), kind: kind as 'approve' | 'reject', actions: { kind: 'report' }, identity: IDENTITY, method: FACE_ID });
+      return o.ok ? 'opened' : o.refusal;
+    }),
+    reject_without_reason: (() => {
+      const r = beginConfirm({ ...base, snapshot: rej.snapshot, live: null, reason: '  ' });
+      return r.step === 'refused' ? r.refusal : r.step;
+    })(),
+  };
+
+  // A fetch landing under an idle sheet closes it when the signed content moved or a check failed.
+  const idle = (over: Partial<Parameters<typeof closesIdleSheet>[0]>) =>
+    closesIdleSheet({ open: true, busy: false, snapshot: snap, checked: { ok: true, hash: snap.hash }, ...over });
+  out.idle_close = {
+    same: idle({}),
+    moved: idle({ checked: { ok: true, hash: 'ff'.repeat(32) } }),
+    failed: idle({ checked: { ok: false } }),
+    busy_moved: idle({ busy: true, checked: { ok: false } }),
+    closed_moved: idle({ open: false, checked: { ok: false } }),
+    no_check_yet: idle({ checked: null }),
+  };
+}
+
+// -- §6.6: a signature sent with no readable answer ---------------------------------------------
+
+{
+  const mine = detail({ signed_by_me: true, votes: [{ signer_id: IDENTITY.userId, signer_name: 'Ada', decision: 'approve', custody: 'device', alg_id: 'ML-DSA-65', reason: null, signed_at: '2026-10-06T10:00:00Z' }] });
+  const listedOnly = detail({ votes: [{ signer_id: IDENTITY.userId, signer_name: 'Ada', decision: 'reject', custody: 'device', alg_id: 'ML-DSA-65', reason: 'x', signed_at: null }] });
+  const flagOnly = detail({ signed_by_me: true });
+  const someoneElse = detail({ votes: [{ signer_id: 2, signer_name: 'Brij', decision: 'approve', custody: 'device', alg_id: 'ML-DSA-65', reason: null, signed_at: null }] });
+  out.settle = {
+    recorded: [voteRecorded(mine, 1), voteRecorded(listedOnly, 1), voteRecorded(flagOnly, 1), voteRecorded(someoneElse, 1)],
+    counted: settledProblem(mine, 1),
+    not_received: settledProblem(someoneElse, 1),
+    unchecked: settledProblem(null, 1),
+  };
+
+  // The API client: which failures are "no answer" and which are an answer it could not read.
+  setApiBaseUrl('https://probe.invalid');
+  const realFetch = globalThis.fetch;
+  type Reply = { throws?: boolean; status?: number; body?: string };
+  let reply: Reply = {};
+  (globalThis as { fetch: unknown }).fetch = async () => {
+    if (reply.throws) throw new TypeError('Network request failed');
+    const status = reply.status ?? 200;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => JSON.parse(reply.body ?? 'not json'),
+    };
+  };
+  const unauthorised: Array<string | null> = [];
+  setUnauthorizedHandler((code) => unauthorised.push(code));
+  const attempt = async (r: Reply, quiet = false) => {
+    reply = r;
+    try {
+      await request(proposalDetailResponse, { path: '/api/v1/x', token: 't', method: 'POST', body: {}, quietUnauthorized: quiet });
+      return { error: null };
+    } catch (err) {
+      const e = err as TransportError & ApiError;
+      return {
+        error: e.name,
+        answer: e instanceof TransportError ? e.answer : null,
+        status: e.status ?? null,
+        remove: removeResult(err),
+        problem: signingProblem(err, FACE_ID),
+      };
+    }
+  };
+  const before = unauthorised.length;
+  const quiet401 = await attempt({ status: 401, body: JSON.stringify({ ok: false, code: 'token_invalid', error: 'raw' }) }, true);
+  const quietCalls = unauthorised.length - before;
+  const loud401 = await attempt({ status: 401, body: JSON.stringify({ ok: false, code: 'token_invalid', error: 'raw' }) });
+  out.client = {
+    no_answer: await attempt({ throws: true }),
+    ok_not_json: await attempt({ status: 200, body: '<html>' }),
+    ok_wrong_shape: await attempt({ status: 200, body: JSON.stringify({ ok: true, proposal: { nope: 1 } }) }),
+    bad_gateway_html: await attempt({ status: 502, body: '<html>' }),
+    quiet_401: quiet401,
+    quiet_401_reported: quietCalls,
+    loud_401_reported: unauthorised.length - before - quietCalls,
+    loud_401: loud401,
+  };
+  setUnauthorizedHandler(null);
+  (globalThis as { fetch: unknown }).fetch = realFetch;
+
+  out.remove_errors = {
+    already_revoked: removeResult(new ApiError('already_revoked', 'raw', 409)),
+    not_found: removeResult(new ApiError('not_found', 'raw', 404)),
+    unauthorized: removeResult(new ApiError('token_invalid', 'raw', 401)),
+    refused: removeResult(new ApiError('forbidden', 'raw', 403)),
+    plain_error: removeResult(new Error('x')),
+  };
 }
 
 writeFileSync(process.argv[2], JSON.stringify(out, null, 1));

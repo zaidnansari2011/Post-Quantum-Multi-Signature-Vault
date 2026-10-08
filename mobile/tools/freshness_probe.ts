@@ -116,7 +116,8 @@ const LEAKY_SUMMARY = {
 
 // -- a stubbed network ------------------------------------------------------------------------
 
-type Reply = { status: number; body: unknown; delayMs?: number };
+/** `ignoresAbort`: a network stack that answers anyway after the request was cancelled. */
+type Reply = { status: number; body: unknown; delayMs?: number; ignoresAbort?: boolean };
 let replies: Reply[] = [];
 let requests = 0;
 
@@ -126,6 +127,7 @@ let requests = 0;
   if (reply.delayMs) {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(resolve, reply.delayMs);
+      if (reply.ignoresAbort) return;
       init.signal?.addEventListener('abort', () => {
         clearTimeout(timer);
         reject(new Error('aborted'));
@@ -217,6 +219,21 @@ async function gate() {
   await pending;
   await new Promise((r) => setTimeout(r, 80));
   out.cancelled = { recorded: networkFetches.has(cancelKey) };
+
+  // Cancelled, but the answer still arrives and parses (the stack ignored the abort): React Query
+  // throws it away, so it was never what the page shows, and it records nothing either.
+  const lateUuid = '00000000-0000-4000-8000-000000000005';
+  const late = client();
+  replies = [{ status: 200, body: detailResponse(), delayMs: 50, ignoresAbort: true }];
+  const latePending = late.fetchQuery(proposalQuery(TOKEN, lateUuid)).catch(() => 'cancelled');
+  await new Promise((r) => setTimeout(r, 5));
+  await late.cancelQueries({ queryKey: keys.proposal(lateUuid) });
+  await latePending;
+  await new Promise((r) => setTimeout(r, 80));
+  out.cancelled_late_answer = {
+    recorded: networkFetches.has(fetchKey(keys.proposal(lateUuid))),
+    in_cache: late.getQueryData(keys.proposal(lateUuid)) !== undefined,
+  };
 
   // A failed fetch records nothing either.
   const failUuid = '00000000-0000-4000-8000-000000000003';

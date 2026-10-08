@@ -51,11 +51,21 @@ export const signedContent = new SignedContentMemory();
  * `checkDecision`, plus I-16: a decision whose signed content differs from what an earlier fetch in
  * this run carried fails as `changed`, and stays failed for the run. Every screen and sheet that
  * shows a decision as genuine, or offers to sign it, asks this.
+ *
+ * `route` is the uuid the person opened (the screen's route, the list row's). The run's memory is
+ * kept under it, never under the uuid the answer claims for itself: a server answering for one
+ * decision with another, and then with a third, would otherwise show each as seen once. An answer
+ * that names another decision, by its own uuid or by the uuid signed into it, is refused outright as
+ * `other_decision`, and the route stays failed for the run.
  */
-export function checkInRun(detail: ProposalDetail): Checked {
+export function checkInRun(detail: ProposalDetail, route: string = detail.proposal_uuid): Checked {
   const checked = checkDecision(detail);
   const derived = checked.ok ? checked.hash : checked.actual;
-  const seen = signedContent.see(detail.proposal_uuid, signedContentKey(detail.signing_inputs, derived));
+  if (detail.proposal_uuid !== route || detail.signing_inputs.proposal_id !== route) {
+    signedContent.markChanged(route);
+    return { ok: false, reason: 'other_decision', expected: route, actual: detail.proposal_uuid };
+  }
+  const seen = signedContent.see(route, signedContentKey(detail.signing_inputs, derived));
   if (seen === 'changed') {
     return { ok: false, reason: 'changed', expected: detail.payload_hash, actual: derived };
   }

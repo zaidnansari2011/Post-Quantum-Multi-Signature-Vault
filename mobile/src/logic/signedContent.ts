@@ -58,6 +58,11 @@ export class SignedContentMemory {
     return this.changed.has(uuid);
   }
 
+  /** Something other than its signed content showed this decision is not what it was: sticky. */
+  markChanged(uuid: string): void {
+    this.changed.add(uuid);
+  }
+
   /** A different person enrolled, or this phone was removed: nothing from before applies. */
   clear(): void {
     this.first.clear();

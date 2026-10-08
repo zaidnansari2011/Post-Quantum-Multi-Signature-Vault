@@ -3,7 +3,9 @@
 // The rule: a 401 NEVER deletes the key. The token is what the server stopped accepting; the seed
 // is the person's signing key, and only two things may delete it: "Remove this phone" once the
 // server confirms the device is revoked (or already was), and the person's own choice after being
-// told what it means ("Set up this phone again", "Remove from this phone only").
+// told what it means ("Set up this phone again", which makes a new key; "Remove from this phone
+// only"). Whatever deletes the identity deletes the seed with it: a seed with no identity is a key
+// nothing on the phone can use or name.
 //
 // Every place in the app that ends a session asks one of these functions what to delete, and does
 // exactly that, so tools/signing_probe.ts can check the whole policy without a handset.
@@ -36,13 +38,11 @@ export function onUnauthorized(code: string | null | undefined): { cause: EndCau
 }
 
 /**
- * The person tapped "Set up this phone again". After a server-confirmed removal, or with the seed
- * already gone, everything goes. After a session that merely ended, the seed stays until enrolment
- * replaces it, which happens only after the password has been accepted: a person who backs out of
- * setting up loses nothing.
+ * The person tapped "Set up this phone again", having been told it makes a new key (§6.20). Every
+ * cause deletes everything: the identity goes, and a seed left without it could never sign again
+ * (until A9, nothing re-attaches a session to an old key), yet would sit in the keystore unnamed.
  */
-export function onSetUpAgain(cause: EndCause): Deletes {
-  if (cause === 'session') return { seed: false, token: true, identity: true, cache: true };
+export function onSetUpAgain(_cause: EndCause): Deletes {
   return EVERYTHING;
 }
 
@@ -57,6 +57,25 @@ export type RemoveResult =
   | 'unauthorized'
   /** Any other refusal. */
   | 'refused';
+
+/**
+ * How the revoke request failed, from the error the API client threw (read by shape, so this module
+ * stays free of the client). A reply the app could not read that came with a 2xx status is a
+ * removal: the server did it, and only its answer was garbled.
+ */
+export function removeResult(err: unknown): RemoveResult {
+  const e = (err ?? {}) as { name?: unknown; code?: unknown; status?: unknown };
+  if (e.name === 'ApiError') {
+    if (e.code === 'already_revoked') return 'already_revoked';
+    if (e.status === 404) return 'not_found';
+    if (e.status === 401) return 'unauthorized';
+    return 'refused';
+  }
+  if (e.name === 'TransportError' && typeof e.status === 'number' && e.status >= 200 && e.status < 300) {
+    return 'removed';
+  }
+  return 'unreachable';
+}
 
 export type RemovePlan = {
   deletes: Deletes;
@@ -83,9 +102,12 @@ export function onRemoveResult(result: RemoveResult): RemovePlan {
         offerLocalOnly: true,
       };
     case 'unauthorized':
+      // Today's server answers an expired session and an already-removed phone alike (401
+      // token_invalid), so this says what is known, not which.
       return {
         deletes: NOTHING,
-        message: "Your session on this phone ended, so Q-Vault couldn't remove it. Remove it on the web.",
+        message:
+          "Q-Vault no longer accepts this phone's session, so it couldn't remove it from here. It may already be removed: check on the web, or remove it from this phone only.",
         offerLocalOnly: true,
       };
     default:

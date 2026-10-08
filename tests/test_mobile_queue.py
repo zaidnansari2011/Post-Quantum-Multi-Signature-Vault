@@ -233,6 +233,24 @@ def _calls() -> list[dict]:
         },
     )
     call(
+        "q_names_said_above",
+        "quorumSentence",
+        {**q, "viewerCanApprove": False, "stillToApprove": ["Brij", "Chen"], "mentionNames": False},
+    )
+    for left in (1, 2):
+        call(
+            f"q_payment_past_limit_{left}",
+            "quorumSentence",
+            {
+                **q,
+                "approvals": 2 - left,
+                "isPayment": True,
+                "pastPayBy": True,
+                "viewerCanApprove": True,
+                "stillToApprove": None,
+            },
+        )
+    call(
         "q_met",
         "quorumSentence",
         {**q, "approvals": 2, "viewerCanApprove": False, "stillToApprove": None},
@@ -395,9 +413,10 @@ def test_each_group_of_payments_says_only_where_they_can_really_be_approved(resu
     assert [(x["kind"], x["title"]) for x in sections] == [
         ("web", "Approve on the web"),
         ("device", "Approve on your other device"),
-        ("nowhere", "Your key isn't on these treasuries"),
+        ("removed", "Your key here is on a removed phone"),
+        ("nowhere", "Your key isn't on this treasury"),
     ]
-    web, device, nowhere = sections
+    web, device, removed, nowhere = sections
     assert [(row["item"]["proposal_uuid"], row["note"]) for row in web["rows"]] == [
         ("pay-password", "Approve on the web"),
         ("pay-password-2", "Approve on the web"),
@@ -405,10 +424,13 @@ def test_each_group_of_payments_says_only_where_they_can_really_be_approved(resu
     assert [(row["item"]["proposal_uuid"], row["note"]) for row in device["rows"]] == [
         ("pay-other-phone", "Approve on Ada's iPad"),
     ]
-    # No key of theirs at all, or the key of a phone that was removed: nowhere to send them.
+    # The key of a phone that was removed IS on the treasury, so it is not "no key of yours"; and
+    # neither group implies the payment can be approved somewhere else.
+    assert [(row["item"]["proposal_uuid"], row["note"]) for row in removed["rows"]] == [
+        ("pay-removed-phone", "Key on a removed phone"),
+    ]
     assert [(row["item"]["proposal_uuid"], row["note"]) for row in nowhere["rows"]] == [
-        ("pay-no-key", "Can't be approved here"),
-        ("pay-removed-phone", "Can't be approved here"),
+        ("pay-no-key", "No key of yours on it"),
     ]
     assert [x["kind"] for x in results["sections_web_only"]] == ["web"]
     assert results["sections_none_one"][0]["title"] == "Your key isn't on this treasury"
@@ -440,21 +462,21 @@ HEADLINES = {
         "Check your connection. Nothing has changed on your decisions.",
     ),
     "h_removed": ("You're no longer in a workspace", "Ask an admin to invite you again."),
-    "h_zero": ("Nothing needs your signature.", None),
-    "h_zero_one_waiting": ("Nothing needs your signature.", "One decision is waiting on others."),
-    "h_zero_three_waiting": (
-        "Nothing needs your signature.",
-        "Three decisions are waiting on others.",
-    ),
-    "h_only_web_one": ("Nothing needs your signature here.", "One payment needs you on the web."),
-    "h_only_web_two": ("Nothing needs your signature here.", "Two payments need you on the web."),
+    # Headlines carry no full stop, whichever they are (the supporting lines are sentences).
+    "h_zero": ("Nothing needs your signature", None),
+    # The "Waiting on others" row under the headline says how many, and opens them: the headline
+    # does not say it again.
+    "h_zero_one_waiting": ("Nothing needs your signature", None),
+    "h_zero_three_waiting": ("Nothing needs your signature", None),
+    "h_only_web_one": ("Nothing needs your signature here", "One payment needs you on the web."),
+    "h_only_web_two": ("Nothing needs your signature here", "Two payments need you on the web."),
     # A group that is not all "on the web" never says so (§6.3): only what is true of all of them.
     "h_only_elsewhere_one": (
-        "Nothing needs your signature here.",
+        "Nothing needs your signature here",
         "One payment needs you, but this phone can't sign it.",
     ),
     "h_web_and_elsewhere": (
-        "Nothing needs your signature here.",
+        "Nothing needs your signature here",
         "Three payments need you, but this phone can't sign them.",
     ),
     "h_elsewhere_with_needs_you": ("Two decisions need your signature", None),
@@ -532,6 +554,16 @@ def test_the_other_approvers_are_named_when_known(results):
 
 def test_the_rejection_clause_is_left_to_the_personal_line_when_it_says_it(results):
     assert results["q_rejection_said_above"] == "One more approval approves this."
+
+
+def test_the_names_are_left_to_the_personal_line_when_it_says_them(results):
+    # Row 4: "You approved this. Waiting on Brij or Chen." sits right above.
+    assert results["q_names_said_above"] == "One more approval approves this."
+
+
+def test_a_payment_past_its_limit_is_never_said_to_be_paid_by_approvals(results):
+    assert results["q_payment_past_limit_1"] == "One more approval approves this."
+    assert results["q_payment_past_limit_2"] == "Two more approvals approve this."
 
 
 def test_no_quorum_sentence_once_it_is_decided(results):

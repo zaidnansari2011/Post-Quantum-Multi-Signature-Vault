@@ -136,9 +136,13 @@ export function DecisionRow({
           <Text role="caption" tone="muted" numberOfLines={1} style={stacked ? null : s.title}>
             {line2}
           </Text>
-          <Text role="caption" tone={soon ? 'warning' : 'muted'} tabular>
-            {due}
-          </Text>
+          {/* Due soon carries the clock as well as the tone, never colour alone (§8.5). */}
+          <View style={s.due}>
+            {soon ? <Icon name="clock" size={14} color={t.color.status.warning.fg} /> : null}
+            <Text role="caption" tone={soon ? 'warning' : 'muted'} tabular>
+              {due}
+            </Text>
+          </View>
         </View>
       ) : (
         <Text role="caption" tone="muted" numberOfLines={1}>
