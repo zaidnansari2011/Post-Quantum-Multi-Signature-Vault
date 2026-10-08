@@ -29,6 +29,8 @@ from qvault.chain.rpc import RpcError
 from qvault.extensions import db
 from qvault.forms import (
     AddMemberForm,
+    CommentForm,
+    DeleteCommentForm,
     MemberRoleForm,
     PaymentProposalForm,
     ProposalForm,
@@ -52,6 +54,8 @@ from qvault.security.decorators import get_membership_or_403
 from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
+    audit_service,
+    discussion_service,
     eligibility,
     evidence_service,
     export_service,
@@ -160,6 +164,9 @@ def vault_detail(vid: int):
     )
     me = vault.member_for(current_user.id)
     is_owner = me.member_role == "owner"
+    if tab == "settings" and not is_owner:
+        # Not offered to anyone else; a link to it drew the owner's forms (their routes refuse).
+        tab = "decisions"
     signer_vaults = inbox_service.signer_vault_ids(current_user)
     treasury = treasury_jobs.view(vault) if _treasuries_on() else None
     if tab == "treasury" and treasury is None:
@@ -190,6 +197,8 @@ def vault_detail(vid: int):
         requester_can_approve=eligibility.vault_allows_requester(vault),
         impossible=eligibility.impossible_to_pass(vault),
         rule_form=VaultRuleForm(),
+        # Its rule changes as before -> after, from the audit log (R5). Settings is the owner's.
+        rule_changes=audit_service.rule_changes(vault) if tab == "settings" and is_owner else [],
         treasury=treasury,
         treasury_status=(
             payout_service.treasury_status(linked, current_app.extensions.get("relayer"))
@@ -636,6 +645,23 @@ def proposal_detail(vid: int, pid: str):
         payout=payout,
         vote_form=VoteForm(),
         withdraw_form=WithdrawForm(),
+        # Its discussion (rework R5): unsigned, and drawn apart from the decision text.
+        comments=discussion_service.thread(proposal, current_user) if tab == "overview" else [],
+        cannot_comment=discussion_service.why_cannot_post(proposal, current_user),
+        mentionable=(
+            discussion_service.directory(proposal, exclude=current_user.id)
+            if tab == "overview"
+            else []
+        ),
+        comment_form=CommentForm(),
+        # The vault's rule changes since this decision was raised, while it is open (R5): some
+        # apply to it (who can sign is checked at signing), some don't (its threshold is frozen).
+        changes_since=(
+            audit_service.rule_changes(vault, after_seq=proof.payload["created_seq"], limit=5)
+            if proposal.status == "open" and proof.payload["created_seq"] is not None
+            else []
+        ),
+        delete_comment_form=DeleteCommentForm(),
         # Plan S16: where it came from and what replaced it, both in this vault.
         raised_again_from=(
             proposal.lifecycle.raised_again_from if proposal.lifecycle is not None else None
@@ -745,6 +771,46 @@ def withdraw_proposal(vid: int, pid: str):
             "success",
         )
     return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+
+
+@bp.post("/<int:vid>/proposals/<pid>/comments")
+@login_required
+def post_comment(vid: int, pid: str):
+    """Post to a decision's discussion. Membership first, as for the page itself; the service
+    decides whether this member may post (``discussion_service.why_cannot_post``)."""
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    form = CommentForm()
+    if not form.validate_on_submit():
+        abort(400)
+    try:
+        comment = discussion_service.post(proposal, current_user, form.body.data)
+    except discussion_service.CommentError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid, _anchor="discussion"))
+    return redirect(
+        url_for("vaults.proposal_detail", vid=vid, pid=pid, _anchor=f"comment-{comment.id}")
+    )
+
+
+@bp.post("/<int:vid>/proposals/<pid>/comments/<int:cid>/delete")
+@login_required
+def delete_comment(vid: int, pid: str, cid: int):
+    """Delete your own comment. Only a comment of this decision's, in a vault the caller is in."""
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    comment = discussion_service.get(proposal, cid)
+    if comment is None:
+        abort(404)
+    if not DeleteCommentForm().validate_on_submit():
+        abort(400)
+    try:
+        discussion_service.delete(comment, current_user)
+    except discussion_service.CommentError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Comment deleted. The audit log keeps a record that it was.", "success")
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid, _anchor="discussion"))
 
 
 @bp.post("/<int:vid>/proposals/<pid>/publish")

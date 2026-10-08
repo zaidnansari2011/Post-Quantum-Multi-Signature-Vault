@@ -41,6 +41,7 @@ from qvault.services import (
     approval_service,
     auth_service,
     device_service,
+    discussion_service,
     eligibility,
     execution_service,
     inbox_service,
@@ -1271,6 +1272,50 @@ def withdraw_proposal(uuid: str):
             return _error("proposal_closed", message, 409)
         return _error("withdraw_refused", message, 403)
     return jsonify(ok=True, proposal=_proposal_summary(proposal, user))
+
+
+@bp.get("/proposals/<uuid>/comments")
+@device_token_required
+def list_comments(uuid: str):
+    """A decision's discussion, oldest first, for the phone (rework R5). Read only.
+
+    The same people who can open the decision can read it. Comments are unsigned and the
+    response says so; ``segments`` gives each comment as runs of text and resolved mentions, so a
+    client draws a mention only where the server resolved one. Paged by comment id: ``after`` is
+    the last id the client has, ``limit`` at most 100.
+    """
+    user = g.api_user
+    proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
+    if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
+        return _error("unknown_proposal", "No such proposal.", 404)
+    limit = _whole("limit", 50, 1, 100)
+    after = _whole("after", 0, 0, 2**31 - 1)
+    if limit is None or after is None:
+        return _error("bad_request", "limit and after must be whole numbers.", 400)
+    rows = discussion_service.thread(proposal, user, after=after or None, limit=limit + 1)
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return jsonify(
+        ok=True,
+        signed=False,
+        note=discussion_service.UNSIGNED_NOTE,
+        can_post=discussion_service.why_cannot_post(proposal, user) is None,
+        comments=[
+            {
+                "id": c["id"],
+                "author": {"id": c["author_id"], "name": c["author"]},
+                "created_at": c["created_at"].isoformat() if c["created_at"] else None,
+                "deleted": c["deleted"],
+                "mine": c["mine"],
+                "body": "".join(part["text"] for part in c["segments"]),
+                "segments": [
+                    {"text": part["text"], "mention": part.get("mention")} for part in c["segments"]
+                ],
+            }
+            for c in rows
+        ],
+        next_after=rows[-1]["id"] if more and rows else None,
+    )
 
 
 @bp.post("/proposals/<uuid>/remind")

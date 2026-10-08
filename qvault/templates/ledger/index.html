@@ -5,7 +5,7 @@
     the filtered page; the integrity column comes from evidence_service. -#}
 {% from "ui/navigation.html" import tabs, page_header %}
 {% from "ui/buttons.html" import button, icon_button %}
-{% from "ui/data.html" import hash %}
+{% from "ui/data.html" import hash, rule_diff %}
 {% from "ui/feedback.html" import banner %}
 {% from "ui/forms.html" import select %}
 {% from "ui/avatars.html" import avatar %}
@@ -94,7 +94,8 @@
     {% set e = a.entry %}
     <tr{% if a.integrity == 'failed' and report.chain_break_seq == e.seq %} class="is-broken"{% endif %}>
       <td class="q-audit__seq">#{{ '{:,}'.format(e.seq) }}</td>
-      <td class="q-audit__ev">{% if a.href %}<a href="{{ url_for('vaults.proposal_detail', vid=a.href[0], pid=a.href[1]) }}">{{ a.sentence }}</a>{% else %}{{ a.sentence }}{% endif %}</td>
+      <td class="q-audit__ev">{% if a.href %}<a href="{{ url_for('vaults.proposal_detail', vid=a.href[0], pid=a.href[1]) }}">{{ a.sentence }}</a>{% else %}{{ a.sentence }}{% endif %}
+        {%- if a.diff %}{{ rule_diff(a.diff) }}{% endif %}</td>
       <td class="q-audit__vault">{{ a.vault if e.vault_id else '' }}</td>
       <td class="q-audit__when"><time datetime="{{ e.timestamp }}">{{ ev_short(e.timestamp, zone=False) }}</time></td>
       <td><a class="q-integ-link" href="{{ url_for('ledger.view', proof=e.seq, **query) }}" aria-label="{{ ev_integrity[a.integrity][0] }}. Open the proof for entry {{ e.seq }}">{{ integ(a.integrity) }}</a></td>
@@ -176,7 +177,7 @@
         <div><dt>Signed by</dt><dd>The log key, {{ cp.alg_id }}{% if proof.checkpoint.key_fingerprint %}<span class="q-line">{{ hash(proof.checkpoint.key_fingerprint, 'log key fingerprint', 16, 0) }}</span>{% endif %}<span class="q-line">{% if proof.checkpoint.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
         <div><dt>Inclusion proof</dt><dd>{% if proof.inclusion.length is not none %}{{ proof.inclusion.length }} hash{{ '' if proof.inclusion.length == 1 else 'es' }}, recomputed from this entry’s leaf to the checkpoint’s root{% else %}Couldn’t be built{% endif %}<span class="q-line">{% if proof.inclusion.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
         {% for w in proof.witnesses %}
-        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-line">{% if w.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
+        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-line">{% if w.valid %}<span class="q-res">{{ icon('check') }}Valid</span>{% elif not w.key_pinned %}<span class="q-res q-res--bad">{{ icon('critical') }}Not the pinned witness key</span>{% else %}<span class="q-res q-res--bad">{{ icon('critical') }}Didn’t verify</span>{% endif %}</span></dd></div>
         {% else %}
         <div><dt>Witness</dt><dd>Not co-signed yet. {% if witness.configured %}The witness signs newer checkpoints as it reaches them.{% else %}No witness is configured.{% endif %}</dd></div>
         {% endfor %}

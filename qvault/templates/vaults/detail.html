@@ -3,7 +3,7 @@
 {% from "ui/buttons.html" import button %}
 {% from "ui/status.html" import status %}
 {% from "ui/avatars.html" import avatar, avatar_stack %}
-{% from "ui/data.html" import data_table, hash, reltime %}
+{% from "ui/data.html" import data_table, hash, reltime, rule_diff %}
 {% from "ui/forms.html" import field, select, checkbox %}
 {% from "ui/feedback.html" import banner %}
 {% from "ui/work.html" import due, deadline, signatures, rule %}
@@ -338,6 +338,22 @@
       </dl>
     </section>
   </div>
+  {#- R5: the rule and who approves, as they changed. From the audit log, newest first. -#}
+  <section class="q-panel q-gap-top" aria-labelledby="changes-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="changes-t">Rule changes</h2><a class="q-cap" href="{{ url_for('ledger.view', vault=vault.id) }}">Full history in the audit log</a></div>
+    {% if rule_changes %}
+    <ol class="q-changes">
+      {% for c in rule_changes %}
+      <li class="q-changes__i">
+        {{ rule_diff(c.diff) }}
+        <span class="q-changes__by">{{ c.who }}, {% if c.when %}<time datetime="{{ c.entry.timestamp }}">{{ ui_absolute(c.when) }}</time>{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="q-panel__bd q-empty-line">No changes since the vault was created.</p>
+    {% endif %}
+  </section>
 {% endif %}
 </div>
 </div>

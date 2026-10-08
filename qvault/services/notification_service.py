@@ -57,6 +57,7 @@ UPDATE_KINDS = (
     "decision_rejected",
     "decision_expired",
     "decision_withdrawn",
+    "decision_mentioned",
     "payout_paid",
     "payout_failed",
     "vault_member_added",
@@ -301,6 +302,27 @@ def decision_withdrawn(proposal, *, actor_id: int, now: datetime | None = None) 
         )
 
 
+def mentioned(comment, recipients: Iterable[int], *, entry, now: datetime | None = None) -> None:
+    """Someone mentioned in a decision's discussion hears who mentioned them, and where.
+
+    ``recipients`` are the people the comment named who can open the decision now
+    (``discussion_service.reader_ids``), never anyone else. The notification links to the
+    discussion and does not quote the comment, so deleting it later leaves nothing behind here.
+    ``entry`` is the comment's ledger entry, which names this comment apart from any other."""
+    with _best_effort("mentioned"):
+        proposal = comment.proposal
+        _send(
+            "decision_mentioned",
+            set(recipients) - {comment.author_id},
+            key=f"decision_mentioned:{entry.seq}",
+            now=now or _utcnow(),
+            vault_id=proposal.vault_id,
+            proposal_id=proposal.id,
+            actor_id=comment.author_id,
+            data={"comment_id": comment.id},
+        )
+
+
 def payout_finished(execution, *, now: datetime | None = None) -> None:
     """A payment carried out, or ended without being paid: the requester and its approvers hear,
     and when it was not paid, so does the vault's owner, who looks after the treasury. Only those
@@ -371,6 +393,23 @@ def threshold_changed(
                 "to": vault.policy.threshold_m,
                 "n": len(_current_signers(vault.id)),
             },
+        )
+
+
+def requester_rule_changed(
+    vault, *, allowed: bool, actor_id: int, entry, now: datetime | None = None
+) -> None:
+    """Plan S15 changed: everyone in the vault but whoever changed it hears whether the person who
+    raises a decision can now approve it. Turning it off reaches decisions already open."""
+    with _best_effort("requester rule changed"):
+        _send(
+            "vault_rule_changed",
+            _members(vault.id) - {actor_id},
+            key=f"vault_rule_changed:requester:{entry.seq}",
+            now=now or _utcnow(),
+            vault_id=vault.id,
+            actor_id=actor_id,
+            data={"change": "requester", "from": not allowed, "to": allowed},
         )
 
 

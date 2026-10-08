@@ -61,6 +61,9 @@ SENTENCES = {
     "proposal_withdrawn": "{who} withdrew a decision in {vault}.",
     "vault_rule_changed": "{who} changed whether whoever raises a decision in {vault} can "
     "approve it.",
+    # A decision's discussion (R5). Unsigned; logged with a hash of the text, never the text.
+    "comment_posted": "{who} commented on a decision in {vault}.",
+    "comment_deleted": "{who} deleted their comment on a decision in {vault}.",
     "file_encrypted": "A file was encrypted and attached to a decision in {vault}.",
     "key_reissued": "{who} replaced their signing key.",
     "password_changed": "{who} changed their password and re-encrypted their keys.",
@@ -258,12 +261,144 @@ def narrate(entries) -> list[dict]:
         template = SENTENCES.get(e.event_type)
         # An event this table has not been taught yet must still render as a readable line. An
         # audit view that silently drops rows it does not recognise is worse than an ugly one.
-        sentence = (
+        sentence = _rule_sentence(e, who, vault) or (
             template.format(who=who, vault=vault, workspace=workspace)
             if template
             else f"{who}: {e.event_type.replace('_', ' ')}."
         )
         out.append({"entry": e, "sentence": sentence, "who": who, "vault": vault})
+    return out
+
+
+def _rule_sentence(entry: LedgerEntry, who: str, vault: str) -> str | None:
+    """A vault rule change with its before and after (R5), when the entry records both. Numbers
+    and yes/no only: names of members stay for ``evidence_service.describe``, which knows who
+    may see them. The same sentence on screen and in the CSV."""
+    if entry.event_type not in ("vault_threshold_changed", "vault_rule_changed"):
+        return None
+    try:
+        data = json.loads(entry.payload_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    before, after = data.get("from"), data.get("to")
+    if entry.event_type == "vault_threshold_changed":
+        if isinstance(before, int) and isinstance(after, int):
+            return (
+                f"{who} changed the approvals {vault} needs from {before} to {after}. Decisions "
+                "already raised keep the rule they started with."
+            )
+        return None
+    if data.get("rule") == "requester_can_approve" and isinstance(after, bool):
+        if after:
+            return f"{who} let whoever raises a decision in {vault} approve it too."
+        return (
+            f"{who} stopped whoever raises a decision in {vault} from approving it, including "
+            "decisions already open."
+        )
+    return None
+
+
+#: The vault rule changes (R5): what changed, as a label and words for its before and after.
+RULE_EVENTS = (
+    "vault_threshold_changed",
+    "vault_rule_changed",
+    "member_added",
+    "member_removed",
+    "member_role_changed",
+)
+ROLE_NAMES = {"owner": "Owner", "signer": "Approver", "viewer": "Viewer"}
+NOT_A_MEMBER = "Not a member"
+
+
+def rule_diff(entry: LedgerEntry, people: dict[int, str]) -> dict | None:
+    """``{"label", "before", "after"}`` for a vault rule change, or None.
+
+    ``people`` names the members the reader may see (``evidence_service.describe``'s rule); a
+    membership change about anyone else has no diff, just its sentence.
+    """
+    if entry.event_type not in RULE_EVENTS:
+        return None
+    try:
+        data = json.loads(entry.payload_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    event = entry.event_type
+    if event == "vault_threshold_changed":
+        before, after = data.get("from"), data.get("to")
+        if isinstance(before, int) and isinstance(after, int):
+            return {"label": "Approvals needed", "before": str(before), "after": str(after)}
+        return None
+    if event == "vault_rule_changed":
+        before, after = data.get("from"), data.get("to")
+        if data.get("rule") == "requester_can_approve" and isinstance(after, bool):
+            return {
+                "label": "Whoever raises a decision can approve it",
+                "before": "Yes" if before else "No",
+                "after": "Yes" if after else "No",
+            }
+        return None
+    name = people.get(data.get("user_id"))
+    if name is None:
+        return None
+    if event == "member_added":
+        before, after = NOT_A_MEMBER, ROLE_NAMES.get(data.get("role"), "Member")
+    elif event == "member_removed":
+        before, after = ROLE_NAMES.get(data.get("role"), "Member"), NOT_A_MEMBER
+    else:
+        before = ROLE_NAMES.get(data.get("from"), "Member")
+        after = ROLE_NAMES.get(data.get("to"), "Member")
+    return {"label": name, "before": before, "after": after}
+
+
+def rule_changes(vault: Vault, *, after_seq: int | None = None, limit: int = 20) -> list[dict]:
+    """The vault's rule changes, newest first, each with who, when and its diff (R5).
+
+    For the vault's Settings and the decision page; the caller has checked the reader is a member
+    of ``vault``, so its members may be named. ``after_seq`` keeps only changes logged after that
+    entry (a decision's own raising, for "changed since it was raised")."""
+    stmt = select(LedgerEntry).where(
+        LedgerEntry.vault_id == vault.id, LedgerEntry.event_type.in_(RULE_EVENTS)
+    )
+    if after_seq is not None:
+        stmt = stmt.where(LedgerEntry.seq > after_seq)
+    entries = db.session.scalars(stmt.order_by(LedgerEntry.seq.desc()).limit(limit)).all()
+    if not entries:
+        return []
+    ids = set()
+    for e in entries:
+        try:
+            uid = json.loads(e.payload_json).get("user_id")
+        except (TypeError, ValueError, AttributeError):
+            uid = None
+        if isinstance(uid, int):
+            ids.add(uid)
+        if e.actor_id:
+            ids.add(e.actor_id)
+    names = (
+        {u.id: (u.display_name or u.email) for u in User.query.filter(User.id.in_(ids))}
+        if ids
+        else {}
+    )
+    # Someone no longer in the vault keeps their name in its history: they were a member when it
+    # happened, and every current member could see them then. Nobody outside the vault reads this.
+    out = []
+    for e in entries:
+        diff = rule_diff(e, names)
+        if diff is None:
+            continue
+        out.append(
+            {
+                "entry": e,
+                "event": e.event_type,
+                "who": names.get(e.actor_id, "Someone") if e.actor != "SYSTEM" else "The system",
+                "when": _parse_time(e.timestamp),
+                "diff": diff,
+            }
+        )
     return out
 
 
