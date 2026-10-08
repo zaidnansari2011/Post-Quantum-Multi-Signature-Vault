@@ -132,6 +132,48 @@ def workspace_of_vault(vault: Vault) -> Workspace | None:
     return current_workspace(vault.owner_id)
 
 
+def home_workspace_id(vault: Vault) -> int | None:
+    """The id of the workspace ``vault`` belongs to, even while its owner is suspended.
+
+    ``workspace_of_vault`` reads the owner's *active* membership, so a suspended owner leaves it
+    with no answer. Who may sign in the vault must not depend on that, so this falls back to the
+    owner's earliest membership of any status.
+    """
+    home = workspace_of_vault(vault)
+    if home is not None:
+        return home.id
+    return db.session.scalar(
+        select(WorkspaceMember.workspace_id)
+        .where(WorkspaceMember.user_id == vault.owner_id)
+        .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
+        .limit(1)
+    )
+
+
+def signing_standing(vault: Vault, user_id: int) -> str | None:
+    """Why ``user_id`` cannot sign in ``vault`` because of the workspace, or None when they can.
+
+    The vault decides who approves (its roles, its frozen signer sets); the workspace decides
+    whether that person is still working here. A suspended member signs nothing, and an auditor
+    is read-only (plan S10), even if a vault made them an approver before their role changed.
+    The same people ``vault_service`` refuses to make an approver. A database with no workspace
+    at all predates them and has no one to suspend.
+    """
+    workspace_id = home_workspace_id(vault)
+    if workspace_id is None:
+        if Workspace.query.first() is None:
+            return None
+        return "your place in this vault's workspace could not be confirmed"
+    member = membership(workspace_id, user_id)
+    if member is None:
+        return "you are not a member of this vault's workspace"
+    if not member.is_active:
+        return "you are suspended from this vault's workspace"
+    if member.role == "auditor":
+        return "auditors are read-only"
+    return None
+
+
 def members(workspace: Workspace, *, status: str | None = None) -> list[WorkspaceMember]:
     """Members in the order they joined, optionally only those with ``status``. Each one's user is
     loaded with them, since every page that lists members names them."""
