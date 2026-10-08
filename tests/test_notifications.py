@@ -87,8 +87,13 @@ def _raise(team, *, at=None, by=None, deadline=None, title="Renew the cloud cont
         )
 
 
-def _vote(proposal, user, decision="approve", reason=None):
-    return approval_service.cast_vote(proposal, user, PW, decision, reason=reason)
+def _vote(proposal, user, decision="approve", reason=None, *, at=None):
+    """A vote cast at ``at``: a decision raised at a fixed date must be voted on inside its own
+    window, not at whatever the real clock says when the suite runs."""
+    with pytest.MonkeyPatch.context() as mp:
+        if at is not None:
+            mp.setattr(approval_service, "datetime", _frozen(at))
+        return approval_service.cast_vote(proposal, user, PW, decision, reason=reason)
 
 
 def _rows(user, kind=None, proposal=None) -> list[Notification]:
@@ -188,7 +193,7 @@ def test_a_rejection_without_a_reason_gives_none(team):
 def test_an_expiry_tells_the_requester_and_the_voters(team):
     deadline = MONDAY + timedelta(days=3)
     proposal = _raise(team, at=MONDAY, deadline=deadline)
-    _vote(proposal, team.brij)
+    _vote(proposal, team.brij, at=MONDAY + timedelta(hours=1))
 
     assert rotation_service.expire_stale_proposals(now=deadline + timedelta(minutes=1)) == 1
 
@@ -525,7 +530,7 @@ def test_a_scheduler_that_was_down_sends_the_latest_reminder_not_a_burst(team):
 
 def test_reminders_go_only_to_approvers_who_have_not_voted(team):
     proposal = _raise(team, at=MONDAY, deadline=MONDAY + timedelta(days=30))
-    _vote(proposal, team.brij)
+    _vote(proposal, team.brij, at=MONDAY + timedelta(hours=1))
 
     notification_service.send_reminders(now=MONDAY + timedelta(days=1))
 
@@ -564,8 +569,8 @@ def test_a_decision_raised_with_under_a_day_to_go_gets_no_warning(team):
 
 def test_a_closed_decision_gets_no_reminders(team):
     proposal = _raise(team, at=MONDAY, deadline=MONDAY + timedelta(days=30))
-    _vote(proposal, team.ada)
-    _vote(proposal, team.brij)
+    _vote(proposal, team.ada, at=MONDAY + timedelta(hours=1))
+    _vote(proposal, team.brij, at=MONDAY + timedelta(hours=1))
 
     assert notification_service.send_reminders(now=MONDAY + timedelta(days=8)) == 0
     assert Notification.query.filter_by(kind="decision_reminder").count() == 0
@@ -576,7 +581,7 @@ def test_a_closed_decision_gets_no_reminders(team):
 
 def test_the_requester_can_remind_once_a_day(team):
     proposal = _raise(team, at=MONDAY, deadline=MONDAY + timedelta(days=30))
-    _vote(proposal, team.brij)
+    _vote(proposal, team.brij, at=MONDAY + timedelta(hours=1))
     first = MONDAY + timedelta(hours=2)
 
     assert notification_service.remind(proposal, team.ada, now=first) == 1
@@ -777,8 +782,14 @@ def test_every_notification_links_to_a_page_on_this_site_and_carries_nothing_tha
     notification_service.send_reminders(now=MONDAY + timedelta(days=1))
     notification_service.send_reminders(now=MONDAY + timedelta(days=2, hours=1))
     notification_service.remind(proposal, team.ada, now=MONDAY + timedelta(days=2, hours=2))
-    _vote(proposal, team.brij, "reject", reason="No")
-    _vote(proposal, team.chen, "reject")
+    _vote(
+        proposal,
+        team.brij,
+        "reject",
+        reason="No",
+        at=MONDAY + timedelta(days=2, hours=2, minutes=10),
+    )
+    _vote(proposal, team.chen, "reject", at=MONDAY + timedelta(days=2, hours=2, minutes=20))
     vault_service.set_threshold(team.vault, 3, actor_id=team.ada.id)
     key_service.change_password(team.dara, PW, "a-new-password-456")
 
