@@ -6,7 +6,9 @@ A proposal moves through a small, auditable state machine:
       │
       ├──(rejections make M unreachable)───────► REJECTED
       │
-      └──(deadline passes while still open)────► EXPIRED
+      ├──(deadline passes while still open)────► EXPIRED
+      │
+      └──(its requester withdraws it)──────────► WITHDRAWN  (plan S16, ``withdraw``)
 
 Every vote is a real post-quantum signature (ML-DSA / SLH-DSA) over ``vote_signing_bytes``,
 verified before it is stored and again for display, and anchored into the hash-chained ledger.
@@ -22,13 +24,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from flask import current_app
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from qvault import glassbox
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
+from qvault.models.proposal import Proposal, ProposalLifecycle
 from qvault.models.signature import Signature
 from qvault.models.vault import SIGNER_ROLES, VaultMember
 from qvault.services import (
@@ -589,6 +592,12 @@ def _record_vote(
         # treasury can be unlinked while a password is being checked), must stop the vote rather
         # than be discovered later by an executor holding an approval it cannot carry out.
         # ``record`` checks all of it, and queries only before it adds its row.
+        # Hold the decision open while this vote is written. The gate read "open" earlier, but a
+        # withdrawal (or another vote deciding it) can commit in between: this conditional write
+        # takes the row's lock on PostgreSQL and re-reads its status, so a vote never lands on a
+        # decision that closed after the gate looked, and a withdrawal waiting on this lock then
+        # finds the decision decided, or open with this vote in it. SQLite serialises writers.
+        _hold_open(proposal)
         if execution is not None:
             execution_digest, execution_sig = execution
             try:
@@ -639,6 +648,90 @@ def _record_vote(
             raise ApprovalError("You have already voted on this proposal.") from exc
         raise  # a different constraint (e.g. a ledger-seq race) must not look like a re-vote
     return sig
+
+
+def _hold_open(proposal) -> None:
+    """Refuse, with nothing written, unless the decision is still open in the database."""
+    held = db.session.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id, Proposal.status == "open")
+        .values(status=Proposal.status)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if held != 1:
+        db.session.rollback()
+        db.session.refresh(proposal)
+        raise ApprovalError(f"This proposal is {proposal.status}; no further votes can be cast.")
+
+
+#: Plan S16's refusal, one sentence for the web and the API.
+NOT_YOURS_TO_WITHDRAW = "Only the person who raised this decision can withdraw it."
+
+
+def withdraw(proposal, actor, *, now: datetime | None = None, commit: bool = True) -> None:
+    """The person who raised an open decision ends it (plan S16): it becomes WITHDRAWN.
+
+    It takes no further votes (the gate's status check, and ``_hold_open`` for a vote racing
+    this). Votes already cast stay as they were and keep verifying; they decide nothing now. The
+    ledger records it and everyone it asked, or who voted, is told. Nothing signed changes: a
+    decision is never edited in place, it is withdrawn and raised again (``raised_again_from``).
+
+    Refused for anyone but its requester, for a requester who has left the vault or is suspended
+    from its workspace (a suspended member acts on nothing), and for a decision that is no longer
+    open, including one whose deadline passed before the sweep ran.
+    """
+    if actor.id != proposal.creator_id:
+        raise ApprovalError(NOT_YOURS_TO_WITHDRAW)
+    vault = proposal.vault
+    if not vault.is_member(actor.id):
+        raise ApprovalError(
+            "You are no longer a member of this vault, so you can't withdraw this decision."
+        )
+    standing = workspace_service.signing_standing(vault, actor.id)
+    if standing is not None and standing != "auditors are read-only":
+        # An auditor raised it as an approver before their role changed: ending their own
+        # request takes nothing from anyone, so it is allowed. Suspended or gone is not.
+        raise ApprovalError(f"You can't withdraw this decision: {standing}.")
+
+    refresh_expiry(proposal, commit=commit)
+    if proposal.status != "open":
+        raise ApprovalError(f"This decision is {proposal.status}, so it can't be withdrawn.")
+
+    now = now or datetime.now(UTC)
+    # Conditional, so a vote that decided it a moment ago wins and this refuses (see _hold_open).
+    changed = db.session.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id, Proposal.status == "open")
+        .values(status="withdrawn")
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if changed != 1:
+        db.session.rollback()
+        db.session.refresh(proposal)
+        raise ApprovalError(f"This decision is {proposal.status}, so it can't be withdrawn.")
+    proposal.status = "withdrawn"
+    lifecycle = proposal.lifecycle
+    if lifecycle is None:  # raised before R5
+        lifecycle = proposal.lifecycle = ProposalLifecycle()
+    lifecycle.withdrawn_at = now
+    lifecycle.withdrawn_by_id = actor.id
+    ledger_service.append(
+        "proposal_withdrawn",
+        {
+            "proposal_uuid": proposal.proposal_uuid,
+            "vault_id": proposal.vault_id,
+            "withdrawn_at": now.isoformat(),
+        },
+        actor=f"user:{actor.id}",
+        actor_id=actor.id,
+        vault_id=proposal.vault_id,
+        ref_type="proposal",
+        ref_id=proposal.proposal_uuid,
+        commit=False,
+    )
+    notification_service.decision_withdrawn(proposal, actor_id=actor.id, now=now)
+    if commit:
+        db.session.commit()
 
 
 def _payment_digest(proposal, signer, key) -> bytes:

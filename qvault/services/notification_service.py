@@ -56,6 +56,7 @@ UPDATE_KINDS = (
     "decision_approved",
     "decision_rejected",
     "decision_expired",
+    "decision_withdrawn",
     "payout_paid",
     "payout_failed",
     "vault_member_added",
@@ -280,6 +281,23 @@ def decision_closed(
             proposal_id=proposal.id,
             actor_id=actor_id,
             data=data,
+        )
+
+
+def decision_withdrawn(proposal, *, actor_id: int, now: datetime | None = None) -> None:
+    """Withdrawn by whoever raised it (plan S16): the approvers it asked, and anyone who voted,
+    hear it has ended, so nobody goes looking for something to sign. Only those still in the
+    vault; not the person who withdrew it."""
+    with _best_effort("decision withdrawn"):
+        asked = _snapshot(proposal) & _current_signers(proposal.vault_id)
+        _send(
+            "decision_withdrawn",
+            ((asked | _voters(proposal)) - {actor_id}) & _members(proposal.vault_id),
+            key=f"decision_withdrawn:{proposal.proposal_uuid}",
+            now=now or _utcnow(),
+            vault_id=proposal.vault_id,
+            proposal_id=proposal.id,
+            actor_id=actor_id,
         )
 
 

@@ -58,6 +58,9 @@ SENTENCES = {
     "proposal_approved": "A decision in {vault} reached the approvals it needed.",
     "proposal_rejected": "A decision in {vault} was rejected.",
     "proposal_expired": "A decision in {vault} expired before enough people signed it.",
+    "proposal_withdrawn": "{who} withdrew a decision in {vault}.",
+    "vault_rule_changed": "{who} changed whether whoever raises a decision in {vault} can "
+    "approve it.",
     "file_encrypted": "A file was encrypted and attached to a decision in {vault}.",
     "key_reissued": "{who} replaced their signing key.",
     "password_changed": "{who} changed their password and re-encrypted their keys.",
@@ -355,6 +358,7 @@ FEED_EVENTS = {
     "proposal_approved": "approved",
     "proposal_rejected": "rejected",
     "proposal_expired": "expired",
+    "proposal_withdrawn": "withdrawn",
     "proposal_executed": "paid",
     "proposal_execution_failed": "failed",
     "decision_published": None,
@@ -438,6 +442,8 @@ def decision_feed(user: User, *, limit: int = 6) -> list[dict]:
         elif event == "proposal_expired":
             approvals = sum(1 for s in proposal.signatures if s.decision == "approve")
             tail = f" expired with {approvals} of {proposal.required_m} approvals"
+        elif event == "proposal_withdrawn":
+            lead = f"{who(entry)} withdrew "
         elif event == "proposal_executed":
             amount = _paid_amount(proposal)
             lead = (

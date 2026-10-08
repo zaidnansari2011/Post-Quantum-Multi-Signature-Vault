@@ -256,6 +256,13 @@ class RunBenchmarkForm(FlaskForm):
     submit = SubmitField("Run live")
 
 
+class WithdrawForm(FlaskForm):
+    """Withdraw an open decision you raised (plan S16). A POST with a CSRF token: it ends the
+    decision for everyone."""
+
+    submit = SubmitField("Withdraw")
+
+
 class PublishForm(FlaskForm):
     """Share a decided decision at a public URL.
 

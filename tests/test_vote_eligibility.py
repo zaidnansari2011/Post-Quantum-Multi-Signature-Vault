@@ -410,7 +410,7 @@ def test_a_decision_that_can_no_longer_pass_says_so_and_stays_open(client):
     client.post("/login", data={"email": ada.email, "password": PASSWORD})
     page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
     assert "This decision can no longer pass" in page
-    assert "It needs 2 more approvals, and only 1 person who can approve it is left." in page
+    assert "It needs 2 more approvals, and only 1 person who can still approve it is left" in page
     assert proposal.status == "open"  # not rejected for them
 
     # The one approval left is still taken, and it still does not decide it.
