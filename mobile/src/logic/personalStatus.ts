@@ -290,7 +290,16 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
         { kind: 'web', line: "This phone can't approve this payment.", fix: false },
       );
     }
-    const device = seat.deviceName ?? 'your other device';
+    if (seat.deviceName === null) {
+      // The treasury's seat is a phone that was removed: it can't sign, so no approval would count.
+      return done(
+        7,
+        NEEDS_YOU,
+        "This vault's treasury holds the key of a phone that was removed, so an approval from this phone wouldn't be paid.",
+        { kind: 'web', line: "This phone can't approve this payment.", fix: false },
+      );
+    }
+    const device = seat.deviceName;
     return done(
       7,
       NEEDS_YOU,

@@ -11,6 +11,7 @@ import {
   byDeadline,
   classifySeat,
   dueToday,
+  elsewhereSections,
   groupApprovals,
   waitingOnOthers,
 } from '../src/logic/queue.ts';
@@ -25,6 +26,7 @@ const FUNCTIONS: Record<string, (...args: any[]) => unknown> = {
   byDeadline,
   classifySeat,
   dueToday,
+  elsewhereSections,
   groupApprovals,
   waitingOnOthers,
   decidedLines,

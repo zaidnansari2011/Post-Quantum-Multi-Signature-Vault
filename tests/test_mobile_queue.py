@@ -119,6 +119,22 @@ def _calls() -> list[dict]:
         {"pay-other-phone": SEATS["pay-other-phone"]},
         NOW_MS,
     )
+    # Where each payment this phone cannot sign can be approved, if anywhere.
+    elsewhere = [
+        _summary("pay-password", 1, is_payment=True),
+        _summary("pay-other-phone", 6, is_payment=True),
+        _summary("pay-no-key", 7, is_payment=True),
+        _summary("pay-removed-phone", 8, is_payment=True),
+        _summary("pay-password-2", 9, is_payment=True),
+    ]
+    seats = {
+        **SEATS,
+        "pay-removed-phone": {"kind": "other_device", "deviceName": None},
+        "pay-password-2": {"kind": "password"},
+    }
+    call("sections", "elsewhereSections", elsewhere, seats)
+    call("sections_web_only", "elsewhereSections", elsewhere[:1], seats)
+    call("sections_none_one", "elsewhereSections", elsewhere[2:3], seats)
     call(
         "waiting",
         "waitingOnOthers",
@@ -166,6 +182,9 @@ def _calls() -> list[dict]:
     headline("h_zero_three_waiting", waiting=3)
     headline("h_only_web_one", web=1)
     headline("h_only_web_two", web=2, waiting=4)
+    headline("h_only_elsewhere_one", elsewhere=1)
+    headline("h_web_and_elsewhere", web=1, elsewhere=2)
+    headline("h_elsewhere_with_needs_you", needsYou=2, elsewhere=3)
     headline("h_one", needsYou=1)
     headline("h_three", needsYou=3, web=2)
     headline("h_three_one_due", needsYou=3, dueToday=1)
@@ -371,6 +390,30 @@ def test_nothing_signed_closed_unknown_or_past_its_deadline_is_in_either_group(r
         assert gone not in shown, gone
 
 
+def test_each_group_of_payments_says_only_where_they_can_really_be_approved(results):
+    sections = results["sections"]
+    assert [(x["kind"], x["title"]) for x in sections] == [
+        ("web", "Approve on the web"),
+        ("device", "Approve on your other device"),
+        ("nowhere", "Your key isn't on these treasuries"),
+    ]
+    web, device, nowhere = sections
+    assert [(row["item"]["proposal_uuid"], row["note"]) for row in web["rows"]] == [
+        ("pay-password", "Approve on the web"),
+        ("pay-password-2", "Approve on the web"),
+    ]
+    assert [(row["item"]["proposal_uuid"], row["note"]) for row in device["rows"]] == [
+        ("pay-other-phone", "Approve on Ada's iPad"),
+    ]
+    # No key of theirs at all, or the key of a phone that was removed: nowhere to send them.
+    assert [(row["item"]["proposal_uuid"], row["note"]) for row in nowhere["rows"]] == [
+        ("pay-no-key", "Can't be approved here"),
+        ("pay-removed-phone", "Can't be approved here"),
+    ]
+    assert [x["kind"] for x in results["sections_web_only"]] == ["web"]
+    assert results["sections_none_one"][0]["title"] == "Your key isn't on this treasury"
+
+
 def test_the_one_time_fix_is_offered_only_for_the_password_key(results):
     assert results["groups"]["offerFix"] is True
     assert results["groups_no_password"]["offerFix"] is False
@@ -405,6 +448,16 @@ HEADLINES = {
     ),
     "h_only_web_one": ("Nothing needs your signature here.", "One payment needs you on the web."),
     "h_only_web_two": ("Nothing needs your signature here.", "Two payments need you on the web."),
+    # A group that is not all "on the web" never says so (§6.3): only what is true of all of them.
+    "h_only_elsewhere_one": (
+        "Nothing needs your signature here.",
+        "One payment needs you, but this phone can't sign it.",
+    ),
+    "h_web_and_elsewhere": (
+        "Nothing needs your signature here.",
+        "Three payments need you, but this phone can't sign them.",
+    ),
+    "h_elsewhere_with_needs_you": ("Two decisions need your signature", None),
     "h_one": ("One decision needs your signature", None),
     "h_three": ("Three decisions need your signature", None),
     "h_three_one_due": ("Three decisions need your signature", "One is due today."),

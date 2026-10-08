@@ -33,7 +33,7 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
 import { retryTransport, useApprovals } from '../approvals.ts';
-import { approvalsHeadline } from '../logic/queue.ts';
+import { approvalsHeadline, elsewhereSections } from '../logic/queue.ts';
 import { offersRaise } from '../proposing.ts';
 
 export default function HomeScreen({
@@ -68,6 +68,9 @@ export default function HomeScreen({
   const canRaise = offersRaise(vaults.data?.vaults);
 
   const { needsYou, web, offerFix } = q.groups;
+  // Split by where each can be approved, so no group's title claims more than its rows (§6.3).
+  const sections = elsewhereSections(web, q.seats);
+  const onWeb = sections.find((x) => x.kind === 'web')?.rows.length ?? 0;
   const hasList = q.awaiting.data !== undefined;
   const failed = !hasList && q.awaiting.isError;
   const loading = !hasList && !failed;
@@ -78,7 +81,8 @@ export default function HomeScreen({
     failed,
     removed,
     needsYou: needsYou.length,
-    web: web.length,
+    web: onWeb,
+    elsewhere: web.length - onWeb,
     waiting: q.waiting.length,
     dueToday: q.dueToday,
   });
@@ -89,7 +93,7 @@ export default function HomeScreen({
     void q.all.refetch();
   };
 
-  const row = (p: ProposalSummary, variant: 'queue' | 'web') => (
+  const row = (p: ProposalSummary, variant: 'queue' | 'web', note?: string) => (
     <DecisionRow
       key={p.proposal_uuid}
       title={p.title}
@@ -99,6 +103,7 @@ export default function HomeScreen({
       required={p.required_m}
       expiresAt={p.expires_at}
       variant={variant}
+      note={note}
       now={q.now}
       onPress={() => onOpen(p.proposal_uuid)}
     />
@@ -135,12 +140,18 @@ export default function HomeScreen({
             <>
               {needsYou.length > 0 ? <List>{needsYou.map((p) => row(p, 'queue'))}</List> : null}
 
-              {web.length > 0 ? (
-                <Section title="Approve on the web" count={web.length} first={needsYou.length === 0}>
+              {sections.map((section, i) => (
+                <Section
+                  key={section.kind}
+                  title={section.title}
+                  count={section.rows.length}
+                  first={needsYou.length === 0 && i === 0}
+                >
                   <List>
                     {[
-                      ...web.map((p) => row(p, 'web')),
-                      ...(offerFix
+                      ...section.rows.map(({ item, note }) => row(item, 'web', note)),
+                      // The one-time move to this phone's key, only where the password key is the seat.
+                      ...(section.kind === 'web' && offerFix
                         ? [
                             <ListRow
                               key="fix"
@@ -154,7 +165,7 @@ export default function HomeScreen({
                     ]}
                   </List>
                 </Section>
-              ) : null}
+              ))}
 
               {q.waiting.length > 0 ? (
                 <View style={needsYou.length + web.length > 0 ? s.after : null}>
