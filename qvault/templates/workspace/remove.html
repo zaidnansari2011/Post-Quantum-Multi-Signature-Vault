@@ -1,37 +1,30 @@
 {% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
 {% block title %}Remove {{ member.user.display_name }} — Q-Vault{% endblock %}
-
-{% block chrome %}
-<div class="head">
-  <div>
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('workspace.members') }}">Members</a>
-    </nav>
-    <div class="head__title">Remove {{ member.user.display_name }}</div>
-    <div class="head__sub">{{ workspace.name }}</div>
-  </div>
-</div>
-{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Remove ' ~ member.user.display_name, None)]) }}{% endblock %}
 
 {% block content %}
-<div class="measure stack">
+{{ page_header('Remove ' ~ member.user.display_name, description=workspace.name) }}
+
+<div class="q-acct">
   {% if vaults %}
-  <div class="panel">
-    <div class="panel__head"><span class="label">Not yet</span></div>
-    <div class="panel__body">
-      <p class="small" style="margin-top:0">
+  <section class="q-panel" aria-labelledby="rm-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rm-t">Not yet</h2></div>
+    <div class="q-panel__bd">
+      <p>
         {{ member.user.display_name }} still belongs to
         {% for v in vaults %}<a href="{{ url_for('vaults.vault_detail', vid=v.id, tab='members') }}">{{ v.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
         Each vault's owner removes them from it first, so the vault's approvers only change under its own rules.
       </p>
-      <a class="btn btn--ghost btn--sm" href="{{ url_for('workspace.members') }}">Back to members</a>
+      {{ button('Back to members', 'secondary', href=url_for('workspace.members')) }}
     </div>
-  </div>
+  </section>
   {% else %}
-  <div class="panel">
-    <div class="panel__head"><span class="label">Remove from the workspace</span></div>
-    <div class="panel__body">
-      <p class="small" style="margin-top:0">
+  <section class="q-panel" aria-labelledby="rm-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rm-t">Remove from the workspace</h2></div>
+    <div class="q-panel__bd">
+      <p>
         {{ member.user.display_name }} ({{ member.user.email }}) will no longer appear in
         {{ workspace.name }} and can't be added to its vaults. Their account, their signing keys and
         every signature they made stay as they are, and the removal is recorded in Audit.
@@ -39,17 +32,17 @@
       </p>
       <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="field">
-          <label class="field__label" for="confirm">Type <strong>{{ member.user.email }}</strong> to confirm</label>
-          <input class="input" id="confirm" name="confirm" autocomplete="off" spellcheck="false">
+        <div class="q-field">
+          <label class="q-field__label" for="confirm">Type <strong>{{ member.user.email }}</strong> to confirm</label>
+          <input class="q-input" id="confirm" name="confirm" autocomplete="off" spellcheck="false">
         </div>
-        <div class="hstack">
-          <button class="btn btn--danger btn--sm" type="submit">Remove {{ member.user.display_name }}</button>
-          <a class="btn btn--quiet btn--sm" href="{{ url_for('workspace.members') }}">Cancel</a>
+        <div class="q-btnrow">
+          {{ button('Remove ' ~ member.user.display_name, 'danger', type='submit') }}
+          {{ button('Cancel', 'ghost', href=url_for('workspace.members')) }}
         </div>
       </form>
     </div>
-  </div>
+  </section>
   {% endif %}
 </div>
 {% endblock %}

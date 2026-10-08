@@ -760,6 +760,65 @@ things to look at, because each was a deliberate call I could have got wrong:
 
 If any of those is wrong it is a JavaScript change and ships over the air — no new APK.
 
+### 3.4 Rework: accessibility checks — `TODO` (added 2026-10-08)
+
+The rework's accessibility pass (plan S24) is checked by machine as far as a machine can:
+`tests/test_accessibility.py` reads every page for names, headings, ids, landmarks and tables, and
+a browser run checked focus visibility in both themes, text contrast and 44px touch targets. What no
+test can tell is whether the product **makes sense through a screen reader**: whether the order is
+sensible, whether a control's name says what it does, whether an announcement arrives once and at
+the right moment.
+
+*Why it's yours:* it needs a person listening, on a real screen reader and a real phone.
+
+*What I've prepared:* the pages are built for this; run the web locally over the demo data (or use
+the live site after the rework is deployed) and sign in as `ada@qvault.demo` /
+`demo-password-2026`.
+
+**A. NVDA on Windows (about 30 minutes).** Install NVDA (free, nvaccess.org), open the site in
+Chrome or Edge, start NVDA (Ctrl+Alt+N). Insert is the NVDA key; H moves by heading, D by landmark,
+F by form field, T by table, Tab by control; Insert+F7 lists links and headings.
+
+1. Any page: press Tab once. You should hear "Skip to content"; press Enter, then Tab again: focus
+   is in the page body, past the sidebar.
+2. Home: press D through the landmarks. Expect: Main (the sidebar), Breadcrumb, the main area.
+   Press 1: one heading level 1 per page, then H moves through level 2s in a sensible order.
+3. Sign out, then sign in with a wrong password. The error must be read without you hunting for
+   it (it is an alert). Then submit the sign-in form with the email empty: focus should land on
+   the email field and NVDA read its label and then the error.
+4. New vault: leave the name empty and submit. Same as above: focus on the refused field, its
+   error read.
+5. Approvals: Tab to the filters. Each select reads its name ("Vault", "Type", "Order"); changing
+   one reloads the list. Then T to the table: NVDA reads the caption, and Ctrl+Alt+arrows read
+   each cell with its column header.
+6. The bell (top bar): Tab to it. It reads "Notifications", the unread count and "collapsed".
+   Enter opens the popover and moves into it; Escape closes it and returns to the bell.
+7. Account > Notifications: Tab through the checkboxes. Each should read its group ("Outcomes"),
+   its event and "In-app", and checked or not checked. The two security rows read as disabled,
+   with the reason.
+8. A decision page: the decision code, the status, and Approve with its password field. Approve
+   once: the result is announced (a toast read through the live region) exactly once.
+9. Verify (signed out): upload an exported decision. The verdict is read as soon as the page
+   loads, once; the page title starts "Passed" or "Failed".
+10. The avatar menu: Enter opens it, arrows move between items, Escape closes it and returns to
+    the avatar. Change the theme from inside it.
+
+**B. TalkBack on the Android phone (about 15 minutes).** Settings > Accessibility > TalkBack, on.
+Swipe right/left moves, double-tap activates; the TalkBack menu (three-finger tap, or swipe down
+then right) offers headings and landmarks. Open the site in Chrome on the phone.
+
+1. Open the menu button (top left): the drawer opens, focus moves into it, and Close menu shuts
+   it.
+2. Account > Notifications: tap each checkbox directly (not its label). A tap a little off the
+   box should still toggle it, and never the box in the row above or below.
+3. Approvals: tap the filters and the tabs; each should be easy to hit first time.
+4. A decision: approve one with the password field and the keyboard open; the result is read.
+
+**C. Anything that is wrong:** tell me the page, what you did, and what was said (or not said),
+in plain words. Each fix is a template or stylesheet change.
+
+*Your effort:* about 45 minutes, once, after the rework is merged.
+
 ## 4. Submission and delivery
 
 ### 4.1 The dissertation — `TODO`
@@ -907,3 +966,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-09-17 | §2.8: Phases 1–2 committed; the Phase 3 broadcast was blocked by the session's permission system and needs your approval (command recorded). |
 | 2026-09-27 | Added §2.9: the system rebuilt on a teammate's Azure subscription (`rg-qvault`, Central India), `project4.zaidansari.tech` kept; new fingerprints to republish; master key to back up; old deployment to delete. |
 | 2026-10-08 | Added §2.10: pin the live witness key (`WITNESS_KEY_FINGERPRINT`) at the switch to the rework. |
+| 2026-10-08 | Added §3.4: the rework's accessibility checks only a person can make (NVDA on Windows, TalkBack on the phone). |

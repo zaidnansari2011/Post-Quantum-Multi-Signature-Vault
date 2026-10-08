@@ -3,7 +3,7 @@
     what the product does today is shown: there is no session list, so there is no session list
     here, and recovery is stated as it stands (S18 is planned, R9). -#}
 {% from "ui/navigation.html" import page_header %}
-{% from "ui/forms.html" import field %}
+{% from "ui/forms.html" import field, radio_group %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/data.html" import hash %}
 {% from "ui/status.html" import badge %}
@@ -58,19 +58,10 @@
     <div class="q-panel__bd">
       <form method="post" action="{{ url_for('account.set_signing_choice') }}">
         {{ choice_form.hidden_tag() }}
-        <fieldset class="q-choices">
-          <legend>The key a treasury registers for you</legend>
-          <div class="q-choice">
-            <input class="q-rd" type="radio" id="choice-password" name="choice" value="password"{% if key_choice.custody != 'device' %} checked{% endif %}>
-            <label for="choice-password">Password key on this account{% if key %}<span class="q-choice__cap">{{ key.public_fingerprint()[:16] }}</span>{% endif %}</label>
-          </div>
-          {% for phone, phone_key in phones %}
-          <div class="q-choice">
-            <input class="q-rd" type="radio" id="choice-{{ phone_key.id }}" name="choice" value="device:{{ phone_key.id }}"{% if key_choice.key_id == phone_key.id %} checked{% endif %}>
-            <label for="choice-{{ phone_key.id }}">Phone key on {{ phone.name }}<span class="q-choice__cap">{{ phone_key.public_fingerprint()[:16] }}</span></label>
-          </div>
-          {% endfor %}
-        </fieldset>
+        {%- set key_options = [('password', 'Password key on this account', key.public_fingerprint()[:16] if key else None)] %}
+        {%- for phone, phone_key in phones %}{% set _ = key_options.append(('device:' ~ phone_key.id, 'Phone key on ' ~ phone.name, phone_key.public_fingerprint()[:16])) %}{% endfor %}
+        {{ radio_group('choice', 'The key a treasury registers for you', key_options,
+                       selected=('device:' ~ key_choice.key_id) if key_choice.custody == 'device' else 'password') }}
         <p class="q-cap q-gap">A treasury only counts approvals made with the key it holds for you. A change applies the next time a treasury is created or changed; what is on chain stays until its signers approve a change.</p>
         {{ button('Save', 'secondary', type='submit') }}
       </form>

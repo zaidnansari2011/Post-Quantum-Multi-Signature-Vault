@@ -1,100 +1,83 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import field, checkbox %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
 {% block title %}Workspace settings — Q-Vault{% endblock %}
-
-{% block chrome %}
-<div class="head">
-  <div>
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('workspace.members') }}">Members</a>
-    </nav>
-    <div class="head__title">Workspace settings</div>
-    <div class="head__sub">{{ workspace.name }} · you're {{ role_name(me.role) }}</div>
-  </div>
-</div>
-{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Workspace settings', None)]) }}{% endblock %}
 
 {% block content %}
-<div class="measure stack">
-  <div class="panel">
-    <div class="panel__head"><span class="label">General</span></div>
-    <div class="panel__body">
+{% set you_are = [('Workspace', workspace.name), ('Your role', role_name(me.role))] %}
+{{ page_header('Workspace settings', facts=you_are) }}
+
+<div class="q-acct">
+  <section class="q-panel" aria-labelledby="ws-general">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="ws-general">General</h2></div>
+    <div class="q-panel__bd">
       {% if manager %}
       <form method="post" action="{{ url_for('workspace.save_general') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="field">
-          <label class="field__label" for="name">Name</label>
-          <input class="input" id="name" name="name" value="{{ workspace.name }}" maxlength="120" required>
-          <p class="field__help">Shown to everyone in the workspace and on invitations.</p>
-        </div>
-        <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+        {{ field('name', 'Name', value=name_value, id='name', required=True, error=name_error,
+                 caption='Shown to everyone in the workspace and on invitations.', attrs={'maxlength': 120}) }}
+        {{ button('Save', 'secondary', type='submit') }}
       </form>
       {% else %}
-      <dl class="meta">
-        <dt>Name</dt><dd>{{ workspace.name }}</dd>
-        <dt>Created</dt><dd>{{ workspace.created_at.strftime('%d %b %Y') }}</dd>
+      <dl class="q-kv">
+        <div><dt>Name</dt><dd>{{ workspace.name }}</dd></div>
+        <div><dt>Created</dt><dd>{{ ui_day(workspace.created_at) }}</dd></div>
       </dl>
-      <p class="field__help">Only owners and admins can change workspace settings.</p>
+      <p class="q-note">Only owners and admins can change workspace settings.</p>
       {% endif %}
     </div>
-  </div>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">Vault defaults</span></div>
-    <div class="panel__body">
+  <section class="q-panel" aria-labelledby="ws-vaults">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="ws-vaults">Vault defaults</h2></div>
+    <div class="q-panel__bd">
       <form method="post" action="{{ url_for('workspace.save_vault_defaults') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="small" style="display:flex;gap:.6rem;align-items:flex-start">
-          <input type="checkbox" name="sod_default" {% if workspace.sod_default %}checked{% endif %}
-                 {% if not manager %}disabled{% endif %}>
-          <span style="flex:1">
-            <strong>Separation of duties for new vaults</strong><br>
-            <span class="muted">The person who raises a decision can't also approve it, so every
-            decision needs the threshold from other people.</span>
-          </span>
-        </label>
-        <p class="field__help" style="margin:.6rem 0 .8rem">
+        {{ checkbox('sod_default', 'Separation of duties for new vaults', checked=workspace.sod_default, value='on',
+                    disabled=not manager,
+                    caption='The person who raises a decision can’t also approve it, so every decision needs the threshold from other people.') }}
+        <p class="q-note q-gap">
           {% if workspace.sod_default %}On{% else %}Off{% endif %}.
           New vaults start with it. It never changes a vault that already exists: each vault’s
           owner sets theirs in its settings.
         </p>
-        {% if manager %}<button class="btn btn--ghost btn--sm" type="submit">Save</button>{% endif %}
+        {% if manager %}{{ button('Save', 'secondary', type='submit') }}{% endif %}
       </form>
     </div>
-  </div>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">Danger zone</span></div>
-    <div class="panel__body stack">
-      <div>
-        <p class="small" style="margin-top:0"><strong>Leave {{ workspace.name }}</strong></p>
+  <section class="q-panel" aria-labelledby="ws-danger">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="ws-danger">Danger zone</h2></div>
+    <div class="q-panel__bd">
+      <div class="q-danger">
+        <h3 class="q-danger__t">Leave {{ workspace.name }}</h3>
         {% if me.role == 'owner' %}
-        <p class="small muted" style="margin:0">
-          Owners can't leave. Ask another owner to change your role first.
-        </p>
+        <p>Owners can't leave. Ask another owner to change your role first.</p>
         {% elif my_vaults %}
-        <p class="small muted" style="margin:0">
+        <p>
           You still belong to {{ my_vaults | map(attribute='name') | join(', ') }}.
           Ask each vault's owner to remove you first.
         </p>
         {% else %}
-        <p class="small muted" style="margin-top:0">
+        <p>
           You'll lose access to the workspace's people and can only come back by invitation.
           Your account and signing keys stay as they are.
         </p>
         <form method="post" action="{{ url_for('workspace.leave') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="field">
-            <label class="field__label" for="leave-confirm">Type <strong>{{ workspace.name }}</strong> to confirm</label>
-            <input class="input" id="leave-confirm" name="confirm" autocomplete="off" spellcheck="false">
+          <div class="q-field">
+            <label class="q-field__label" for="leave-confirm">Type <strong>{{ workspace.name }}</strong> to confirm</label>
+            <input class="q-input" id="leave-confirm" name="confirm" autocomplete="off" spellcheck="false">
           </div>
-          <button class="btn btn--danger btn--sm" type="submit">Leave workspace</button>
+          {{ button('Leave workspace', 'danger', type='submit') }}
         </form>
         {% endif %}
       </div>
-      <div class="divider"></div>
-      <div>
-        <p class="small" style="margin-top:0"><strong>Delete the workspace</strong></p>
-        <p class="small muted" style="margin:0">
+      <div class="q-danger">
+        <h3 class="q-danger__t">Delete the workspace</h3>
+        <p>
           {% if vault_count %}
           Not possible while it has vaults ({{ vault_count }}): their decisions and audit record must stay checkable.
           {% else %}
@@ -103,6 +86,6 @@
         </p>
       </div>
     </div>
-  </div>
+  </section>
 </div>
 {% endblock %}

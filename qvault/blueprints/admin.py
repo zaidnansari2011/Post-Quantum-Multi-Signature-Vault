@@ -35,6 +35,7 @@ from qvault.services import (
     rotation_service,
 )
 from qvault.services.config_service import ConfigError, DowngradeRefused
+from qvault.ui import standard_note
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -79,10 +80,13 @@ def _live_run(kind: str) -> dict | None:
 
 def _algorithm_choices():
     registry = current_app.extensions["crypto"]
-    return [
-        (m.alg_id, f"{m.alg_id} — {m.human_name} · {m.nist_standard} (cat {m.security_category})")
-        for m in registry.signature_metas()
-    ]
+    choices = []
+    for m in registry.signature_metas():
+        standard, note = standard_note(m.nist_standard)
+        remark = f", {note[:1].lower()}{note[1:]}" if note else ""
+        label = f"{m.alg_id}: {m.human_name}, {standard}{remark} (category {m.security_category})"
+        choices.append((m.alg_id, label))
+    return choices
 
 
 @bp.get("/crypto")
@@ -230,7 +234,7 @@ def run_benchmark():
             total_budget_s=current_app.config["BENCHMARK_LIVE_BUDGET_S"],
         )
     except benchmark_service.BenchmarkError as exc:
-        flash(f"Benchmark aborted — a correctness check failed: {exc}", "danger")
+        flash(f"Benchmark aborted. A correctness check failed: {exc}", "danger")
         return redirect(url_for("admin.benchmark"))
 
     return redirect(url_for("admin.benchmark", run=_hold_live_run("benchmark", live)))
@@ -291,7 +295,7 @@ def demo_expire_keys():
         )
     except Exception:  # noqa: BLE001 - same ledger-seq race the "run now" button handles
         db.session.rollback()
-        flash("Could not age the keys just now — please try again shortly.", "warning")
+        flash("Could not age the keys just now. Try again in a moment.", "warning")
         return redirect(url_for("admin.rotation"))
 
     flash(
@@ -316,7 +320,7 @@ def run_maintenance():
     except Exception:  # noqa: BLE001 - e.g. a ledger-seq race with the scheduled job
         db.session.rollback()
         flash(
-            "Maintenance is already running (scheduled job) — please try again shortly.", "warning"
+            "Maintenance is already running as a scheduled job. Try again in a moment.", "warning"
         )
         return redirect(url_for("admin.rotation"))
     # "persist": the counts are the result, and the user keys due need someone to act, so this
@@ -397,7 +401,7 @@ def run_attack_lab():
     breached = live["summary"]["breached"] + live["summary"]["vacuous"] + live["summary"]["error"]
     if breached:
         flash(
-            f"{breached} attack(s) did not behave as expected — see the detail below. "
+            f"{breached} attack(s) did not behave as expected. The detail is below. "
             "This is a finding, not a display problem.",
             "danger",
         )

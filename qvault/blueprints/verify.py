@@ -111,4 +111,6 @@ def index():
         error=error,
         expect_log=request.form.get("expect_log", ""),
         expect_witness=request.form.get("expect_witness", ""),
+        # The file drop refuses a larger file before it is sent; the read above still enforces it.
+        max_bundle_bytes=MAX_BUNDLE_BYTES,
     )

@@ -31,6 +31,8 @@ OUR_CSS = [
         "base.css",
         "components.css",
         "evidence.css",
+        "screens.css",
+        "notifications.css",
         "qvault.css",
         "utilities.css",
     )

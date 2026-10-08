@@ -25,23 +25,53 @@
      7 days"). min and max (datetimes) bound the calendar; the route refuses a past due time and
      a payment's longer than 30 days. empty is
      what the read-back says while the field is blank. Elements anywhere on the page marked
-     data-due-echo="<id>" show the same words (the "who approves" preview).
+     data-due-echo="<id>" show the same words (the "who approves" preview). The calendar button
+     is drawn hidden and qvault.js shows it, so without the script there is no dead button.
 
-   file_drop(name, label, caption=None, error=None, id=None)
+   date_field(name, label, value=None, caption=None, error=None, id=None, bad=False)
+     A calendar day, "YYYY-MM-DD", for a filter. Like due_field it is a text input with a
+     calendar button and no native date control, so it posts the same string a native date input
+     posts, typed or picked. Picking a day writes the input and fires change (a data-autosubmit
+     form submits on it); a value that is not a date says so under the field.
+     bad     the route refused value as not a day (a hand-made URL, or a form sent without the
+             script): it is shown as typed, marked invalid, with the same words qvault.js uses.
+
+   number(name, label, value=None, min=None, max=None, step=None, caption=None, error=None,
+          required=False, id=None, attrs={}, inline=False)
+     A whole number. The input stays a native type="number" (arrow keys, a spinbutton for screen
+     readers, the numeric keypad on a phone, min and max checked by the browser); qvault.js swaps
+     the browser's tiny spinner for − and + buttons that stop at min and max. The buttons are
+     out of the tab order because the arrow keys already do what they do.
+     inline  the label is read but not shown, for a toolbar.
+
+   file_drop(name, label, caption=None, error=None, id=None, accept=None, max_bytes=None,
+             required=False)
      A file input drawn as a drop zone: "Choose a file or drop it here", then the chosen file's
      name and size. The input itself stays in the page (visually hidden, still focusable), so it
      posts exactly as before and works without JavaScript; qvault.js adds the drop and the name.
+     accept     the input's accept list; a dropped file must match it too (the file dialog
+                filters, a drop would not).
+     max_bytes  the server's limit for this file. qvault.js refuses a larger file before upload
+                and says why; the route still enforces its own limit, this only saves the wait.
+     Only one file: a drop of several is refused rather than silently posting the first.
 
    search(name, label, value=None, placeholder=None, id=None)
      A search box for a toolbar, with its magnifier drawn inside. The label is read, not shown.
 
-   checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={})
-   switch(name, label, checked=False, value='1', caption=None, id=None, attrs={})
+   checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={}, disabled=False)
+   switch(name, label, checked=False, value='1', caption=None, id=None, attrs={}, disabled=False)
      A switch is a checkbox with role="switch": it posts the same way, and applies a setting
-     rather than agreeing to something.
+     rather than agreeing to something. value is what a ticked box posts: keep the one the route
+     reads ("on" for a bare HTML checkbox, "y" for a WTForms BooleanField).
 
    radio_group(name, legend, options, selected=None, error=None)
      options  a list of (value, text) or (value, text, caption) tuples.
+
+   wtf_field(f, caption=None, attrs={}, mono=False)
+     A WTForms field drawn as a field: the same label, caption and error as field(), but the
+     input is the form's own rendering, so its id, name, value and the validators' attributes
+     (required, maxlength) are exactly what the form declares. For a StringField, PasswordField,
+     EmailField, IntegerField or TextAreaField; attrs adds attributes (autocomplete, rows).
 #}
 {% from "ui/icons.html" import icon %}
 
@@ -50,8 +80,8 @@
 {%- for message in error or [] %}<p class="q-field__err">{{ icon('critical') }}<span>{{ message }}</span></p>{% endfor -%}
 {%- endmacro %}
 
-{% macro _described(fid, caption, error) -%}
-{%- set ids = [] -%}
+{% macro _described(fid, caption, error, extra=None) -%}
+{%- set ids = [extra] if extra else [] -%}
 {%- if caption %}{% set _ = ids.append(fid ~ '-cap') %}{% endif -%}
 {%- if error %}{% set _ = ids.append(fid ~ '-err') %}{% endif -%}
 {%- if ids %} aria-describedby="{{ ids|join(' ') }}"{% endif -%}
@@ -110,7 +140,7 @@
   <span class="q-date">
     <input class="q-input q-date__in" id="{{ fid }}" name="{{ name }}" type="text" inputmode="numeric" autocomplete="off"
       spellcheck="false"{% if value %} value="{{ value }}"{% endif %}{{ _described(fid, caption or True, error) }}>
-    <button class="q-date__btn" type="button" data-due-open aria-haspopup="dialog" aria-expanded="false" aria-controls="{{ fid }}-pop" aria-label="Choose a date" title="Choose a date">{{ icon('calendar') }}</button>
+    <button class="q-date__btn" type="button" data-due-open aria-haspopup="dialog" aria-expanded="false" aria-controls="{{ fid }}-pop" aria-label="Choose a date" title="Choose a date" hidden>{{ icon('calendar') }}</button>
     <span class="q-date__pop" id="{{ fid }}-pop" role="dialog" aria-label="Choose {{ label|lower }}" data-due-pop hidden></span>
   </span>
   <p class="q-field__cap" id="{{ fid }}-cap"><span class="q-date__read" data-due-read id="{{ fid }}-read" aria-live="polite">{{ empty }}</span>{% if caption %} {{ caption }}{% endif %}</p>
@@ -120,18 +150,66 @@
 </div>
 {%- endmacro %}
 
-{% macro file_drop(name, label, caption=None, error=None, id=None) -%}
+{% macro date_field(name, label, value=None, caption=None, error=None, id=None, bad=False) -%}
+{%- set fid = id or 'f-' ~ name -%}
+<div class="q-field" data-due-field data-mode="date">
+  <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
+  <span class="q-date">
+    <input class="q-input q-date__in" id="{{ fid }}" name="{{ name }}" type="text" inputmode="numeric" autocomplete="off"
+      spellcheck="false" maxlength="10" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"{% if value %} value="{{ value }}"{% endif %}{{ _described(fid, caption, error, fid ~ '-bad') }}
+      {%- if bad and not error %} aria-invalid="true" data-bad{% endif %}>
+    <button class="q-date__btn" type="button" data-due-open aria-haspopup="dialog" aria-expanded="false" aria-controls="{{ fid }}-pop" aria-label="Choose a date: {{ label }}" title="Choose a date" hidden>{{ icon('calendar') }}</button>
+    <span class="q-date__pop" id="{{ fid }}-pop" role="dialog" aria-label="Choose {{ label[:1]|lower ~ label[1:] }}" data-due-pop hidden></span>
+  </span>
+  <p class="q-field__err q-date__bad" id="{{ fid }}-bad" data-due-read>{% if bad %}Type it as 2026-10-13.{% endif %}</p>
+  {%- if caption %}
+  <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
+  {%- endif %}
+  {%- if error %}
+  <div id="{{ fid }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro number(name, label, value=None, min=None, max=None, step=None, caption=None, error=None,
+                required=False, id=None, attrs={}, inline=False) -%}
+{%- set fid = id or 'f-' ~ name -%}
+{%- set what = label[:1]|lower ~ label[1:] -%}
+<div class="q-field{% if inline %} q-field--inline{% endif %}">
+  <label class="{{ 'visually-hidden' if inline else 'q-field__label' }}" for="{{ fid }}">{{ label }}</label>
+  <span class="q-num" data-stepper>
+    <button class="q-num__b" type="button" data-step="-1" tabindex="-1" aria-label="Decrease {{ what }}" hidden>{{ icon('minus') }}</button>
+    <input class="q-input q-num__in" id="{{ fid }}" name="{{ name }}" type="number" inputmode="numeric"
+      {%- if value is not none and value != '' %} value="{{ value }}"{% endif %}
+      {%- if min is not none %} min="{{ min }}"{% endif %}{% if max is not none %} max="{{ max }}"{% endif %}
+      {%- if step is not none %} step="{{ step }}"{% endif %}{% if required %} required{% endif %}{{ _described(fid, caption, error) }}{{ attrs|xmlattr }}>
+    <button class="q-num__b" type="button" data-step="1" tabindex="-1" aria-label="Increase {{ what }}" hidden>{{ icon('plus') }}</button>
+  </span>
+  {%- if caption %}
+  <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
+  {%- endif %}
+  {%- if error %}
+  <div id="{{ fid }}-err">{{ _errors(error) }}</div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{% macro file_drop(name, label, caption=None, error=None, id=None, accept=None, max_bytes=None,
+                   required=False) -%}
 {%- set fid = id or 'f-' ~ name -%}
 <div class="q-field">
   <span class="q-field__label" id="{{ fid }}-l">{{ label }}</span>
   <span class="q-drop" data-drop>
-    <input class="q-drop__in" type="file" id="{{ fid }}" name="{{ name }}" aria-labelledby="{{ fid }}-l"{{ _described(fid, caption, error) }}>
+    <input class="q-drop__in" type="file" id="{{ fid }}" name="{{ name }}"
+      {%- if accept %} accept="{{ accept }}"{% endif %}{% if max_bytes %} data-max-bytes="{{ max_bytes }}"{% endif %}
+      {%- if required %} required{% endif %} aria-labelledby="{{ fid }}-l"{{ _described(fid, caption, error, fid ~ '-bad') }}>
     <label class="q-drop__zone" for="{{ fid }}">
       {{ icon('upload') }}
       <span class="q-drop__t"><span class="q-drop__act">Choose a file</span> <span class="q-drop__or">or drop it here</span></span>
       <span class="q-drop__name" data-drop-name></span>
     </label>
   </span>
+  <p class="q-field__err q-drop__bad" id="{{ fid }}-bad" data-drop-err></p>
   {%- if caption %}
   <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
   {%- endif %}
@@ -150,22 +228,44 @@
 </div>
 {%- endmacro %}
 
-{% macro _check(kind, role, name, label, checked, value, caption, id, attrs) -%}
+{% macro _check(kind, role, name, label, checked, value, caption, id, attrs, disabled) -%}
 {%- set fid = id or 'f-' ~ name -%}
 <div class="{{ 'q-swrow' if kind == 'q-sw' else 'q-choice' }}">
   <input class="{{ kind }}" type="checkbox" id="{{ fid }}" name="{{ name }}" value="{{ value }}"
-    {%- if role %} role="{{ role }}"{% endif %}{% if checked %} checked{% endif %}
+    {%- if role %} role="{{ role }}"{% endif %}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}
     {%- if caption %} aria-describedby="{{ fid }}-cap"{% endif %}{{ attrs|xmlattr }}>
-  <label for="{{ fid }}">{{ label }}{% if caption %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ caption }}</span>{% endif %}</label>
+  {#- The caption sits beside the label, not inside it: inside, it would be read twice, once in
+      the name and again as the description. -#}
+  <span class="q-choice__txt"><label for="{{ fid }}">{{ label }}</label>{% if caption %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ caption }}</span>{% endif %}</span>
 </div>
 {%- endmacro %}
 
-{% macro checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={}) -%}
-{{ _check('q-cb', None, name, label, checked, value, caption, id, attrs) }}
+{% macro checkbox(name, label, checked=False, value='1', caption=None, id=None, attrs={}, disabled=False) -%}
+{{ _check('q-cb', None, name, label, checked, value, caption, id, attrs, disabled) }}
 {%- endmacro %}
 
-{% macro switch(name, label, checked=False, value='1', caption=None, id=None, attrs={}) -%}
-{{ _check('q-sw', 'switch', name, label, checked, value, caption, id, attrs) }}
+{% macro switch(name, label, checked=False, value='1', caption=None, id=None, attrs={}, disabled=False) -%}
+{{ _check('q-sw', 'switch', name, label, checked, value, caption, id, attrs, disabled) }}
+{%- endmacro %}
+
+{% macro wtf_field(f, caption=None, attrs={}, mono=False) -%}
+{%- set fid = f.id -%}
+{%- set kw = {'class': 'q-input' ~ (' q-input--mono' if mono else '')} -%}
+{%- set _ = kw.update(attrs) -%}
+{%- set ids = [] -%}
+{%- if caption %}{% set _ = ids.append(fid ~ '-cap') %}{% endif -%}
+{%- if f.errors %}{% set _ = ids.append(fid ~ '-err') %}{% set _ = kw.update({'aria-invalid': 'true'}) %}{% endif -%}
+{%- if ids %}{% set _ = kw.update({'aria-describedby': ids|join(' ')}) %}{% endif -%}
+<div class="q-field">
+  {{ f.label(class='q-field__label') }}
+  {{ f(**kw) }}
+  {%- if caption %}
+  <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
+  {%- endif %}
+  {%- if f.errors %}
+  <div id="{{ fid }}-err">{{ _errors(f.errors) }}</div>
+  {%- endif %}
+</div>
 {%- endmacro %}
 
 {% macro radio_group(name, legend, options, selected=None, error=None) -%}
@@ -174,9 +274,11 @@
   {%- for option in options %}
   {%- set fid = 'f-' ~ name ~ '-' ~ loop.index %}
   <div class="q-choice">
+    {%- set cap = option[2] if option|length > 2 else None %}
     <input class="q-rd" type="radio" id="{{ fid }}" name="{{ name }}" value="{{ option[0] }}"
-      {%- if selected is not none and option[0]|string == selected|string %} checked{% endif %}>
-    <label for="{{ fid }}">{{ option[1] }}{% if option|length > 2 and option[2] %}<span class="q-choice__cap">{{ option[2] }}</span>{% endif %}</label>
+      {%- if selected is not none and option[0]|string == selected|string %} checked{% endif %}
+      {%- if cap %} aria-describedby="{{ fid }}-cap"{% endif %}>
+    <span class="q-choice__txt"><label for="{{ fid }}">{{ option[1] }}</label>{% if cap %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ cap }}</span>{% endif %}</span>
   </div>
   {%- endfor %}
   {%- if error %}

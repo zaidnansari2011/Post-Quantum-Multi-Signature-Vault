@@ -140,6 +140,8 @@ textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6)
 .q-cb:disabled::before { background: var(--text-disabled); }
 .q-choice { display: flex; gap: var(--space-8); align-items: flex-start; }
 .q-choice label { cursor: pointer; }
+.q-choice__txt { min-width: 0; }
+.q-choice__txt > label { display: block; }
 .q-choice__cap { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 .q-choices { display: grid; gap: var(--space-8); border: 0; margin: 0 0 var(--space-16); padding: 0; min-width: 0; }
 .q-choices > legend { padding: 0; margin-bottom: var(--space-6); font-weight: var(--weight-medium); }
@@ -160,6 +162,22 @@ textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6)
 .q-sw:disabled::before { background: var(--fill-disabled); }
 .q-swrow { display: flex; gap: var(--space-12); align-items: flex-start; }
 .q-swrow label { cursor: pointer; }
+
+/* On a touch screen the box stays 16px (the switch 32 by 20) but its hit area grows to 44px around
+ * it (S24), drawn by an empty ::after the box owns, so a tap on it is a tap on the box. The box sits
+ * 2px into its row, so the area reaches 12px above the row: rows are at least 44px tall and 12px
+ * apart, so the area never reaches the row above, and a tap between two options cannot land on the
+ * wrong one. A box away from its label (a table cell) relies on this most; its row is made as tall
+ * where it is drawn (notifications.css). */
+@media (pointer: coarse) {
+  .q-cb, .q-rd { position: relative; }
+  .q-cb::after, .q-rd::after, .q-sw::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: var(--target-touch); height: var(--target-touch); transform: translate(-50%, -50%);
+  }
+  .q-choice, .q-swrow { min-height: var(--target-touch); }
+  .q-choices { gap: var(--space-12); }
+}
 
 /* ---------------------------------------------------------------- segmented control
  * A small set of mutually exclusive choices that apply at once, such as the theme. The current
@@ -568,6 +586,14 @@ th[aria-sort] .q-sort { color: var(--text); }
 .q-pub__nav > a:hover { background: var(--fill); color: var(--text); }
 .q-pub__nav > a[aria-current="page"] { color: var(--text); }
 @media (max-width: 560px) { .q-pub__nav > a.q-pub__opt { display: none; } }
+/* At the narrowest phones (320px, WCAG 1.4.10 reflow) the word beside the mark goes, so the bar
+ * fits without scrolling sideways; the link keeps "Q-Vault" as its name for a screen reader. */
+@media (max-width: 379px) {
+  .q-pub__bar { gap: var(--space-8); }
+  .q-pub__brand > span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
 
 /* ---------------------------------------------------------------- error pages (errors.html) */
 
@@ -967,6 +993,40 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 .q-drop__name { flex-basis: 100%; color: var(--text); font-weight: var(--text-body-strong-weight); overflow-wrap: anywhere; }
 .q-drop__name:empty { display: none; }
 .q-drop.is-filled .q-drop__or { display: none; }
+/* Why a chosen or dropped file was refused (qvault.js); empty, and so absent, otherwise. */
+.q-drop__bad:empty, .q-date__bad:empty { display: none; }
+
+/* ---------------------------------------------------------------- number (ui/forms.html: number)
+ * A native number input; qvault.js adds .is-on, shows the − and + buttons and hides the
+ * browser's spinner. Without the script the native spinner stays, so nothing is lost. */
+
+.q-num { display: inline-flex; align-items: stretch; max-width: 100%; vertical-align: top; }
+.q-num__in { width: 6.5rem; font-variant-numeric: tabular-nums; }
+.q-num.is-on .q-num__in {
+  width: 4.5rem; border-radius: 0; text-align: center;
+  appearance: textfield; -moz-appearance: textfield;
+}
+.q-num.is-on .q-num__in::-webkit-inner-spin-button,
+.q-num.is-on .q-num__in::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.q-num__in:focus-visible { position: relative; z-index: 1; }
+.q-num__b {
+  display: inline-grid; place-items: center; flex: none; width: var(--control-h); padding: 0; margin: 0;
+  border: var(--border-width) solid var(--border-strong); background: var(--surface); color: var(--text-muted);
+  cursor: pointer; transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-num__b:first-child { border-right: 0; border-radius: var(--radius-control) 0 0 var(--radius-control); }
+.q-num__b:last-child { border-left: 0; border-radius: 0 var(--radius-control) var(--radius-control) 0; }
+.q-num__b:hover:not(:disabled) { background: var(--fill); color: var(--text); }
+.q-num__b:disabled { color: var(--text-disabled); background: var(--surface); cursor: not-allowed; }
+/* Two rules, not one list: a browser without :has() would drop the whole list. */
+.q-num__in[aria-invalid="true"] ~ .q-num__b { border-color: var(--status-critical-fg); }
+.q-num__b:has(~ .q-num__in[aria-invalid="true"]) { border-color: var(--status-critical-fg); }
+.q-field--inline .q-num { width: auto; }
+@media (max-width: 767px) {
+  /* A thumb needs the full touch target, so the buttons, and the input between them, grow to it. */
+  .q-num__b { width: var(--target-touch); }
+  .q-num__b, .q-num.is-on .q-num__in { height: var(--target-touch); }
+}
 
 @media (max-width: 767px) {
   /* A phone keeps the one primary action beside the headline, as an icon (screens.md C.2). */
@@ -1003,6 +1063,7 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 
 /* The date popover opens upwards when there is no room below the field (qvault.js decides). */
 .q-date__pop.is-up { top: auto; bottom: calc(100% + 4px); }
+.q-date__pop.is-end { left: auto; right: 0; }
 .q-date__read { font-weight: var(--weight-regular); color: var(--text-muted); }
 .q-inwrap { max-width: 280px; }
 
@@ -1013,6 +1074,7 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 @media (max-width: 767px) {
   /* Tabs that run off a phone's edge fade there and scroll, so the hidden ones read as more. */
   .q-tabs { scroll-padding-inline: var(--gutter); mask-image: linear-gradient(to right, var(--text) 85%, transparent); }
+  .q-tabs.is-end { mask-image: none; }
   .q-toolbar .q-field--inline:first-of-type { flex-basis: 100%; }
   .q-toolbar .q-field--inline { flex: 1 1 40%; }
   .q-date__btn { right: 0; top: 0; width: 40px; height: 100%; }
@@ -1043,3 +1105,25 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 .q-changes__i:first-child { border-top: 0; }
 .q-changes__i .q-diff { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); }
 .q-changes__by { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* ================================================================ touch targets (S24)
+ * On a coarse pointer (a phone, a tablet) a control is at least 44px each way; with a mouse the
+ * denser sizes stand (24px is the floor there, WCAG 2.5.8). Everything drawn from the height
+ * tokens (inputs, selects, buttons of every size, icon buttons, menu rows) grows with them; the
+ * rest grows its own box. A link inside a table row keeps its size: rows sit closer than 44px, so
+ * a larger area would overlap the next row's, and its row height already spaces it (2.5.8). */
+@media (pointer: coarse) {
+  :root { --control-h-sm: var(--target-touch); --control-h: var(--target-touch); --control-h-lg: var(--target-touch); }
+  .q-tab { height: var(--target-touch); min-width: var(--target-touch); justify-content: center; }
+  .q-date__btn { width: var(--target-touch); }
+  /* The calendar's days: 44px each way, the popover as wide as seven of them where the screen allows. */
+  .q-date__pop { width: min(344px, calc(100vw - 2 * var(--gutter))); }
+  .q-cal__d { height: var(--target-touch); }
+  /* A toast stays a small chip; its close button's hit area reaches past it instead. */
+  .q-toast .q-ib::before { content: ""; position: absolute; inset: -10px; }
+  .seg__b { min-height: var(--target-touch); min-width: var(--target-touch); }
+  .q-pub__brand, .q-pub__nav > a, .q-docnav a { display: inline-flex; align-items: center; min-height: var(--target-touch); }
+  .q-docnav a { display: flex; }
+  /* A link on a line of its own: a taller box, with the margin taken back so nothing moves. */
+  .q-lnk { display: inline-block; padding-block: 14px; margin-block: -14px; }
+}

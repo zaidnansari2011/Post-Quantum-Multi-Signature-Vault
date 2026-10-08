@@ -136,6 +136,51 @@ def test_a_field_without_an_error_is_not_marked_invalid(app):
     assert "aria-invalid" not in html and "aria-describedby" not in html
 
 
+def test_a_form_field_keeps_what_the_form_declares_and_ties_its_caption_and_error(app):
+    """wtf_field draws a WTForms field as a field without re-declaring it: the id, name, value and
+    the validators' attributes come from the form, so a converted form posts what it did."""
+    from qvault.forms import RegisterForm
+
+    with app.test_request_context("/", method="POST", data={"email": "not-an-email"}):
+        form = RegisterForm(meta={"csrf": False})
+        form.validate()
+        html = app.jinja_env.from_string(
+            '{% from "ui/forms.html" import wtf_field %}'
+            "{{ wtf_field(form.email, caption='Your sign-in.',"
+            " attrs={'autocomplete': 'username'}) }}"
+            "{{ wtf_field(form.display_name) }}"
+        ).render(form=form)
+    email = re.search(r"<input[^>]*name=\"email\"[^>]*>", html).group(0)
+    assert '<label class="q-field__label" for="email">Email</label>' in html
+    for attr in (
+        'id="email"',
+        'value="not-an-email"',
+        'maxlength="255"',
+        "required",
+        'autocomplete="username"',
+        'class="q-input"',
+        'aria-invalid="true"',
+        'aria-describedby="email-cap email-err"',
+    ):
+        assert attr in email, attr
+    assert '<p class="q-field__cap" id="email-cap">Your sign-in.</p>' in html
+    assert re.search(r'<div id="email-err"><p class="q-field__err">.*?Invalid email', html, re.S)
+    # A field with an error but no caption names only its error.
+    name = re.search(r"<input[^>]*name=\"display_name\"[^>]*>", html).group(0)
+    assert 'aria-describedby="display_name-err"' in name
+
+
+def test_a_form_field_without_an_error_is_not_marked_invalid(app):
+    from qvault.forms import LoginForm
+
+    with app.test_request_context("/"):
+        html = app.jinja_env.from_string(
+            '{% from "ui/forms.html" import wtf_field %}{{ wtf_field(form.password) }}'
+        ).render(form=LoginForm(meta={"csrf": False}))
+    assert 'type="password"' in html and 'class="q-input"' in html
+    assert "aria-invalid" not in html and "aria-describedby" not in html
+
+
 def test_a_select_marks_the_current_option(app):
     html = render(
         app,
@@ -171,6 +216,93 @@ def test_a_radio_group_has_a_legend_and_checks_the_selected_option(app):
     assert not re.search(r'value="approve"\s+checked', html)
 
 
+def test_a_caption_describes_its_choice_and_is_not_part_of_its_name(app):
+    """Inside the label, a caption would be read in the name and again as the description; a
+    radio's whole caption would become its name."""
+    html = render(
+        app,
+        '{% from "ui/forms.html" import radio_group, checkbox %}'
+        '{{ radio_group("role", "Role", [("member", "Member", "Creates vaults")]) }}'
+        '{{ checkbox("sod", "Separation of duties", caption="The raiser cannot approve") }}',
+    )
+    assert re.search(r'<label for="f-role-1">Member</label>', html)
+    assert 'aria-describedby="f-role-1-cap"' in html
+    assert '<span class="q-choice__cap" id="f-role-1-cap">Creates vaults</span>' in html
+    assert '<label for="f-sod">Separation of duties</label>' in html
+    assert 'aria-describedby="f-sod-cap"' in html
+
+
+def test_a_disabled_checkbox_says_so_and_keeps_the_value_it_would_post(app):
+    html = render(
+        app,
+        '{% from "ui/forms.html" import checkbox %}'
+        '{{ checkbox("sod", "Separation of duties", checked=True, value="on", disabled=True) }}',
+    )
+    assert 'name="sod" value="on" checked disabled' in html
+
+
+def test_a_number_stays_a_native_number_input_with_its_bounds(app):
+    """The arrow keys, the spinbutton role and the phone's keypad come from the native input; the
+    − and + buttons are drawn hidden and out of the tab order, and qvault.js shows them."""
+    html = render(
+        app,
+        '{% from "ui/forms.html" import number %}'
+        '{{ number("threshold_m", "Approvals required", 2, min=1, max=50, required=True,'
+        ' caption="Of the vault\'s approvers.") }}',
+    )
+    assert '<label class="q-field__label" for="f-threshold_m">Approvals required</label>' in html
+    tag = re.search(r"<input[^>]*>", html).group(0)
+    assert 'type="number"' in tag and 'name="threshold_m"' in tag and 'value="2"' in tag
+    assert 'min="1"' in tag and 'max="50"' in tag and "required" in tag
+    assert 'aria-describedby="f-threshold_m-cap"' in tag
+    buttons = re.findall(r"<button[^>]*>", html)
+    assert len(buttons) == 2
+    assert all('type="button"' in b and 'tabindex="-1"' in b and " hidden" in b for b in buttons)
+    assert 'aria-label="Decrease approvals required"' in html
+    assert 'aria-label="Increase approvals required"' in html
+
+
+def test_an_empty_number_posts_nothing_rather_than_a_placeholder_value(app):
+    html = render(app, '{% from "ui/forms.html" import number %}{{ number("n", "N", "") }}')
+    assert "value=" not in re.search(r"<input[^>]*>", html).group(0)
+
+
+def test_a_date_field_is_a_typed_day_with_a_calendar_not_a_native_picker(app):
+    html = render(
+        app,
+        '{% from "ui/forms.html" import date_field %}'
+        '{{ date_field("from", "From", "2026-10-13", id="f-from") }}',
+    )
+    tag = re.search(r"<input[^>]*>", html).group(0)
+    assert 'type="text"' in tag and 'name="from"' in tag and 'value="2026-10-13"' in tag
+    assert r'pattern="\d{4}-\d{2}-\d{2}"' in tag
+    assert 'aria-describedby="f-from-bad"' in tag, "the message for a bad date is read with it"
+    assert 'data-due-field data-mode="date"' in html
+    assert 'aria-label="Choose a date: From"' in html and 'aria-controls="f-from-pop"' in html
+    assert '<p class="q-field__err q-date__bad" id="f-from-bad" data-due-read></p>' in html
+
+
+def test_a_file_drop_carries_the_accept_list_and_the_size_limit(app):
+    html = render(
+        app,
+        '{% from "ui/forms.html" import file_drop %}'
+        '{{ file_drop("bundle", "File", accept=".json,application/json", max_bytes=4194304,'
+        ' caption="Up to 4 MB.") }}',
+    )
+    tag = re.search(r"<input[^>]*>", html, re.S).group(0)
+    assert 'type="file"' in tag and 'name="bundle"' in tag
+    assert 'accept=".json,application/json"' in tag and 'data-max-bytes="4194304"' in tag
+    assert 'aria-labelledby="f-bundle-l"' in tag
+    assert 'aria-describedby="f-bundle-bad f-bundle-cap"' in tag
+    assert 'id="f-bundle-bad" data-drop-err' in html
+
+
+def test_a_file_drop_without_limits_draws_neither(app):
+    html = render(app, '{% from "ui/forms.html" import file_drop %}{{ file_drop("file", "A") }}')
+    tag = re.search(r"<input[^>]*>", html, re.S).group(0)
+    assert "accept=" not in tag and "data-max-bytes" not in tag and "required" not in tag
+
+
 # ------------------------------------------------------------------------------ data
 
 
@@ -187,6 +319,13 @@ def test_a_hash_keeps_both_ends_and_copies_the_whole_value(app):
 
 def test_a_short_value_is_not_truncated():
     assert ui.middle_truncate("abc123") == "abc123"
+
+
+def test_a_cut_that_keeps_no_tail_shows_only_the_head():
+    """value[-0:] is the whole string: a head-only cut once printed the head, then all of it."""
+    value = "0123456789abcdef" * 4
+    assert ui.middle_truncate(value, 24, 0) == value[:24] + "…"
+    assert ui.middle_truncate("0123456789abcdef", 16, 0) == "0123456789abcdef"
 
 
 COLUMNS = [
@@ -269,6 +408,16 @@ def test_tabs_are_links_and_the_current_one_is_marked(app):
     assert '<span class="q-count">3</span>' in html
 
 
+def test_a_tab_count_can_say_what_it_counts_to_a_screen_reader(app):
+    html = render(
+        app,
+        '{% from "ui/navigation.html" import tabs %}'
+        "{{ tabs([{'key': 'needs_you', 'label': 'Needs you', 'href': '?section=needs_you',"
+        " 'count': 2, 'count_sr': 'unread'}], 'needs_you', 'Notification sections') }}",
+    )
+    assert '<span class="q-count">2<span class="visually-hidden"> unread</span></span>' in html
+
+
 def test_a_page_header_has_one_title_labelled_facts_and_one_action(app):
     html = render(
         app,
@@ -312,13 +461,27 @@ def test_a_dialog_is_a_native_dialog_labelled_by_its_title(app):
     assert '<div class="q-dlg__ft"><button>Reject</button></div>' in html
 
 
-def test_a_critical_banner_is_an_alert_and_an_info_banner_is_not(app):
+def test_an_announced_critical_banner_is_an_alert_and_an_info_banner_is_not(app):
     critical = render(
         app,
-        '{% from "ui/feedback.html" import banner %}{{ banner("critical", "Tamper detected") }}',
+        '{% from "ui/feedback.html" import banner %}'
+        '{{ banner("critical", "Tamper detected", announce=True) }}',
     )
-    info = render(app, '{% from "ui/feedback.html" import banner %}{{ banner("info", "Queued") }}')
+    info = render(
+        app,
+        '{% from "ui/feedback.html" import banner %}{{ banner("info", "Queued", announce=True) }}',
+    )
     assert 'role="alert"' in critical and 'role="status"' in info
+
+
+def test_a_banner_for_a_standing_state_is_read_with_the_page_not_announced(app):
+    """A live region drawn with the page is not reliably announced, and one that is announced on
+    every visit to a page in a standing state is noise; the caller says when it is news."""
+    for tone in ("critical", "warning", "info"):
+        html = render(
+            app, '{% from "ui/feedback.html" import banner %}{{ banner("' + tone + '", "Behind") }}'
+        )
+        assert "role=" not in html and "aria-live" not in html
 
 
 def test_an_empty_state_says_the_fact_then_the_next_step(app):
@@ -358,3 +521,43 @@ def test_an_avatar_stack_shows_three_and_counts_the_rest(app):
     assert html.count('class="q-av"') == 3
     assert ">+2</span>" in html
     assert 'aria-label="Ada, Brij, Chen, Dee, Eve"' in html
+
+
+# ------------------------------------------------------------------ recorded figures and dates
+
+
+@pytest.mark.parametrize(
+    "raw, shown",
+    [
+        ("2^128 operations", "2¹²⁸ operations"),
+        ("polynomial - O(n^3) gates", "polynomial – O(n³) gates"),
+        ("6.3e14 core-years", "6.3 × 10¹⁴ core-years"),
+        ("45589x the age of the universe", "45,589× the age of the universe"),
+        ("2.3e+11x the work of RSA-250", "2.3 × 10¹¹ times the work of RSA-250"),
+        # Left alone: an address, a hash fragment, a size.
+        ("0x3cbC1F33 a3e14b 1920x1080", "0x3cbC1F33 a3e14b 1920x1080"),
+    ],
+)
+def test_recorded_figures_are_set_as_a_person_writes_them(raw, shown):
+    assert ui.figures(raw) == shown
+
+
+def test_a_recovered_value_keeps_its_hyphens():
+    assert ui.figures("'BOARD MINUTES - CONFIDENTIAL'", dashes=False) == (
+        "'BOARD MINUTES - CONFIDENTIAL'"
+    )
+
+
+def test_a_standard_and_its_remark_are_split_in_sentence_case():
+    assert ui.standard_note("FIPS 186-5 - classical, NOT post-quantum") == (
+        "FIPS 186-5",
+        "Classical, not post-quantum",
+    )
+    assert ui.standard_note("FIPS 204") == ("FIPS 204", "")
+
+
+def test_a_recorded_iso_time_reads_like_every_other_time():
+    assert ui.absolute_time("2026-08-24T18:42:40.176009+00:00") == "Mon 24 Aug 2026, 18:42 UTC"
+    assert ui.absolute_time("2026-08-24T18:42:40Z") == "Mon 24 Aug 2026, 18:42 UTC"
+    assert ui.day(datetime(2026, 10, 4, 9, 58, tzinfo=UTC)) == "4 Oct 2026"
+    assert ui.absolute_time(None) == "" and ui.absolute_time("not a time") == ""

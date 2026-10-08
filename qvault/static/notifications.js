@@ -6,6 +6,9 @@
   var button = bell.querySelector('.nbell__button');
   var pop = bell.querySelector('.nbell__pop');
   var GAP = 8;
+  // Only now can the link open a popover, so only now does it say so.
+  button.setAttribute('aria-haspopup', 'dialog');
+  button.setAttribute('aria-expanded', 'false');
 
   // Beside the bell when there is room to its right (the rail), otherwise below it, right-aligned
   // (a top bar). Kept inside the viewport either way.
