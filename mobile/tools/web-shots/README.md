@@ -15,6 +15,7 @@ never part of a normal `expo start` or EAS build: it takes effect only through
 | `serve.py` | Serves the export and proxies `/api` to a localhost backend (refuses any other host) |
 | `shoot.py` | Drives the app like a person: enrols, raises, signs, and shoots each screen |
 | `gallery.py` | Shoots every gallery page in light and dark at 1.0 and 2.0 |
+| `states.py` | Every Approvals state and every decision state (phone-ux §6.3 to §6.7), by rewriting one real decision's UNSIGNED fields in the browser; the tampered states change a signed field on purpose |
 
 Both shooters run the touch-target audit (phone-ux §4.6): `ui/Touchable` writes its effective
 target to `data-hit-w` / `data-hit-h` (react-native-web ignores `hitSlop`), and any target under
@@ -44,6 +45,7 @@ EXPO_OVERRIDE_METRO_CONFIG="$(pwd)/tools/web-shots/metro.config.js" \
 python tools/web-shots/serve.py /tmp/p1-web 8191 http://127.0.0.1:5191 &
 python tools/web-shots/gallery.py http://127.0.0.1:8191 out/gallery
 python tools/web-shots/shoot.py http://127.0.0.1:8191 out/app_dark_2 out/state dark 2
+python tools/web-shots/states.py http://127.0.0.1:8191 out/states_dark_2 out/state dark 2
 ```
 
 `shoot.py` keeps the enrolled devices in its state folder, so later runs (other themes and
