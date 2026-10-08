@@ -128,6 +128,8 @@ class ProposalForm(FlaskForm):
         "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
     )
     file = FileField("Attach a file (optional)")
+    #: Plan S16, "Raise again": the closed decision this replaces. Checked by the service.
+    raised_again_from = HiddenField()
     submit = SubmitField("Create proposal")
 
 
@@ -141,6 +143,7 @@ class PaymentProposalForm(FlaskForm):
     deadline = DateTimeLocalField(
         "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
     )
+    raised_again_from = HiddenField()
     submit = SubmitField("Create payment decision")
 
 

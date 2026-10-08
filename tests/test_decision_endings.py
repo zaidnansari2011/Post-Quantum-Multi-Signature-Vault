@@ -18,10 +18,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.orm.attributes import set_committed_value
 from test_device_api import _enrol_over_http, _sign_vote
-from test_vote_eligibility import PASSWORD, WRONG
+from test_payment_decisions import RECIPIENT, _payment, _vault
+from test_vote_eligibility import PASSWORD, WRONG, payments_on  # noqa: F401 (a fixture)
 
 from qvault.extensions import db
-from qvault.models import Key, LedgerEntry, Notification, Signature
+from qvault.models import Key, LedgerEntry, Notification, Proposal, Signature
 from qvault.services import (
     approval_service,
     auth_service,
@@ -32,6 +33,7 @@ from qvault.services import (
     workspace_service,
 )
 from qvault.services.approval_service import ApprovalError
+from qvault.services.proposal_service import ProposalError
 from qvault.services.signing import vote_signing_bytes
 
 
@@ -333,3 +335,133 @@ def test_the_request_to_approve_leaves_needs_you_and_says_how_it_ended(app):
     assert items["decision_withdrawn"]["title"] == "Ada withdrew a decision"
     assert "nothing to sign" in items["decision_withdrawn"]["body"]
     assert items["decision_raised"]["body"].endswith("Withdrawn without your vote.")
+
+
+# --- raise again -------------------------------------------------------------------------------
+
+
+def test_raising_a_withdrawn_decision_again_links_both_ways(client):
+    ada, _brij, _chen, vault, proposal = _team("againweb")
+    approval_service.withdraw(proposal, ada)
+    vid, pid = vault.id, proposal.proposal_uuid
+    signed_before = (proposal.payload_hash, proposal.action_text, proposal.status)
+
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    assert f"/vaults/{vid}/proposals/new?again={pid}" in page
+
+    form = client.get(f"/vaults/{vid}/proposals/new?again={pid}").get_data(as_text=True)
+    assert "Replaces" in form and "Signatures don’t carry over" in form
+    assert 'value="Renew"' in form and "Renew the cloud contract." in form
+    assert f'name="raised_again_from" type="hidden" value="{pid}"' in form
+
+    resp = client.post(
+        f"/vaults/{vid}/proposals/new",
+        data={
+            "title": "Renew",
+            "action_text": "Renew the cloud contract for one year.",
+            "raised_again_from": pid,
+        },
+    )
+    new = Proposal.query.filter(Proposal.proposal_uuid != pid).one()
+    assert resp.status_code == 302 and new.proposal_uuid in resp.headers["Location"]
+    assert new.lifecycle.raised_again_from_id == proposal.id
+    # A new decision, never an edit: the original is exactly as it was.
+    db.session.refresh(proposal)
+    assert (proposal.payload_hash, proposal.action_text, proposal.status) == signed_before
+    assert new.payload_hash != proposal.payload_hash
+
+    page = client.get(f"/vaults/{vid}/proposals/{new.proposal_uuid}").get_data(as_text=True)
+    assert "Raised again from" in page and f"/vaults/{vid}/proposals/{pid}" in page
+    page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    assert "Raised again as" in page and new.proposal_uuid in page
+
+
+@pytest.mark.parametrize("how", ["rejected", "expired"])
+def test_a_rejected_or_expired_decision_can_be_raised_again(app, how):
+    ada, brij, chen, vault, proposal = _team(f"again{how}")
+    if how == "rejected":
+        approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Too costly.")
+        approval_service.cast_vote(proposal, chen, PASSWORD, "reject", reason="Agreed.")
+    else:
+        proposal.expires_at = datetime.now(UTC) - timedelta(minutes=1)  # unswept: still "open"
+        db.session.commit()
+    new = proposal_service.create_proposal(
+        vault, brij, "Renew", "Cheaper plan.", raised_again_from=proposal.proposal_uuid
+    )
+    assert new.lifecycle.raised_again_from_id == proposal.id
+    assert [p.id for p in proposal_service.raised_again_as(proposal)] == [new.id]
+
+
+@pytest.mark.parametrize("state", ["open", "approved"])
+def test_an_open_or_approved_decision_cannot_be_raised_again(app, state):
+    ada, brij, chen, vault, proposal = _team(f"noagain{state}")
+    if state == "approved":
+        approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+        approval_service.cast_vote(proposal, chen, PASSWORD, "approve")
+    with pytest.raises(ProposalError, match="Only a withdrawn, rejected or expired"):
+        proposal_service.create_proposal(
+            vault, ada, "Again", "Again.", raised_again_from=proposal.proposal_uuid
+        )
+
+
+def test_a_decision_in_another_vault_cannot_be_named_as_the_original(app):
+    ada, _brij, _chen, vault, proposal = _team("othervault")
+    approval_service.withdraw(proposal, ada)
+    elsewhere = vault_service.create_vault(ada, "Elsewhere", "", 1)
+    with pytest.raises(ProposalError, match="isn't in this vault"):
+        proposal_service.create_proposal(
+            elsewhere, ada, "Again", "Again.", raised_again_from=proposal.proposal_uuid
+        )
+    assert proposal_service.raised_again_as(proposal) == []
+
+
+def test_a_viewer_is_not_offered_raise_again(client):
+    ada, _brij, _chen, vault, proposal = _team("againviewer")
+    viewer = auth_service.register_user("againviewer-v@e.com", "Vic", PASSWORD)
+    vault_service.add_member(vault, viewer.email, "viewer", actor_id=ada.id)
+    approval_service.withdraw(proposal, ada)
+    client.post("/login", data={"email": viewer.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    assert "?again=" not in page
+
+
+def test_the_phone_raises_a_decision_again(app, client):
+    ada, _brij, _chen, vault, proposal = _team("againapi")
+    _b, _s, auth = _enrol_over_http(client, ada)
+    approval_service.withdraw(proposal, ada)
+    uuid = proposal.proposal_uuid
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        headers=auth,
+        json={"title": "Renew", "action_text": "Renew for a year.", "raised_again_from": uuid},
+    )
+    assert r.status_code == 201
+    new = r.get_json()["proposal"]
+    assert new["raised_again_from"] == {"proposal_uuid": uuid, "title": "Renew"}
+    old = client.get(f"/api/v1/proposals/{uuid}", headers=auth).get_json()["proposal"]
+    assert old["raised_again_as"] == [{"proposal_uuid": new["proposal_uuid"], "title": "Renew"}]
+
+    r = client.post(
+        f"/api/v1/vaults/{vault.id}/proposals",
+        headers=auth,
+        json={"title": "T", "action_text": "x", "raised_again_from": new["proposal_uuid"]},
+    )
+    assert r.status_code == 422 and "Only a withdrawn" in r.get_json()["error"]
+
+
+@pytest.mark.usefixtures("payments_on")
+def test_a_payment_raised_again_starts_from_its_recipient_and_amount(client):
+    owner, _other, vault, _treasury = _vault("againpay", threshold_m=1)
+    proposal = _payment(vault, owner, value_wei=25 * 10**16)
+    approval_service.withdraw(proposal, owner)
+    vid, pid = vault.id, proposal.proposal_uuid
+
+    client.post("/login", data={"email": owner.email, "password": PASSWORD})
+    form = client.get(f"/vaults/{vid}/proposals/new?again={pid}").get_data(as_text=True)
+    assert f'value="{RECIPIENT}"' in form
+    assert 'value="0.25"' in form
+    assert f'name="raised_again_from" type="hidden" value="{pid}"' in form

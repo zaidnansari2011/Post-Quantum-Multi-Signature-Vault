@@ -749,9 +749,18 @@ def create_proposal(vid: int):
             return _error("bad_deadline", "A deadline must be in the future.", 422)
         deadline = datetime.now(UTC) + timedelta(hours=hours)
 
+    again = body.get("raised_again_from")
+    if again is not None and not isinstance(again, str):
+        return _error("bad_request", "raised_again_from must be a decision id.", 422)
     try:
         proposal = proposal_service.create_proposal(
-            vault, user, title, action_text, deadline=deadline, payment=payment_request
+            vault,
+            user,
+            title,
+            action_text,
+            deadline=deadline,
+            payment=payment_request,
+            raised_again_from=again or None,
         )
     except ProposalError as exc:
         # The commonest case is a policy that needs more signatures than the vault has signers,
@@ -827,7 +836,18 @@ def _lifecycle_view(proposal) -> dict:
     """How it was withdrawn and raised again (plan S16); unsigned, shown only."""
     lifecycle = proposal.lifecycle
     withdrawn_by = lifecycle.withdrawn_by if lifecycle is not None else None
+    source = lifecycle.raised_again_from if lifecycle is not None else None
     return {
+        # A11: "Raised again from" and the forward links, each a decision in the same vault.
+        "raised_again_from": (
+            {"proposal_uuid": source.proposal_uuid, "title": source.title}
+            if source is not None
+            else None
+        ),
+        "raised_again_as": [
+            {"proposal_uuid": p.proposal_uuid, "title": p.title}
+            for p in proposal_service.raised_again_as(proposal)
+        ],
         "withdrawn_by": (
             {"id": withdrawn_by.id, "name": withdrawn_by.display_name}
             if withdrawn_by is not None

@@ -85,6 +85,7 @@
   </span>
   {% endif %}
   {% if can_withdraw %}{{ button('Withdraw', 'ghost', attrs={'data-dialog-open': 'dlg-withdraw'}) }}{% endif %}
+  {% if can_raise_again %}{{ button('Raise again', 'secondary', href=url_for('vaults.new_proposal', vid=vault.id, again=proposal.proposal_uuid)) }}{% endif %}
   {% call menu('More actions', 'more', trigger='icon') %}
     {{ menu_item('Export for verification', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
     {{ menu_item('Download as JSON', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='json')) }}
@@ -440,6 +441,12 @@
     <div><dt>Type</dt><dd>{{ 'Payment' if is_payment else 'General' }}</dd></div>
     <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the vault’s rule don’t apply to this decision.</span></dd></div>
     <div><dt>Raised</dt><dd>{{ ui_absolute(proposal.created_at) }}</dd></div>
+    {% if raised_again_from %}
+    <div><dt>Raised again from</dt><dd><a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=raised_again_from.proposal_uuid) }}">{{ raised_again_from.title }}</a><span class="q-cap">A new decision: nothing signed there counts here.</span></dd></div>
+    {% endif %}
+    {% if raised_again_as %}
+    <div><dt>Raised again as</dt><dd>{% for p in raised_again_as %}<a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=p.proposal_uuid) }}">{{ p.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</dd></div>
+    {% endif %}
     <div><dt>Decision ID</dt><dd>{{ hash(proposal.proposal_uuid, 'decision ID') }}</dd></div>
     {% if is_signer %}
     <div><dt>You</dt><dd>
