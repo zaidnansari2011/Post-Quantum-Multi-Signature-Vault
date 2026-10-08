@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import select, radio_group %}
 {% block title %}Invite people — Q-Vault{% endblock %}
 
 {% block chrome %}
@@ -26,15 +27,8 @@
           <input class="input" id="email" name="email" type="email" value="{{ email }}" autocomplete="off" required>
           <p class="field__help">Only an account with this address can accept the invitation.</p>
         </div>
-        <fieldset class="field" style="border:0;padding:0;margin:0">
-          <legend class="field__label">Workspace role</legend>
-          {% for r in roles %}
-          <label class="small" style="display:flex;gap:.6rem;align-items:flex-start;margin:.35rem 0">
-            <input type="radio" name="role" value="{{ r }}" {% if r == role %}checked{% endif %}>
-            <span style="flex:1"><strong>{{ role_name(r) }}</strong> <span class="muted">{{ role_help[r] }}</span></span>
-          </label>
-          {% endfor %}
-        </fieldset>
+        {%- set role_options = [] %}{% for r in roles %}{% set _ = role_options.append((r, role_name(r), role_help[r])) %}{% endfor %}
+        {{ radio_group('role', 'Workspace role', role_options, selected=role) }}
       </div>
     </div>
 
@@ -46,14 +40,8 @@
           They join these vaults when they accept. You can only add people to vaults you own.
         </p>
         {% for v in vaults %}
-        <div class="hstack" style="justify-content:space-between;margin:.4rem 0">
-          <label class="small truncate" for="vault_{{ v.id }}">{{ v.name }}</label>
-          <select class="input input--auto" id="vault_{{ v.id }}" name="vault_{{ v.id }}">
-            <option value="" {% if v.id not in chosen %}selected{% endif %}>Not added</option>
-            <option value="signer" {% if chosen.get(v.id) == 'signer' %}selected{% endif %}>Approver</option>
-            <option value="viewer" {% if chosen.get(v.id) == 'viewer' %}selected{% endif %}>Viewer</option>
-          </select>
-        </div>
+        {{ select('vault_' ~ v.id, v.name, [('', 'Not added'), ('signer', 'Approver'), ('viewer', 'Viewer')],
+                  chosen.get(v.id) or '', id='vault_' ~ v.id) }}
         {% endfor %}
         <p class="field__help">
           An approver counts towards the vault's threshold for decisions raised after they join.

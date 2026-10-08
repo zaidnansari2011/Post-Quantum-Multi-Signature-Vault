@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import select, checkbox %}
 {% block title %}Algorithms — Q-Vault{% endblock %}
 {% set max_sig = sig_metas | map(attribute='sizes.signature') | max %}
 {% set max_pk = sig_metas | map(attribute='sizes.public_key') | max %}
@@ -157,20 +158,13 @@
                               | map(attribute='security_category') | first) %}
         <form method="post" action="{{ url_for('admin.switch_crypto') }}">
           {{ form.hidden_tag() }}
-          <div class="field">{{ form.algorithm(class="input") }}</div>
+          {{ select('algorithm', form.algorithm.label.text, form.algorithm.choices, form.algorithm.data, id=form.algorithm.id) }}
 
           {# Lowering the security category is a decision, not a preference (ADR-0012). #}
           <div class="downgrade">
-            <label class="hstack hstack--tight" style="align-items:flex-start" for="{{ form.confirm_downgrade.id }}">
-              {{ form.confirm_downgrade() }}
-              <span class="small fill" style="color:var(--broken);font-weight:600">
-                {{ form.confirm_downgrade.label.text }}
-              </span>
-            </label>
-            <p class="tiny muted" style="margin:.3rem 0 0">
-              Currently category {{ current_cat }}. A lower category is refused without this and a
-              stated reason, and is recorded as a downgrade.
-            </p>
+            {{ checkbox('confirm_downgrade', form.confirm_downgrade.label.text, checked=form.confirm_downgrade.data, value='y',
+                        id=form.confirm_downgrade.id,
+                        caption='Currently category ' ~ current_cat ~ '. A lower category is refused without this and a stated reason, and is recorded as a downgrade.') }}
             {{ form.downgrade_reason(class="input", placeholder="Reason", style="margin-top:.4rem") }}
           </div>
 

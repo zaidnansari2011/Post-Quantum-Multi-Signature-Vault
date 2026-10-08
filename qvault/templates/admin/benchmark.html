@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import number %}
 {% block title %}Performance — Q-Vault{% endblock %}
 
 {% macro sig_table(rows) %}
@@ -88,7 +89,7 @@
   <div class="head__actions">
     <form method="post" action="{{ url_for('admin.run_benchmark') }}" class="hstack hstack--tight">
       {{ form.hidden_tag() }}
-      {{ form.iterations(class="input input--auto", type="number", min="1", max=max_iterations, style="width:4.5rem") }}
+      {{ number('iterations', form.iterations.label.text, form.iterations._value(), min=1, max=max_iterations, id=form.iterations.id, inline=True) }}
       {{ form.submit(class="btn btn--ghost btn--sm") }}
     </form>
   </div>

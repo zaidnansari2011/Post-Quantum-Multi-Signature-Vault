@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import checkbox %}
 {% block title %}Workspace settings — Q-Vault{% endblock %}
 
 {% block chrome %}
@@ -43,15 +44,9 @@
     <div class="panel__body">
       <form method="post" action="{{ url_for('workspace.save_vault_defaults') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label class="small" style="display:flex;gap:.6rem;align-items:flex-start">
-          <input type="checkbox" name="sod_default" {% if workspace.sod_default %}checked{% endif %}
-                 {% if not manager %}disabled{% endif %}>
-          <span style="flex:1">
-            <strong>Separation of duties for new vaults</strong><br>
-            <span class="muted">The person who raises a decision can't also approve it, so every
-            decision needs the threshold from other people.</span>
-          </span>
-        </label>
+        {{ checkbox('sod_default', 'Separation of duties for new vaults', checked=workspace.sod_default, value='on',
+                    disabled=not manager,
+                    caption='The person who raises a decision can’t also approve it, so every decision needs the threshold from other people.') }}
         <p class="field__help" style="margin:.6rem 0 .8rem">
           {% if workspace.sod_default %}On{% else %}Off{% endif %}.
           Saved as the default for new vaults. Vaults don't apply it yet, and it never changes a

@@ -7,7 +7,7 @@
 {% from "ui/buttons.html" import button, icon_button %}
 {% from "ui/data.html" import hash %}
 {% from "ui/feedback.html" import banner %}
-{% from "ui/forms.html" import select %}
+{% from "ui/forms.html" import select, date_field, number %}
 {% from "ui/avatars.html" import avatar %}
 {% from "ui/icons.html" import icon %}
 {% block title %}Audit — Q-Vault{% endblock %}
@@ -75,8 +75,8 @@
   {{ select('event', 'Event', ev_opts, selected=filters.event, id='f-event') }}
   {{ select('vault', 'Vault', vault_opts, selected=filters.vault_id or '', id='f-vault') }}
   {{ select('actor', 'Person', actor_opts, selected=filters.actor_id or '', id='f-actor') }}
-  <div class="q-field"><label class="q-field__label" for="f-from">From</label><input class="q-input" id="f-from" type="date" name="from" value="{{ filters.date_from }}"></div>
-  <div class="q-field"><label class="q-field__label" for="f-to">To</label><input class="q-input" id="f-to" type="date" name="to" value="{{ filters.date_to }}"></div>
+  {{ date_field('from', 'From', filters.date_from, id='f-from') }}
+  {{ date_field('to', 'To', filters.date_to, id='f-to') }}
   <noscript>{{ button('Apply', 'secondary', type='submit') }}</noscript>
   {% if filters.is_filtered %}{{ button('Clear filters', 'ghost', href=url_for('ledger.view')) }}{% endif %}
 </form>
@@ -129,8 +129,7 @@
   <p class="q-dev__t">Developer: tamper with the record to see the check catch it</p>
   <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="q-line q-line--gap">
     {{ tamper_form.hidden_tag() }}
-    <label for="{{ tamper_form.target_seq.id }}">Entry</label>
-    {{ tamper_form.target_seq(class="q-input q-input--narrow", type="number", min="1") }}
+    {{ number('target_seq', 'Entry', tamper_form.target_seq._value(), min=1, id=tamper_form.target_seq.id) }}
     {{ button('Edit an entry', 'ghost', type='submit', size='sm', name='edit', value=tamper_form.edit.label.text) }}
     {{ button('Rewrite from an entry', 'ghost', type='submit', size='sm', name='rewrite', value=tamper_form.rewrite.label.text) }}
   </form>

@@ -361,16 +361,6 @@
 .q-verify .q-dtext { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
 .q-verify .q-dtext .q-addr { font-size: var(--text-decision-addr-size); }
 .q-file { display: grid; gap: var(--space-6); }
-.q-file input[type="file"] {
-  width: 100%; padding: var(--space-8); border: var(--border-width) dashed var(--border-strong); border-radius: var(--radius-card);
-  background: var(--surface); color: var(--text-muted); cursor: pointer;
-}
-.q-file input[type="file"]::file-selector-button {
-  margin-right: var(--space-12); height: var(--control-h); padding-inline: var(--space-12);
-  border: var(--border-width) solid var(--border-hover); border-radius: var(--radius-control);
-  background: var(--surface); color: var(--text); font: inherit; font-weight: var(--text-body-strong-weight); cursor: pointer;
-}
-.q-file input[type="file"]:hover::file-selector-button { background: var(--fill); }
 
 /* ================================================================ Account */
 

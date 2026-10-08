@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import number %}
 {% block title %}New vault — Q-Vault{% endblock %}
 
 {% block chrome %}
@@ -24,12 +25,9 @@
           {{ form.description.label(class="field__label") }}
           {{ form.description(class="input", rows="2") }}
         </div>
-        <div class="field">
-          {{ form.threshold_m.label(class="field__label") }}
-          {{ form.threshold_m(class="input", type="number", min="1", style="max-width:6rem") }}
-          <p class="field__help">You are the first approver. Add more members afterwards.</p>
-          {% for e in form.threshold_m.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-        </div>
+        {{ number('threshold_m', form.threshold_m.label.text, form.threshold_m._value(), min=1, max=50, required=True,
+                  id=form.threshold_m.id, caption='You are the first approver. Add more members afterwards.',
+                  error=form.threshold_m.errors) }}
         <div class="hstack">
           {{ form.submit(class="btn btn--primary btn--sm") }}
           <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.list_vaults') }}">Cancel</a>

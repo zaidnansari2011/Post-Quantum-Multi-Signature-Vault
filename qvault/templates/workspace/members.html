@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import select %}
 {% block title %}Members — Q-Vault{% endblock %}
 {% block bodyclass %}body body--flush{% endblock %}
 
@@ -103,13 +104,10 @@
           </td>
           <td>
             {% if row.can_act and m.is_active and not row.last_owner %}
-            <form method="post" action="{{ url_for('workspace.change_role', uid=m.user_id) }}" class="hstack hstack--tight">
+            <form method="post" action="{{ url_for('workspace.change_role', uid=m.user_id) }}" class="q-inline-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select class="input input--auto" name="role" aria-label="Role for {{ m.user.display_name }}" style="height:26px;font-size:.74rem">
-                {% for r in roles %}
-                <option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ role_name(r) }}</option>
-                {% endfor %}
-              </select>
+              {%- set role_opts = [] %}{% for r in roles %}{% set _ = role_opts.append((r, role_name(r))) %}{% endfor %}
+              {{ select('role', 'Role for ' ~ m.user.display_name, role_opts, m.role, id='role-' ~ m.user_id, inline=True) }}
               <button class="btn btn--ghost btn--sm" type="submit">Save</button>
             </form>
             {% else %}
