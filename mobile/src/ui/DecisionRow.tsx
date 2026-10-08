@@ -100,7 +100,7 @@ export function DecisionRow({
     variant === 'outcome' && outcome
       ? `${outcome.word}${outcome.when ? ` ${outcome.when}` : ''}`
       : variant === 'web'
-        ? 'Approve on the web'
+        ? `Approve on the web${due ? `. Due ${due}` : ''}`
         : due
           ? `Due ${due}`
           : null,
@@ -127,9 +127,21 @@ export function DecisionRow({
           </Text>
         ) : null}
       </View>
-      <Text role="caption" tone="muted" numberOfLines={1}>
-        {line2}
-      </Text>
+      {variant === 'web' && due ? (
+        // The "Approve on the web" variant: line 3 says where, so the due time moves here (§5.6).
+        <View style={[s.line, stacked && s.lineStacked]}>
+          <Text role="caption" tone="muted" numberOfLines={1} style={stacked ? null : s.title}>
+            {line2}
+          </Text>
+          <Text role="caption" tone={soon ? 'warning' : 'muted'} tabular>
+            {due}
+          </Text>
+        </View>
+      ) : (
+        <Text role="caption" tone="muted" numberOfLines={1}>
+          {line2}
+        </Text>
+      )}
       <View style={[s.line, s.line3, stacked && s.lineStacked]}>
         {left}
         {right}

@@ -52,6 +52,13 @@ export const meResponse = z.object({
   }),
   device: deviceSchema,
   my_key: z.lazy(() => myKeySchema).nullable().optional(),
+  // R3: the workspace this person works in. Null when an admin has removed them (Approvals says
+  // so, §6.3); absent from an older server. A shape this app does not know is dropped, not fatal.
+  workspace: z
+    .object({ id: z.number().int(), name: z.string(), role: z.string() })
+    .nullable()
+    .optional()
+    .catch(undefined),
 });
 export type Me = z.infer<typeof meResponse>;
 export const myKeySchema = z.object({
@@ -129,6 +136,9 @@ export const proposalSummary = z.object({
   expires_at: z.string().nullable(),
   signed_by_me: z.boolean(),
   can_sign: z.boolean(),
+  // Display only, never signed: lets the queue find the payments whose treasury seat it must look
+  // up (phone-ux §6.3). Absent from an older server; a wrong shape is dropped, never fatal.
+  is_payment: z.boolean().optional().catch(undefined),
 });
 export type ProposalSummary = z.infer<typeof proposalSummary>;
 
@@ -238,6 +248,18 @@ export const proposalDetail = proposalSummary.extend({
     .optional(),
   // Payment decisions only: how the payout stands (Phase 8). Shown, never signed.
   payout: payoutView.nullable().optional(),
+  // Planned API fields (phone-ux §10.3: A1, A3, A4, R5), all unsigned display. Read when a server
+  // sends them; a server that sends none, or a shape this app does not know, loses nothing but the
+  // sentence they would add (`.catch` drops them rather than refusing the whole decision).
+  raised_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
+  separation_of_duties: z.boolean().optional().catch(undefined),
+  signers: z
+    .array(z.object({ user_id: z.number().int(), name: z.string().nullable() }))
+    .optional()
+    .catch(undefined),
+  decided_at: z.string().nullable().optional().catch(undefined),
+  withdrawn_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
+  withdrawn_at: z.string().nullable().optional().catch(undefined),
 });
 export type ProposalDetail = z.infer<typeof proposalDetail>;
 
