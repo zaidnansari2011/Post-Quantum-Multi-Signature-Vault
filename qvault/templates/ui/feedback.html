@@ -1,8 +1,15 @@
 {# Feedback (styles: components.css, "banner, empty state", "toast", "dialog").
 
-   banner(tone, title, body=None)
+   banner(tone, title, body=None, announce=False)
      A state the reader should know about before acting, in one of the five tones. An optional
      caller() block holds its actions (one or two buttons). Use a status line, not a lecture (S4).
+     announce  whether a screen reader is told at once, which depends on when, not on the tone.
+               True for the outcome of what the reader just did (the result of the form they
+               sent) and for a fault that must stop them before anything else on the page (the
+               log fails its checks): critical and warning become an alert, the rest a status.
+               False, the default, for a standing state of the page (a witness behind, a link
+               for another account): it is read in order with the page, like its heading, and
+               not announced again on every visit.
 
    empty_state(title, caption=None, action=None)
      What an empty list says: the plain fact, then the next step. action is {label, href}.
@@ -23,8 +30,8 @@
 
 {% set _tone_icon = {'neutral': 'info', 'info': 'info', 'success': 'success', 'warning': 'warning', 'critical': 'critical'} %}
 
-{% macro banner(tone, title, body=None) -%}
-<div class="q-banner q-banner--{{ ui_tone(tone) }}"{% if tone in ('critical', 'warning') %} role="alert"{% else %} role="status"{% endif %}>
+{% macro banner(tone, title, body=None, announce=False) -%}
+<div class="q-banner q-banner--{{ ui_tone(tone) }}"{% if announce %} role="{{ 'alert' if tone in ('critical', 'warning') else 'status' }}"{% endif %}>
   {{ icon(_tone_icon[tone]) }}
   <div class="q-banner__b">
     <p class="q-banner__t">{{ title }}</p>

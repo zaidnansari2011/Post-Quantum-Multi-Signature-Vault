@@ -1,34 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Performance — Q-Vault{% endblock %}
+{% from "ui/forms.html" import number %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/feedback.html" import banner %}
+{% block title %}Performance — Security — Q-Vault{% endblock %}
 
-{% macro sig_table(rows) %}
+{% macro sig_table(rows, caption) %}
   {% if rows %}
   {# `or 1` guards the bar-width division: an all-zero report must not 500 the page. #}
   {% set max_sign = (rows | map(attribute='ops.sign.median_ms') | max) or 1 %}
   {% set max_size = (rows | map(attribute='measured_sizes.signature') | max) or 1 %}
-  <div class="scroll-x">
-    <table class="dt">
+  <div class="q-table-wrap">
+    <table class="q-table">
+      <caption class="visually-hidden">{{ caption }}</caption>
       <thead>
-        <tr><th style="width:20%">Algorithm</th><th class="num">Cat.</th><th class="num">Keygen</th>
-            <th style="width:16%">Sign</th><th class="num">Verify</th><th class="num">Verify/s</th>
-            <th class="num">Public key</th><th style="width:16%">Signature</th></tr>
+        <tr><th scope="col" style="width:20%">Algorithm</th><th scope="col" class="is-num">Cat.</th><th scope="col" class="is-num">Keygen</th>
+            <th scope="col" style="width:16%">Sign</th><th scope="col" class="is-num">Verify</th><th scope="col" class="is-num">Verify/s</th>
+            <th scope="col" class="is-num">Public key</th><th scope="col" style="width:16%">Signature</th></tr>
       </thead>
       <tbody>
       {% for r in rows %}
         <tr>
-          <td><span class="tag">{{ r.alg_id }}</span><span class="dt__sub">{{ r.nist_standard }}</span></td>
-          <td class="num">{{ r.security_category }}</td>
-          <td class="num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
+          <td><span class="q-tag">{{ r.alg_id }}</span>{% set std, note = ui_standard(r.nist_standard) %}<span class="q-cap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
+          <td class="is-num">{{ r.security_category }}</td>
+          <td class="is-num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
           <td>
-            <span class="mono">{{ '%.3f'|format(r.ops.sign.median_ms) }} ms</span>
-            <div class="bar" style="margin-top:3px"><div class="bar__fill" style="width: {{ (r.ops.sign.median_ms / max_sign * 100)|round(1) }}%"></div></div>
+            <span class="q-nowrap">{{ '%.3f'|format(r.ops.sign.median_ms) }} ms</span>
+            <span class="q-bar"><span class="q-bar__fill" style="width: {{ (r.ops.sign.median_ms / max_sign * 100)|round(1) }}%"></span></span>
           </td>
-          <td class="num">{{ '%.3f'|format(r.ops.verify.median_ms) }}</td>
-          <td class="num">{{ '%.0f'|format(r.ops.verify.ops_per_sec) }}</td>
-          <td class="num">{{ r.measured_sizes.public_key }} B</td>
+          <td class="is-num">{{ '%.3f'|format(r.ops.verify.median_ms) }}</td>
+          <td class="is-num">{{ '%.0f'|format(r.ops.verify.ops_per_sec) }}</td>
+          <td class="is-num">{{ r.measured_sizes.public_key }} B</td>
           <td>
-            <span class="mono">{{ r.measured_sizes.signature }} B</span>
-            <div class="bar" style="margin-top:3px"><div class="bar__fill bar__fill--alt" style="width: {{ (r.measured_sizes.signature / max_size * 100)|round(1) }}%"></div></div>
+            <span class="q-nowrap">{{ r.measured_sizes.signature }} B</span>
+            <span class="q-bar"><span class="q-bar__fill q-bar__fill--alt" style="width: {{ (r.measured_sizes.signature / max_size * 100)|round(1) }}%"></span></span>
           </td>
         </tr>
       {% endfor %}
@@ -36,28 +41,29 @@
     </table>
   </div>
   {% else %}
-  <div class="panel__body"><p class="small muted" style="margin:0">No signature algorithms measured.</p></div>
+  <div class="q-panel__bd"><p class="q-empty-line">No signature algorithms measured.</p></div>
   {% endif %}
 {% endmacro %}
 
-{% macro kem_table(rows) %}
-<div class="scroll-x">
-  <table class="dt">
+{% macro kem_table(rows, caption) %}
+<div class="q-table-wrap">
+  <table class="q-table">
+    <caption class="visually-hidden">{{ caption }}</caption>
     <thead>
-      <tr><th style="width:24%">Algorithm</th><th class="num">Cat.</th><th class="num">Keygen</th>
-          <th class="num">Encapsulate</th><th class="num">Decapsulate</th>
-          <th class="num">Public key</th><th class="num">Ciphertext</th></tr>
+      <tr><th scope="col" style="width:24%">Algorithm</th><th scope="col" class="is-num">Cat.</th><th scope="col" class="is-num">Keygen</th>
+          <th scope="col" class="is-num">Encapsulate</th><th scope="col" class="is-num">Decapsulate</th>
+          <th scope="col" class="is-num">Public key</th><th scope="col" class="is-num">Ciphertext</th></tr>
     </thead>
     <tbody>
     {% for r in rows %}
       <tr>
-        <td><span class="tag">{{ r.alg_id }}</span><span class="dt__sub">{{ r.nist_standard }}</span></td>
-        <td class="num">{{ r.security_category }}</td>
-        <td class="num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
-        <td class="num">{{ '%.3f'|format(r.ops.encapsulate.median_ms) }}</td>
-        <td class="num">{{ '%.3f'|format(r.ops.decapsulate.median_ms) }}</td>
-        <td class="num">{{ r.measured_sizes.public_key }} B</td>
-        <td class="num">{{ r.measured_sizes.ciphertext }} B</td>
+        <td><span class="q-tag">{{ r.alg_id }}</span>{% set std, note = ui_standard(r.nist_standard) %}<span class="q-cap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
+        <td class="is-num">{{ r.security_category }}</td>
+        <td class="is-num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
+        <td class="is-num">{{ '%.3f'|format(r.ops.encapsulate.median_ms) }}</td>
+        <td class="is-num">{{ '%.3f'|format(r.ops.decapsulate.median_ms) }}</td>
+        <td class="is-num">{{ r.measured_sizes.public_key }} B</td>
+        <td class="is-num">{{ r.measured_sizes.ciphertext }} B</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -66,62 +72,50 @@
 {% endmacro %}
 
 {% macro run_meta(rep) %}
-<div class="panel__body" style="padding-top:.5rem;padding-bottom:.5rem">
-  <span class="tiny muted">
-    {{ rep.parameters.iterations }} iterations · {{ rep.parameters.warmup }} warm-up ·
-    {{ rep.parameters.message_size_bytes }} B messages · {{ rep.backend }} ·
-    {{ rep.environment.implementation }} {{ rep.environment.python }} ·
-    {{ rep.environment.system }} · {{ rep.environment.cpu_count }} CPUs
-  </span>
-</div>
+<dl class="q-kv">
+  <div><dt>Measured</dt><dd>{{ rep.parameters.iterations }} iterations after {{ rep.parameters.warmup }} warm-up, over {{ rep.parameters.message_size_bytes }}-byte messages</dd></div>
+  <div><dt>Library</dt><dd>{{ rep.backend }}</dd></div>
+  <div><dt>Machine</dt><dd>{{ rep.environment.system }}, {{ rep.environment.cpu_count }} CPUs, {{ rep.environment.implementation }} {{ rep.environment.python }}</dd></div>
+</dl>
 {% endmacro %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Security</div>
-    <div class="head__sub">
-      {% if report and report.signatures %}Reference run {{ report.generated_at[:10] }}
-      {% else %}No reference run recorded{% endif %}
-    </div>
-  </div>
-  <div class="head__actions">
-    <form method="post" action="{{ url_for('admin.run_benchmark') }}" class="hstack hstack--tight">
-      {{ form.hidden_tag() }}
-      {{ form.iterations(class="input input--auto", type="number", min="1", max=max_iterations, style="width:4.5rem") }}
-      {{ form.submit(class="btn btn--ghost btn--sm") }}
-    </form>
-  </div>
-</div>
-{% include "admin/_nav.html" %}
-{% endblock %}
-
 {% block content %}
+<div class="q-admin">
+{% set has_ref = report and report.signatures %}
+{% call page_header('Security', description=None if has_ref else 'No reference run recorded.', facts=[('Reference run', ui_day(report.generated_at))] if has_ref else []) %}
+  <form method="post" action="{{ url_for('admin.run_benchmark') }}" class="q-admin__run">
+    {{ form.hidden_tag() }}
+    {{ number('iterations', form.iterations.label.text, form.iterations._value(), min=1, max=max_iterations, id=form.iterations.id, inline=True) }}
+    {{ button(form.submit.label.text, 'secondary', type='submit', name='submit', value=form.submit.label.text) }}
+  </form>
+{% endcall %}
+{% include "admin/_nav.html" %}
 
+<div class="q-stack q-stack--lg">
 {% if live %}
-<div class="panel" style="margin-bottom:1rem">
-  <div class="panel__head">
-    <span class="label">Live run</span>
-    <span class="push tiny muted">{{ live.elapsed_s }} s · capped at {{ max_iterations }} iterations</span>
+<section class="q-panel q-panel--table" aria-labelledby="live-t">
+  <div class="q-panel__hd">
+    <h2 class="q-panel__t" id="live-t">Live run</h2>
+    <span class="q-small">Took {{ live.elapsed_s }} seconds. A live run is capped at {{ max_iterations }} iterations.</span>
   </div>
   {{ run_meta(live) }}
-  {{ sig_table(live.signatures) }}
-  {% if live.kems %}{{ kem_table(live.kems) }}{% endif %}
-</div>
+  {{ sig_table(live.signatures, 'Signature algorithms, live run') }}
+  {% if live.kems %}{{ kem_table(live.kems, 'Key encapsulation, live run') }}{% endif %}
+</section>
 {% endif %}
 
 {% if report and report.signatures %}
-<div class="panel">
-  <div class="panel__head"><span class="label">Signatures</span></div>
+<section class="q-panel q-panel--table" aria-labelledby="ref-t">
+  <div class="q-panel__hd"><h2 class="q-panel__t" id="ref-t">Signatures</h2></div>
   {{ run_meta(report) }}
-  {{ sig_table(report.signatures) }}
-</div>
+  {{ sig_table(report.signatures, 'Signature algorithms, reference run') }}
+</section>
 
 {% if report.kems %}
-<div class="panel">
-  <div class="panel__head"><span class="label">Key encapsulation</span></div>
-  {{ kem_table(report.kems) }}
-</div>
+<section class="q-panel q-panel--table" aria-labelledby="kem-t">
+  <div class="q-panel__hd"><h2 class="q-panel__t" id="kem-t">Key encapsulation</h2></div>
+  {{ kem_table(report.kems, 'Key encapsulation, reference run') }}
+</section>
 {% endif %}
 
 {% set truncated = [] %}
@@ -131,18 +125,20 @@
   {% endfor %}
 {% endfor %}
 {% if truncated %}
-<div class="alert alert-warning" style="margin-top:1rem">
-  <span>Time budget reached for {{ truncated | join(', ') }} — those figures summarise fewer samples.</span>
-</div>
+{{ banner('warning', 'Time budget reached for ' ~ (truncated | join(', ')) ~ '. Those figures summarise fewer samples.') }}
 {% endif %}
 
 {% else %}
-<div class="empty">
-  <div class="empty__title">No reference run recorded</div>
-  <p class="empty__sub">
-    Canonical figures are produced offline so they do not compete with the server for CPU.
-  </p>
-  <p><code class="hash" style="cursor:default">py -3.13 scripts/run_benchmark.py</code></p>
+<div class="q-panel">
+  <div class="q-empty">
+    <p class="q-empty__t">No reference run recorded</p>
+    <p class="q-empty__c">
+      Canonical figures are produced offline so they do not compete with the server for CPU.
+    </p>
+    <code class="q-cmdline">py -3.13 scripts/run_benchmark.py</code>
+  </div>
 </div>
 {% endif %}
+</div>
+</div>
 {% endblock %}

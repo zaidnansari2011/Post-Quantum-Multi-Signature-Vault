@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Verify a decision — Q-Vault{% endblock %}
+{#- After a check the title says how it went, so it is the first thing a screen reader reads. -#}
+{% block title %}{% if error %}Couldn’t read that file — {% elif report %}{{ 'Passed' if report.ok else 'Failed' }} — {% endif %}Verify a decision — Q-Vault{% endblock %}
 {% block crumbs %}{% from "ui/navigation.html" import breadcrumbs %}{{ breadcrumbs([('Verify a decision', None)]) }}{% endblock %}
 {#- Verify (rework R2): a file or a paste, then the outcome, a coverage line built from the checks
     that actually ran ("Checked: the decision text, 3 signatures, ..."), and one row per check
     saying Passed, Failed or Unavailable. Rendered identically signed in or out: most people this
     page is for have never had an account here. -#}
 {% from "ui/feedback.html" import banner %}
-{% from "ui/forms.html" import field %}
+{% from "ui/forms.html" import field, file_drop %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/data.html" import hash %}
 {% from "ui/icons.html" import icon %}
@@ -18,11 +19,11 @@
     <p class="q-verify__lead">Check an exported Q-Vault decision: its text, every signature, its place in the log and the witness’s co-signature. No account needed.</p>
   </header>
 
-  {% if error %}{{ banner('critical', 'Couldn’t read that file', error) }}{% endif %}
+  {% if error %}{{ banner('critical', 'Couldn’t read that file', error, announce=True) }}{% endif %}
 
   {% if report %}
   {#- Layer 1: the verifier's own verdict, word for word. -#}
-  {{ banner('success' if report.ok else 'critical', report.summary, (report.facts.title ~ (', in ' ~ report.facts.vault if report.facts.vault else '')) if report.facts.title else None) }}
+  {{ banner('success' if report.ok else 'critical', report.summary, (report.facts.title ~ (', in ' ~ report.facts.vault if report.facts.vault else '')) if report.facts.title else None, announce=True) }}
 
   {% if report.facts.action_text %}
   <section class="q-panel" aria-labelledby="v-dec">
@@ -73,18 +74,15 @@
     {% if not report %}<div class="q-panel__hd"><h2 class="q-panel__t" id="v-form">The exported decision</h2></div>{% else %}<h2 class="visually-hidden" id="v-form">Check another file</h2>{% endif %}
     <div class="q-panel__bd">
       <form method="post" enctype="multipart/form-data" action="{{ url_for('verify.index') }}">
-        <div class="q-file">
-          <label class="q-field__label" for="f-bundle">File</label>
-          {#- EVERY format the export can produce, default first. This list has been wrong twice --
-              once holding only .json while the download was a .zip, then only .zip/.json while
-              the download had become .html -- and both times the symptom was identical: the
-              single file the user actually possessed was greyed out in the file dialog. The route
-              accepts all three either way (verify.py::_read_submission -> verify/reader.py); this
-              attribute only governs what the OS dialog shows. -#}
-          <input id="f-bundle" type="file" name="bundle" aria-describedby="f-bundle-cap"
-                 accept=".html,.zip,.json,text/html,application/zip,application/json">
-          <p class="q-field__cap" id="f-bundle-cap">The .html record, the .zip package or the .json bundle. Up to 4 MB.</p>
-        </div>
+        {#- EVERY format the export can produce, default first. This list has been wrong twice --
+            once holding only .json while the download was a .zip, then only .zip/.json while
+            the download had become .html -- and both times the symptom was identical: the
+            single file the user actually possessed was greyed out in the file dialog. The route
+            accepts all three either way (verify.py::_read_submission -> verify/reader.py); this
+            attribute only governs what the OS dialog shows (and, through qvault.js, what a drop
+            takes). max_bytes is verify.MAX_BUNDLE_BYTES; the route enforces it either way. -#}
+        {{ file_drop('bundle', 'File', id='f-bundle', accept='.html,.zip,.json,text/html,application/zip,application/json',
+                     max_bytes=max_bundle_bytes, caption='The .html record, the .zip package or the .json bundle. Up to 4 MB.') }}
         <p class="q-verify__or">or</p>
         {{ field('bundle_text', 'Paste the contents', type='textarea', caption='The JSON bundle, or the text of the .html record.', attrs={'spellcheck': 'false', 'rows': 5}) }}
         <details class="q-acc">

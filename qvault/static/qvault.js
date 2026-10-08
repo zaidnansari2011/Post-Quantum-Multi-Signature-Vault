@@ -195,7 +195,7 @@
 
     // Flash messages rendered as inline alerts.
     el = t.closest('[data-dismiss]');
-    if (el) { el.closest('.alert').remove(); return; }
+    if (el) { el.closest('[data-flash]').remove(); return; }
 
     // The theme: paint the choice at once, then let the form post it so the server remembers.
     el = t.closest('.themepick button[name="theme"]');
@@ -228,19 +228,6 @@
       }, function () { announce('Copy failed. Select the text and copy it instead.'); });
       return;
     }
-
-    // The older hash chip: click it to copy its full value. A truncated hash you cannot retrieve
-    // in full is not evidence of anything.
-    el = t.closest('.hash[data-copy]');
-    if (el) {
-      var chip = el;
-      copyText(chip.getAttribute('data-copy')).then(function () {
-        var prev = chip.textContent;
-        chip.classList.add('copied');
-        chip.textContent = 'copied';
-        window.setTimeout(function () { chip.classList.remove('copied'); chip.textContent = prev; }, 1000);
-      }, function () {});
-    }
   });
 
   // A link followed inside the drawer closes it, so Back does not return to an open drawer.
@@ -261,10 +248,26 @@
   });
 
   // Submitting a filter form on change is what makes a toolbar feel like a tool rather than a
-  // form: no Apply button to hunt for. Text inputs are excluded: they submit on Enter.
+  // form: no Apply button to hunt for. Text inputs are excluded: they submit on Enter. A date
+  // filter (ui/forms.html, date_field) is a text input that submits on change too, but only once
+  // what it holds is a date or nothing, so a half-typed date is not sent and silently dropped.
   doc.addEventListener('change', function (e) {
-    var el = e.target.closest('[data-autosubmit] select, [data-autosubmit] input[type=date]');
-    if (el) el.form.requestSubmit();
+    var el = e.target.closest('[data-autosubmit] select, [data-autosubmit] input[type=date], ' +
+      '[data-autosubmit] [data-due-field] .q-date__in');
+    if (!el) return;
+    var day = el.closest('[data-due-field][data-mode="date"]');
+    if (day) checkDay(day, true);
+    if (!el.checkValidity()) return;
+    // Another filter changed while a date filter holds something that is not a date (typed, or
+    // refused by the route and shown back): the log is not filtered by it either way, so it is
+    // cleared rather than left to stop the form sending at all.
+    if (!day) {
+      el.form.querySelectorAll('[data-due-field][data-mode="date"]').forEach(function (other) {
+        var input = other.querySelector('.q-date__in');
+        if (!input.checkValidity()) { input.value = ''; checkDay(other, true); }
+      });
+    }
+    el.form.requestSubmit();
   });
 
   // A button marked data-busy-on-submit shows it is working and cannot be pressed twice; the
@@ -337,7 +340,9 @@
    * [data-due-field] (ui/forms.html, due_field): a text input holding "YYYY-MM-DD HH:MM" in UTC.
    * The calendar button opens a month grid and a time list that write that input; the moment is
    * read back in words under the field and in any [data-due-echo] (the "who approves" preview).
-   * Without this script the input is still a text field the form reads. */
+   * Without this script the input is still a text field the form reads.
+   * [data-mode="date"] (date_field) is the same calendar for a day alone: "YYYY-MM-DD", no time,
+   * picking a day closes it and fires change, and only a value that is not a date is read back. */
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
     'September', 'October', 'November', 'December'];
@@ -353,6 +358,44 @@
     var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
     if (d.getUTCMonth() !== +m[2] - 1 || +m[4] > 23 || +m[5] > 59) return null;
     return d;
+  }
+
+  // A day alone, "YYYY-MM-DD", as a UTC midnight, or null.
+  function parseDay(text) {
+    var m = /^\s*(\d{4})-(\d{2})-(\d{2})\s*$/.exec(text || '');
+    if (!m) return null;
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3] ? d : null;
+  }
+
+  function isDay(field) { return field.getAttribute('data-mode') === 'date'; }
+
+  function parseFor(field, text) { return isDay(field) ? parseDay(text) : parseDue(text); }
+
+  function formatDay(d) {
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+  }
+
+  // A date filter says nothing while it holds a date or nothing; otherwise it says how to type
+  // one. While typing (final false) it only clears the message, so "2026-1" is not an error yet,
+  // but the input is invalid to the form at once, so Enter cannot send a day that does not exist
+  // ("2026-13-40" fits the pattern attribute; the route would drop it without a word).
+  function checkDay(field, final) {
+    var input = field.querySelector('.q-date__in');
+    var out = field.querySelector('[data-due-read]');
+    var ok = input.value.trim() === '' || !!parseDay(input.value);
+    var message = ok ? '' : 'Type it as 2026-10-13.';
+    input.setCustomValidity(message);
+    if (!ok && !final) return;
+    var was = out.textContent;
+    out.textContent = message;
+    if (ok) {
+      if (input.hasAttribute('data-bad')) { input.removeAttribute('aria-invalid'); input.removeAttribute('data-bad'); }
+    } else {
+      input.setAttribute('aria-invalid', 'true');
+      input.setAttribute('data-bad', '');
+      if (message !== was) announce(message);
+    }
   }
 
   function formatDue(d) {
@@ -382,6 +425,7 @@
   }
 
   function readBack(field) {
+    if (isDay(field)) { checkDay(field, false); return; }
     var input = field.querySelector('.q-date__in');
     var d = parseDue(input.value);
     var empty = field.getAttribute('data-empty') || '';
@@ -396,7 +440,7 @@
   function buildCalendar(field, month) {
     var pop = field.querySelector('[data-due-pop]');
     var input = field.querySelector('.q-date__in');
-    var chosen = parseDue(input.value);
+    var chosen = parseFor(field, input.value);
     var bounds = dueBounds(field);
     var today = new Date();
     var first = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
@@ -427,18 +471,23 @@
         day + ' ' + MONTHS[date.getUTCMonth()] + ' ' + date.getUTCFullYear() + '"' + (off ? ' disabled' : '') +
         ' tabindex="-1">' + day + '</button>';
     }
-    html += '</div><div class="q-cal__time"><label for="' + input.id + '-time">Time, UTC</label>' +
-      '<span class="q-selwrap"><select class="q-select" id="' + input.id + '-time" data-cal-time>';
-    var current = chosen ? pad(chosen.getUTCHours()) + ':' + pad(chosen.getUTCMinutes()) : '17:00';
-    var listed = false;
-    for (var t = 0; t < 48; t++) {
-      var value = pad(Math.floor(t / 2)) + ':' + (t % 2 ? '30' : '00');
-      if (value === current) listed = true;
-      html += '<option' + (value === current ? ' selected' : '') + '>' + value + '</option>';
+    html += '</div>';
+    // A day alone has no time to choose.
+    if (!isDay(field)) {
+      html += '<div class="q-cal__time"><label for="' + input.id + '-time">Time, UTC</label>' +
+        '<span class="q-selwrap"><select class="q-select" id="' + input.id + '-time" data-cal-time>';
+      var current = chosen ? pad(chosen.getUTCHours()) + ':' + pad(chosen.getUTCMinutes()) : '17:00';
+      var listed = false;
+      for (var t = 0; t < 48; t++) {
+        var value = pad(Math.floor(t / 2)) + ':' + (t % 2 ? '30' : '00');
+        if (value === current) listed = true;
+        html += '<option' + (value === current ? ' selected' : '') + '>' + value + '</option>';
+      }
+      if (!listed) html = html.replace('<select class="q-select" id="' + input.id + '-time" data-cal-time>',
+        '<select class="q-select" id="' + input.id + '-time" data-cal-time><option selected>' + current + '</option>');
+      html += '</select>' + chevron('down') + '</span></div>';
     }
-    if (!listed) html = html.replace('<select class="q-select" id="' + input.id + '-time" data-cal-time>',
-      '<select class="q-select" id="' + input.id + '-time" data-cal-time><option selected>' + current + '</option>');
-    html += '</select>' + chevron('down') + '</span></div><div class="q-cal__ft">' +
+    html += '<div class="q-cal__ft">' +
       '<button class="q-btn q-btn--ghost q-btn--sm" type="button" data-cal-clear>Clear</button>' +
       '<button class="q-btn q-btn--secondary q-btn--sm" type="button" data-cal-done>Done</button></div>';
     pop.innerHTML = html;
@@ -459,12 +508,15 @@
   function openDue(field) {
     var pop = field.querySelector('[data-due-pop]');
     var button = field.querySelector('[data-due-open]');
-    var chosen = parseDue(field.querySelector('.q-date__in').value);
+    var chosen = parseFor(field, field.querySelector('.q-date__in').value);
     var bounds = dueBounds(field);
     var base = chosen || bounds.min || new Date();
     var day = buildCalendar(field, base);
-    pop.classList.remove('is-up');
+    pop.classList.remove('is-up', 'is-end');
     pop.hidden = false;
+    // Line up with the field's right edge when it would run off the right of the window (a date
+    // filter in a phone's right-hand column).
+    if (pop.getBoundingClientRect().right > doc.documentElement.clientWidth) pop.classList.add('is-end');
     // Open upwards when the calendar would run off the bottom of the window and fits above.
     var box = pop.getBoundingClientRect();
     var input = field.querySelector('.q-date__in').getBoundingClientRect();
@@ -481,9 +533,18 @@
     if (refocus) field.querySelector('[data-due-open]').focus();
   }
 
+  // Tell the page the input changed, as typing and leaving it would: a script's write fires
+  // nothing by itself, and a filter form submits on change.
+  function changed(input) { input.dispatchEvent(new Event('change', { bubbles: true })); }
+
   function setDue(field, dayAt) {
     var pop = field.querySelector('[data-due-pop]');
     var input = field.querySelector('.q-date__in');
+    if (isDay(field)) {
+      input.value = formatDay(new Date(dayAt));
+      checkDay(field, true);
+      return;
+    }
     var time = (pop.querySelector('[data-cal-time]') || {}).value || '17:00';
     var parts = time.split(':');
     var day = new Date(dayAt);
@@ -523,6 +584,11 @@
     var dayButton = t.closest('[data-cal-day]');
     if (dayButton && !dayButton.disabled) {
       setDue(field, +dayButton.getAttribute('data-cal-day'));
+      if (isDay(field)) {
+        closeDue(field, true);
+        changed(field.querySelector('.q-date__in'));
+        return;
+      }
       var at = +dayButton.getAttribute('data-cal-day');
       buildCalendar(field, new Date(at));
       var same = field.querySelector('[data-cal-day="' + at + '"]');
@@ -530,9 +596,12 @@
       return;
     }
     if (t.closest('[data-cal-clear]')) {
-      field.querySelector('.q-date__in').value = '';
+      var cleared = field.querySelector('.q-date__in');
+      var had = cleared.value !== '';
+      cleared.value = '';
       readBack(field);
       closeDue(field, true);
+      if (isDay(field) && had) changed(cleared);
       return;
     }
     if (t.closest('[data-cal-done]')) closeDue(field, true);
@@ -549,6 +618,20 @@
   doc.addEventListener('input', function (e) {
     var field = e.target.closest && e.target.closest('[data-due-field]');
     if (field && e.target.classList.contains('q-date__in')) readBack(field);
+  });
+
+  // Tabbing (or clicking a control) out of the field closes its calendar, so an open dialog is
+  // never left behind the focus. Only when focus lands somewhere: a click on nothing focusable
+  // is the click handler's to judge, and a button that takes no focus on click (Safari) would
+  // otherwise close the calendar before its own click arrived.
+  doc.addEventListener('focusout', function (e) {
+    var field = e.target.closest && e.target.closest('[data-due-field]');
+    if (field && e.relatedTarget && !field.contains(e.relatedTarget)) closeDue(field, false);
+  });
+
+  doc.addEventListener('change', function (e) {
+    var field = e.target.closest && e.target.closest('[data-due-field][data-mode="date"]');
+    if (field && e.target.classList.contains('q-date__in')) checkDay(field, true);
   });
 
   doc.addEventListener('keydown', function (e) {
@@ -582,23 +665,71 @@
    * [data-drop] (ui/forms.html, file_drop): the real file input stays in the page; this adds
    * dropping a file on the zone and naming the chosen file. */
 
+  function sizeText(bytes) {
+    return bytes < 1024 ? bytes + ' bytes' : bytes < 1048576 ? Math.round(bytes / 1024) + ' KB'
+      : (bytes / 1048576).toFixed(1).replace(/\.0$/, '') + ' MB';
+  }
+
   function showFile(drop) {
     var input = drop.querySelector('input[type=file]');
     var name = drop.querySelector('[data-drop-name]');
     var act = drop.querySelector('.q-drop__act');
     var file = input.files && input.files[0];
     drop.classList.toggle('is-filled', !!file);
-    if (name) {
-      name.textContent = file ? file.name + ', ' + (file.size < 1024 ? file.size + ' bytes'
-        : file.size < 1048576 ? Math.round(file.size / 1024) + ' KB'
-        : (file.size / 1048576).toFixed(1) + ' MB') : '';
-    }
+    if (name) name.textContent = file ? file.name + ', ' + sizeText(file.size) : '';
     if (act) act.textContent = file ? 'Choose another file' : 'Choose a file';
+  }
+
+  // The accept list as the file dialog reads it: ".json", "application/json" or "image/*".
+  function accepts(input, file) {
+    var list = input.getAttribute('accept');
+    if (!list) return true;
+    var name = file.name.toLowerCase();
+    var type = (file.type || '').toLowerCase();
+    return list.split(',').some(function (a) {
+      a = a.trim().toLowerCase();
+      if (!a) return false;
+      if (a.charAt(0) === '.') return name.slice(-a.length) === a;
+      if (a.slice(-2) === '/*') return type.indexOf(a.slice(0, -1)) === 0;
+      return type === a;
+    });
+  }
+
+  // Why this file cannot be sent, or ''. The route enforces its own limit; this saves the wait.
+  function fileProblem(input, file) {
+    var max = +input.getAttribute('data-max-bytes');
+    if (max && file.size > max) {
+      return file.name + ' is larger than ' + sizeText(max) + ', the most this form takes.';
+    }
+    if (!accepts(input, file)) return file.name + ' is not a type this form takes.';
+    return '';
+  }
+
+  function dropMessage(drop, message) {
+    var input = drop.querySelector('input[type=file]');
+    var field = drop.closest('.q-field');
+    var out = field && field.querySelector('[data-drop-err]');
+    if (!out) return;
+    out.textContent = message;
+    if (message) {
+      input.setAttribute('aria-invalid', 'true');
+      input.setAttribute('data-bad', '');
+      announce(message);
+    } else if (input.hasAttribute('data-bad')) {
+      input.removeAttribute('aria-invalid');
+      input.removeAttribute('data-bad');
+    }
   }
 
   doc.addEventListener('change', function (e) {
     var drop = e.target.closest && e.target.closest('[data-drop]');
-    if (drop) showFile(drop);
+    if (!drop) return;
+    var input = drop.querySelector('input[type=file]');
+    var file = input.files && input.files[0];
+    var problem = file ? fileProblem(input, file) : '';
+    if (problem) input.value = '';
+    dropMessage(drop, problem);
+    showFile(drop);
   });
 
   ['dragenter', 'dragover'].forEach(function (type) {
@@ -617,10 +748,45 @@
       drop.classList.remove('is-over');
       if (type === 'drop' && e.dataTransfer && e.dataTransfer.files.length) {
         var input = drop.querySelector('input[type=file]');
-        input.files = e.dataTransfer.files;
-        showFile(drop);
+        var files = e.dataTransfer.files;
+        // The file dialog would never let these through, so a drop must not either.
+        var problem = files.length > 1 && !input.multiple ? 'Drop one file at a time.' : fileProblem(input, files[0]);
+        if (problem) { dropMessage(drop, problem); return; }
+        input.files = files;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       }
     });
+  });
+
+  /* ------------------------------------------------------------------ the number stepper
+   * [data-stepper] (ui/forms.html, number): the input stays a native number input; this shows the
+   * − and + buttons, which step it as the arrow keys do and stop at its min and max. */
+
+  function syncStepper(box) {
+    var input = box.querySelector('.q-num__in');
+    var value = input.value === '' ? NaN : +input.value;
+    box.querySelectorAll('[data-step]').forEach(function (b) {
+      var down = +b.getAttribute('data-step') < 0;
+      var limit = down ? input.min : input.max;
+      b.disabled = input.disabled || input.readOnly ||
+        (limit !== '' && !isNaN(value) && (down ? value <= +limit : value >= +limit));
+    });
+  }
+
+  doc.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-stepper] [data-step]');
+    if (!b || b.disabled) return;
+    var input = b.closest('[data-stepper]').querySelector('.q-num__in');
+    try {
+      if (+b.getAttribute('data-step') < 0) input.stepDown(); else input.stepUp();
+    } catch (err) { return; }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  doc.addEventListener('input', function (e) {
+    var box = e.target.closest && e.target.closest('[data-stepper]');
+    if (box) syncStepper(box);
   });
 
   /* ------------------------------------------------------------------ start */
@@ -634,9 +800,49 @@
     });
     if (said.length) announce(said.join('. '));
     toasts.forEach(armToast);
+    // A form sent back with errors: focus its first refused field, so a screen reader reads its
+    // label and then its error (tied by aria-describedby) at once, rather than leaving the reader
+    // at the top of a page that looks unchanged. Only a posted form's fields, and only while
+    // nothing else has focus, so a filter on a page someone opened never takes it.
+    var refused = doc.querySelector('form[method="post" i] [aria-invalid="true"]');
+    // A refused radio group marks its fieldset; its chosen option, or its first, takes the focus.
+    if (refused && refused.tagName === 'FIELDSET') {
+      refused = refused.querySelector('input:checked') || refused.querySelector('input');
+    }
+    if (refused && (doc.activeElement === doc.body || !doc.activeElement)) refused.focus();
+    // A tab strip wider than a phone scrolls sideways: bring the current tab into view, so the
+    // page never opens on a strip whose chosen tab is cut off. Its right edge fades to say there
+    // is more; at the end of the scroll there is not, so the fade comes off (.is-end).
+    doc.querySelectorAll('.q-tabs').forEach(function (strip) {
+      var edge = function () {
+        strip.classList.toggle('is-end', strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1);
+      };
+      strip.addEventListener('scroll', edge, { passive: true });
+      var current = strip.querySelector('[aria-current="page"]');
+      if (current && strip.scrollWidth > strip.clientWidth) {
+        var box = strip.getBoundingClientRect();
+        var tab = current.getBoundingClientRect();
+        if (tab.left < box.left || tab.right > box.right - box.width * 0.15) {
+          strip.scrollLeft += tab.left - box.left - (box.width - tab.width) / 2;
+        }
+      }
+      edge();
+    });
     refreshTimes();
     window.setInterval(refreshTimes, 60000);
-    doc.querySelectorAll('[data-due-field]').forEach(readBack);
+    // A date filter the page came back holding (from the URL) is checked as finished, so a value
+    // that is not a date shows its message and aria-invalid now, not only once it is edited.
+    doc.querySelectorAll('[data-due-field]').forEach(function (field) {
+      if (isDay(field) && field.querySelector('.q-date__in').value.trim() !== '') checkDay(field, true);
+      else readBack(field);
+    });
+    // The calendar button is drawn hidden: without this script it would do nothing.
+    doc.querySelectorAll('[data-due-open][hidden]').forEach(function (b) { b.hidden = false; });
+    doc.querySelectorAll('[data-stepper]').forEach(function (box) {
+      box.classList.add('is-on');
+      box.querySelectorAll('[data-step]').forEach(function (b) { b.hidden = false; });
+      syncStepper(box);
+    });
   }
 
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', start);

@@ -7,7 +7,7 @@
 {% from "ui/buttons.html" import button, icon_button %}
 {% from "ui/data.html" import hash, rule_diff %}
 {% from "ui/feedback.html" import banner %}
-{% from "ui/forms.html" import select %}
+{% from "ui/forms.html" import select, date_field, number %}
 {% from "ui/avatars.html" import avatar %}
 {% from "ui/icons.html" import icon %}
 {% block title %}Audit — Q-Vault{% endblock %}
@@ -39,7 +39,7 @@
   {%- elif not report.anchor_ok %}The seal over the end of the record doesn’t verify.
   {%- elif not report.anchor_covers_head %}The record was rewritten. The seal still covers entry #{{ report.anchor_seq }} and no longer matches the newest entry.{% endif -%}
 {% endset %}
-<div class="q-gap">{{ banner('critical', 'Tamper detected', why) }}</div>
+<div class="q-gap">{{ banner('critical', 'Tamper detected', why, announce=True) }}</div>
 {% endif %}
 
 <div class="q-audit-sum q-audit-sum--log">
@@ -75,8 +75,12 @@
   {{ select('event', 'Event', ev_opts, selected=filters.event, id='f-event') }}
   {{ select('vault', 'Vault', vault_opts, selected=filters.vault_id or '', id='f-vault') }}
   {{ select('actor', 'Person', actor_opts, selected=filters.actor_id or '', id='f-actor') }}
-  <div class="q-field"><label class="q-field__label" for="f-from">From</label><input class="q-input" id="f-from" type="date" name="from" value="{{ filters.date_from }}"></div>
-  <div class="q-field"><label class="q-field__label" for="f-to">To</label><input class="q-input" id="f-to" type="date" name="to" value="{{ filters.date_to }}"></div>
+  {#- A day the route refused (not a real date) is shown as typed and said to be wrong, not
+      silently dropped; the log is not filtered by it. -#}
+  {% set raw_from = (request.args.get('from') or '').strip()[:32] %}
+  {% set raw_to = (request.args.get('to') or '').strip()[:32] %}
+  {{ date_field('from', 'From', filters.date_from or raw_from, id='f-from', bad=raw_from and not filters.date_from) }}
+  {{ date_field('to', 'To', filters.date_to or raw_to, id='f-to', bad=raw_to and not filters.date_to) }}
   <noscript>{{ button('Apply', 'secondary', type='submit') }}</noscript>
   {% if filters.is_filtered %}{{ button('Clear filters', 'ghost', href=url_for('ledger.view')) }}{% endif %}
 </form>
@@ -128,10 +132,9 @@
 {% if demo_enabled %}
 <div class="q-dev q-gap-top">
   <p class="q-dev__t">Developer: tamper with the record to see the check catch it</p>
-  <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="q-line q-line--gap">
+  <form method="post" action="{{ url_for('ledger.demo_tamper') }}" class="q-line q-line--gap q-tamper">
     {{ tamper_form.hidden_tag() }}
-    <label for="{{ tamper_form.target_seq.id }}">Entry</label>
-    {{ tamper_form.target_seq(class="q-input q-input--narrow", type="number", min="1") }}
+    {{ number('target_seq', 'Entry', tamper_form.target_seq._value(), min=1, required=True, id=tamper_form.target_seq.id) }}
     {{ button('Edit an entry', 'ghost', type='submit', size='sm', name='edit', value=tamper_form.edit.label.text) }}
     {{ button('Rewrite from an entry', 'ghost', type='submit', size='sm', name='rewrite', value=tamper_form.rewrite.label.text) }}
   </form>

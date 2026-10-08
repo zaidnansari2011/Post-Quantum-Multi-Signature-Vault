@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import String, and_, cast, distinct, or_, select
 
@@ -137,10 +137,15 @@ class Filters:
 
         def _date(name):
             raw = (args.get(name) or "").strip()
-            # Only an ISO date is accepted; anything else is dropped rather than passed to SQL.
+            # Only an ISO date that is a real day is accepted ("2026-13-40" fits the shape and
+            # would compare as text); anything else is dropped rather than passed to SQL.
             if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
                 head, mid, tail = raw[:4], raw[5:7], raw[8:]
                 if head.isdigit() and mid.isdigit() and tail.isdigit():
+                    try:
+                        date.fromisoformat(raw)
+                    except ValueError:
+                        return ""
                     return raw
             return ""
 
