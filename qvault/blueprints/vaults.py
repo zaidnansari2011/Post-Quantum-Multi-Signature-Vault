@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from base64 import b64decode
 from datetime import UTC, datetime, timedelta
 
@@ -203,7 +204,7 @@ def vault_detail(vid: int):
         n_signers=len(vault.signer_ids()),
         # Plan S15, and whether it leaves every new decision unable to pass (eligibility.py).
         requester_can_approve=eligibility.vault_allows_requester(vault),
-        impossible=eligibility.impossible_to_pass(vault),
+        impossible=eligibility.why_cannot_pass_if_raised(vault),
         rule_form=VaultRuleForm(),
         # Its rule changes as before -> after, from the audit log (R5). Settings is the owner's.
         rule_changes=audit_service.rule_changes(vault) if tab == "settings" and is_owner else [],
@@ -418,9 +419,54 @@ def set_requester_rule(vid: int):
                 "decisions already open.",
                 "success",
             )
-        if eligibility.impossible_to_pass(vault):
-            flash(eligibility.CANNOT_PASS_UNDER_SOD, "warning")
+        refusal = eligibility.cannot_raise(vault)
+        if refusal is not None:
+            flash(refusal, "warning")
     return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+
+
+#: What a vault rule change since a decision was raised does to it (``_with_effects``).
+_APPROVER_WORDS = ("Approver", "Owner")
+
+
+def _with_effects(proposal, changes: list[dict]) -> list[dict]:
+    """Each change with ``effect``: whether and how it reaches this open decision, decided from
+    the decision’s own facts. Its threshold and signer set are frozen; who may sign is checked
+    at signing (the frozen set AND an approver now), and so is separation of duties (the rule
+    it was raised under AND the vault’s now). Keys, worded by the decision page:
+
+    * ``kept_rule``: a threshold change, which never reaches it;
+    * ``sod_on``: the requester can’t approve it now;
+    * ``sod_off``: the requester can approve it again (it was raised while they could);
+    * ``sod_off_frozen``: it doesn’t (it was raised while they couldn’t);
+    * ``not_in_set``: someone who wasn’t one of its approvers when it was raised;
+    * ``approver_again``: one of its approvers then, an approver again now;
+    * ``no_longer``: one of its approvers then, no longer one;
+    * ``still_cannot``: one of its approvers then, and still not an approver.
+    """
+    snapshot = set(json.loads(proposal.authorized_signers_snapshot))
+    lifecycle = proposal.lifecycle
+    raised_allowing = lifecycle is None or lifecycle.requester_can_approve is not False
+    out = []
+    for change in changes:
+        event, diff = change["event"], change["diff"]
+        if event == "vault_threshold_changed":
+            effect = "kept_rule"
+        elif event == "vault_rule_changed":
+            if diff["after"] == "No":
+                effect = "sod_on"
+            else:
+                effect = "sod_off" if raised_allowing else "sod_off_frozen"
+        elif change.get("user_id") not in snapshot:
+            effect = "not_in_set"
+        elif diff["after"] in _APPROVER_WORDS:
+            effect = "approver_again"
+        elif diff["before"] in _APPROVER_WORDS:
+            effect = "no_longer"
+        else:
+            effect = "still_cannot"
+        out.append({**change, "effect": effect})
+    return out
 
 
 def _payments_possible(vault) -> bool:
@@ -660,6 +706,7 @@ def proposal_detail(vid: int, pid: str):
     # and the evidence layers, each built from the checks above or run fresh in evidence_service.
     tab = request.args.get("tab")
     tab = tab if tab in ("evidence", "technical") else "overview"
+    cannot_pass = proposal.status == "open" and not outlook.reachable
     status_key, status_n = evidence.personal_status(
         # Effective, not stored: a passed deadline reads Expired before the sweep runs (S20).
         inbox_service.effective_status(proposal),
@@ -667,6 +714,7 @@ def proposal_detail(vid: int, pid: str):
         approvals=approvals,
         required_m=proposal.required_m,
         payout_state=payout["state"] if payout else None,
+        can_still_pass=not cannot_pass,
     )
     proof = evidence_service.decision_evidence(
         proposal, binding=binding, votes=votes, viewer_id=current_user.id, payout=payout
@@ -689,7 +737,13 @@ def proposal_detail(vid: int, pid: str):
         can_approve_ids=sorted(
             set(eligible) | {s.signer_id for s in proposal.signatures if s.decision == "approve"}
         ),
-        cannot_pass=proposal.status == "open" and not outlook.reachable,
+        cannot_pass=cannot_pass,
+        # Why, person by person, from what holds now (``eligibility.shortfall``).
+        shortfall=(
+            evidence.shortfall_lines(eligibility.shortfall(proposal), proof.names, current_user.id)
+            if cannot_pass
+            else []
+        ),
         needed=outlook.needed,
         # Plan S15: the person who raised it, when they may not approve it.
         own_decision=current_user.id == proposal.creator_id
@@ -732,7 +786,10 @@ def proposal_detail(vid: int, pid: str):
         # The vault's rule changes since this decision was raised, while it is open (R5): some
         # apply to it (who can sign is checked at signing), some don't (its threshold is frozen).
         changes_since=(
-            audit_service.rule_changes(vault, after_seq=proof.payload["created_seq"], limit=5)
+            _with_effects(
+                proposal,
+                audit_service.rule_changes(vault, after_seq=proof.payload["created_seq"], limit=5),
+            )
             if proposal.status == "open" and proof.payload["created_seq"] is not None
             else []
         ),

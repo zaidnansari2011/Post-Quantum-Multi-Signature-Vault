@@ -130,7 +130,12 @@
     <h2 class="q-preview__t" id="preview-t">Who approves</h2>
     <p class="q-preview__rule">
       {{ quorum(0, preview.m, 'md', show_count=False) }}
+      {%- if preview.impossible %}
+      {#- Too few could approve it: "Any 2 of Brij" would read as a rule it can meet. -#}
+      <span>Needs {{ preview.m }} approval{{ '' if preview.m == 1 else 's' }}; {% if preview.names %}only {{ ui_names(preview.names) }} can give one{% else %}nobody can give one{% endif %}</span>
+      {%- else %}
       <span>Any {{ preview.m }} of {{ ui_names(preview.names) }}</span>
+      {%- endif %}
     </p>
     <ul class="q-preview__people">
       {%- for person in preview.people %}
@@ -152,13 +157,13 @@
       {%- endif %}
     </dl>
     {%- if preview.impossible %}
-    <p class="q-preview__warn" role="alert">{{ icon('warning') }}It can’t pass: it would need all {{ preview.n }} approvers, and you can’t approve your own decision. Ask the vault’s owner to lower the threshold or add an approver.</p>
+    <p class="q-preview__warn" role="alert">{{ icon('warning') }}It can’t pass: {{ preview.why }}</p>
     {%- endif %}
     <p class="q-preview__cap">Approvers are fixed when you raise it. People added to {{ vault.name }} later can’t approve it.</p>
   </aside>
 
   <div class="q-compose__act">
-    <button class="q-btn q-btn--primary" type="submit" name="submit" value="{{ form.submit.label.text }}" data-busy-on-submit>
+    <button class="q-btn q-btn--primary" type="submit" name="submit" value="{{ form.submit.label.text }}" data-busy-on-submit{% if preview.impossible %} disabled{% endif %}>
       <span>{{ 'Raise payment' if is_payment else 'Raise decision' }}</span><span class="q-btn__busy" aria-hidden="true"><i></i><i></i><i></i></span>
     </button>
     {{ button('Cancel', 'ghost', href=url_for('vaults.vault_detail', vid=vault.id)) }}

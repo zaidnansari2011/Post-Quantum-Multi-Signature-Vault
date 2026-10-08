@@ -329,3 +329,72 @@ def test_where_the_requester_may_approve_their_decision_still_needs_them(app):
     ada, _brij, _chen, vault = _team("ownlistsoff", separation=False)
     proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
     assert inbox_service.counts(ada)["needs_you"] == 1
+
+
+# --- approvers who can't approve now, at raising ------------------------------------------------
+
+
+def _with_chen_suspended(prefix, threshold_m=3, separation=False):
+    """3 approvers, Chen suspended from the workspace: only Ada and Brij can approve now."""
+    ada, brij, chen, vault = _team(prefix, threshold_m=threshold_m, separation=separation)
+    workspace_service.suspend_member(
+        workspace_service.workspace_of_vault(vault), chen.id, actor=ada
+    )
+    return ada, brij, chen, vault
+
+
+def test_raising_is_refused_when_suspended_approvers_leave_too_few(app):
+    """3 of 3 with Chen suspended raised fine and was born unable to pass; the banner then blamed
+    something that happened since. It is refused, in words that say why."""
+    ada, brij, _chen, vault = _with_chen_suspended("suspraise")
+    assert eligibility.impossible_to_pass(vault, requester_id=ada.id) is True
+    with pytest.raises(ProposalError, match="could never pass") as refused:
+        proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
+    assert "needs 3 approvals, and only 2 people could give one" in str(refused.value)
+    assert "1 of its approvers is suspended from the workspace" in str(refused.value)
+    assert "reinstate a suspended approver" in str(refused.value)
+
+    vault_service.set_threshold(vault, 2, actor_id=ada.id)
+    proposal_service.create_proposal(vault, brij, "T", "Release 33,000.")
+
+
+def test_suspended_approvers_and_separation_together_are_counted_once_each(app):
+    ada, _brij, _chen, vault = _with_chen_suspended("suspsod", threshold_m=2, separation=True)
+    with pytest.raises(ProposalError, match="only 1 person could give one") as refused:
+        proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
+    assert "you can’t approve your own decision here" in str(refused.value)
+
+
+def test_the_preview_warns_before_raising_and_does_not_offer_raise(client):
+    ada, _brij, _chen, vault = _with_chen_suspended("susppreview")
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    preview = client.get(f"/vaults/{vault.id}/proposals/new").get_data(as_text=True)
+    assert "It can’t pass: it needs 3 approvals, and only 2 people could give one" in preview
+    assert "Needs 3 approvals; only Brij and you can give one" in preview
+    assert "data-busy-on-submit disabled" in preview
+    page = client.get(f"/vaults/{vault.id}").get_data(as_text=True)
+    assert "No decision raised here can pass" in page
+
+
+def test_under_separation_the_preview_names_only_who_can_approve(client):
+    """2 of 2 under S15: "Any 2 of Brij" read as a rule it could meet, and listed You."""
+    ada = auth_service.register_user("solo-a@e.com", "Ada", PASSWORD)
+    brij = auth_service.register_user("solo-b@e.com", "Brij", PASSWORD)
+    vault = vault_service.create_vault(ada, "Pair", "", 2)
+    vault_service.add_member(vault, brij.email, "signer", actor_id=ada.id)
+    vault_service.set_requester_can_approve(vault, False, actor_id=ada.id)
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    preview = client.get(f"/vaults/{vault.id}/proposals/new").get_data(as_text=True)
+    assert "Needs 2 approvals; only Brij can give one" in preview
+    assert "Any 2 of Brij" not in preview
+    people = preview.split('class="q-preview__people"', 1)[1].split("</ul>", 1)[0]
+    assert "<span>You</span>" not in people and "<span>Brij</span>" in people
+    assert "data-busy-on-submit disabled" in preview
+
+
+def test_a_vault_that_can_pass_offers_raise(client):
+    ada, _brij, _chen, vault = _team("canraise")
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    preview = client.get(f"/vaults/{vault.id}/proposals/new").get_data(as_text=True)
+    assert "data-busy-on-submit disabled" not in preview
+    assert "data-busy-on-submit>" in preview

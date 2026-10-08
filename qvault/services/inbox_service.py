@@ -393,6 +393,7 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
             payment=p.action is not None,
             payout_state=payouts.get(p.id),
             treasuries_on=treasuries_on,
+            can_still_pass=outlook.reachable,
         )
         view = decision_types.typed_view(p, typed.get(p.id))
         rows.append(
@@ -445,6 +446,7 @@ def status_key(
     payment: bool = False,
     payout_state: str | None = None,
     treasuries_on: bool = False,
+    can_still_pass: bool = True,
 ) -> tuple[str, int | None]:
     """A decision's state as a key of the closed status vocabulary (plan S6), with its count.
 
@@ -454,10 +456,17 @@ def status_key(
     still needed, not people. An approved payment reads as its payout: Queued until the treasury
     pays, then Paid, or Failed when it cannot be paid; with treasuries switched off and no payout
     it stays Approved. ``ui.status_of`` turns the key into its word and tone.
+
+    ``can_still_pass`` is False when too few people can still approve an open decision to reach
+    its threshold (``eligibility.outlook``): it then reads Can’t pass instead of Waiting on N.
+    A derived word, not a status: the decision is still open, and Needs your signature still wins
+    for someone who can sign it, since their vote is still taken.
     """
     if status == "open":
         if needs_me:
             return "needs_you", None
+        if not can_still_pass:
+            return "cannot_pass", None
         return "waiting", max(required_m - approvals, 1)
     if status == "approved" and payment:
         if payout_state is not None:

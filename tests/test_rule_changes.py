@@ -214,3 +214,71 @@ def test_the_seal_names_only_who_can_still_approve(client):
     page = _page(client, vault, proposal)
     assert "It needs 2 more approvals." in page
     assert "can approve." not in page.split('id="sig-t"', 1)[1].split("</p>", 1)[0]
+
+
+def test_a_snapshot_approver_made_an_approver_again_is_told_they_can_sign_it(client):
+    """Chen was one of its approvers when it was raised, was demoted, and is an approver again:
+    the gate lets Chen sign, so the page must not say the change doesn't apply."""
+    ada, brij, chen, vault = _team("repromote", threshold_m=2)
+    proposal = proposal_service.create_proposal(vault, ada, "Renew", "Renew the contract.")
+    vault_service.change_member_role(vault, chen.id, "viewer", actor_id=ada.id)
+    vault_service.change_member_role(vault, chen.id, "signer", actor_id=ada.id)
+    from qvault.services import eligibility
+
+    assert eligibility.can_sign(proposal, chen.id) is True
+    _login(client, brij)
+    page = _page(client, vault, proposal)
+    assert "they were one of its approvers when it was raised, so being one again" in page
+    assert "Doesn’t apply here: only its approvers when it was raised can sign it." not in page
+
+
+def test_someone_who_was_never_one_of_its_approvers_is_not_said_to_reach_it(client):
+    ada, brij, _chen, vault = _team("outsider", threshold_m=2)
+    dev = auth_service.register_user("outsider-d@e.com", "Dev Shah", PASSWORD)
+    vault_service.add_member(vault, dev.email, "viewer", actor_id=ada.id)
+    proposal = proposal_service.create_proposal(vault, ada, "Renew", "Renew the contract.")
+    vault_service.remove_member(vault, dev.id, actor_id=ada.id)
+    _login(client, brij)
+    page = _page(client, vault, proposal)
+    assert "Doesn’t apply here: only its approvers when it was raised can sign it." in page
+    assert "Applies here: only someone who is still an approver can sign it." not in page
+
+
+def test_turning_separation_off_again_says_whether_it_reopens_this_decision(client):
+    """Raised while the requester could approve: off then on again lets them approve it again,
+    and the page says so. Raised while they couldn't: on again doesn't reopen it."""
+    from qvault.services import eligibility
+
+    ada, brij, _chen, vault = _team("offon", threshold_m=2)
+    vault_service.set_requester_can_approve(vault, True, actor_id=ada.id)
+    under_yes = proposal_service.create_proposal(vault, ada, "Yes", "Raised under yes.")
+    vault_service.set_requester_can_approve(vault, False, actor_id=ada.id)
+    under_no = proposal_service.create_proposal(vault, ada, "No", "Raised under no.")
+    vault_service.set_requester_can_approve(vault, True, actor_id=ada.id)
+
+    assert eligibility.can_sign(under_yes, ada.id) is True
+    assert eligibility.can_sign(under_no, ada.id) is False
+    _login(client, brij)
+    page = _page(client, vault, under_yes)
+    assert "Applies here: whoever raised it can approve it again." in page
+    assert "Applies here too: whoever raised it can’t approve it." in page
+    page = _page(client, vault, under_no)
+    assert "Doesn’t reopen this decision to whoever raised it" in page
+    assert "can approve it again" not in page
+
+
+def test_the_details_say_later_changes_add_nobody_rather_than_that_nothing_applies(client):
+    ada, brij, _chen, vault = _team("details")
+    proposal = proposal_service.create_proposal(vault, ada, "Renew", "Renew the contract.")
+    _login(client, brij)
+    page = _page(client, vault, proposal)
+    assert "Later changes to the threshold or approvers don’t add anyone to this decision." in page
+    assert "Later changes to the vault’s rule don’t apply" not in page
+
+
+def test_the_settings_caption_says_what_turning_it_back_on_does(client):
+    ada, _brij, _chen, vault = _team("caption")
+    _login(client, ada)
+    page = client.get(f"/vaults/{vault.id}?tab=settings").get_data(as_text=True)
+    assert "Turning it back on lets whoever raised an open decision approve it again" in page
+    assert "turning it on doesn’t reopen them" not in page

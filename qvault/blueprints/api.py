@@ -27,6 +27,7 @@ from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, current_app, g, jsonify, request
 
+from qvault import evidence
 from qvault.chain.action import NETWORKS, format_wei
 from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
@@ -46,6 +47,7 @@ from qvault.services import (
     device_service,
     discussion_service,
     eligibility,
+    evidence_service,
     execution_service,
     inbox_service,
     key_service,
@@ -845,8 +847,11 @@ def _proposal_summary(proposal, user) -> dict:
         voted=[s.signer_id for s in proposal.signatures],
         eligible=eligible,
     )
+    can_still_pass = inbox_service.effective_status(proposal) != "open" or outlook.reachable
     return {
-        **_summary_facts(proposal, user, approvals, rejections, eligible=eligible),
+        **_summary_facts(
+            proposal, user, approvals, rejections, eligible=eligible, can_still_pass=can_still_pass
+        ),
         "proposal_uuid": proposal.proposal_uuid,
         "title": proposal.title,
         "vault_id": proposal.vault_id,
@@ -865,7 +870,16 @@ def _proposal_summary(proposal, user) -> dict:
         # open decision whose approvers were demoted, removed or suspended can stop being able to
         # pass; it stays open until its deadline rather than being rejected for them.
         "can_still_approve": list(outlook.still),
-        "can_still_pass": inbox_service.effective_status(proposal) != "open" or outlook.reachable,
+        "can_still_pass": can_still_pass,
+        # Why it can't, one sentence per cause that holds now, as the web's banner says it
+        # (eligibility.shortfall); empty while it can still pass.
+        "cannot_pass_why": (
+            []
+            if can_still_pass
+            else evidence.shortfall_lines(
+                eligibility.shortfall(proposal), evidence_service.names_for(proposal), user.id
+            )
+        ),
         # A1 and plan S15, for the phone's personal status (mobile/src/logic/personalStatus.ts).
         "raised_by": {
             "id": proposal.creator_id,
@@ -998,7 +1012,13 @@ def _lifecycle_view(proposal) -> dict:
 
 
 def _summary_facts(
-    proposal, user, approvals: int, rejections: int, *, eligible: set[int] | None = None
+    proposal,
+    user,
+    approvals: int,
+    rejections: int,
+    *,
+    eligible: set[int] | None = None,
+    can_still_pass: bool = True,
 ) -> dict:
     """The status as every web list says it (rework S6): ``display_status`` is the key of the
     closed vocabulary with its word and tone, from the same ``inbox_service.status_key`` the Home
@@ -1023,6 +1043,7 @@ def _summary_facts(
         payment=proposal.action is not None,
         payout_state=payout.state if payout is not None else None,
         treasuries_on=bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED")),
+        can_still_pass=can_still_pass,
     )
     word, tone = status_of(key, n)
     return {"display_status": {"key": key, "word": word, "tone": tone}}

@@ -44,11 +44,12 @@
 {{ tabs(tab_items, tab, 'Vault sections') }}
 <div class="q-vault__body">
 {% if impossible %}
-{#- S15 with a threshold of every approver: one approver (whoever raises it) is always out of
-    reach, so New decision refuses. Said here, to everyone, rather than only on refusal. -#}
-{{ banner('warning', 'No decision raised here can pass',
-  'It needs all ' ~ n_signers ~ ' approvers, and whoever raises a decision can’t approve it. ' ~
-  ('Lower the threshold, add an approver, or let the person who raises a decision approve it in Settings.' if is_owner else 'The vault’s owner can lower the threshold, add an approver, or let the person who raises a decision approve it.')) }}
+{#- Too few people could approve a decision raised now (S15 with a threshold of every approver,
+    or approvers suspended or read-only in the workspace), so New decision refuses. Said here,
+    to everyone, rather than only on refusal (eligibility.why_cannot_pass_if_raised). -#}
+{% set why = impossible[:1]|upper ~ impossible[1:] %}
+{% if is_owner %}{% set why = why|replace('Ask the vault’s owner to ', 'You can ') %}{% endif %}
+{{ banner('warning', 'No decision raised here can pass', why) }}
 {% endif %}
 
 {% if tab == 'decisions' %}
@@ -319,7 +320,7 @@
       <form class="q-panel__bd" method="post" action="{{ url_for('vaults.set_requester_rule', vid=vault.id) }}">
         {{ rule_form.hidden_tag() }}
         {{ checkbox('requester_can_approve', 'The person who raises a decision can also approve it', checked=requester_can_approve, value='y', id='f-requester-can-approve',
-                    caption='When this is off, every decision needs its approvals from people other than whoever raised it. Turning it off applies to decisions already open; turning it on doesn’t reopen them to whoever raised them.') }}
+                    caption='When this is off, every decision needs its approvals from people other than whoever raised it. Turning it off applies to decisions already open. Turning it back on lets whoever raised an open decision approve it again, unless it was raised while this was off.') }}
         {{ button('Save', 'secondary', type='submit') }}
       </form>
     </section>
