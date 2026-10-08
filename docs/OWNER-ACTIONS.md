@@ -725,6 +725,33 @@ things to look at, because each was a deliberate call I could have got wrong:
 
 If any of those is wrong it is a JavaScript change and ships over the air — no new APK.
 
+### 3.4 Rework: phone handset checks — `TODO` (added 2026-10-08)
+
+Things in the rework phone app that only a handset can settle. Each was left at the safe,
+already-proven setting rather than guessed.
+
+1. **Class 3 biometrics only, and a confirm after a face match.** The spec (phone-ux §5.13, I-9)
+   wants the signing prompt at `biometricsSecurityLevel: 'strong'` without
+   `requireConfirmation: false`. It is not on, because expo-local-authentication 57.0.2 turns
+   `'strong'` plus the PIN fallback into androidx.biometric's `BIOMETRIC_STRONG | DEVICE_CREDENTIAL`,
+   which androidx documents as unsupported on Android 9 and 10 (API 28 and 29):
+   `PromptInfo.Builder.build()` throws there, and the module only catches a
+   `NullPointerException`, so such a phone could not sign. `mobile/src/keystore.ts` keeps the
+   options every handset so far has proven (`requireConfirmation: false`, platform-default level).
+   *To check:* on an Android 11+ phone and, if you have one, an Android 9 or 10 phone, set
+   `biometricsSecurityLevel: 'strong'` (or gate it on `Platform.Version >= 30`), approve and reject
+   once with a fingerprint and once with the PIN, and confirm the prompt opens on both. Then decide
+   whether to keep the confirm after a face match.
+2. **The decision's 20-second refresh and the biometric prompt.** The app ignores the app going to
+   the background while its own prompt is up (the PIN screen on Android is a separate activity).
+   *To check:* open a decision, approve with the PIN fallback, take 30 seconds over the PIN, and
+   confirm the sheet stays put and the signature goes through.
+3. **Offline.** Turn on aeroplane mode with the app open: the bar "Offline. Showing what was here
+   at …" should appear on the next refresh, the queue stays, and Approve on a decision says it needs
+   a connection. Kill the app, reopen it offline, and confirm the queue paints from the encrypted
+   cache. (Before the rework APK there is no NetInfo, so the bar appears after a failed request,
+   not the instant the radio drops.)
+
 ## 4. Submission and delivery
 
 ### 4.1 The dissertation — `TODO`
@@ -871,3 +898,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-09-17 | Added §2.8: on-chain execution on Sepolia. Keys received, relayer wallet generated, funding outstanding. |
 | 2026-09-17 | §2.8: Phases 1–2 committed; the Phase 3 broadcast was blocked by the session's permission system and needs your approval (command recorded). |
 | 2026-09-27 | Added §2.9: the system rebuilt on a teammate's Azure subscription (`rg-qvault`, Central India), `project4.zaidansari.tech` kept; new fingerprints to republish; master key to back up; old deployment to delete. |
+| 2026-10-08 | Added §3.4: rework phone handset checks (Class 3 biometrics on Android 9 and 10, the prompt with the refresh, offline). |
