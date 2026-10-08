@@ -44,7 +44,7 @@
               {% endif %}
             </td>
             <td class="npref__col">
-              <input type="checkbox" id="in_app-{{ kind }}" name="in_app" value="{{ kind }}"
+              <input class="q-cb" type="checkbox" id="in_app-{{ kind }}" name="in_app" value="{{ kind }}"
                      {% if row.channels.in_app %}checked{% endif %}
                      {% if row.locked %}disabled aria-describedby="locked-{{ kind }}"{% endif %}>
             </td>
