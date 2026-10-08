@@ -17,11 +17,15 @@ handles that resolve, belong to the decision's readers: members of its vault in 
 A handle that names nobody among them stays plain text and says nothing about whether such a person
 exists anywhere else, so the discussion cannot be used to find out who is in the workspace. The
 person mentioned is notified (``notification_service.mentioned``) only if they can still open the
-decision. Handles are a person's first name, when no other reader shares it, and the part of
-their email before the ``@``, which every member already sees on the vault's Members tab.
+decision. Handles are a person's first name and the part of their email before the ``@`` (which
+every member already sees on the vault's Members tab), each only while it names one reader: a
+handle that is one reader's first name and another's email name names neither. A first name
+with a letter that has no plain a-z form (an accent is dropped: Élif is ``@elif``) gives no
+handle rather than a mangled one.
 
 **Limits.** A comment is 1 to 2,000 characters, names at most 10 people, a person posts at most
-5 comments a minute, and a decision holds at most 500 comments.
+5 comments a minute and 100 on one decision (deleted ones count, so posting and deleting can't
+go on for ever), and a decision shows at most 500 comments that aren't deleted.
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ MAX_MENTIONS = 10
 RATE_LIMIT = 5
 RATE_WINDOW = timedelta(minutes=1)
 MAX_PER_DECISION = 500
+MAX_PER_AUTHOR = 100
 
 #: ``@handle``: not preceded by a word character, ``@`` or ``.``, so an email address in the text
 #: (``ada@example.com``) is not read as a mention of ``example``.
@@ -109,38 +114,48 @@ def reader_ids(proposal) -> set[int]:
     )
 
 
-def _handle(text: str) -> str:
-    return _HANDLE.sub("", (text or "").strip().lower())
+def _fold(text: str) -> str:
+    """Lower case, accents dropped (``Élif`` is ``elif``)."""
+    decomposed = unicodedata.normalize("NFKD", (text or "").strip())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
+def _name_handle(name: str) -> str:
+    """A first name as a handle, or "" when a letter in it has no plain form (``Łukasz``): a
+    handle that drops letters would offer @ukasz, which names nobody the writer knows."""
+    first = _fold(name.split(" ", 1)[0]) if name else ""
+    return "" if _HANDLE.search(first) else first
+
+
+def _email_handle(email: str) -> str:
+    return _HANDLE.sub("", _fold(email.split("@", 1)[0]))
 
 
 def directory(proposal, *, exclude: int | None = None) -> list[dict]:
     """The people a comment on ``proposal`` can mention, each with the handles that name them.
 
-    Only the decision's readers. A first name two readers share names neither (their email
-    handles still do); an email handle two readers share (``ada@one.com``, ``ada@two.com``) is
-    dropped too, so a handle never names someone the writer did not mean.
+    Only the decision's readers, and only handles that name exactly one of them, whichever way:
+    a first name two readers share names neither (their email handles still do), an email
+    handle two readers share (``ada@one.com``, ``ada@two.com``) is dropped too, and so is a
+    handle that is one reader's first name and another's email name (Brij Patel, and Zed Quinn
+    at ``brij@...``). A handle never names someone the writer did not mean.
     """
     ids = reader_ids(proposal)
     users = User.query.filter(User.id.in_(ids)).order_by(User.display_name, User.id).all()
-    firsts: dict[str, list[int]] = {}
-    locals_: dict[str, list[int]] = {}
+    owners: dict[str, set[int]] = {}
+    mine: dict[int, list[str]] = {}
     for u in users:
         name = (u.display_name or "").strip()
-        first = _handle(name.split(" ", 1)[0]) if name else ""
-        local = _handle(u.email.split("@", 1)[0])
-        if first:
-            firsts.setdefault(first, []).append(u.id)
-        if local:
-            locals_.setdefault(local, []).append(u.id)
+        for handle in (_name_handle(name), _email_handle(u.email)):
+            if handle:
+                owners.setdefault(handle, set()).add(u.id)
+                if handle not in mine.setdefault(u.id, []):
+                    mine[u.id].append(handle)
     out = []
     for u in users:
         if u.id == exclude:
             continue
-        handles = []
-        for table in (firsts, locals_):
-            for handle, owners in table.items():
-                if owners == [u.id] and handle not in handles:
-                    handles.append(handle)
+        handles = [h for h in mine.get(u.id, []) if owners[h] == {u.id}]
         if handles:
             out.append({"user_id": u.id, "name": u.display_name or u.email, "handles": handles})
     return out
@@ -227,8 +242,23 @@ def post(proposal, author, body: str | None, *, now: datetime | None = None) -> 
         raise CommentError(
             "rate_limited", "You’ve posted several comments in the last minute. Wait a minute."
         )
+    mine = db.session.scalar(
+        select(func.count(DecisionComment.id)).where(
+            DecisionComment.proposal_id == proposal.id, DecisionComment.author_id == author.id
+        )
+    )
+    if mine >= MAX_PER_AUTHOR:
+        raise CommentError(
+            "author_full",
+            f"You’ve posted {MAX_PER_AUTHOR} comments on this decision, which is as many as "
+            "one person can.",
+        )
+    # Deleted comments don't count here, so nobody can close a discussion by posting and
+    # deleting; MAX_PER_AUTHOR bounds what one person can store.
     count = db.session.scalar(
-        select(func.count(DecisionComment.id)).where(DecisionComment.proposal_id == proposal.id)
+        select(func.count(DecisionComment.id)).where(
+            DecisionComment.proposal_id == proposal.id, DecisionComment.deleted_at.is_(None)
+        )
     )
     if count >= MAX_PER_DECISION:
         raise CommentError(
