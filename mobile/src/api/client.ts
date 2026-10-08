@@ -29,6 +29,25 @@ export class TransportError extends Error {
   }
 }
 
+/**
+ * Told about every 401 a request made WITH a token gets back, wherever it was made: the session
+ * shows Session ended (phone-ux §6.20). One place, so no screen has to notice it during render, and
+ * nothing here deletes anything (I-3).
+ */
+let onUnauthorized: ((code: string | null) => void) | null = null;
+
+export function setUnauthorizedHandler(handler: ((code: string | null) => void) | null): void {
+  onUnauthorized = handler;
+}
+
+function unauthorized(code: string | null): void {
+  try {
+    onUnauthorized?.(code);
+  } catch {
+    // The session's handler must never turn a 401 into a different failure.
+  }
+}
+
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT';
   path: string;
@@ -87,6 +106,7 @@ export async function request<T>(
   try {
     payload = await response.json();
   } catch (err) {
+    if (response.status === 401 && options.token) unauthorized(null);
     throw new TransportError(
       response.ok
         ? 'The server sent a reply this app could not read.'
@@ -97,6 +117,7 @@ export async function request<T>(
 
   if (!response.ok) {
     const parsed = errorBody.safeParse(payload);
+    if (response.status === 401 && options.token) unauthorized(parsed.success ? parsed.data.code : null);
     if (parsed.success) {
       throw new ApiError(parsed.data.code, parsed.data.error, response.status);
     }

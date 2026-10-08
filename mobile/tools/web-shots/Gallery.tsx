@@ -507,7 +507,17 @@ function OverlayPage() {
       <Story title="Behind the acknowledgement">
         <SignedText text="Commit to the Q4 reserved-capacity plan." />
       </Story>
-      <SignedOverlay visible approved filled={2} required={2} onDone={noop} />
+      <SignedOverlay
+        visible
+        mark="tick"
+        sealed
+        headline="Decision approved"
+        line="Yours was the approval that met the rule."
+        filled={2}
+        required={2}
+        next={{ caption: '2 more need your signature', onPress: noop }}
+        onDone={noop}
+      />
     </>
   );
 }

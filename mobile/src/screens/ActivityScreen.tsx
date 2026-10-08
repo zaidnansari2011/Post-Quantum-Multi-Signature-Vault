@@ -53,7 +53,7 @@ const OUTCOME_TONE: Record<string, TextTone> = {
 
 export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
   const s = useStyles();
-  const { token, handleUnauthorized } = useEnrolledSession();
+  const { token } = useEnrolledSession();
   const [filter, setFilter] = useState<Filter>('all');
   const header = useCollapsingHeader();
 
@@ -63,9 +63,7 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
     retry: (count, err) => !(err instanceof ApiError) && count < 2,
   });
 
-  if (query.error instanceof ApiError && query.error.status === 401) {
-    void handleUnauthorized();
-  }
+  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
 
   // Not memoised on the data: a decision that passes its deadline while the list is cached moves
   // from Open to Declined the next time the screen draws.

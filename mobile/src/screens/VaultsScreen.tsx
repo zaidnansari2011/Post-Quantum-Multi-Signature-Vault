@@ -41,7 +41,7 @@ export default function VaultsScreen({
   onCreate: () => void;
 }) {
   const s = useStyles();
-  const { token, handleUnauthorized } = useEnrolledSession();
+  const { token } = useEnrolledSession();
   const header = useCollapsingHeader();
 
   const query = useQuery({
@@ -50,9 +50,7 @@ export default function VaultsScreen({
     retry: (count, err) => !(err instanceof ApiError) && count < 2,
   });
 
-  if (query.error instanceof ApiError && query.error.status === 401) {
-    void handleUnauthorized();
-  }
+  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
 
   const awaiting = useQuery({
     queryKey: ['proposals', 'awaiting'],

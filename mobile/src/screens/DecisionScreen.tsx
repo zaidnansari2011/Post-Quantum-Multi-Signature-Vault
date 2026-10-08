@@ -1,14 +1,18 @@
 // A single decision, and the only screen in the app that can produce a signature (phone-ux §6.5).
 //
-// The order of operations is load-bearing and unchanged:
+// The order of operations is load-bearing:
 //
 //   1. Fetch the decision, including the complete `signing_inputs`.
-//   2. Recompute `payload_hash` from those inputs, here, and run every other check (checks.ts).
+//   2. Recompute `payload_hash` from those inputs, here, and run every other check (checks.ts),
+//      including that the signed content has not changed since an earlier fetch in this run (I-16).
 //   3. Only if they all hold, offer Approve and Reject at all. A decision that fails offers no
 //      signing whatsoever, not even Reject (D7): the phone signs over a hash it derived itself, and
 //      when that disagrees with the server's there is nothing verified to sign.
-//   4. On tap, restate what is about to be signed, prompt for the handset lock, sign the hash WE
-//      derived, verify our own signature, then submit (flows.ts, which checks again first).
+//   4. On tap, open the approve or reject sheet over a FROZEN copy of the decision, checked again as
+//      it opens (I-6, src/signingSheet.ts). On confirm, check the copy once more and compare it with
+//      the page's latest fetch; only then prompt for the handset lock, sign the hash WE derived,
+//      verify our own signature, and submit (flows.ts, which checks again before the prompt). One
+//      signature at a time: a second tap while one is in flight does nothing.
 //
 // What the page says and allows comes from one place, `personalStatus()` (§6.6), never from flags
 // worked out here: the action bar shows Approve only when it returns `sign`. A status this app does
@@ -19,9 +23,9 @@
 // recipient; the quorum and its sentence; who decided; "Checked on this phone" with the code; and
 // Details. Everything else is one tap away in the evidence sheet.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Share, View, type LayoutChangeEvent } from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 
 import {
@@ -30,7 +34,6 @@ import {
   Button,
   DisclosureRow,
   EmptyState,
-  Field,
   Icon,
   InlineMessage,
   List,
@@ -40,7 +43,6 @@ import {
   Screen,
   Scroll,
   Seal,
-  Sheet,
   SignedOverlay,
   SignedText,
   Skeleton,
@@ -54,20 +56,25 @@ import { decisionStatus } from '../status.ts';
 import { parseInstant, whenAfter } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
-import { ApiError, TransportError } from '../api/client.ts';
+import { ApiError } from '../api/client.ts';
 import { getApiBaseUrl } from '../config.ts';
-import { retryTransport } from '../approvals.ts';
-import { checkDecision, type Checked } from '../checks.ts';
-import {
-  NoScreenLockError,
-  NotThisPhonesSeatError,
-  PayloadMismatchError,
-  SelfVerificationError,
-  voteOnProposal,
-  type VoteOutcome,
-} from '../flows.ts';
+import { retryTransport, useApprovals } from '../approvals.ts';
+import { checkInRun, type Checked } from '../checks.ts';
+import { voteOnProposal, type VoteOutcome } from '../flows.ts';
 import { type Decision } from '../crypto/signing.ts';
 import type { ProposalDetail } from '../api/schemas.ts';
+import { reportSigning } from '../links.ts';
+import { useSigningMethod } from '../signingMethod.ts';
+import {
+  confirmSigning,
+  openSigningSheet,
+  signingProblem,
+  type OpenRefusal,
+  type SheetKind,
+  type SigningProblem,
+  type Snapshot,
+} from '../signingSheet.ts';
+import { acknowledgement, nextCaption } from '../logic/consequence.ts';
 import { decisionCode, spokenCode } from '../logic/decisionCode.ts';
 import { problemReport } from '../logic/evidence.ts';
 import { personalStatus, type DecisionFacts, type Seat, type SessionVote } from '../logic/personalStatus.ts';
@@ -76,17 +83,42 @@ import { quorumSentence } from '../logic/quorum.ts';
 import { dayMonth, dueWhen } from '../logic/words.ts';
 import { EvidenceSheet, type EvidenceTab } from './decision/EvidenceSheet.tsx';
 import { DetailsSheet, MoreSheet, TamperPanel, WhoDecided, type MoreItem } from './decision/parts.tsx';
+import { SigningSheet } from './decision/SigningSheet.tsx';
 
 const DAY = 24 * 60 * 60 * 1000;
 const SEPOLIA = 11155111;
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 
 type OpenSheet = 'evidence' | 'details' | 'more' | null;
+type Message = { tone: 'neutral' | 'warning' | 'critical'; text: string };
+
+/** Paint the busy state before the ML-DSA work holds the JS thread (§6.10). */
+const nextFrame = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+/** What the bar says when a sheet refuses to open. Tampered says nothing: the page already does. */
+function refusalMessage(refusal: OpenRefusal): Message | null {
+  switch (refusal) {
+    case 'seat':
+      return { tone: 'warning', text: "The treasury doesn't hold this phone's key for you, so this phone can't approve it." };
+    case 'digest':
+      return {
+        tone: 'critical',
+        text: "Refused to sign: the treasury's payment doesn't match this decision. Nothing was signed.",
+      };
+    case 'not_offered':
+      return { tone: 'neutral', text: "This can't be signed from here." };
+    default:
+      return null;
+  }
+}
 
 export default function DecisionScreen({
   uuid,
+  via,
   opened,
   onBack,
+  onNext,
   onOpenTreasuryApprovals,
   onRaiseIn,
 }: {
@@ -97,18 +129,33 @@ export default function DecisionScreen({
   /** 'queue': opened from a list that showed it open, so a closed answer says "before you opened this". */
   opened?: 'queue';
   onBack: () => void;
+  /** "Next decision" from the acknowledgement: replaces this route (§6.11, §2.3). */
+  onNext: (uuid: string) => void;
   onOpenTreasuryApprovals: () => void;
   onRaiseIn: (vaultId: number, vaultName: string) => void;
 }) {
   const s = useStyles();
   const t = useTheme();
-  const { token, identity, custody, handleUnauthorized } = useEnrolledSession();
+  const { token, identity, custody, markKeyUnusable } = useEnrolledSession();
   const queryClient = useQueryClient();
+  const method = useSigningMethod();
+  const queue = useApprovals();
 
-  const [pending, setPending] = useState<Decision | null>(null);
+  // The signing sheet: its frozen snapshot (kept while it animates out), whether it is open, and
+  // whether a signature is in flight. `inFlight` guards against a second tap in the same frame,
+  // before React has re-rendered the button as busy.
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [signingOpen, setSigningOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const [problem, setProblem] = useState<SigningProblem | null>(null);
+  const [reasonMissing, setReasonMissing] = useState(false);
+  const [barMessage, setBarMessage] = useState<Message | null>(null);
+  const [keyBanner, setKeyBanner] = useState<string | null>(null);
+  const [closedBeforeSigned, setClosedBeforeSigned] = useState(false);
+
   const [outcome, setOutcome] = useState<(VoteOutcome & { decision: Decision; at: string }) | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
+  const [acknowledging, setAcknowledging] = useState(false);
   const [sheet, setSheet] = useState<OpenSheet>(null);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>('checks');
   const [titleBottom, setTitleBottom] = useState<number | null>(null);
@@ -133,9 +180,35 @@ export default function DecisionScreen({
     retry: retryTransport,
   });
 
-  // Every check, on every render of a loaded decision: what is shown beside the code must describe
-  // the data on screen now, including after a refetch.
-  const checked = useMemo<Checked | null>(() => (detail ? checkDecision(detail) : null), [detail]);
+  // Every check, on every fetch of the decision: what is shown beside the code must describe the
+  // data on screen now, including after a refetch, and signed content that changed between two
+  // fetches in this run fails as `changed` (I-16).
+  const checked = useMemo<Checked | null>(() => (detail ? checkInRun(detail) : null), [detail]);
+
+  const closeSigning = useCallback(() => {
+    if (inFlight.current) return;
+    setSigningOpen(false);
+    setProblem(null);
+    setReasonMissing(false);
+  }, []);
+
+  // A fetch that changed the signed content, or failed a check, closes an idle sheet before any
+  // prompt, and the page shows why (§6.6, I-16). A signature already in flight is over the frozen
+  // snapshot and cannot be recalled; the page shows the change once it settles.
+  useEffect(() => {
+    if (!signingOpen || busy || !snapshot || !checked) return;
+    if (!checked.ok || checked.hash !== snapshot.hash) closeSigning();
+  }, [signingOpen, busy, snapshot, checked, closeSigning]);
+
+  // Tell the link router what is happening, so a link never interrupts a signature (§2.4 rule 2).
+  useEffect(() => {
+    reportSigning({
+      sheet: signingOpen ? (busy ? 'busy' : 'idle') : 'none',
+      acknowledging,
+      closeSheet: closeSigning,
+    });
+  }, [signingOpen, busy, acknowledging, closeSigning]);
+  useEffect(() => () => reportSigning({ sheet: 'none', acknowledging: false, closeSheet: null }), []);
 
   // Row 16: the state this screen first saw. Opened from a list that showed it open, and closed by
   // the time it loaded, the first line says it closed before you opened it.
@@ -148,31 +221,8 @@ export default function DecisionScreen({
     });
   }
 
+  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
   const unauthorised = query.error instanceof ApiError && query.error.status === 401;
-  useEffect(() => {
-    if (unauthorised) void handleUnauthorized();
-  }, [unauthorised, handleUnauthorized]);
-
-  const vote = useMutation({
-    mutationFn: async ({ decision, reason }: { decision: Decision; reason: string | null }) => {
-      if (!detail) throw new Error('Proposal is still loading.');
-      return voteOnProposal({ custody, token, identity, detail, decision, reason });
-    },
-    onSuccess: (result, { decision }) => {
-      setOutcome({ ...result, decision, at: new Date().toISOString() });
-      setError(null);
-      setPending(null);
-      // The acknowledgement owns the haptic, timed to its tick: firing here too would buzz twice.
-      setConfirming(true);
-      void queryClient.invalidateQueries({ queryKey: ['proposals'] });
-      void queryClient.invalidateQueries({ queryKey: ['proposal', uuid] });
-    },
-    onError: (err) => {
-      setError(describe(err));
-      setPending(null);
-      feedback.refused();
-    },
-  });
 
   const webUrl = detail ? `${getApiBaseUrl()}/vaults/${detail.vault_id}/proposals/${uuid}` : null;
   const openWeb = () => {
@@ -257,7 +307,8 @@ export default function DecisionScreen({
     integrity: checked.ok ? { ok: true } : { ok: false, reason: checked.reason },
     vote: sessionVote,
     seat,
-    closedBefore: opened === 'queue' && firstStatus.current !== 'open' ? 'opened' : null,
+    closedBefore:
+      opened === 'queue' && firstStatus.current !== 'open' ? 'opened' : closedBeforeSigned ? 'signed' : null,
     now,
   });
   const actions = personal.actions;
@@ -293,7 +344,7 @@ export default function DecisionScreen({
   // tone and the clock, never colour alone.
   const soon = open && !Number.isNaN(whenAt) && whenAt - now < DAY;
 
-  // Who can still approve, by A3's names, for the quorum sentence.
+  // Who can still approve, by A3's names, for the quorum sentence and the acknowledgement.
   const voted = new Set(detail.votes.map((v) => v.signer_id));
   const remaining = detail.signers
     ? policy.signers
@@ -338,6 +389,97 @@ export default function DecisionScreen({
     setSheet('evidence');
   };
 
+  // -- signing ---------------------------------------------------------------------------------
+
+  const startSigning = (kind: SheetKind) => {
+    if (inFlight.current || signingOpen) return;
+    setBarMessage(null);
+    const attempt = openSigningSheet({ detail, kind, actions, identity, method, via });
+    if (!attempt.ok) {
+      const message = refusalMessage(attempt.refusal);
+      if (message) {
+        setBarMessage(message);
+        feedback.refused();
+      }
+      return;
+    }
+    setSnapshot(attempt.snapshot);
+    setProblem(null);
+    setReasonMissing(false);
+    setSigningOpen(true);
+  };
+
+  const confirm = async (reason: string) => {
+    if (inFlight.current || !snapshot || !signingOpen) return;
+    // The frozen snapshot, checked again and compared with the page's latest fetch, before any
+    // prompt (I-1, I-6, I-16). The live copy is read from the cache, not from this render.
+    const live = queryClient.getQueryData<{ proposal: ProposalDetail }>(['proposal', uuid])?.proposal;
+    const ready = confirmSigning(snapshot, live, reason);
+    if (!ready.ok) {
+      if (ready.refusal === 'reason_missing' || ready.refusal === 'reason_too_long') {
+        setReasonMissing(true);
+        return;
+      }
+      // Changed or failed: close before any prompt; the page shows the failure.
+      closeSigning();
+      feedback.refused();
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setProblem(null);
+    try {
+      await nextFrame();
+      const result = await voteOnProposal({
+        custody,
+        token,
+        identity,
+        detail: ready.detail,
+        decision: snapshot.kind,
+        reason: ready.reason,
+      });
+      setOutcome({ ...result, decision: snapshot.kind, at: new Date().toISOString() });
+      setBarMessage(null);
+      setSigningOpen(false);
+      // The acknowledgement owns the haptic, timed to its tick: firing here too would buzz twice.
+      setAcknowledging(true);
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] });
+      void queryClient.invalidateQueries({ queryKey: ['proposal', uuid] });
+    } catch (err) {
+      const p = signingProblem(err, method);
+      if (p.closeSheet) {
+        setSigningOpen(false);
+        setReasonMissing(false);
+      }
+      if (p.place === 'sheet') setProblem(p);
+      if (p.place === 'bar' && p.text) setBarMessage({ tone: p.tone, text: p.text });
+      if (p.place === 'banner' && p.text) setKeyBanner(p.text);
+      if (p.closedBeforeSigned) setClosedBeforeSigned(true);
+      if (p.refetch) void query.refetch();
+      // A cancelled prompt gets nothing: the person chose it (§7.2).
+      if (p.tone !== 'neutral') feedback.refused();
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  // The acknowledgement (§6.11): its words from the signed rule and the counts the server returned.
+  const ack = outcome
+    ? acknowledgement({
+        decision: outcome.decision,
+        M: policy.M,
+        N: policy.N,
+        approvals: outcome.approvals,
+        rejections: outcome.rejections,
+        isPayment,
+        stillToApprove,
+      })
+    : null;
+  // Next decision: the queue's own "Needs your signature" group, less this one, soonest first; the
+  // same number as the badge (§2.5), and never an "Approve on the web" item.
+  const nextUp = queue.groups.needsYou.filter((p) => p.proposal_uuid !== uuid);
+
   const more: MoreItem[] = [
     { key: 'share', title: 'Share link', icon: 'share', onPress: () => webUrl && void Share.share({ message: webUrl }).catch(() => {}) },
     { key: 'web', title: 'Open on the web', icon: 'external', onPress: openWeb },
@@ -359,6 +501,9 @@ export default function DecisionScreen({
   };
 
   const navTitle = scrolledPastTitle ? detail.title : (detail.vault_name ?? `Vault ${detail.vault_id}`);
+  // At large text the action bar keeps only its buttons (§6.6 row 7): the line repeats the personal
+  // line, so it goes, and the one-time switch moves onto the page under the status line.
+  const compactBar = t.stacked;
 
   return (
     <Screen edges={['top']}>
@@ -393,8 +538,17 @@ export default function DecisionScreen({
               text="This phone doesn't recognise this decision's state, so it offers nothing to sign. Open it on the web to see more."
             />
           ) : null}
+          {compactBar && actions.kind === 'web' && actions.fix ? (
+            <TextLink label="Approve treasury payments on this phone" onPress={onOpenTreasuryApprovals} />
+          ) : null}
 
-          {error ? <Banner tone="critical" title={error.title} detail={error.detail} /> : null}
+          {keyBanner ? (
+            <Banner
+              tone="critical"
+              title={keyBanner}
+              actions={[{ label: 'Set up this phone again', onPress: markKeyUnusable }]}
+            />
+          ) : null}
 
           {/* The title: the name it goes by in every list. Unsigned, so small and in sans. */}
           <View style={s.titleBlock} onLayout={onTitleLayout}>
@@ -493,30 +647,27 @@ export default function DecisionScreen({
 
       <Bar
         actions={actions}
-        busy={vote.isPending}
-        onApprove={() => setPending('approve')}
-        onReject={() => setPending('reject')}
+        busy={busy}
+        compact={compactBar}
+        message={barMessage}
+        onApprove={() => startSigning('approve')}
+        onReject={() => startSigning('reject')}
         onReport={report}
         onOpenWeb={openWeb}
         onFix={onOpenTreasuryApprovals}
         onRaiseAgain={() => onRaiseIn(detail.vault_id, detail.vault_name ?? '')}
       />
 
-      <ConfirmSheet
-        decision={pending}
-        detail={detail}
-        busy={vote.isPending}
-        onCancel={() => setPending(null)}
-        onConfirm={(reason) => {
-          if (!pending) return;
-          // Checked again at the moment of signing (I-1): a refetch since the sheet opened could
-          // have brought a decision that no longer holds. flows.ts checks once more before the prompt.
-          if (!checkDecision(detail).ok) {
-            setPending(null);
-            return;
-          }
-          vote.mutate({ decision: pending, reason });
-        }}
+      <SigningSheet
+        snapshot={snapshot}
+        visible={signingOpen}
+        busy={busy}
+        problem={problem}
+        reasonMissing={reasonMissing}
+        onConfirm={(reason) => void confirm(reason)}
+        onCancel={closeSigning}
+        onReasonChange={() => setReasonMissing(false)}
+        onOpenWeb={openWeb}
       />
 
       <EvidenceSheet
@@ -537,13 +688,29 @@ export default function DecisionScreen({
 
       {/* The acknowledgement. Stays until dismissed: someone who signed and put the phone down
           should still be told what happened when they look at it again. */}
-      <SignedOverlay
-        visible={confirming && outcome !== null}
-        approved={outcome?.decision === 'approve'}
-        filled={approvals}
-        required={policy.M}
-        onDone={() => setConfirming(false)}
-      />
+      {ack ? (
+        <SignedOverlay
+          visible={acknowledging}
+          mark={ack.mark}
+          sealed={ack.sealed}
+          headline={ack.headline}
+          line={ack.line}
+          filled={approvals}
+          required={policy.M}
+          next={
+            nextUp.length > 0
+              ? {
+                  caption: nextCaption(nextUp.length),
+                  onPress: () => {
+                    setAcknowledging(false);
+                    onNext(nextUp[0]!.proposal_uuid);
+                  },
+                }
+              : null
+          }
+          onDone={() => setAcknowledging(false)}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -552,6 +719,8 @@ export default function DecisionScreen({
 function Bar({
   actions,
   busy,
+  compact,
+  message,
   onApprove,
   onReject,
   onReport,
@@ -561,6 +730,10 @@ function Bar({
 }: {
   actions: ReturnType<typeof personalStatus>['actions'];
   busy: boolean;
+  /** Large text: buttons only (the line is the personal line again, and the link is on the page). */
+  compact: boolean;
+  /** An action's error after its sheet closed. */
+  message: Message | null;
   onApprove: () => void;
   onReject: () => void;
   onReport: () => void;
@@ -572,6 +745,7 @@ function Bar({
     case 'sign':
       return (
         <ActionBar
+          message={message}
           secondary={{ label: 'Reject', variant: 'dangerSecondary', onPress: onReject, disabled: busy }}
           primary={{ label: 'Approve', onPress: onApprove, disabled: busy }}
         />
@@ -580,10 +754,11 @@ function Bar({
       // A rejection carries no treasury signature, so Reject stays (§6.6 row 7).
       return (
         <ActionBar
-          line={actions.line}
+          message={message}
+          line={compact ? null : actions.line}
           secondary={{ label: 'Reject', variant: 'dangerSecondary', onPress: onReject, disabled: busy }}
         >
-          {actions.fix ? <TextLink label="Approve treasury payments on this phone" onPress={onFix} /> : null}
+          {actions.fix && !compact ? <TextLink label="Approve treasury payments on this phone" onPress={onFix} /> : null}
         </ActionBar>
       );
     case 'report':
@@ -591,115 +766,22 @@ function Bar({
       return (
         <ActionBar
           stack
+          message={message}
           primary={{ label: 'Copy a report', variant: 'secondary', onPress: onReport }}
           secondary={{ label: 'Open on the web', variant: 'quiet', onPress: onOpenWeb }}
         />
       );
     case 'remind':
-      return <ActionBar line="You raised this, so you can't approve it." />;
+      return <ActionBar message={message} line="You raised this, so you can't approve it." />;
     case 'raiseAgain':
       return actions.placement === 'bar' ? (
-        <ActionBar primary={{ label: 'Raise again', variant: 'secondary', onPress: onRaiseAgain }} />
+        <ActionBar message={message} primary={{ label: 'Raise again', variant: 'secondary', onPress: onRaiseAgain }} />
+      ) : message ? (
+        <ActionBar message={message} />
       ) : null;
     default:
-      return null;
+      return message ? <ActionBar message={message} /> : null;
   }
-}
-
-/**
- * The restatement: the action text verbatim, never a summary. (The signing step rebuilds this as
- * the approve and reject sheets of §6.8 and §6.9; a rejection already needs its reason, S16.)
- */
-function ConfirmSheet({
-  decision,
-  detail,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  decision: Decision | null;
-  detail: ProposalDetail;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: (reason: string | null) => void;
-}) {
-  const payment = detail.signing_inputs.action;
-  const completes = detail.approvals + 1 >= detail.signing_inputs.policy.M;
-  const [reason, setReason] = useState('');
-  const [missing, setMissing] = useState(false);
-  // Kept while the sheet animates out, so it does not flash to the other title on its way down.
-  const last = useRef<Decision>('approve');
-  if (decision) last.current = decision;
-  const isApprove = (decision ?? last.current) === 'approve';
-  const noun = payment ? 'payment' : 'decision';
-
-  useEffect(() => {
-    if (decision === null) {
-      setReason('');
-      setMissing(false);
-    }
-  }, [decision]);
-
-  const confirm = () => {
-    if (isApprove) return onConfirm(null);
-    const text = reason.trim();
-    if (!text) {
-      // Shown inline, before any prompt: a rejection without its reason is never signed (S16).
-      setMissing(true);
-      return;
-    }
-    onConfirm(text);
-  };
-
-  return (
-    <Sheet
-      visible={decision !== null}
-      onClose={onCancel}
-      dismissible={!busy}
-      title={isApprove ? `Approve this ${noun}` : `Reject this ${noun}`}
-      footer={
-        <>
-          <Text role="caption" tone="muted">
-            {isApprove && payment
-              ? 'Your approval also signs the payment exactly as shown, which the treasury checks on chain before it pays. It cannot be withdrawn.'
-              : isApprove
-                ? completes
-                  ? 'Yours is the signature that meets the threshold. Once it is recorded the decision is approved and cannot be withdrawn.'
-                  : 'Your signature is recorded against this decision and cannot be withdrawn.'
-                : 'Your rejection is recorded against this decision and cannot be withdrawn.'}
-          </Text>
-          <Button
-            label={isApprove ? 'Sign approval' : 'Sign rejection'}
-            variant={isApprove ? 'primary' : 'danger'}
-            onPress={confirm}
-            busy={busy}
-            full
-          />
-          <Button label="Cancel" variant="quiet" onPress={onCancel} disabled={busy} full />
-        </>
-      }
-    >
-      {isApprove ? null : (
-        <Field
-          label="Reason"
-          caption={`Everyone in ${detail.vault_name ?? 'this vault'} sees this next to your rejection. It isn't part of what you sign.`}
-          error={missing ? 'Add a reason so they know what to change.' : null}
-          value={reason}
-          onChangeText={(v: string) => {
-            setReason(v);
-            if (v.trim()) setMissing(false);
-          }}
-          maxLength={255}
-          multiline
-        />
-      )}
-      {payment ? (
-        <PaymentCard action={payment} place="sheet" sentence={detail.signing_inputs.action_text} />
-      ) : (
-        <SignedText text={detail.signing_inputs.action_text} size="decision" />
-      )}
-    </Sheet>
-  );
 }
 
 /**
@@ -731,58 +813,6 @@ function DecisionSkeleton() {
       <Skeleton width={140} height={14} />
     </View>
   );
-}
-
-function describe(err: unknown): { title: string; detail?: string } {
-  if (err instanceof PayloadMismatchError) {
-    return { title: 'Refused to sign.', detail: "This decision doesn't match what would be signed. Nothing was signed." };
-  }
-  if (err instanceof SelfVerificationError) {
-    return { title: "This phone's key can't sign any more. Nothing was signed." };
-  }
-  if (err instanceof NotThisPhonesSeatError) {
-    return { title: 'Not signed on this phone.', detail: err.message };
-  }
-  if (err instanceof NoScreenLockError) {
-    return { title: 'Set a screen lock to sign with this phone.', detail: 'Nothing was signed.' };
-  }
-  if (err instanceof Error && err.name === 'AuthenticationCancelled') {
-    return { title: 'Nothing was signed.' };
-  }
-  // Not folded into the line above: a device that cannot ask is a different problem from a person
-  // who declined, and "nothing was signed" to a locked-out sensor sends them round the same loop.
-  if (err instanceof Error && err.name === 'AuthenticationUnavailable') {
-    const reason = (err as { reason?: string }).reason;
-    return {
-      title: 'This phone could not check it was you. Nothing was signed.',
-      detail:
-        reason === 'lockout' || reason === 'not_enrolled'
-          ? 'Unlock your phone with its PIN, then try again.'
-          : 'Check that a screen lock is set up on this phone.',
-    };
-  }
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case 'already_voted':
-        return { title: 'You have already signed this decision.' };
-      case 'chain_unavailable':
-        return { title: "Sepolia didn't answer, so nothing was signed.", detail: 'Try again in a minute.' };
-      case 'proposal_closed':
-        return { title: 'This was decided before your signature arrived. Nothing was signed.' };
-      case 'not_a_signer':
-        return { title: "You're not an approver on this decision." };
-      case 'device_key_not_active':
-      case 'signature_invalid':
-        return { title: "This phone's key can't sign any more. Nothing was signed." };
-      default:
-        // The server's own wording is never shown (§6.6).
-        return { title: 'Something went wrong, so nothing was signed.' };
-    }
-  }
-  if (err instanceof TransportError) {
-    return { title: "Not signed. Q-Vault didn't receive your signature, so nothing changed." };
-  }
-  return { title: 'Something went wrong, so nothing was signed.' };
 }
 
 const useStyles = makeStyles((t) => ({
