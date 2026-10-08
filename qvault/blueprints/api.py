@@ -296,7 +296,11 @@ def _vault_summary(vault: Vault, user) -> dict:
             continue
         if approval_service.vote_of(p, user.id) is not None:
             continue
-        if signing_here and user.id in set(json.loads(p.authorized_signers_snapshot)):
+        if (
+            signing_here
+            and user.id in set(json.loads(p.authorized_signers_snapshot))
+            and not eligibility.own_decision_blocked(p, user.id)
+        ):
             awaiting += 1
     return {
         "vault_id": vault.id,

@@ -205,13 +205,22 @@ def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
     because the result is an id list the outer query filters on.
     """
     candidates = db.session.execute(
-        select(Proposal.id, Proposal.authorized_signers_snapshot).where(
+        select(Proposal.id, Proposal.authorized_signers_snapshot, Proposal.creator_id).where(
             Proposal.vault_id.in_(_signer_vault_ids(user)),
             _live_open(now),
             _unsigned_by(user),
         )
     ).all()
-    return [pid for pid, snapshot in candidates if user.id in set(json.loads(snapshot))]
+    return [
+        pid
+        for pid, snapshot, creator_id in candidates
+        if user.id in set(json.loads(snapshot))
+        # Their own decision, under separation of duties (S15): not theirs to sign.
+        and not (
+            creator_id == user.id
+            and eligibility.own_decision_blocked(db.session.get(Proposal, pid), user.id)
+        )
+    ]
 
 
 def _tab_condition(user: User, tab: str, now: datetime, needs_ids: list[int] | None = None):
@@ -326,7 +335,9 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
         status = effective_status(p, now=now)
         signed_ids = {s.signer_id for s in p.signatures}
         signed_by_me = user.id in signed_ids
-        authorised = user.id in set(snapshots[p.id])
+        authorised = user.id in set(snapshots[p.id]) and not eligibility.own_decision_blocked(
+            p, user.id
+        )
         outlook = eligibility.outlook(
             p,
             approvals=len(approvers),

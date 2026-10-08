@@ -101,6 +101,12 @@ def requester_may_approve(proposal) -> bool:
     return frozen and vault_allows_requester(proposal.vault)
 
 
+def own_decision_blocked(proposal, user_id: int) -> bool:
+    """Whether ``user_id`` raised ``proposal`` and separation of duties keeps them from signing it.
+    For the lists, which test the frozen set and the vault separately."""
+    return proposal.creator_id == user_id and not requester_may_approve(proposal)
+
+
 def impossible_to_pass(vault: Vault, *, signers: int | None = None) -> bool:
     """Whether every decision raised in ``vault`` now would be born unable to pass.
 

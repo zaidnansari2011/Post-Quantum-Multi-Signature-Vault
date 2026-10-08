@@ -27,6 +27,7 @@ from qvault.services import (
     approval_service,
     auth_service,
     eligibility,
+    inbox_service,
     proposal_service,
     vault_service,
     workspace_service,
@@ -306,3 +307,25 @@ def test_only_the_vaults_owner_changes_the_rule(client):
     client.post(f"/vaults/{vid}/settings/requester", data={"requester_can_approve": "y"})
     db.session.expire_all()
     assert eligibility.vault_allows_requester(vault) is True
+
+
+def test_no_list_asks_the_requester_to_sign_their_own_decision(app, client):
+    ada, brij, _chen, vault = _team("ownlists")
+    proposal = proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
+
+    assert inbox_service.counts(ada)["needs_you"] == 0
+    assert inbox_service.awaiting_signature(ada) == 0
+    assert inbox_service.counts(brij)["needs_you"] == 1
+    row = inbox_service.decorate([proposal], ada, inbox_service.signer_vault_ids(ada))[0]
+    assert row["needs_me"] is False and row["can_sign"] is False
+    assert "You" not in row["can_still_approve"]
+
+    _body, _secret, auth = _enrol_over_http(client, ada)
+    vaults = client.get("/api/v1/vaults", headers=auth).get_json()["vaults"]
+    assert [v["awaiting_me"] for v in vaults if v["vault_id"] == vault.id] == [0]
+
+
+def test_where_the_requester_may_approve_their_decision_still_needs_them(app):
+    ada, _brij, _chen, vault = _team("ownlistsoff", separation=False)
+    proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
+    assert inbox_service.counts(ada)["needs_you"] == 1
