@@ -50,6 +50,7 @@ from qvault.security.decorators import get_membership_or_403
 from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
+    eligibility,
     evidence_service,
     export_service,
     file_crypto_service,
@@ -494,13 +495,20 @@ def proposal_detail(vid: int, pid: str):
     device_signed = sum(1 for s in proposal.signatures if s.custody == "device")
 
     my_vote = approval_service.vote_of(proposal, current_user.id)
-    # An approver of THIS decision: in its frozen signer set (what the service authorises
-    # against) and still a signer of the vault. Someone added after it was raised is neither
-    # offered a vote nor told it needs them (rework R2, the personal status).
-    is_signer = current_user.id in {m.user_id for m in vault.signer_members()} and (
-        current_user.id in evidence_service.approver_ids(proposal)
-    )
+    # An approver of THIS decision: whoever the vote gate would let sign it (its frozen signer
+    # set, an approver of the vault now, in good standing in the workspace). Someone added after
+    # it was raised, or demoted or suspended since, is neither offered a vote nor told it needs
+    # them (rework R2, the personal status; owner decision 2026-10-08).
+    eligible = eligibility.eligible_ids(proposal)
+    is_signer = current_user.id in eligible
     can_vote = proposal.status == "open" and is_signer and my_vote is None
+    # Who can still approve, and whether they are enough to decide it (``eligibility``).
+    outlook = eligibility.outlook(
+        proposal,
+        approvals=approvals,
+        voted=[s.signer_id for s in proposal.signatures],
+        eligible=eligible,
+    )
     binding = approval_service.verify_proposal_binding(proposal)
     # Approving a payment signs what the treasury will pay, built from the stored payment; when
     # that no longer matches what was signed, offering Approve would invite a signature over a
@@ -537,6 +545,10 @@ def proposal_detail(vid: int, pid: str):
         status_n=status_n,
         ev=proof,
         approver_ids=evidence_service.approver_ids(proposal),
+        still_ids=list(outlook.still),
+        cannot_pass=proposal.status == "open" and not outlook.reachable,
+        needed=outlook.needed,
+        was_signer=not is_signer and current_user.id in evidence_service.approver_ids(proposal),
         due_soon=proposal.status == "open" and due is not None and due - now <= DUE_SOON,
         approve_lines=evidence.approve_consequence(
             approvals=approvals, required_m=proposal.required_m, payment=amount

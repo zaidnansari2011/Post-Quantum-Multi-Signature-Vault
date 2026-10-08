@@ -41,6 +41,7 @@ from qvault.services import (
     approval_service,
     auth_service,
     device_service,
+    eligibility,
     execution_service,
     inbox_service,
     key_service,
@@ -286,6 +287,8 @@ def _vault_summary(vault: Vault, user) -> dict:
     signers = vault.signer_ids()
     member = vault.member_for(user.id)
     awaiting = 0
+    # Who may sign here now (the vote gate's rule), once for the vault rather than per decision.
+    signing_here = user.id in eligibility.current_signer_ids(vault)
     for p in vault.proposals:
         # The effective status, not the stored one: a deadline that passed before the sweep ran
         # leaves the count at once (rework S20), as it leaves every other needs-you queue.
@@ -293,7 +296,7 @@ def _vault_summary(vault: Vault, user) -> dict:
             continue
         if approval_service.vote_of(p, user.id) is not None:
             continue
-        if user.id in set(json.loads(p.authorized_signers_snapshot)):
+        if signing_here and user.id in set(json.loads(p.authorized_signers_snapshot)):
             awaiting += 1
     return {
         "vault_id": vault.id,
@@ -776,8 +779,15 @@ def _authorized_ids(proposal) -> set[int]:
 
 def _proposal_summary(proposal, user) -> dict:
     approvals, rejections = approval_service.tally(proposal)
+    eligible = eligibility.eligible_ids(proposal)
+    outlook = eligibility.outlook(
+        proposal,
+        approvals=approvals,
+        voted=[s.signer_id for s in proposal.signatures],
+        eligible=eligible,
+    )
     return {
-        **_summary_facts(proposal, user, approvals, rejections),
+        **_summary_facts(proposal, user, approvals, rejections, eligible=eligible),
         "proposal_uuid": proposal.proposal_uuid,
         "title": proposal.title,
         "vault_id": proposal.vault_id,
@@ -789,24 +799,35 @@ def _proposal_summary(proposal, user) -> dict:
         "rejections": rejections,
         "expires_at": proposal.expires_at.isoformat() if proposal.expires_at else None,
         "signed_by_me": approval_service.vote_of(proposal, user.id) is not None,
-        "can_sign": user.id in _authorized_ids(proposal),
+        # Whether the vote endpoint would let this user sign: the frozen signer set AND an
+        # approver of the vault now, in good standing (``eligibility``, owner decision 2026-10-08).
+        "can_sign": user.id in eligible,
+        # Additive (R5): who can still approve it, and whether they are enough to decide it. An
+        # open decision whose approvers were demoted, removed or suspended can stop being able to
+        # pass; it stays open until its deadline rather than being rejected for them.
+        "can_still_approve": list(outlook.still),
+        "can_still_pass": inbox_service.effective_status(proposal) != "open" or outlook.reachable,
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
     }
 
 
-def _summary_facts(proposal, user, approvals: int, rejections: int) -> dict:
+def _summary_facts(
+    proposal, user, approvals: int, rejections: int, *, eligible: set[int] | None = None
+) -> dict:
     """The status as every web list says it (rework S6): ``display_status`` is the key of the
     closed vocabulary with its word and tone, from the same ``inbox_service.status_key`` the Home
     lists and the inbox use. Additive: ``status`` stays the stored value the app already reads,
     and the app may show this word instead of working one out."""
     status = inbox_service.effective_status(proposal)
-    # The same test as this API's awaiting list (the frozen signer set, not yet voted), so a row
-    # in it never says Waiting on N; the vote route checks no more than that either.
+    # The same test as this API's awaiting list (may sign it now, not yet voted), so a row in it
+    # never says Waiting on N; it is the vote route's own rule (``eligibility``).
+    if eligible is None:
+        eligible = eligibility.eligible_ids(proposal)
     needs_me = (
         status == "open"
-        and user.id in _authorized_ids(proposal)
+        and user.id in eligible
         and approval_service.vote_of(proposal, user.id) is None
     )
     payout = payout_service.payout_of(proposal) if proposal.action is not None else None

@@ -40,7 +40,8 @@ from qvault.models.proposal import Proposal
 from qvault.models.signature import Signature
 from qvault.models.treasury import ProposalAction
 from qvault.models.user import User
-from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember
+from qvault.models.vault import Vault, VaultMember
+from qvault.services import eligibility
 from qvault.services.signing import format_wei
 from qvault.ui import decision_code, first_name
 
@@ -153,10 +154,10 @@ def _member_vault_ids(user: User):
     return select(VaultMember.vault_id).where(VaultMember.user_id == user.id)
 
 
-def _signer_vault_ids(user: User):
-    return select(VaultMember.vault_id).where(
-        VaultMember.user_id == user.id, VaultMember.member_role.in_(SIGNER_ROLES)
-    )
+def _signer_vault_ids(user: User) -> list[int]:
+    """The vaults where this user may sign now: an approver there and in good standing in its
+    workspace (``eligibility``, the vote gate's rule). A list, worked out once per call."""
+    return sorted(eligibility.signing_vault_ids(user.id))
 
 
 def _live_open(now: datetime):
@@ -288,7 +289,7 @@ def search(user: User, filters: Filters, *, now: datetime | None = None):
 
 def signer_vault_ids(user: User) -> set[int]:
     """Vaults where this user may sign — used to decide whether a row is actionable by them."""
-    return set(db.session.scalars(_signer_vault_ids(user)).all())
+    return set(_signer_vault_ids(user))
 
 
 def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | None = None):
@@ -297,12 +298,10 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     Kept out of the template because "does this need me?" is four conditions, and a template that
     computes it inline will drift from the SQL in ``_tab_condition`` that produced the counts.
 
-    ``needs_me``: open, this reader is in the proposal's frozen signer set (``cast_vote``
-    requires it), they are an approver of the vault today, and they have not voted. The current
-    role is the same test the notifications use (``notification_service._eligible_approvers``);
-    the vote path itself checks only the frozen set and membership, so someone demoted to viewer
-    after a decision was raised is not asked for it here but could still sign it (recorded for
-    the owner in the R2 report).
+    ``needs_me``: open, this reader is in the proposal's frozen signer set, ``signer_vaults``
+    says they may sign in its vault now, and they have not voted: the vote gate's rule
+    (``eligibility``), which the notifications use too, so a row never asks for a signature the
+    server would refuse.
 
     The rest is what a row shows since rework R2: approvals and rejections as stored votes (a list
     does not re-verify every signature; the decision page does), the status as a key of the closed
@@ -312,6 +311,10 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     now = now or datetime.now(UTC)
     proposals = list(proposals)
     snapshots = {p.id: json.loads(p.authorized_signers_snapshot) for p in proposals}
+    # Who may sign in each vault now, once per vault on the page rather than once per row.
+    signing_now = {
+        p.vault_id: eligibility.current_signer_ids(p.vault) for p in proposals if p.status == "open"
+    }
     people = _people(
         {uid for ids in snapshots.values() for uid in ids} | {p.creator_id for p in proposals}
     )
@@ -324,6 +327,12 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
         signed_ids = {s.signer_id for s in p.signatures}
         signed_by_me = user.id in signed_ids
         authorised = user.id in set(snapshots[p.id])
+        outlook = eligibility.outlook(
+            p,
+            approvals=len(approvers),
+            voted=signed_ids,
+            eligible=eligibility.eligible_ids(p, current=signing_now.get(p.vault_id, ())),
+        )
         needs_me = (
             status == "open" and authorised and p.vault_id in signer_vaults and not signed_by_me
         )
@@ -357,10 +366,10 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
                 "approved_by": [_name(people, s.signer_id, user) for s in approvers],
                 # Their full names, for avatars: "You" is a word, not an initial.
                 "approved_by_full": [_full_name(people, s.signer_id, user) for s in approvers],
-                # Who can still give an approval: in the frozen set, and not yet voted either way.
-                "can_still_approve": [
-                    _name(people, uid, user) for uid in snapshots[p.id] if uid not in signed_ids
-                ],
+                # Who can still give an approval: who may sign it now, not yet voted either way.
+                "can_still_approve": [_name(people, uid, user) for uid in outlook.still],
+                # False when too few of them are left to reach its threshold (``eligibility``).
+                "can_still_pass": status != "open" or outlook.reachable,
             }
         )
     return rows

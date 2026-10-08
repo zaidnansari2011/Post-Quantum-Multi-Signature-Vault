@@ -25,6 +25,9 @@ from qvault.models import ExecutionSignature, Key, LedgerEntry, Signature
 from qvault.services import (
     approval_service,
     auth_service,
+    eligibility,
+    inbox_service,
+    notification_service,
     proposal_service,
     vault_service,
     workspace_service,
@@ -317,3 +320,123 @@ def test_a_suspended_member_cannot_approve_a_payment(payments_on):
     with pytest.raises(ApprovalError, match="suspended"):
         approval_service.cast_vote(proposal, other, PASSWORD, "approve")
     assert ExecutionSignature.query.filter_by(proposal_id=proposal.id).count() == 0
+
+
+def test_the_api_no_longer_offers_the_decision_to_a_demoted_approver(app, client):
+    ada, brij, _chen, vault, proposal = _three("apilist")
+    _body, _secret, auth = _enrol_over_http(client, brij)
+    uuid = proposal.proposal_uuid
+    vault_service.change_member_role(vault, brij.id, "viewer", actor_id=ada.id)
+
+    awaiting = client.get("/api/v1/proposals?state=awaiting", headers=auth).get_json()
+    assert uuid not in [p["proposal_uuid"] for p in awaiting["proposals"]]
+    detail = client.get(f"/api/v1/proposals/{uuid}", headers=auth).get_json()["proposal"]
+    assert detail["can_sign"] is False
+
+
+# --- every screen counts approvers by the gate's rule -----------------------------------------
+
+
+def test_eligibility_and_the_gate_agree_about_everyone(app):
+    """``eligibility`` is what the screens read; ``_authorize_vote`` is what refuses. For each
+    way of losing (or never having) the right to sign, both must give the same answer."""
+    ada, brij, chen, vault, proposal = _three("agree", threshold_m=1)
+    dev = auth_service.register_user("agree-d@e.com", "Dev", PASSWORD)
+    eve = auth_service.register_user("agree-e@e.com", "Eve", PASSWORD)
+    fay = auth_service.register_user("agree-f@e.com", "Fay", PASSWORD)
+    vault_service.add_member(vault, dev.email, "signer", actor_id=ada.id)  # after it was raised
+    vault_service.add_member(vault, fay.email, "viewer", actor_id=ada.id)
+    workspace = workspace_service.workspace_of_vault(vault)
+    vault_service.change_member_role(vault, brij.id, "viewer", actor_id=ada.id)
+    workspace_service.suspend_member(workspace, chen.id, actor=ada)
+    # Eve is in the workspace and no vault at all.
+
+    for person in (ada, brij, chen, dev, eve, fay):
+        try:
+            approval_service._authorize_vote(proposal, person, "approve", commit=False)
+            allowed = True
+        except ApprovalError:
+            allowed = False
+        assert allowed == eligibility.can_sign(proposal, person.id), person.display_name
+    assert eligibility.eligible_ids(proposal) == {ada.id}
+
+
+def test_a_suspended_approver_is_not_asked_for_their_signature(app):
+    ada, brij, _chen, vault, proposal = _three("asked")
+    assert inbox_service.counts(brij)["needs_you"] == 1
+    assert notification_service.inbox(brij, "needs_you").total == 1
+    _suspend(vault, ada, brij)
+
+    assert inbox_service.counts(brij)["needs_you"] == 0
+    assert inbox_service.awaiting_signature(brij) == 0
+    assert notification_service.inbox(brij, "needs_you").total == 0
+    rows = inbox_service.decorate([proposal], ada, inbox_service.signer_vault_ids(ada))
+    assert "Brij" not in rows[0]["can_still_approve"]
+    assert set(rows[0]["can_still_approve"]) == {"You", "Chen"}
+
+
+def test_a_demoted_approver_reads_that_they_no_longer_approve(client):
+    ada, brij, _chen, vault, proposal = _three("readsdemoted")
+    vault_service.change_member_role(vault, brij.id, "viewer", actor_id=ada.id)
+    vid, pid = vault.id, proposal.proposal_uuid
+
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    # Ada and Chen can approve; Brij is in the rule it was raised under, and can't any more.
+    assert "<b>Chen</b> can also approve" in page
+    assert "<b>Brij</b>" not in page.split("Signatures")[1].split("</ol>")[0]
+    client.post("/logout")
+
+    client.post("/login", data={"email": brij.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    assert "No longer an approver" in page
+    assert "dlg-approve" not in page
+
+
+def _cannot_pass(prefix):
+    """A 2-of-3 decision whose vault then drops to one approver able to sign: the threshold is
+    lowered to 1 and Brij and Chen are made viewers. Only Ada is left for two approvals."""
+    ada, brij, chen, vault, proposal = _three(prefix, threshold_m=2)
+    vault_service.set_threshold(vault, 1, actor_id=ada.id)
+    vault_service.change_member_role(vault, brij.id, "viewer", actor_id=ada.id)
+    vault_service.change_member_role(vault, chen.id, "viewer", actor_id=ada.id)
+    return ada, brij, chen, vault, proposal
+
+
+def test_a_decision_that_can_no_longer_pass_says_so_and_stays_open(client):
+    ada, _brij, _chen, vault, proposal = _cannot_pass("cantpass")
+    vid, pid = vault.id, proposal.proposal_uuid
+
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
+    assert "This decision can no longer pass" in page
+    assert "It needs 2 more approvals, and only 1 person who can approve it is left." in page
+    assert proposal.status == "open"  # not rejected for them
+
+    # The one approval left is still taken, and it still does not decide it.
+    approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
+    assert proposal.status == "open"
+
+    # Home's "Waiting on others" row says so too.
+    home = client.get("/").get_data(as_text=True)
+    assert "Can’t pass: too few approvers left" in home
+
+
+def test_a_decision_that_can_still_pass_shows_no_warning(client):
+    ada, _brij, _chen, vault, proposal = _three("canpass")
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    assert "can no longer pass" not in page
+
+
+def test_the_api_says_when_a_decision_can_no_longer_pass(app, client):
+    ada, _brij, chen, _vault, proposal = _cannot_pass("apicantpass")
+    _body, _secret, auth = _enrol_over_http(client, ada)
+
+    detail = client.get(f"/api/v1/proposals/{proposal.proposal_uuid}", headers=auth).get_json()
+    assert detail["proposal"]["can_still_pass"] is False
+    assert detail["proposal"]["can_still_approve"] == [ada.id]
+    assert detail["proposal"]["can_sign"] is True
+    assert detail["proposal"]["status"] == "open"
