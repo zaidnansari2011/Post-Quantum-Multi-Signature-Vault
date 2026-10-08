@@ -163,7 +163,7 @@ def test_an_approval_cannot_be_replayed_as_a_rejection(app):
     approve_sig = _device_sign(secret, proposal, "approve", ada)
 
     with pytest.raises(ApprovalError, match="did not verify"):
-        approval_service.record_device_vote(proposal, ada, key, "reject", approve_sig)
+        approval_service.record_device_vote(proposal, ada, key, "reject", approve_sig, reason="No.")
 
 
 def test_a_signature_cannot_be_replayed_onto_a_different_proposal(app):

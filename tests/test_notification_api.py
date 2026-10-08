@@ -137,7 +137,7 @@ def test_a_removed_member_stops_seeing_the_vaults_notifications_on_the_phone(cli
     _raise(inbox, "Never answered")
     approval_service.cast_vote(voted_on, inbox["brij"], PASSWORD, "reject", reason="Over budget")
     vault_service.remove_member(inbox["vault"], inbox["brij"].id, actor_id=inbox["ada"].id)
-    approval_service.cast_vote(voted_on, inbox["chen"], PASSWORD, "reject")
+    approval_service.cast_vote(voted_on, inbox["chen"], PASSWORD, "reject", reason="Not convinced.")
     assert voted_on.status == "rejected"
     phone = inbox["brij_phone"]
 

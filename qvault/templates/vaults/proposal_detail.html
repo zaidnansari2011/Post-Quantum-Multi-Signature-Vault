@@ -532,7 +532,7 @@
   <form id="reject-form" method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
     {{ vote_form.csrf_token }}
     {{ restated('reject-text') }}
-    {{ field('reason', 'Reason (optional)', id='f-reason-reject', caption='Everyone in ' ~ vault.name ~ ' sees this next to your rejection. It isn’t part of what you sign. Up to 255 characters.', attrs={'maxlength': 255, 'autofocus': True}) }}
+    {{ field('reason', 'Reason', id='f-reason-reject', required=True, caption='Required. Everyone in ' ~ vault.name ~ ' sees this next to your rejection, so whoever raised it knows what to change. It isn’t part of what you sign. Up to 255 characters.', attrs={'maxlength': 255, 'autofocus': True}) }}
     {% for line in reject_lines %}<p class="q-conseq">{{ line }}</p>{% endfor %}
     {{ field('password', 'Password', type='password', id='f-password-reject', required=True, caption='Unlocks your signing key for this signature only. It isn’t stored.', attrs={'autocomplete': 'current-password'}) }}
   </form>

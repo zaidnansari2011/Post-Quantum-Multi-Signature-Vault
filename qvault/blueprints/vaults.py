@@ -783,7 +783,10 @@ def vote(vid: int, pid: str):
     proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
     form = VoteForm()
     if not form.validate_on_submit():
-        flash("Please enter your password to sign.", "danger")
+        if form.reason.errors:
+            flash("Keep the reason to 255 characters; nothing was recorded.", "danger")
+        else:
+            flash("Please enter your password to sign.", "danger")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
     # Require exactly one explicit decision: never default an ambiguous submit to "approve".

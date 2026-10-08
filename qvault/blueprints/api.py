@@ -973,6 +973,9 @@ def proposal_detail(uuid: str):
             "signing_inputs": signing_inputs,
             "payload_hash": proposal.payload_hash,
             "signing_bytes_sha256": sha256_hex(signing_bytes_for(proposal)),
+            # A16 (plan S16): a rejection must carry a reason; the vote endpoint refuses one
+            # without (``reason_required``). The reason is shown, never signed.
+            "reject_reason_required": True,
             "votes": [
                 {
                     "signer_id": s.signer_id,
@@ -1066,6 +1069,7 @@ _VOTE_STATUS = {
     "already_voted": 409,
     "not_a_signer": 403,
     "own_decision": 403,
+    "reason_required": 422,
     "proposal_closed": 422,
     "signature_invalid": 422,
     "device_key_not_active": 422,
@@ -1089,6 +1093,9 @@ def _vote_code(message: str) -> str:
     # Plan S15, before the generic "approve ... reject" test below, which its sentence would match.
     if "you raised this" in lowered:
         return "own_decision"
+    # Plan S16 (A16): a rejection without a reason, or with one too long.
+    if "add a reason" in lowered or "keep the reason" in lowered:
+        return "reason_required"
     if "already voted" in lowered:
         return "already_voted"
     if "not an authorised signer" in lowered:

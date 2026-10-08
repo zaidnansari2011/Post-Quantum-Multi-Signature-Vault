@@ -97,7 +97,7 @@ def test_the_requester_cannot_approve_or_reject_their_own_decision(app):
     with pytest.raises(ApprovalError, match="You raised this decision"):
         approval_service.cast_vote(proposal, ada, WRONG, "approve")
     with pytest.raises(ApprovalError, match="You raised this decision"):
-        approval_service.cast_vote(proposal, ada, PASSWORD, "reject")
+        approval_service.cast_vote(proposal, ada, PASSWORD, "reject", reason="Not convinced.")
     assert _votes(proposal) == 0
 
     approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
@@ -276,7 +276,7 @@ def test_one_rejection_can_leave_a_decision_unable_to_pass(app):
     every screen says it can no longer pass."""
     ada, brij, _chen, vault = _team("onereject")
     proposal = proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
-    approval_service.cast_vote(proposal, brij, PASSWORD, "reject")
+    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not convinced.")
 
     assert proposal.status == "open"
     outlook = eligibility.outlook(

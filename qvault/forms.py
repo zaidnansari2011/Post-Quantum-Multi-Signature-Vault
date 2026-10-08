@@ -151,7 +151,9 @@ class VoteForm(FlaskForm):
     password = PasswordField(
         "Your password (to unlock your signing key)", validators=[DataRequired()]
     )
-    reason = StringField("Reason (optional)", validators=[Optional(), Length(max=255)])
+    # Required for a rejection (plan S16); the service enforces it, as the route cannot know
+    # which button was pressed before the form validates.
+    reason = StringField("Reason", validators=[Optional(), Length(max=255)])
     approve = SubmitField("Approve & sign")
     reject = SubmitField("Reject")
 
