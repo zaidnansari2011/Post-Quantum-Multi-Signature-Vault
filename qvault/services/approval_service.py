@@ -10,8 +10,9 @@ A proposal moves through a small, auditable state machine:
 
 Every vote is a real post-quantum signature (ML-DSA / SLH-DSA) over ``vote_signing_bytes``,
 verified before it is stored and again for display, and anchored into the hash-chained ledger.
-Authorisation uses the proposal's *frozen* signer snapshot, so changing vault membership after
-creation can neither add nor remove eligible voters for an in-flight proposal.
+Authorisation needs the proposal's *frozen* signer snapshot, so changing vault membership after
+creation can never add a voter to an in-flight proposal, AND a current approver role in the vault,
+so demoting or removing someone stops them signing anything further (``_authorize_vote``).
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from flask import current_app
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from qvault import glassbox
@@ -28,6 +30,7 @@ from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
+from qvault.models.vault import SIGNER_ROLES, VaultMember
 from qvault.services import execution_service, key_service, ledger_service
 from qvault.services.signing import payment_text, signing_bytes_for, vote_signing_bytes
 
@@ -353,15 +356,37 @@ def finalize_stalled(*, commit: bool = True) -> int:
     return decided
 
 
+def is_current_approver(vault_id: int, user_id: int) -> bool:
+    """Whether ``user_id`` is an approver (owner or signer) of the vault right now.
+
+    Read from the database rather than from ``vault.members``, so a relationship loaded earlier in
+    the request cannot answer for a role that has since changed.
+    """
+    role = db.session.scalar(
+        select(VaultMember.member_role).where(
+            VaultMember.vault_id == vault_id, VaultMember.user_id == user_id
+        )
+    )
+    return role in SIGNER_ROLES
+
+
 def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
     """The governance gate every vote passes, whoever held the key.
 
-    The order is observable and must not change: the decision whitelist first (so an invalid
-    decision can never reach the signed bytes), then the durable expiry refresh (so a
-    stale-but-open proposal cannot be voted on), then the status gate, then authorisation against
-    the **frozen** signer snapshot rather than current vault membership, and finally the advisory
-    duplicate check — advisory because ``uq_signature_signer`` is the authority and a concurrent
-    vote may not be visible here yet.
+    The order is observable and must not change:
+
+    1. the decision whitelist (so an invalid decision can never reach the signed bytes);
+    2. the durable expiry refresh (so a stale-but-open proposal cannot be voted on);
+    3. the status gate;
+    4. the **frozen** signer snapshot: someone made an approver after the decision was raised was
+       not one of the people it asked, so they cannot sign it;
+    5. the vault's approvers **now** (owner decision 2026-10-08): the snapshot is necessary but
+       not sufficient, so someone demoted to viewer or removed since it was raised cannot sign
+       it either. Votes they cast while they were an approver keep counting;
+    6. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
+       and a concurrent vote may not be visible here yet.
+
+    Every check here comes before a password is tried or a signature is verified.
     """
     if decision not in ("approve", "reject"):
         raise ApprovalError("Decision must be 'approve' or 'reject'.")
@@ -373,6 +398,12 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
 
     if signer.id not in _authorized_ids(proposal):
         raise ApprovalError("You are not an authorised signer for this proposal.")
+    if not is_current_approver(proposal.vault_id, signer.id):
+        # Worded to keep the API's "not_a_signer" code: it is the same refusal to the client.
+        raise ApprovalError(
+            "You are not an authorised signer for this proposal any more: you are no longer an "
+            "approver of this vault."
+        )
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
 
