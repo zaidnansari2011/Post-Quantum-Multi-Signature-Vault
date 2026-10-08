@@ -57,7 +57,7 @@ export function StatusLine({
       <View style={[s.statusTop, t.stacked && s.statusTopStacked]}>
         {badge ? <StatusBadge word={badge.word} tone={badge.tone} /> : null}
         {when ? (
-          <View style={s.when}>
+          <View style={[s.when, t.stacked && s.whenStacked]}>
             {warn ? <Icon name={passed ? 'alert' : 'clock'} size={16} color={t.color.status.warning.fg} /> : null}
             <Text role="caption" tone={warn ? 'warning' : 'muted'} tabular>
               {when}
@@ -93,4 +93,6 @@ const useStyles = makeStyles((t) => ({
   },
   statusTopStacked: { flexDirection: 'column', alignItems: 'flex-start', gap: t.space[4] },
   when: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
+  // Wrapped at large text: the mark stays with the first line, not between the two.
+  whenStacked: { alignItems: 'flex-start' },
 }));
