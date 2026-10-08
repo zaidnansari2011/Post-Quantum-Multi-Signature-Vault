@@ -174,6 +174,29 @@ def signing_standing(vault: Vault, user_id: int) -> str | None:
     return None
 
 
+def in_good_standing(vault: Vault, user_ids: Iterable[int]) -> set[int]:
+    """Which of ``user_ids`` ``signing_standing`` lets sign in ``vault``, in one query.
+
+    For the screens that count approvers; the vote gate asks ``signing_standing`` for its reason.
+    """
+    ids = set(user_ids)
+    if not ids:
+        return set()
+    workspace_id = home_workspace_id(vault)
+    if workspace_id is None:
+        return ids if Workspace.query.first() is None else set()
+    return set(
+        db.session.scalars(
+            select(WorkspaceMember.user_id).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id.in_(ids),
+                WorkspaceMember.status == "active",
+                WorkspaceMember.role != "auditor",
+            )
+        )
+    )
+
+
 def members(workspace: Workspace, *, status: str | None = None) -> list[WorkspaceMember]:
     """Members in the order they joined, optionally only those with ``status``. Each one's user is
     loaded with them, since every page that lists members names them."""

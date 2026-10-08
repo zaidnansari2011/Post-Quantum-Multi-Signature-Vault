@@ -104,6 +104,17 @@
 </div>
 {% endif %}
 
+{% if cannot_pass %}
+{#- Approvers demoted, removed or suspended since it was raised: it is not rejected for them
+    (nobody rejected it), so it says why it can't pass and how it ends (eligibility.py). -#}
+{% set k = still_ids | length %}
+<div class="q-dbanner">
+{{ banner('warning', 'This ' ~ noun ~ ' can no longer pass',
+  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left. Approvers were removed, made viewers or suspended after it was raised. Votes already cast still count. '
+  ~ ('It stays open until it expires ' ~ ui_absolute(proposal.expires_at) ~ '.' if proposal.expires_at else 'It stays open until it is withdrawn.')) }}
+</div>
+{% endif %}
+
 <div class="q-detail">
 <div class="q-dmain">
 
@@ -188,7 +199,8 @@
     {% endfor %}
 
     {% if proposal.status == 'open' %}
-      {% set others = approver_ids | reject('in', voted_ids) | reject('equalto', current_user.id) | list %}
+      {#- Who can still approve, by the vote gate's rule: not merely the frozen set. -#}
+      {% set others = still_ids | reject('equalto', current_user.id) | list %}
       {% if can_vote %}
       <li class="q-tl__i q-tl__i--you">
         <span class="q-tl__who">{{ avatar(current_user.display_name or current_user.email, 24, decorative=True) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
@@ -425,6 +437,8 @@
       {%- elif proposal.status == 'open' %}An approver. You sign with your {{ 'password key' if my_key and my_key.wrap_domain != 'device' else 'key' }}{% if my_key %}, {{ my_key.alg_id }}{% endif %}.
       {%- else %}An approver. You didn’t sign this.{% endif -%}
     </dd></div>
+    {% elif was_signer %}
+    <div><dt>You</dt><dd>No longer an approver<span class="q-cap">You were one of its approvers when it was raised, and can’t sign it now. A vote you cast before still counts.</span></dd></div>
     {% else %}
     <div><dt>You</dt><dd>View only<span class="q-cap">You aren’t one of this decision’s approvers.</span></dd></div>
     {% endif %}

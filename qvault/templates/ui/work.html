@@ -91,6 +91,8 @@
   {%- if row.my_vote == 'reject' -%}
   {%- set needed = p.required_n - p.required_m + 1 -%}
   <span class="q-wl__note">You rejected. It’s rejected only if {{ needed }} of {{ p.required_n }} reject.</span>
+  {%- elif row.can_still_pass is false -%}
+  <span class="q-wl__note">Can’t pass: too few approvers left</span>
   {%- else -%}
   {%- set others = row.can_still_approve | reject('equalto', 'You') | list -%}
   {%- if others %}<span class="q-wl__note">{{ ui_names(others, conjunction='or') }}</span>{% endif -%}
