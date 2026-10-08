@@ -1,18 +1,11 @@
 {# Security is one section with several screens, so it carries its own tab strip rather than
    appearing as three unrelated items in the main navigation. #}
-<div class="tabs">
-  <a class="tab" href="{{ url_for('admin.crypto') }}"
-     {% if request.endpoint == 'admin.crypto' %}aria-current="page"{% endif %}>Algorithms</a>
-  <a class="tab" href="{{ url_for('admin.rotation') }}"
-     {% if request.endpoint == 'admin.rotation' %}aria-current="page"{% endif %}>Keys</a>
-  <a class="tab" href="{{ url_for('admin.benchmark') }}"
-     {% if request.endpoint == 'admin.benchmark' %}aria-current="page"{% endif %}>Performance</a>
-  {% if config.ONCHAIN_EXECUTION_ENABLED %}
-  <a class="tab" href="{{ url_for('admin.chain') }}"
-     {% if request.endpoint == 'admin.chain' %}aria-current="page"{% endif %}>Chain</a>
-  {% endif %}
-  {% if config.ATTACK_LAB_ENABLED %}
-  <a class="tab" href="{{ url_for('admin.attack_lab') }}"
-     {% if request.endpoint in ('admin.attack_lab', 'admin.run_attack_lab') %}aria-current="page"{% endif %}>Adversary lab</a>
-  {% endif %}
-</div>
+{% from "ui/navigation.html" import tabs %}
+{% set admin_tabs = [
+  {'key': 'admin.crypto', 'label': 'Algorithms', 'href': url_for('admin.crypto')},
+  {'key': 'admin.rotation', 'label': 'Keys', 'href': url_for('admin.rotation')},
+  {'key': 'admin.benchmark', 'label': 'Performance', 'href': url_for('admin.benchmark')},
+] %}
+{% if config.ONCHAIN_EXECUTION_ENABLED %}{% set _ = admin_tabs.append({'key': 'admin.chain', 'label': 'Chain', 'href': url_for('admin.chain')}) %}{% endif %}
+{% if config.ATTACK_LAB_ENABLED %}{% set _ = admin_tabs.append({'key': 'admin.attack_lab', 'label': 'Adversary lab', 'href': url_for('admin.attack_lab')}) %}{% endif %}
+{{ tabs(admin_tabs, 'admin.attack_lab' if request.endpoint == 'admin.run_attack_lab' else request.endpoint, 'Security sections') }}

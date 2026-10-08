@@ -1,122 +1,102 @@
 {% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/status.html" import badge %}
+{% from "ui/data.html" import hash %}
 {% block title %}Keys — Q-Vault{% endblock %}
 {% set active = rows | selectattr('key.status', 'equalto', 'active') | list %}
 {% set retired = rows | rejectattr('key.status', 'equalto', 'active') | list %}
 {% set due = rows | selectattr('due') | list %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Security</div>
-    <div class="head__sub">{{ rows|length }} keys · replacement after {{ config.KEY_MAX_AGE_DAYS }} days</div>
-  </div>
-  <div class="head__actions">
-    {% if due %}
-      <span class="chip chip--waiting">{{ due|length }} due</span>
-    {% else %}
-      <span class="chip chip--sealed">All within date</span>
-    {% endif %}
-    <form method="post" action="{{ url_for('admin.run_maintenance') }}">
-      {{ form.hidden_tag() }}
-      {{ form.submit(class="btn btn--ghost btn--sm") }}
-    </form>
-  </div>
-</div>
-{% include "admin/_nav.html" %}
-{% endblock %}
-
 {% block content %}
-<div class="figures" style="margin-bottom:1rem">
-  <div class="figure"><div class="figure__num">{{ active|length }}</div><div class="figure__label">Active</div></div>
-  <div class="figure"><div class="figure__num">{{ retired|length }}</div><div class="figure__label">Retired, verifying</div></div>
-  <div class="figure">
-    <div class="figure__num" {% if due %}style="color:var(--waiting)"{% endif %}>{{ due|length }}</div>
-    <div class="figure__label">Past date</div>
-  </div>
-  <div class="figure">
-    <div class="figure__num" {% if user_keys_due %}style="color:var(--waiting)"{% endif %}>{{ user_keys_due|length }}</div>
-    <div class="figure__label">Awaiting owner</div>
-  </div>
+<div class="q-admin">
+{% set state %}{% if due %}{{ badge(due|length ~ ' due', 'warning') }}{% else %}{{ badge('All within date', 'success') }}{% endif %}{% endset %}
+{% call page_header('Security', description=rows|length ~ ' keys · replacement after ' ~ config.KEY_MAX_AGE_DAYS ~ ' days', status=state) %}
+  <form method="post" action="{{ url_for('admin.run_maintenance') }}">
+    {{ form.hidden_tag() }}
+    {{ button(form.submit.label.text, 'secondary', type='submit', name='submit', value=form.submit.label.text) }}
+  </form>
+{% endcall %}
+{% include "admin/_nav.html" %}
+
+<div class="q-stats">
+  <div class="q-stat"><p class="q-stat__v">{{ active|length }}</p><p class="q-stat__l">Active</p></div>
+  <div class="q-stat"><p class="q-stat__v">{{ retired|length }}</p><p class="q-stat__l">Retired, verifying</p></div>
+  <div class="q-stat"><p class="q-stat__v{% if due %} is-warning{% endif %}">{{ due|length }}</p><p class="q-stat__l">Past date</p></div>
+  <div class="q-stat"><p class="q-stat__v{% if user_keys_due %} is-warning{% endif %}">{{ user_keys_due|length }}</p><p class="q-stat__l">Awaiting owner</p></div>
 </div>
 
-<div class="split split--wide">
-  <div class="panel">
-    <div class="panel__head"><span class="label">Keys</span></div>
-    <div class="scroll-x">
-      <table class="dt">
+<div class="q-split">
+  <section class="q-panel q-panel--table" aria-labelledby="keys-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="keys-t">Keys</h2></div>
+    <div class="q-table-wrap">
+      <table class="q-table q-table--compact">
         <thead>
-          <tr><th class="num" style="width:50px">#</th><th>Scope</th><th>Purpose</th>
-              <th>Algorithm</th><th>Status</th><th>Custody</th><th>Replace by</th><th>Fingerprint</th></tr>
+          <tr><th scope="col" class="is-num" style="width:50px">#</th><th scope="col">Scope</th><th scope="col">Purpose</th>
+              <th scope="col">Algorithm</th><th scope="col">Status</th><th scope="col">Custody</th><th scope="col">Replace by</th><th scope="col">Fingerprint</th></tr>
         </thead>
         <tbody>
           {% for r in rows %}
           <tr>
-            <td class="num mono">{{ r.key.id }}</td>
-            <td class="small truncate">{{ r.scope }}</td>
-            <td class="mono">{{ r.key.role }}</td>
-            <td><span class="tag">{{ r.key.alg_id }}</span></td>
+            <td class="is-num">{{ r.key.id }}</td>
+            <td><span class="q-trunc">{{ r.scope }}</span></td>
+            <td><code class="q-mono">{{ r.key.role }}</code></td>
+            <td><span class="q-tag">{{ r.key.alg_id }}</span></td>
             <td>
-              {% if r.due %}<span class="chip chip--waiting">Due</span>
-              {% elif r.key.status == 'active' %}<span class="chip chip--sealed">Active</span>
-              {% else %}<span class="chip">Retired</span>{% endif %}
+              {% if r.due %}{{ badge('Due', 'warning') }}
+              {% elif r.key.status == 'active' %}{{ badge('Active', 'success') }}
+              {% else %}{{ badge('Retired') }}{% endif %}
             </td>
-            <td>
-              {% if r.key.wrap_domain == 'master' %}<span class="chip">Server</span>
-              {% else %}<span class="chip">Owner</span>{% endif %}
-            </td>
-            <td class="tiny muted nowrap">{{ r.key.rotate_after.strftime('%d %b %Y') if r.key.rotate_after else '—' }}</td>
-            <td><code class="hash" data-copy="{{ r.key.public_fingerprint() }}">{{ r.key.public_fingerprint() }}</code></td>
+            <td>{{ badge('Server' if r.key.wrap_domain == 'master' else 'Owner') }}</td>
+            <td class="q-small q-nowrap">{{ r.key.rotate_after.strftime('%d %b %Y') if r.key.rotate_after else '—' }}</td>
+            <td>{{ hash(r.key.public_fingerprint(), 'key fingerprint') }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 
-  <div class="stack">
-    <div class="panel">
-      <div class="panel__head"><span class="label">Custody</span></div>
-      <div class="panel__body">
-        <dl class="meta">
-          <dt>Server</dt>
-          <dd class="small">The audit seal key and vault file keys. Replaced automatically.</dd>
-          <dt>Owner</dt>
-          <dd class="small">Personal signing keys, locked with a password the server never holds.
-            Flagged when due; replaced by the owner.</dd>
-        </dl>
-      </div>
-    </div>
+  <div class="q-stack">
+    <section class="q-panel" aria-labelledby="cust-t">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="cust-t">Custody</h2></div>
+      <dl class="q-kv" style="--kv-label: 88px">
+        <div><dt>Server</dt><dd>The audit seal key and vault file keys. Replaced automatically.</dd></div>
+        <div><dt>Owner</dt><dd>Personal signing keys, locked with a password the server never holds.
+          Flagged when due; replaced by the owner.</dd></div>
+      </dl>
+    </section>
 
     {% if user_keys_due %}
-    <div class="panel">
-      <div class="panel__head"><span class="label">Awaiting their owner</span></div>
-      <table class="dt">
-        <tbody>
-          {% for k in user_keys_due %}
-          <tr>
-            <td class="truncate small">{{ k.owner.display_name or k.owner.email if k.owner else '—' }}</td>
-            <td><span class="tag">{{ k.alg_id }}</span></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <section class="q-panel q-panel--table" aria-labelledby="await-t">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="await-t">Awaiting their owner</h2></div>
+      <div class="q-table-wrap">
+        <table class="q-table q-table--compact">
+          <thead><tr><th scope="col">Owner</th><th scope="col">Algorithm</th></tr></thead>
+          <tbody>
+            {% for k in user_keys_due %}
+            <tr>
+              <td><span class="q-trunc">{{ k.owner.display_name or k.owner.email if k.owner else '—' }}</span></td>
+              <td><span class="q-tag">{{ k.alg_id }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
     {% endif %}
 
     {% if demo_enabled %}
-    <div class="panel dev">
-      <div class="panel__head"><span class="label">Developer</span></div>
-      <div class="panel__body">
-        <form method="post" action="{{ url_for('admin.demo_expire_keys') }}">
-          {{ expire_form.hidden_tag() }}
-          {{ expire_form.submit(class="btn btn--danger btn--sm btn--block") }}
-        </form>
-        <p class="tiny muted" style="margin:.4rem 0 0">
-          Moves deadlines forward, never the keys. Recorded in the audit trail.
-        </p>
-      </div>
-    </div>
+    <section class="q-dev" aria-labelledby="dev-t">
+      <p class="q-dev__t" id="dev-t">Developer</p>
+      <form method="post" action="{{ url_for('admin.demo_expire_keys') }}">
+        {{ expire_form.hidden_tag() }}
+        {{ button(expire_form.submit.label.text, 'danger', type='submit', size='sm', block=True, name='submit', value=expire_form.submit.label.text) }}
+      </form>
+      <p class="q-dev__t">Moves deadlines forward, never the keys. Recorded in the audit trail.</p>
+    </section>
     {% endif %}
   </div>
+</div>
 </div>
 {% endblock %}

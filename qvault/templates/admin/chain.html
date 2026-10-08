@@ -1,82 +1,69 @@
 {% extends "base.html" %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/status.html" import badge %}
 {% block title %}Chain — Q-Vault{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Security</div>
-    <div class="head__sub">Treasury work on Sepolia · paid by the relayer</div>
-  </div>
-  <div class="head__actions">
-    {% if not chain.relayer %}
-      <span class="chip chip--waiting">No relayer</span>
-    {% elif chain.relayer.balance is none %}
-      <span class="chip chip--waiting">Ethereum not answering</span>
-    {% elif chain.relayer.low %}
-      <span class="chip chip--waiting">Relayer low</span>
-    {% else %}
-      <span class="chip chip--sealed">Funded</span>
-    {% endif %}
-  </div>
-</div>
-{% include "admin/_nav.html" %}
-{% endblock %}
-
 {% block content %}
-<div class="figures" style="margin-bottom:1rem">
-  <div class="figure"><div class="figure__num">{{ chain.open.links }}</div><div class="figure__label">Links in progress</div></div>
-  <div class="figure"><div class="figure__num">{{ chain.open.reconfigurations }}</div><div class="figure__label">Changes in progress</div></div>
-  <div class="figure"><div class="figure__num">{{ chain.open.payouts }}</div><div class="figure__label">Payouts in progress</div></div>
-  <div class="figure">
-    <div class="figure__num" {% if chain.failures %}style="color:var(--waiting)"{% endif %}>{{ chain.failures|length }}</div>
-    <div class="figure__label">Recent failures</div>
-  </div>
+<div class="q-admin">
+{% set state %}
+  {%- if not chain.relayer %}{{ badge('No relayer', 'warning') }}
+  {%- elif chain.relayer.balance is none %}{{ badge('Ethereum not answering', 'warning') }}
+  {%- elif chain.relayer.low %}{{ badge('Relayer low', 'warning') }}
+  {%- else %}{{ badge('Funded', 'success') }}{% endif -%}
+{% endset %}
+{{ page_header('Security', description='Treasury work on Sepolia · paid by the relayer', status=state) }}
+{% include "admin/_nav.html" %}
+
+<div class="q-stats">
+  <div class="q-stat"><p class="q-stat__v">{{ chain.open.links }}</p><p class="q-stat__l">Links in progress</p></div>
+  <div class="q-stat"><p class="q-stat__v">{{ chain.open.reconfigurations }}</p><p class="q-stat__l">Changes in progress</p></div>
+  <div class="q-stat"><p class="q-stat__v">{{ chain.open.payouts }}</p><p class="q-stat__l">Payouts in progress</p></div>
+  <div class="q-stat"><p class="q-stat__v{% if chain.failures %} is-warning{% endif %}">{{ chain.failures|length }}</p><p class="q-stat__l">Recent failures</p></div>
 </div>
 
-<div class="split">
-  <div class="panel">
-    <div class="panel__head"><span class="label">Recent failures</span></div>
+<div class="q-split">
+  <section class="q-panel q-panel--table" aria-labelledby="fail-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="fail-t">Recent failures</h2></div>
     {% if chain.failures %}
-    <div class="scroll-x">
-      <table class="dt">
-        <thead><tr><th>Kind</th><th>Vault</th><th>State</th><th>Reason</th><th class="num">When</th></tr></thead>
+    <div class="q-table-wrap">
+      <table class="q-table">
+        <thead><tr><th scope="col">Kind</th><th scope="col">Vault</th><th scope="col">State</th><th scope="col">Reason</th><th scope="col" class="is-num">When</th></tr></thead>
         <tbody>
           {% for f in chain.failures %}
           <tr>
-            <td><span class="tag">{{ f.kind }}</span></td>
-            <td><a class="dt__link" href="{{ url_for('vaults.vault_detail', vid=f.vault_id, tab='treasury') }}">{{ f.vault or 'Vault ' ~ f.vault_id }}</a></td>
-            <td><span class="chip {{ 'chip--broken' if f.state == 'failed' else 'chip--waiting' }}">{{ f.state | capitalize }}</span></td>
-            <td class="small">{{ f.reason or '' }}</td>
-            <td class="num tiny muted nowrap">{{ f.at.strftime('%d %b %H:%M') }}</td>
+            <td><span class="q-tag">{{ f.kind }}</span></td>
+            <td><a href="{{ url_for('vaults.vault_detail', vid=f.vault_id, tab='treasury') }}">{{ f.vault or 'Vault ' ~ f.vault_id }}</a></td>
+            <td>{{ badge(f.state | capitalize, 'critical' if f.state == 'failed' else 'warning') }}</td>
+            <td>{{ f.reason or '' }}</td>
+            <td class="is-num q-small q-nowrap">{{ f.at.strftime('%d %b %H:%M') }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     {% else %}
-    <div class="panel__body"><p class="small muted" style="margin:0">Nothing has failed.</p></div>
+    <div class="q-panel__bd"><p class="q-empty-line">Nothing has failed.</p></div>
     {% endif %}
-  </div>
+  </section>
 
-  <div class="panel">
-    <div class="panel__head"><span class="label">Relayer</span></div>
-    <div class="panel__body">
-      {% if chain.relayer %}
-      <dl class="meta">
-        <dt>Address</dt>
-        <dd><a class="mono" rel="noreferrer noopener" target="_blank"
-               href="https://sepolia.etherscan.io/address/{{ chain.relayer.address }}">{{ chain.relayer.address }}</a></dd>
-        <dt>Balance</dt><dd class="mono">{{ chain.relayer.balance or 'Unavailable' }}</dd>
-        <dt>Reserve</dt><dd class="mono">{{ chain.relayer.reserve }}</dd>
-        {% if chain.relayer.payout_cost %}<dt>One payout</dt><dd class="mono">up to {{ chain.relayer.payout_cost }}</dd>{% endif %}
-      </dl>
-      {% if chain.relayer.low %}
-      <p class="small">Below the reserve plus one payout: new chain work waits until the relayer is topped up.</p>
-      {% endif %}
-      {% else %}
-      <p class="small muted">No relayer key is configured on this instance.</p>
-      {% endif %}
-    </div>
-  </div>
+  <section class="q-panel" aria-labelledby="relayer-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="relayer-t">Relayer</h2></div>
+    {% if chain.relayer %}
+    <dl class="q-kv" style="--kv-label: 104px">
+      <div><dt>Address</dt>
+      <dd><a class="q-mono" rel="noreferrer noopener" target="_blank"
+             href="https://sepolia.etherscan.io/address/{{ chain.relayer.address }}">{{ chain.relayer.address }}</a></dd></div>
+      <div><dt>Balance</dt><dd>{{ chain.relayer.balance or 'Unavailable' }}</dd></div>
+      <div><dt>Reserve</dt><dd>{{ chain.relayer.reserve }}</dd></div>
+      {% if chain.relayer.payout_cost %}<div><dt>One payout</dt><dd>up to {{ chain.relayer.payout_cost }}</dd></div>{% endif %}
+    </dl>
+    {% if chain.relayer.low %}
+    <p class="q-panel__ft">Below the reserve plus one payout: new chain work waits until the relayer is topped up.</p>
+    {% endif %}
+    {% else %}
+    <div class="q-panel__bd"><p class="q-empty-line">No relayer key is configured on this instance.</p></div>
+    {% endif %}
+  </section>
+</div>
 </div>
 {% endblock %}
