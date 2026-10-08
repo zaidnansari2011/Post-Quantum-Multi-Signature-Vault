@@ -3,9 +3,10 @@
 // The HIG asks for the method by name: "Sign with Face ID", not "Sign". The name comes from two
 // facts: what `detectProtection()` reports (it already requires BIOMETRIC_STRONG before it says
 // 'biometric') and the biometric hardware `supportedAuthenticationTypesAsync()` lists. A phone whose
-// only biometric is Class 2 face unlock reports 'device_credential', and with
-// `biometricsSecurityLevel: 'strong'` its prompt shows only the PIN screen, so its button must name
-// the PIN, not "face unlock". Never "passcode".
+// only biometric is Class 2 face unlock reports 'device_credential', and its button names the PIN,
+// not "face unlock". Never "passcode". (The prompt itself stays at the platform's default level
+// until a handset check clears `biometricsSecurityLevel: 'strong'` on Android 9 and 10, see
+// keystore.ts; until then such a phone's prompt may offer the face unlock before the PIN.)
 //
 // No React Native or Expo import: the hardware types are passed in as expo-local-authentication's
 // numbers, so tools/logic_probe.ts can run every combination under Node.

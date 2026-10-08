@@ -113,10 +113,13 @@ export async function confirmPresence(prompt: PromptStrings): Promise<Protection
     promptDescription: prompt.description,
     cancelLabel: 'Cancel',
     disableDeviceFallback: false,
-    // Class 3 only (phone-ux §5.13): a Class 2 face unlock is offered the PIN instead. And no
-    // `requireConfirmation: false`: the platform default asks for an explicit confirm after a face
-    // match, which Android reserves passive authentication against for high-risk actions.
-    biometricsSecurityLevel: 'strong',
+    // The handset-proven options, kept on purpose. `biometricsSecurityLevel: 'strong'` with the PIN
+    // fallback makes expo-local-authentication 57.0.2 ask androidx.biometric for
+    // BIOMETRIC_STRONG | DEVICE_CREDENTIAL, a combination androidx documents as unsupported on
+    // Android 9 and 10 (API 28-29): `PromptInfo.Builder.build()` throws there, outside the module's
+    // try, so those phones could not sign at all. Class 3 only, and the confirm after a face match,
+    // wait for a handset check (docs/OWNER-ACTIONS.md, "Rework: phone handset checks").
+    requireConfirmation: false,
   });
   if (!result.success) {
     if (DECLINED.has(result.error)) throw new AuthenticationCancelled();
