@@ -104,7 +104,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const [storedIdentity, storedToken, seed] = await Promise.all([
         keystore.loadIdentity(),
         keystore.loadToken(),
-        keystore.hasSeed(),
+        // A keystore that cannot answer is not a missing key: assume it is there, and let signing say.
+        keystore.hasSeed().catch(() => true),
       ]);
       if (cancelled) return;
       // Nothing is deleted at start-up: a half-stored state is shown for what it is.
