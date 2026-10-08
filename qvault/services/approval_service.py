@@ -52,6 +52,8 @@ class ApprovalError(ValueError):
 #: Plan S16: a rejection says why. The reason is shown beside the vote and is not signed (S9).
 REASON_REQUIRED = "Add a reason for rejecting, so the person who raised it knows what to change."
 REASON_MAX = 255
+#: A reason sent as something other than text (the device API's JSON can carry anything).
+REASON_NOT_TEXT = "Keep the reason to plain text; nothing was recorded."
 
 #: Plan S15's refusal. The API maps "you raised this" to the code ``own_decision``.
 OWN_DECISION = (
@@ -420,8 +422,8 @@ def _authorize_vote(
        (``eligibility.requester_may_approve``);
     8. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
        and a concurrent vote may not be visible here yet;
-    9. a rejection carries a reason (plan S16), at most ``REASON_MAX`` characters. Not signed:
-       ``vote_signing_bytes`` is unchanged (S9).
+    9. a rejection carries a reason (plan S16), text of at most ``REASON_MAX`` characters. Not
+       signed: ``vote_signing_bytes`` is unchanged (S9).
 
     Every check here comes before a password is tried or a signature is verified.
     """
@@ -450,6 +452,8 @@ def _authorize_vote(
         raise ApprovalError(OWN_DECISION)
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
+    if reason is not None and not isinstance(reason, str):
+        raise ApprovalError(REASON_NOT_TEXT)
     note = (reason or "").strip()
     if decision == "reject" and not note:
         raise ApprovalError(REASON_REQUIRED)
