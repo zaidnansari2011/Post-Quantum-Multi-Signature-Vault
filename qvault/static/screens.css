@@ -84,11 +84,6 @@ p.q-panel__bd { margin: 0; }
 
 .q-auth { width: 100%; max-width: 360px; margin: 0 auto; padding: var(--space-32) 0; }
 .q-auth--wide { max-width: 480px; }
-.q-auth__brand {
-  display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-24);
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong); color: var(--text);
-}
-.q-auth__brand .q-mark { width: 22px; height: 22px; }
 .q-auth__t { margin: 0 0 var(--space-16); font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); }
 .q-auth__p { margin: 0 0 var(--space-16); color: var(--text-muted); }
 .q-auth form { margin: 0; }
@@ -256,7 +251,6 @@ p.q-panel__bd { margin: 0; }
 .q-live[data-paused="1"] .q-live__dot { background: var(--border-strong); animation: none; }
 @keyframes q-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .q-live__dot { animation: none; } }
-.q-trace__empty { padding: var(--space-48) var(--space-16); text-align: center; color: var(--text-subtle); }
 
 /* One operation: a request that did cryptographic work. */
 .q-op { background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
@@ -350,3 +344,11 @@ p.q-panel__bd { margin: 0; }
   .q-panel__hd:has(> .q-small) { flex-wrap: wrap; row-gap: var(--space-2); }
   .q-panel__hd > .q-small { flex-basis: 100%; margin-left: 0; text-align: left; }
 }
+
+/* Security → Chain: a failure's reason is a sentence, so it keeps a readable measure on a desktop
+ * (at phone width the row is a stacked card, components.css). */
+@media (min-width: 768px) { .q-chain__why { min-width: 22ch; } .q-chain__when { min-width: 12ch; text-align: right; } }
+.q-table td.q-c-main.q-chain__vault { min-width: 0; }
+/* A time in a table's last column, written in full (ui.absolute_time): it may wrap, aligned with
+ * its right-aligned header, rather than push the table into a sideways scroll. */
+.q-table td.q-when { text-align: right; min-width: 13ch; }

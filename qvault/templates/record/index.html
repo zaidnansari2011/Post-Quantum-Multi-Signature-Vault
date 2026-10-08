@@ -13,9 +13,10 @@
 
   <header>
     <h1 class="q-ph__t">{{ proposal.title }}</h1>
-    <p class="q-verify__lead">
-      {{ vault.name }} · {{ bundle.decision.created_at_iso[:10] }}
-    </p>
+    <dl class="q-facts">
+      <div class="q-fact"><dt>Vault</dt><dd>{{ vault.name }}</dd></div>
+      <div class="q-fact"><dt>Opened</dt><dd>{{ ui_day(bundle.decision.created_at_iso) }}</dd></div>
+    </dl>
   </header>
 
   {# The verdict, computed here and now by running the same code a stranger runs offline. The one
@@ -46,12 +47,12 @@
       <div><dt>Policy</dt><dd>{{ proposal.required_m }} of {{ proposal.required_n }} must approve</dd></div>
       <div><dt>Approvals</dt><dd>{{ approvals }}</dd></div>
       {% if rejections %}<div><dt>Rejections</dt><dd>{{ rejections }}</dd></div>{% endif %}
-      <div><dt>Opened</dt><dd>{{ bundle.decision.created_at_iso }}</dd></div>
+      <div><dt>Opened</dt><dd><time datetime="{{ bundle.decision.created_at_iso }}">{{ ui_absolute(bundle.decision.created_at_iso) }}</time></dd></div>
       <div><dt>Payload hash</dt><dd>{{ hash(proposal.payload_hash, 'payload hash', 24, 0) }}</dd></div>
       {% if bundle.decision.file_sha256 %}
       <div><dt>Attachment</dt>
       <dd>{{ hash(bundle.decision.file_sha256, 'attachment hash', 24, 0) }}
-          <span class="q-cap">hash only — the file itself stays encrypted</span></dd></div>
+          <span class="q-cap">Only the hash is shown. The file itself stays encrypted.</span></dd></div>
       {% endif %}
     </dl>
   </section>
@@ -60,7 +61,7 @@
     <div class="q-panel__hd">
       <h2 class="q-panel__t" id="r-sig">Signatures</h2>
       <span class="q-small">
-        {{ signatures|length }} recorded{% if device_signed %} · {{ device_signed }} device-held{% endif %}
+        {{ signatures|length }} recorded{% if device_signed %}, {{ device_signed }} of them made on the signer’s own device{% endif %}
       </span>
     </div>
     <div class="q-table-wrap">
@@ -89,7 +90,7 @@
             </td>
             <td><span class="q-tag">{{ s.alg_id }}</span></td>
             <td class="is-num">{{ s.size_bytes }}</td>
-            <td class="is-num q-small q-nowrap">{{ (s.signed_at or '')[:10] }}</td>
+            <td class="q-small q-when">{% if s.signed_at %}<time datetime="{{ s.signed_at }}">{{ ui_absolute(s.signed_at) }}</time>{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -155,7 +156,7 @@
       <p class="q-note">
         The result above was computed on this server, so it is a convenience rather than evidence.
         The downloaded record re-checks its own signatures when you open it in a browser, offline,
-        with nothing installed — or run
+        with nothing installed. Or run
         <code class="q-mono">python -m qvault.verify decision-{{ proposal.proposal_uuid.split('-')[0] }}.qvault.json</code>.
       </p>
     </div>

@@ -18,7 +18,7 @@
     {% for n in needs_you.items %}{{ item(n, stamp, back) }}{% endfor %}
   </ul>
   {% else %}
-  <p class="npop__empty">Nothing waits on your approval.</p>
+  <p class="npop__empty">{% if pending_count %}No requests here, but {{ pending_count }} {{ 'decision waits' if pending_count == 1 else 'decisions wait' }} on your signature in <a href="{{ url_for('approvals.index') }}">Approvals</a>.{% else %}Nothing waits on your approval.{% endif %}</p>
   {% endif %}
 </div>
 

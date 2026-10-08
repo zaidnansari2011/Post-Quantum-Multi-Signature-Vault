@@ -33,8 +33,8 @@
       <p class="q-stat__l">Merkle root</p>
     </div>
     <div class="q-stat">
-      <p class="q-stat__v">{{ log.witnessed if log.witnessed else '—' }}</p>
-      <p class="q-stat__l">Witnessed to</p>
+      <p class="q-stat__v">{{ log.witnessed if log.witnessed else 'Not yet' }}</p>
+      <p class="q-stat__l">Entries witnessed</p>
     </div>
     <div class="q-stat">
       <p class="q-stat__v">{{ algorithms }}</p>
@@ -46,11 +46,11 @@
      one thing offered to them — as an action, not as a footnote. #}
   <div class="q-landing__act">
     {{ button('Verify a decision', 'secondary', href=url_for('verify.index')) }}
-    <span class="q-small">no account needed</span>
+    <span class="q-small">No account needed.</span>
   </div>
 
   <p class="q-small q-landing__foot">
-    <a href="{{ url_for('docs.index') }}">Documentation</a> · Reference system, not production-audited
+    <a href="{{ url_for('docs.index') }}">Documentation</a>. A reference system, not production-audited.
   </p>
 </div>
 {% endblock %}

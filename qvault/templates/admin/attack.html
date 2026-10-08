@@ -33,13 +33,14 @@
   <ol class="q-atk__steps">
     {% for step in run.steps %}
     <li class="q-atk__step">
-      <div class="q-atk__label">{{ step.label }}</div>
-      {% if step.detail %}<p class="q-atk__detail">{{ step.detail }}</p>{% endif %}
-      {% if step.value %}<div class="q-atk__val">{{ step.value }}</div>{% endif %}
+      <div class="q-atk__label">{{ ui_figures(step.label) }}</div>
+      {% if step.detail %}<p class="q-atk__detail">{{ ui_figures(step.detail) }}</p>{% endif %}
+      {#- A value is quoted as it was recovered, so only its numbers are set, never its dashes. -#}
+      {% if step.value %}<div class="q-atk__val">{{ ui_figures(step.value, dashes=False) }}</div>{% endif %}
     </li>
     {% endfor %}
   </ol>
-  {% if run.note %}<p class="q-atk__note">{{ run.note }}</p>{% endif %}
+  {% if run.note %}<p class="q-atk__note">{{ ui_figures(run.note) }}</p>{% endif %}
 </div>
 {% endmacro %}
 
@@ -55,14 +56,14 @@
     </span>
   </div>
 
-  <p class="q-atk__q">&ldquo;{{ a.question }}&rdquo;</p>
+  <p class="q-atk__q">&ldquo;{{ ui_figures(a.question) }}&rdquo;</p>
 
   <dl class="q-atk__model">
-    <div><dt>Attacker has</dt><dd>{{ a.capability }}</dd></div>
-    <div><dt>Trying to</dt><dd>{{ a.goal }}</dd></div>
-    <div><dt>Decided by</dt><dd>{{ a.defence }} <span class="q-tag">{{ a.defence_ref }}</span></dd></div>
-    <div><dt>Control</dt><dd>{{ a.control_note }}{% if a.standard %}
-      <span class="q-small">· {{ a.standard }}</span>{% endif %}</dd></div>
+    <div><dt>Attacker has</dt><dd>{{ ui_figures(a.capability) }}</dd></div>
+    <div><dt>Trying to</dt><dd>{{ ui_figures(a.goal) }}</dd></div>
+    <div><dt>Decided by</dt><dd>{{ ui_figures(a.defence) }} <span class="q-tag">{{ a.defence_ref }}</span></dd></div>
+    <div><dt>Control</dt><dd>{{ ui_figures(a.control_note) }}</dd></div>
+    {% if a.standard %}<div><dt>Standard</dt><dd>{{ ui_figures(a.standard) }}</dd></div>{% endif %}
   </dl>
 
   <div class="q-atk__runs">
@@ -103,14 +104,14 @@
 
 {% block content %}
 <div class="q-admin">
-{% set lead %}{% if stored %}Reference run {{ stored.generated_at[:10] }} · {{ stored.summary.total }} attacks{% else %}No reference run recorded{% endif %}{% endset %}
-{% call page_header('Adversary lab', description=lead) %}
+{% set facts = [('Reference run', ui_day(stored.generated_at)), ('Attacks', stored.summary.total)] if stored else [] %}
+{% call page_header('Adversary lab', description=None if stored else 'No reference run recorded.', facts=facts) %}
   <form method="post" action="{{ url_for('admin.run_attack_lab') }}">
     {{ form.hidden_tag() }}
     {{ button('Run the algorithm attacks now', 'secondary', type='submit') }}
   </form>
 {% endcall %}
-{% include "admin/_nav.html" %}
+{% include "_developer_nav.html" %}
 
 {% if live %}
 <section class="q-panel q-atk-run" aria-labelledby="live-t">
@@ -119,8 +120,8 @@
     {# Shown after a redirect, and again on a refresh, so it gives the time it ran rather than
        "just now". #}
     <span class="q-small">
-      {{ live.generated_at[11:16] }} UTC · {{ live.elapsed_s }} s · {{ live.summary.total }}
-      algorithm-level attacks, re-run on this server
+      {{ live.summary.total }} algorithm-level attacks, re-run on this server at
+      {{ ui_absolute(live.generated_at) }}. They took {{ live.elapsed_s }} seconds.
     </span>
   </div>
   <div class="q-panel__bd">{{ summary_figures(live) }}</div>
@@ -132,11 +133,13 @@
 <section class="q-panel q-atk-run" aria-labelledby="ref-t">
   <div class="q-panel__hd">
     <h2 class="q-panel__t" id="ref-t">{{ 'Reference run' if live else 'Last recorded run' }}</h2>
-    <span class="q-small">
-      {{ stored.generated_at }} · {{ stored.machine.platform }} · Python {{ stored.machine.python }}
-      · {{ stored.backend }} · {{ stored.elapsed_s }} s
-    </span>
   </div>
+  <dl class="q-kv">
+    <div><dt>Ran</dt><dd>{{ ui_absolute(stored.generated_at) }}</dd></div>
+    <div><dt>Machine</dt><dd>{{ stored.machine.platform }}, Python {{ stored.machine.python }}</dd></div>
+    <div><dt>Library</dt><dd>{{ stored.backend }}</dd></div>
+    <div><dt>Took</dt><dd>{{ stored.elapsed_s }} seconds</dd></div>
+  </dl>
   <div class="q-panel__bd">
     {% if not live %}{{ summary_figures(stored) }}{% endif %}
     <p class="q-note q-measure">
@@ -161,38 +164,39 @@
         <tr>
           <td><span class="q-tag">RSA-2048</span></td>
           <td>
-            <span class="q-strong">{{ stored.cost.rsa_2048.classical.core_years_human }}</span> core-years
-            <span class="q-cap">{{ '%.0f'|format(stored.cost.rsa_2048.classical.times_age_of_universe) }}x the age of the universe on one core</span>
+            <span class="q-strong">{{ ui_figures(stored.cost.rsa_2048.classical.core_years_human) }}</span> core-years
+            <span class="q-cap">{{ '{:,.0f}'.format(stored.cost.rsa_2048.classical.times_age_of_universe) }} times the age of the universe on one core</span>
           </td>
           <td>
             <span class="q-strong">{{ stored.cost.rsa_2048.quantum.physical_estimates[-1].wall_clock }}</span>
-            <span class="q-cap">{{ '{:,}'.format(stored.cost.rsa_2048.quantum.physical_estimates[-1].physical_qubits) }} noisy qubits · {{ stored.cost.rsa_2048.quantum.scaling }}</span>
+            <span class="q-cap">{{ '{:,}'.format(stored.cost.rsa_2048.quantum.physical_estimates[-1].physical_qubits) }} noisy qubits.</span>
+            <span class="q-cap">{% set sc = ui_figures(stored.cost.rsa_2048.quantum.scaling) %}{{ sc[:1]|upper ~ sc[1:] }}</span>
           </td>
           <td class="q-small">
-            {{ stored.cost.rsa_2048.classical.anchor }}
+            {{ ui_figures(stored.cost.rsa_2048.classical.anchor) }}
             <span class="q-cap">{{ stored.cost.rsa_2048.quantum.physical_estimates[-1].source }}</span>
           </td>
         </tr>
         <tr>
           <td><span class="q-tag">{{ stored.cost.ecdsa_p256.curve }}</span></td>
           <td>
-            <span class="q-strong">2^{{ '%.0f'|format(stored.cost.ecdsa_p256.classical_group_operations_log2) }}</span> group operations
-            <span class="q-cap">{{ stored.cost.ecdsa_p256.classical_method }}</span>
+            <span class="q-strong">2<sup>{{ '%.0f'|format(stored.cost.ecdsa_p256.classical_group_operations_log2) }}</sup></span> group operations
+            <span class="q-cap">{{ ui_figures(stored.cost.ecdsa_p256.classical_method) }}</span>
           </td>
           <td>
             <span class="q-strong">{{ '{:,}'.format(stored.cost.ecdsa_p256.quantum_logical_qubits) }}</span> logical qubits
-            <span class="q-cap">{{ stored.cost.ecdsa_p256.quantum_scaling }}</span>
+            <span class="q-cap">{% set sc = ui_figures(stored.cost.ecdsa_p256.quantum_scaling) %}{{ sc[:1]|upper ~ sc[1:] }}</span>
           </td>
-          <td class="q-small">{{ stored.cost.ecdsa_p256.note }}</td>
+          <td class="q-small">{{ ui_figures(stored.cost.ecdsa_p256.note) }}</td>
         </tr>
       </tbody>
     </table>
   </div>
   {% if stored.cost.regulatory %}
   <p class="q-panel__bd q-small">
-    Classical signatures deprecated after {{ stored.cost.regulatory.deprecated_after }},
-    disallowed after {{ stored.cost.regulatory.disallowed_after }} —
-    {{ stored.cost.regulatory.source }}. {{ stored.cost.regulatory.note }}
+    Classical signatures are deprecated after {{ stored.cost.regulatory.deprecated_after }} and
+    disallowed after {{ stored.cost.regulatory.disallowed_after }}. Source:
+    {{ ui_figures(stored.cost.regulatory.source) }}. {{ ui_figures(stored.cost.regulatory.note) }}
   </p>
   {% endif %}
 </section>

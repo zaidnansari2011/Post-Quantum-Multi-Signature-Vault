@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "ui/mark.html" import mark %}
 {% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/feedback.html" import banner %}
@@ -25,14 +24,15 @@
 
 {% macro body() %}
 <div class="q-auth q-auth--wide">
-  <div class="q-auth__brand">
-    {{ mark(22) }}
-    <span>Q-Vault</span>
-  </div>
 
   {% if state == 'unknown' %}
     <h1 class="q-auth__t">This link isn't valid</h1>
     <p class="q-auth__p">Check that you copied all of it. If it still doesn't work, ask the person who invited you for a new link.</p>
+    {% if current_user.is_authenticated %}
+      {{ button('Go to Home', 'secondary', href=url_for('core.index'), block=True) }}
+    {% else %}
+      {{ button('Sign in', 'secondary', href=url_for('auth.login'), block=True) }}
+    {% endif %}
 
   {% elif state == 'accepted' %}
     <h1 class="q-auth__t">This invitation has been used</h1>

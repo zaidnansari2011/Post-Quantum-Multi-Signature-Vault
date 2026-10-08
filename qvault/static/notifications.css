@@ -127,7 +127,7 @@
 .npref__grid tbody th { font-weight: var(--weight-regular); }
 .npref__grid tbody + tbody > tr:first-child > * { border-top: var(--border-width) solid var(--border); }
 .npref__col { width: 7.5rem; text-align: center; }
-.q-table th.npref__col { text-align: center; }
+.q-table th.npref__col, .q-table td.npref__col { text-align: center; }
 .npref__off {
   display: block; font-weight: var(--weight-regular); color: var(--text-subtle);
 }

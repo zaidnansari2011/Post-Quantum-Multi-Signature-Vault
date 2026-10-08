@@ -11,10 +11,10 @@
 {% block content %}
 <div class="q-admin">
 {% set state %}{% if due %}{{ badge(due|length ~ ' due', 'warning') }}{% else %}{{ badge('All within date', 'success') }}{% endif %}{% endset %}
-{% call page_header('Security', description=rows|length ~ ' keys · replacement after ' ~ config.KEY_MAX_AGE_DAYS ~ ' days', status=state) %}
+{% call page_header('Security', description=rows|length ~ ' keys. Each is replaced after ' ~ config.KEY_MAX_AGE_DAYS ~ ' days.', status=state) %}
   <form method="post" action="{{ url_for('admin.run_maintenance') }}">
     {{ form.hidden_tag() }}
-    {{ button(form.submit.label.text, 'secondary', type='submit', name='submit', value=form.submit.label.text) }}
+    {{ button('Rotate and expire keys now', 'secondary', type='submit', name='submit', value=form.submit.label.text) }}
   </form>
 {% endcall %}
 {% include "admin/_nav.html" %}
@@ -48,7 +48,7 @@
               {% else %}{{ badge('Retired') }}{% endif %}
             </td>
             <td>{{ badge('Server' if r.key.wrap_domain == 'master' else 'Owner') }}</td>
-            <td class="q-small q-nowrap">{{ r.key.rotate_after.strftime('%d %b %Y') if r.key.rotate_after else '—' }}</td>
+            <td class="q-small q-nowrap">{{ ui_day(r.key.rotate_after) if r.key.rotate_after else 'No date' }}</td>
             <td>{{ hash(r.key.public_fingerprint(), 'key fingerprint') }}</td>
           </tr>
           {% endfor %}

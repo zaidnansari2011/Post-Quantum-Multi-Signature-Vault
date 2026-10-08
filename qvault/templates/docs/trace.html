@@ -30,7 +30,7 @@
 <p>
   The trace shows the Python in this repository. It cannot show the interior of ML-DSA or SLH-DSA:
   those are compiled implementations the application calls, so for a signing step you see the
-  complete call — the message, the key, the signature, the verdict and the time it took — and not
+  complete call (the message, the key, the signature, the verdict and the time it took) and not
   the lattice arithmetic in between. The page says so on the step itself rather than implying a
   visibility it does not have.
 </p>
@@ -51,7 +51,7 @@
     <tr><td>Unwrap the private key</td>
         <td>The key is withheld; its size is not. It exists in memory for two steps.</td></tr>
     <tr><td>Sign</td>
-        <td>The signature's size is a research result in itself — compare ML-DSA against
+        <td>The signature's size is a research result in itself: compare ML-DSA against
             SLH-DSA on the <a href="{{ url_for('docs.page', slug='algorithms') }}">algorithms</a>
             page.</td></tr>
     <tr><td>Verify before releasing</td>
@@ -80,8 +80,8 @@
   <a href="{{ url_for('docs.page', slug='verifying') }}">exported decision</a>.
 </p>
 <p>
-  No secret is shown. Passwords and derived keys are withheld entirely — not their length, not a
-  hash of them — and everything the page does display is either public by construction or
+  No secret is shown. Passwords and derived keys are withheld entirely, not their length, not a
+  hash of them, and everything the page does display is either public by construction or
   something you can recompute yourself.
 </p>
 
