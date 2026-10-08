@@ -94,6 +94,7 @@ export function Identifier({
   showLabel?: boolean;
 }) {
   const s = useStyles();
+  const t = useTheme();
   const [whole, setWhole] = useState(false);
   const short = middleOut(value);
   const canShorten = short !== value;
@@ -114,10 +115,12 @@ export function Identifier({
           {label}
         </Text>
       ) : null}
-      <View style={s.row}>
+      {/* At large text the controls go under the value, so the shortened value is never cut a
+          second time by the row (§8.1: no truncated addresses). */}
+      <View style={[s.row, t.stacked && s.rowStacked]}>
         {/* Always the grouped, short reading (§8.2): the whole value is read only when asked. */}
         <View
-          style={s.value}
+          style={[s.value, t.stacked && s.valueStacked]}
           accessible
           accessibilityLabel={spokenIdentifier(label, value)}
           accessibilityHint="Double tap to hear in full"
@@ -132,12 +135,13 @@ export function Identifier({
           {full ? (
             <GroupedValue value={value} />
           ) : (
-            <Text role="code" numberOfLines={1}>
+            <Text role="code" numberOfLines={t.stacked ? undefined : 1}>
               {short}
             </Text>
           )}
         </View>
         {/* On the value's own row, so an identifier costs one line, not two. */}
+        <View style={s.controls}>
         {expanded === 'toggle' && canShorten ? (
           <TextLink
             label={whole ? 'Show less' : 'Show full'}
@@ -154,6 +158,7 @@ export function Identifier({
           size={18}
           compact
         />
+        </View>
       </View>
     </View>
   );
@@ -162,6 +167,9 @@ export function Identifier({
 const useStyles = makeStyles((t) => ({
   wrap: { gap: t.space[2] },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[4] },
+  rowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 0 },
+  valueStacked: { flex: 0 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
   // The controls are 32pt, so the value's first line is centred on them and the row costs 32.
   value: { flex: 1, minHeight: 32, justifyContent: 'center', paddingVertical: 6 },
 }));
