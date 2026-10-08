@@ -31,7 +31,13 @@ from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.signature import Signature
 from qvault.models.vault import SIGNER_ROLES, VaultMember
-from qvault.services import execution_service, key_service, ledger_service, notification_service
+from qvault.services import (
+    execution_service,
+    key_service,
+    ledger_service,
+    notification_service,
+    workspace_service,
+)
 from qvault.services.signing import payment_text, signing_bytes_for, vote_signing_bytes
 
 
@@ -390,7 +396,9 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
     5. the vault's approvers **now** (owner decision 2026-10-08): the snapshot is necessary but
        not sufficient, so someone demoted to viewer or removed since it was raised cannot sign
        it either. Votes they cast while they were an approver keep counting;
-    6. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
+    6. their standing in the vault's workspace: an active member, and not an auditor
+       (``workspace_service.signing_standing``). A suspended member signs nothing;
+    7. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
        and a concurrent vote may not be visible here yet.
 
     Every check here comes before a password is tried or a signature is verified.
@@ -410,6 +418,11 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
         raise ApprovalError(
             "You are not an authorised signer for this proposal any more: you are no longer an "
             "approver of this vault."
+        )
+    standing = workspace_service.signing_standing(proposal.vault, signer.id)
+    if standing is not None:
+        raise ApprovalError(
+            f"You are not an authorised signer for this proposal any more: {standing}."
         )
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")

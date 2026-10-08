@@ -22,7 +22,13 @@ from test_execution_signatures import _device_vote, _phone_seat
 from test_payment_decisions import TREASURY, _payment, _vault
 
 from qvault.models import ExecutionSignature, Key, LedgerEntry, Signature
-from qvault.services import approval_service, auth_service, proposal_service, vault_service
+from qvault.services import (
+    approval_service,
+    auth_service,
+    proposal_service,
+    vault_service,
+    workspace_service,
+)
 from qvault.services.approval_service import ApprovalError
 
 PASSWORD = "password-123"
@@ -213,4 +219,101 @@ def test_a_demoted_approver_cannot_approve_a_payment_on_the_phone(payments_on, c
     with pytest.raises(ApprovalError, match="no longer an approver"):
         _device_vote(payments_on, proposal, other, key, secret, "approve", execution=b"\0" * 3309)
     assert _votes(proposal) == 0
+    assert ExecutionSignature.query.filter_by(proposal_id=proposal.id).count() == 0
+
+
+# --- the workspace: suspended members and auditors sign nothing --------------------------------
+
+
+def _suspend(vault, actor, user):
+    workspace_service.suspend_member(
+        workspace_service.workspace_of_vault(vault), user.id, actor=actor
+    )
+
+
+def test_a_suspended_workspace_member_cannot_sign(app):
+    ada, brij, _chen, vault, proposal = _three("suspended")
+    _suspend(vault, ada, brij)
+
+    with pytest.raises(ApprovalError, match="suspended from this vault's workspace"):
+        approval_service.cast_vote(proposal, brij, WRONG, "approve")
+    with pytest.raises(ApprovalError, match="suspended"):
+        approval_service.cast_vote(proposal, brij, PASSWORD, "reject")
+    assert _votes(proposal) == 0
+
+
+def test_a_reinstated_member_can_sign_again(app):
+    ada, brij, _chen, vault, proposal = _three("reinstated")
+    workspace = workspace_service.workspace_of_vault(vault)
+    workspace_service.suspend_member(workspace, brij.id, actor=ada)
+    workspace_service.reinstate_member(workspace, brij.id, actor=ada)
+
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert approval_service.tally(proposal) == (1, 0)
+
+
+def test_an_approver_whose_workspace_role_became_auditor_cannot_sign(app):
+    ada, brij, _chen, vault, proposal = _three("auditor")
+    workspace_service.change_role(
+        workspace_service.workspace_of_vault(vault), brij.id, "auditor", actor=ada
+    )
+
+    with pytest.raises(ApprovalError, match="auditors are read-only"):
+        approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+
+
+def test_a_suspended_vault_owner_does_not_unlock_or_lock_the_others(app):
+    """The vault still belongs to its owner's workspace while the owner is suspended: the others
+    keep signing, and the owner signs nothing."""
+    ada, brij, chen, vault, proposal = _three("ownersuspended")
+    workspace = workspace_service.workspace_of_vault(vault)
+    workspace_service.change_role(workspace, brij.id, "owner", actor=ada)
+    workspace_service.suspend_member(workspace, ada.id, actor=brij)
+
+    with pytest.raises(ApprovalError, match="suspended"):
+        approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
+    approval_service.cast_vote(proposal, chen, PASSWORD, "approve")
+    assert approval_service.tally(proposal) == (1, 0)
+
+
+def test_a_suspended_members_phone_is_refused_over_the_api(app, client):
+    ada, brij, _chen, vault, proposal = _three("apisuspended")
+    _body, secret, auth = _enrol_over_http(client, brij)
+    _suspend(vault, ada, brij)
+
+    r = client.post(
+        f"/api/v1/proposals/{proposal.proposal_uuid}/vote",
+        headers=auth,
+        json={
+            "decision": "approve",
+            "signature_b64": _sign_vote(secret, proposal, "approve", brij),
+        },
+    )
+    assert r.status_code == 403
+    assert r.get_json()["code"] == "not_a_signer"
+    assert _votes(proposal) == 0
+
+
+def test_the_web_form_refuses_a_suspended_member(client):
+    ada, brij, _chen, vault, proposal = _three("websuspended")
+    _suspend(vault, ada, brij)
+    vid, pid = vault.id, proposal.proposal_uuid
+
+    client.post("/login", data={"email": brij.email, "password": PASSWORD})
+    resp = client.post(
+        f"/vaults/{vid}/proposals/{pid}/vote",
+        data={"password": PASSWORD, "approve": "Approve & sign"},
+        follow_redirects=True,
+    )
+    assert b"suspended from this vault" in resp.data
+    assert _votes(proposal) == 0
+
+
+def test_a_suspended_member_cannot_approve_a_payment(payments_on):
+    owner, other, vault, _treasury = _vault("paysuspended", threshold_m=1)
+    proposal = _payment(vault, owner)
+    _suspend(vault, owner, other)
+
+    with pytest.raises(ApprovalError, match="suspended"):
+        approval_service.cast_vote(proposal, other, PASSWORD, "approve")
     assert ExecutionSignature.query.filter_by(proposal_id=proposal.id).count() == 0
