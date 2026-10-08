@@ -961,6 +961,40 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 .q-drop__name { flex-basis: 100%; color: var(--text); font-weight: var(--text-body-strong-weight); overflow-wrap: anywhere; }
 .q-drop__name:empty { display: none; }
 .q-drop.is-filled .q-drop__or { display: none; }
+/* Why a chosen or dropped file was refused (qvault.js); empty, and so absent, otherwise. */
+.q-drop__bad:empty, .q-date__bad:empty { display: none; }
+
+/* ---------------------------------------------------------------- number (ui/forms.html: number)
+ * A native number input; qvault.js adds .is-on, shows the − and + buttons and hides the
+ * browser's spinner. Without the script the native spinner stays, so nothing is lost. */
+
+.q-num { display: inline-flex; align-items: stretch; max-width: 100%; vertical-align: top; }
+.q-num__in { width: 6.5rem; font-variant-numeric: tabular-nums; }
+.q-num.is-on .q-num__in {
+  width: 4.5rem; border-radius: 0; text-align: center;
+  appearance: textfield; -moz-appearance: textfield;
+}
+.q-num.is-on .q-num__in::-webkit-inner-spin-button,
+.q-num.is-on .q-num__in::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.q-num__in:focus-visible { position: relative; z-index: 1; }
+.q-num__b {
+  display: inline-grid; place-items: center; flex: none; width: var(--control-h); padding: 0; margin: 0;
+  border: var(--border-width) solid var(--border-strong); background: var(--surface); color: var(--text-muted);
+  cursor: pointer; transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-num__b:first-child { border-right: 0; border-radius: var(--radius-control) 0 0 var(--radius-control); }
+.q-num__b:last-child { border-left: 0; border-radius: 0 var(--radius-control) var(--radius-control) 0; }
+.q-num__b:hover:not(:disabled) { background: var(--fill); color: var(--text); }
+.q-num__b:disabled { color: var(--text-disabled); background: var(--surface); cursor: not-allowed; }
+/* Two rules, not one list: a browser without :has() would drop the whole list. */
+.q-num__in[aria-invalid="true"] ~ .q-num__b { border-color: var(--status-critical-fg); }
+.q-num__b:has(~ .q-num__in[aria-invalid="true"]) { border-color: var(--status-critical-fg); }
+.q-field--inline .q-num { width: auto; }
+@media (max-width: 767px) {
+  /* A thumb needs the full touch target, so the buttons, and the input between them, grow to it. */
+  .q-num__b { width: var(--target-touch); }
+  .q-num__b, .q-num.is-on .q-num__in { height: var(--target-touch); }
+}
 
 @media (max-width: 767px) {
   /* A phone keeps the one primary action beside the headline, as an icon (screens.md C.2). */
@@ -997,6 +1031,7 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 
 /* The date popover opens upwards when there is no room below the field (qvault.js decides). */
 .q-date__pop.is-up { top: auto; bottom: calc(100% + 4px); }
+.q-date__pop.is-end { left: auto; right: 0; }
 .q-date__read { font-weight: var(--weight-regular); color: var(--text-muted); }
 .q-inwrap { max-width: 280px; }
 
