@@ -44,6 +44,7 @@ errors: list[str] = []
 GENERAL = "Payroll adjustment schedule"  # Treasury vault, 2 of 3, signers Ada, Brij, Chen
 LONG = "Decommission legacy reporting host"  # Production access, 3 of 5
 PAYMENT = "Return 0.0001 ETH to the relayer"  # Treasury vault, a payment
+OVER_180 = "Calderwood insurance renewal, 2027"  # Contracts, 2 of 4: signed text of 284 characters
 EXTRA = ["Q4 cloud commitment", "Force password reset, finance group"]
 
 ADA, BRIJ, CHEN = (1, "Ada Okafor"), (2, "Brij Mehta"), (3, "Chen Wei")
@@ -52,6 +53,14 @@ NOW = datetime.now(UTC)
 
 def iso(delta: timedelta) -> str:
     return (NOW + delta).isoformat()
+
+
+def later_today() -> timedelta:
+    """Ahead of now, before local midnight: "due today" (the Waiting row's caption, §6.3 item 4)."""
+    local = datetime.now().astimezone()
+    midnight = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    left = midnight - local
+    return max(min(timedelta(hours=4), left - timedelta(minutes=20)), timedelta(minutes=5))
 
 
 AUDIT = """() => [...document.querySelectorAll('[data-hit-w]')]
@@ -295,6 +304,11 @@ def states(fp, other_fp):
     s["d01c_tampered_policy"] = ("ada", GENERAL, lambda d, _: (open_now(d), d.update(required_m=1)))
     s["d02_needs_you"] = ("ada", GENERAL, needs)
     s["d02b_needs_you_long_text"] = ("ada", LONG, lambda d, _: open_now(d, hours=50))
+    s["d02d_needs_you_text_over_180"] = (
+        "ada",
+        OVER_180,
+        lambda d, _: (open_now(d, hours=50), with_votes(d, [vote(BRIJ, "approve", 90)])),
+    )
     s["d02c_needs_you_payment"] = (
         "ada",
         PAYMENT,
@@ -513,6 +527,23 @@ def states(fp, other_fp):
             ),
         ),
     )
+    # More than four voters (a 3 of 5 rule can only have five once decided): three lines and
+    # "See all 5" (§6.5 item 8), scrolled into view.
+    s["d19b_who_decided_see_all"] = (
+        "ada",
+        LONG,
+        lambda d, _: closed(
+            d,
+            "rejected",
+            [
+                vote((5, "Elif Demir"), "approve", 300),
+                vote((6, "Femi Adeyemi"), "reject", 200, reason="Keep it until the export is verified."),
+                vote(BRIJ, "approve", 100, custody="server"),
+                vote(CHEN, "reject", 50, reason="Same as Femi."),
+                vote((8, "Hassan Idris"), "reject", 10, reason="Not before the audit."),
+            ],
+        ),
+    )
     return s
 
 
@@ -530,7 +561,7 @@ def detail_route(rewrite):
 
 # States that are closed when they are opened, which a person reaches from Activity, not the queue:
 # opened from the queue, a closed decision is row 16 ("before you opened this") by design.
-FROM_ACTIVITY = re.compile(r"^d(09|1[0-5])[a-z]?_")
+FROM_ACTIVITY = re.compile(r"^d(09|1[0-5]|19b)[a-z]?_")
 
 
 def run_state(browser, name, state_file, title, rewrite, extra_sheet=None):
@@ -572,7 +603,11 @@ def run_state(browser, name, state_file, title, rewrite, extra_sheet=None):
     button(page, title).click()
     button(page, "Details").wait_for(timeout=60000)
     quiet(page)
-    shot(page, name, tall=True)
+    if name.startswith("d19b_"):
+        # First screen only, with the collapsed list and its "See all" in view.
+        page.get_by_role("button", name=re.compile("^See all")).first.scroll_into_view_if_needed()
+        page.wait_for_timeout(500)
+    shot(page, name)
     if extra_sheet:
         extra_sheet(page, name)
     ctx.close()
@@ -636,7 +671,12 @@ def approvals_states(browser, ada, fp):
     ]
     web_pay = summary(PAYMENT, 20)
     waiting = [
-        summary("Aperture Media retainer", 4, signed_by_me=True, approvals=1),
+        summary(
+            "Aperture Media retainer",
+            later_today().total_seconds() / 3600,
+            signed_by_me=True,
+            approvals=1,
+        ),
         summary("Raise the API rate limit for Northwind", 70, signed_by_me=True, approvals=2),
     ]
     all_rewritten = queue + [web_pay] + waiting
@@ -648,7 +688,7 @@ def approvals_states(browser, ada, fp):
 
         return rw
 
-    def go(name, awaiting, all_props, seat=fp, tall=True, after=None, me_rewrite=None, fail=None):
+    def go(name, awaiting, all_props, seat=fp, tall=False, after=None, me_rewrite=None, fail=None):
         ctx, page = new_page(browser, ada)
         if fail == "abort":
             page.route(re.compile(r".*/api/v1/proposals\?state=.*"), lambda r: r.abort())
@@ -692,7 +732,7 @@ def approvals_states(browser, ada, fp):
         button(page, "Waiting on others").click()
         page.wait_for_timeout(900)
         quiet(page)
-        shot(page, "a07_waiting_on_others", tall=True)
+        shot(page, "a07_waiting_on_others")
 
     go(
         "a01_approvals_with_web_group",
@@ -743,7 +783,11 @@ def decision_errors(browser, ada):
         quiet(page)
         button(page, GENERAL).click()
         if name == "e02_decision_load_failed":
-            page.get_by_text("Can't load this decision.").wait_for(timeout=60000)
+            # Its list summary is in the queue, so the page shows it with the offline line (D5);
+            # with no summary it is the "Can't load" banner.
+            page.get_by_text("Can't load this decision.").or_(
+                page.get_by_text("The full decision opens when you're back online.")
+            ).first.wait_for(timeout=60000)
         page.wait_for_timeout(1200)
         shot(page, name)
         ctx.close()

@@ -140,8 +140,9 @@ export function Identifier({
             </Text>
           )}
         </View>
-        {/* On the value's own row, so an identifier costs one line, not two. */}
-        <View style={s.controls}>
+        {/* On the value's own row, so an identifier costs one line, not two; at large text, at the
+            end of the line under it, so they read as the value's own actions, not a new item. */}
+        <View style={[s.controls, t.stacked && s.controlsStacked]}>
         {expanded === 'toggle' && canShorten ? (
           <TextLink
             label={whole ? 'Show less' : 'Show full'}
@@ -172,6 +173,7 @@ const useStyles = makeStyles((t) => ({
   // address to the 32pt minimum and drew it over the label above and the controls below.
   valueStacked: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
   controls: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
+  controlsStacked: { alignSelf: 'flex-end' },
   // The controls are 32pt, so the value's first line is centred on them and the row costs 32.
   value: { flex: 1, minHeight: 32, justifyContent: 'center', paddingVertical: 6 },
 }));

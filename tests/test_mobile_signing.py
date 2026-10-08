@@ -449,8 +449,9 @@ def test_the_key_is_deleted_only_once_the_server_no_longer_counts_it(r):
         }, result
         assert remove[result]["offerLocalOnly"] is True
         assert remove[result]["message"]
+    # No answer: the request may have arrived and its reply been lost, so never "wasn't removed".
     assert remove["unreachable"]["message"] == (
-        "Can't reach Q-Vault, so this phone wasn't removed. Try again."
+        "Q-Vault didn't answer, so this phone may not have been removed. Try again."
     )
     assert r["session"]["remove_local_only"]["seed"] is True
 
