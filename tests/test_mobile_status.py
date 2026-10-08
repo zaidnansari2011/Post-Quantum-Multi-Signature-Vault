@@ -550,6 +550,15 @@ CASES = {
         "to pay. Nothing was sent. Top it up, then raise it again.",
         "none",
     ),
+    # Someone who voted on it is not told it closed "before you opened this".
+    "16_not_for_someone_who_voted_on_it": (
+        _case(APPROVED_BY_TWO, closed_before="opened"),
+        9,
+        "Approved",
+        "success",
+        "Approved 5 Oct by Hassan and you.",
+        "none",
+    ),
     # An unknown status is never put into a sentence, even when it closed while you were away.
     "16_unknown_status_opened_from_the_queue": (
         _case({"status": "frozen"}, closed_before="opened"),

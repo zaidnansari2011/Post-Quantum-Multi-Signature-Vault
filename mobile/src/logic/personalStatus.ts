@@ -222,7 +222,9 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
     const closed = closedState(d, status, viewerId, raisedByMe, closedOn, approvals, M, vote, now);
     // Row 16: it closed between this person opening (or signing) it and now. Only for a state this
     // app knows: an unknown one stays row 0, and its raw word is never put into a sentence.
-    if (input.closedBefore && !vote && closed.row !== 0) {
+    // Not when this person voted on it: theirs was part of how it closed, not news to them.
+    const votedOnIt = d.signed_by_me || d.votes.some((v) => v.signer_id === viewerId);
+    if (input.closedBefore && !vote && !votedOnIt && closed.row !== 0) {
       const prefix = closedBeforeLine(d, status, viewerId, input.closedBefore);
       // A payout's own sentence (queued, paid, failed) still follows: "before you opened this"
       // must not hide that the money did not move (§6.6, "Prefixed").
