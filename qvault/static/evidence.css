@@ -29,6 +29,7 @@
 .q-res { display: inline-flex; align-items: center; gap: var(--space-4); color: var(--status-success-fg); font-weight: var(--weight-medium); white-space: nowrap; }
 .q-res .q-icon { width: 14px; height: 14px; vertical-align: 0; }
 .q-res--bad { color: var(--status-critical-fg); }
+.q-res--warn { color: var(--status-warning-fg); }
 
 /* The decision code: mono, a little spaced so it reads aloud in two halves. */
 .q-code { font-family: var(--font-mono); font-size: var(--text-code-size); line-height: var(--text-code-line); font-weight: var(--weight-medium); letter-spacing: 0.02em; color: var(--text); font-variant-ligatures: none; }
@@ -273,7 +274,7 @@
 .q-audit-sum {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-16); margin-bottom: var(--space-24);
 }
-.q-figure { display: grid; gap: var(--space-4); padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); min-width: 0; }
+.q-figure { display: grid; align-content: start; gap: var(--space-4); padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); min-width: 0; }
 .q-figure__l { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
 .q-figure__v { display: flex; align-items: center; gap: var(--space-8); min-width: 0; }
 .q-figure__v code { font-family: var(--font-mono); font-size: var(--text-figure-size); line-height: var(--text-figure-line); font-weight: var(--weight-medium); letter-spacing: 0.02em; color: var(--text); font-variant-ligatures: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

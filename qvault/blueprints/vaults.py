@@ -616,6 +616,10 @@ def proposal_detail(vid: int, pid: str):
         ev=proof,
         approver_ids=evidence_service.approver_ids(proposal),
         still_ids=list(outlook.still),
+        # Who can approve it, by the vote gate's rule, plus anyone whose approval already counts.
+        can_approve_ids=sorted(
+            set(eligible) | {s.signer_id for s in proposal.signatures if s.decision == "approve"}
+        ),
         cannot_pass=proposal.status == "open" and not outlook.reachable,
         needed=outlook.needed,
         # Plan S15: the person who raised it, when they may not approve it.

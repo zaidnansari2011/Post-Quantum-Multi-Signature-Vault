@@ -168,13 +168,16 @@
   <div class="q-seal">{{ quorum(approvals, proposal.required_m, size='lg', show_count=False) }}<span class="q-seal__n">{{ approvals }} of {{ proposal.required_m }} approval{{ '' if proposal.required_m == 1 else 's' }}</span></div>
   <p class="q-seal__s">
     {%- if proposal.status == 'open' %}
-      {{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(approver_ids) }} can approve.
+      {#- Who can approve by the vote gate's rule (eligibility), not the frozen set: a demoted
+          approver, or under S15 whoever raised it, is not offered as one. -#}
+      {%- if cannot_pass %}It needs {{ left }} more approval{{ '' if left == 1 else 's' }}.
+      {%- else %}{{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(can_approve_ids) }} can approve.{% endif %}
     {%- elif proposal.status == 'approved' %}
       Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.
     {%- elif proposal.status == 'rejected' %}
       Rejected by {{ rejections }} of the {{ proposal.required_n }} approvers, so it could no longer reach {{ proposal.required_m }} approvals.
     {%- elif proposal.status == 'withdrawn' %}
-      Withdrawn by {{ names.get(proposal.creator_id, 'the person who raised it') }} with {{ approvals }} of the {{ proposal.required_m }} approvals it needed. Approvals already given no longer count.
+      Withdrawn by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }} with {{ approvals }} of the {{ proposal.required_m }} approvals it needed. Approvals already given no longer count.
     {%- else %}
       Expired with {{ approvals }} of the {{ proposal.required_m }} approvals it needed.
     {%- endif %}
@@ -237,7 +240,7 @@
           {% elif proposal.status == 'rejected' %}
           <p><b>Rejected</b>. It can no longer be approved</p>
           {% elif proposal.status == 'withdrawn' %}
-          <p><b>Withdrawn</b> by {{ names.get(proposal.creator_id, 'the person who raised it') }}. It can no longer be approved</p>
+          <p><b>Withdrawn</b> by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }}. It can no longer be approved</p>
           {% else %}
           <p><b>Expired</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% endif %}

@@ -198,3 +198,19 @@ def test_a_closed_decision_lists_no_changes(client):
     db.session.expire_all()
     _login(client, brij)
     assert "Changed since raised" not in _page(client, vault, proposal)
+
+
+def test_the_seal_names_only_who_can_still_approve(client):
+    """Under S15 turned on after raising, whoever raised it is not offered as an approver, and a
+    decision that can't pass says what it needs instead of naming anyone."""
+    ada, brij, chen, vault = _team("seal", threshold_m=2)
+    proposal = proposal_service.create_proposal(vault, ada, "Renew", "Renew the contract.")
+    vault_service.set_requester_can_approve(vault, False, actor_id=ada.id)
+    _login(client, brij)
+    page = _page(client, vault, proposal)
+    assert "Any 2 of Chen Wei and you can approve." in page
+
+    vault_service.change_member_role(vault, chen.id, "viewer", actor_id=ada.id)
+    page = _page(client, vault, proposal)
+    assert "It needs 2 more approvals." in page
+    assert "can approve." not in page.split('id="sig-t"', 1)[1].split("</p>", 1)[0]

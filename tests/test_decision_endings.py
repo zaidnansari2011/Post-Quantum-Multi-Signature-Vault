@@ -289,7 +289,7 @@ def test_withdraw_on_the_web(client):
     resp = client.post(f"/vaults/{vid}/proposals/{pid}/withdraw", follow_redirects=True)
     text = resp.get_data(as_text=True)
     assert "Withdrawn. It has ended for everyone" in text
-    assert "Withdrawn by You with 0 of the 2 approvals" in text
+    assert "Withdrawn by you with 0 of the 2 approvals" in text
     assert "dlg-withdraw" not in text and "dlg-approve" not in text
 
     # The lists say Withdrawn, in the closed vocabulary, and every page that lists it renders.
