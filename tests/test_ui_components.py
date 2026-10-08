@@ -445,13 +445,27 @@ def test_a_dialog_is_a_native_dialog_labelled_by_its_title(app):
     assert '<div class="q-dlg__ft"><button>Reject</button></div>' in html
 
 
-def test_a_critical_banner_is_an_alert_and_an_info_banner_is_not(app):
+def test_an_announced_critical_banner_is_an_alert_and_an_info_banner_is_not(app):
     critical = render(
         app,
-        '{% from "ui/feedback.html" import banner %}{{ banner("critical", "Tamper detected") }}',
+        '{% from "ui/feedback.html" import banner %}'
+        '{{ banner("critical", "Tamper detected", announce=True) }}',
     )
-    info = render(app, '{% from "ui/feedback.html" import banner %}{{ banner("info", "Queued") }}')
+    info = render(
+        app,
+        '{% from "ui/feedback.html" import banner %}{{ banner("info", "Queued", announce=True) }}',
+    )
     assert 'role="alert"' in critical and 'role="status"' in info
+
+
+def test_a_banner_for_a_standing_state_is_read_with_the_page_not_announced(app):
+    """A live region drawn with the page is not reliably announced, and one that is announced on
+    every visit to a page in a standing state is noise; the caller says when it is news."""
+    for tone in ("critical", "warning", "info"):
+        html = render(
+            app, '{% from "ui/feedback.html" import banner %}{{ banner("' + tone + '", "Behind") }}'
+        )
+        assert "role=" not in html and "aria-live" not in html
 
 
 def test_an_empty_state_says_the_fact_then_the_next_step(app):

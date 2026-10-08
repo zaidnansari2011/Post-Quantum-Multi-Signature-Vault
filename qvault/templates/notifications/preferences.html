@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/navigation.html" import page_header, breadcrumbs %}
-{% block title %}Notification preferences — Q-Vault{% endblock %}
+{% block title %}Notification preferences — Account — Q-Vault{% endblock %}
 {% block crumbs %}{{ breadcrumbs([('Account', url_for('account.index')), ('Notifications', None)]) }}{% endblock %}
 
 {% block content %}
@@ -29,18 +29,20 @@
                 <th scope="col" class="npref__col npref__later">Phone push <span class="npref__off">Not set up</span></th>
               </tr>
             </thead>
+            {#- One tbody per group, headed by a rowgroup header, and each event a row header: a
+                screen reader on a checkbox reads its group, its event and its channel. -#}
+            {% for group, kinds in groups %}
             <tbody>
-              {% for group, kinds in groups %}
-              <tr class="npref__group"><td colspan="4">{{ group }}</td></tr>
+              <tr class="npref__group"><th scope="rowgroup" colspan="4">{{ group }}</th></tr>
               {% for kind, label in kinds %}
               {% set row = grid[kind] %}
               <tr>
-                <td>
+                <th scope="row">
                   <label for="in_app-{{ kind }}">{{ label }}</label>
                   {% if row.locked %}
                   <span class="q-cap" id="locked-{{ kind }}">Always on, so you hear at once if someone else gets into your account.</span>
                   {% endif %}
-                </td>
+                </th>
                 <td class="npref__col">
                   <input class="q-cb" type="checkbox" id="in_app-{{ kind }}" name="in_app" value="{{ kind }}"
                          {% if row.channels.in_app %}checked{% endif %}
@@ -50,8 +52,8 @@
                 <td class="npref__col npref__later"><span class="npref__none" title="Phone push is not set up">–</span></td>
               </tr>
               {% endfor %}
-              {% endfor %}
             </tbody>
+            {% endfor %}
           </table>
         </div>
         <p class="q-note q-gap">Switching an event off removes it from the bell and the

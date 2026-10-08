@@ -3,7 +3,8 @@
 {% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/feedback.html" import banner %}
-{% block title %}Invitation — Q-Vault{% endblock %}
+{% block title %}{{ {'unknown': 'Invalid invitation link', 'accepted': 'Invitation used', 'revoked': 'Invitation withdrawn',
+  'expired': 'Invitation expired', 'void': 'Invitation no longer valid'}.get(state) or 'Join ' ~ invitation.workspace.name }} — Invitation — Q-Vault{% endblock %}
 
 {# One page for every state of an invitation link, signed in or out. ``state`` is one of:
    unknown, accepted, revoked, expired, void (the inviter can no longer invite), wrong_account,

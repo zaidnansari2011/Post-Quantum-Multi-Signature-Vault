@@ -781,6 +781,16 @@
     });
     if (said.length) announce(said.join('. '));
     toasts.forEach(armToast);
+    // A form sent back with errors: focus its first refused field, so a screen reader reads its
+    // label and then its error (tied by aria-describedby) at once, rather than leaving the reader
+    // at the top of a page that looks unchanged. Only a posted form's fields, and only while
+    // nothing else has focus, so a filter on a page someone opened never takes it.
+    var refused = doc.querySelector('form[method="post" i] [aria-invalid="true"]');
+    // A refused radio group marks its fieldset; its chosen option, or its first, takes the focus.
+    if (refused && refused.tagName === 'FIELDSET') {
+      refused = refused.querySelector('input:checked') || refused.querySelector('input');
+    }
+    if (refused && (doc.activeElement === doc.body || !doc.activeElement)) refused.focus();
     refreshTimes();
     window.setInterval(refreshTimes, 60000);
     doc.querySelectorAll('[data-due-field]').forEach(readBack);

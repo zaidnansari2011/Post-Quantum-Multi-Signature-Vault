@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Verify a decision — Q-Vault{% endblock %}
+{#- After a check the title says how it went, so it is the first thing a screen reader reads. -#}
+{% block title %}{% if error %}Couldn’t read that file — {% elif report %}{{ 'Passed' if report.ok else 'Failed' }} — {% endif %}Verify a decision — Q-Vault{% endblock %}
 {% block crumbs %}{% from "ui/navigation.html" import breadcrumbs %}{{ breadcrumbs([('Verify a decision', None)]) }}{% endblock %}
 {#- Verify (rework R2): a file or a paste, then the outcome, a coverage line built from the checks
     that actually ran ("Checked: the decision text, 3 signatures, ..."), and one row per check
@@ -18,11 +19,11 @@
     <p class="q-verify__lead">Check an exported Q-Vault decision: its text, every signature, its place in the log and the witness’s co-signature. No account needed.</p>
   </header>
 
-  {% if error %}{{ banner('critical', 'Couldn’t read that file', error) }}{% endif %}
+  {% if error %}{{ banner('critical', 'Couldn’t read that file', error, announce=True) }}{% endif %}
 
   {% if report %}
   {#- Layer 1: the verifier's own verdict, word for word. -#}
-  {{ banner('success' if report.ok else 'critical', report.summary, (report.facts.title ~ (', in ' ~ report.facts.vault if report.facts.vault else '')) if report.facts.title else None) }}
+  {{ banner('success' if report.ok else 'critical', report.summary, (report.facts.title ~ (', in ' ~ report.facts.vault if report.facts.vault else '')) if report.facts.title else None, announce=True) }}
 
   {% if report.facts.action_text %}
   <section class="q-panel" aria-labelledby="v-dec">

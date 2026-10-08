@@ -7,14 +7,14 @@
   and it is built so that altering it shows.
 </p>
 
-<h3>The chain</h3>
+<h2>The chain</h2>
 <p>
   Each entry stores a SHA-256 hash of its own contents and the hash of the entry before it. That
   makes the record a chain: recompute any entry and its hash no longer matches, so verification
   reports a break at exactly that point, and every entry after it becomes unprovable.
 </p>
 
-<h3>The seal</h3>
+<h2>The seal</h2>
 <p>
   A chain alone only catches a careless edit. An attacker with database access could rewrite an
   entry <em>and</em> recompute every hash after it, leaving the chain self-consistent again.
@@ -27,7 +27,7 @@
   cannot be injected either.
 </p>
 
-<h3>The witness</h3>
+<h2>The witness</h2>
 <p>
   The seal still leaves one gap, because it lives in the store it protects: an adversary who
   deletes the tail of the record <em>and</em> its seals is left with a shorter record that is
@@ -47,7 +47,7 @@
   arriving is what a rewrite looks like from the outside.
 </p>
 
-<h3>What it does not defend against</h3>
+<h2>What it does not defend against</h2>
 <p>
   <strong>Immutable is the wrong word.</strong> An adversary with raw database write access can
   rewrite the chain. What they cannot do is produce a seal that matches, a countersignature from a
@@ -60,7 +60,7 @@
   the separation is real.
 </p>
 
-<h3>What you can see</h3>
+<h2>What you can see</h2>
 <p>
   The audit view is scoped: you see events for vaults you belong to, your own actions, and global
   system events. Integrity, however, is always verified over the <em>whole</em> chain, not the part

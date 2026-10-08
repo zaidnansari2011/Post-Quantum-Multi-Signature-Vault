@@ -7,7 +7,7 @@
   set number of people have to sign it before it counts.
 </p>
 
-<h3>Proposing</h3>
+<h2>Proposing</h2>
 <p>
   A vault's owner and anyone who can approve in it can propose a decision; a view-only member
   cannot. You give it a title and the exact wording of the action being authorised. At that
@@ -20,7 +20,7 @@
   database, the decision page says so and stops counting the signatures on it.
 </p>
 
-<h3>Signing</h3>
+<h2>Signing</h2>
 <p>
   Approvers type their password, which unlocks their private signing key for that one operation.
   The signature commits to three things at once: <em>which</em> decision, <em>what</em> was decided,
@@ -32,7 +32,7 @@
   by the interface.
 </p>
 
-<h3>The threshold</h3>
+<h2>The threshold</h2>
 <p>
   A vault set to &ldquo;2 of 3&rdquo; needs two of its three approvers. The tally counts only
   signatures that verify <em>at the moment you look</em> — every signature is re-checked on every
@@ -45,7 +45,7 @@
   reached. If it has a deadline and that passes first, it <strong>expires</strong> without effect.
 </p>
 
-<h3>Attachments</h3>
+<h2>Attachments</h2>
 <p>
   A decision can carry a file. It is encrypted with AES-256-GCM before it is stored, and the key
   for it is wrapped for the vault using ML-KEM. The file never reaches disk in the clear, and the

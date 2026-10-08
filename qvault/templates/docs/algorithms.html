@@ -11,7 +11,7 @@
   In August 2024 NIST published the first replacement standards. Q-Vault uses all three.
 </p>
 
-<h3>What is used where</h3>
+<h2>What is used where</h2>
 <ul>
   <li><strong>ML-DSA</strong> (FIPS 204) — signatures. Every approval, and the seal over the audit
     record.</li>
@@ -21,16 +21,17 @@
     switchable option.</li>
 </ul>
 
-<h3>What it costs</h3>
+<h2>What it costs</h2>
 <p>
   Post-quantum cryptography costs a little more time and a great deal more space. All six figures
   below are measured on the development machine by the same harness &mdash; the classical schemes
   are registered providers here, not numbers quoted from a specification:
 </p>
 <div class="q-table-wrap"><table class="q-table">
-  <thead>
-    <tr><th>Scheme</th><th class="is-num">Sign</th><th class="is-num">Verify</th>
-        <th class="is-num">Public key</th><th class="is-num">Signature</th></tr>
+  <caption class="visually-hidden">What each algorithm costs</caption>
+  <th scope="col"ead>
+    <tr><th scope="col">Scheme</th><th scope="col" class="is-num">Sign</th><th scope="col" class="is-num">Verify</th>
+        <th scope="col" class="is-num">Public key</th><th scope="col" class="is-num">Signature</th></tr>
   </thead>
   <tbody>
     <tr><td>RSA-2048 <span class="q-small">classical</span></td>
@@ -51,7 +52,7 @@
   why both are standardised, and why being able to move between them matters.
 </p>
 
-<h3>Changing algorithm</h3>
+<h2>Changing algorithm</h2>
 <p>
   Every key, signature and seal records the algorithm that produced it, and is always verified by
   that same algorithm. Switching the system default therefore changes only which algorithm
