@@ -147,6 +147,44 @@ class PaymentProposalForm(FlaskForm):
     submit = SubmitField("Create payment decision")
 
 
+class AccessProposalForm(FlaskForm):
+    """A Production access decision (plan S13). The fields write the decision text, so their rules
+    are ``qvault.services.decision_types``'s, the phone's too; the lengths here only stop an
+    absurd post early."""
+
+    title = StringField("Title", validators=[DataRequired(), Length(max=255)])
+    person = StringField("Who gets access", validators=[Length(max=400)])
+    system = StringField("System", validators=[Length(max=400)])
+    level = StringField("Access", validators=[Length(max=40)])
+    until = StringField("Until", validators=[Length(max=40)])
+    reason = StringField("Reason", validators=[Length(max=1200)])
+    reference = StringField("Ticket or reference", validators=[Length(max=400)])
+    deadline = DateTimeLocalField(
+        "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
+    )
+    raised_again_from = HiddenField()
+    submit = SubmitField("Create access decision")
+
+
+class ContractProposalForm(FlaskForm):
+    """A Contract decision (plan S13): who with, what for, and optionally its value and term."""
+
+    title = StringField("Title", validators=[DataRequired(), Length(max=255)])
+    counterparty = StringField("Counterparty", validators=[Length(max=600)])
+    subject = StringField("What it's for", validators=[Length(max=1200)])
+    amount = StringField("Value", validators=[Length(max=100)])
+    currency = StringField("Currency", validators=[Length(max=20)])
+    starts = StringField("Starts", validators=[Length(max=40)])
+    ends = StringField("Ends", validators=[Length(max=40)])
+    reference = StringField("Contract reference", validators=[Length(max=400)])
+    deadline = DateTimeLocalField(
+        "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
+    )
+    file = FileField("Attach the contract (optional)")
+    raised_again_from = HiddenField()
+    submit = SubmitField("Create contract decision")
+
+
 class VoteForm(FlaskForm):
     """Cast a signed approve/reject vote. The password unlocks the signer's PQC private key so
     the vote can be signed; it is used transiently and never stored."""

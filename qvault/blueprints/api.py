@@ -32,14 +32,17 @@ from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
+from qvault.models.key import Key
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.treasury import TreasurySigner
+from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
     approval_service,
     auth_service,
+    decision_types,
     device_service,
     discussion_service,
     eligibility,
@@ -57,7 +60,12 @@ from qvault.services import (
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
-from qvault.services.proposal_service import PaymentRequest, ProposalError
+from qvault.services.proposal_service import (
+    FieldsRefused,
+    PaymentRequest,
+    ProposalError,
+    TypedRequest,
+)
 from qvault.services.signing import signing_bytes_for
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
@@ -691,6 +699,9 @@ def create_proposal(vid: int):
     title = (body.get("title") or "").strip()
     action_text = (body.get("action_text") or "").strip()
     payment = body.get("payment")
+    # Plan S13 (A13): a Production access or Contract decision, its text written from `fields`.
+    # `type` is the name phone-ux gives it; `decision_type` matches what the detail returns.
+    decision_type = body.get("decision_type", body.get("type"))
     if "action" in body:
         # The signed action is built by the server from `payment` (plan D23); a client never
         # supplies it. Accepting and ignoring it would create a text-only decision that reads like
@@ -702,7 +713,26 @@ def create_proposal(vid: int):
         )
     if not title:
         return _error("title_required", "A title is required.", 422)
-    if payment is None and not action_text:
+    typed = None
+    if decision_type not in (None, "general"):
+        if "type" in body and "decision_type" in body and body["type"] != body["decision_type"]:
+            return _error("bad_request", "Send the type once, as decision_type.", 422)
+        if decision_type == "payment":
+            return _error(
+                "payment_invalid", "Send a payment's recipient and amount as 'payment'.", 422
+            )
+        if decision_type not in decision_types.STORED_TYPES:
+            return _error("unknown_type", decision_types.MESSAGES["unknown_type"], 422)
+        if payment is not None:
+            return _error("bad_request", "A payment has no other type.", 422)
+        if action_text:
+            return _error(
+                "typed_text_generated",
+                "This decision's text is written from its fields; omit action_text.",
+                422,
+            )
+        typed = TypedRequest(decision_type, body.get("fields"))
+    if payment is None and typed is None and not action_text:
         return _error("action_required", "Describe what is being decided.", 422)
     if len(title) > 255:
         return _error("title_too_long", "Titles are limited to 255 characters.", 422)
@@ -765,8 +795,13 @@ def create_proposal(vid: int):
             action_text,
             deadline=deadline,
             payment=payment_request,
+            typed=typed,
             raised_again_from=again or None,
         )
+    except FieldsRefused as exc:
+        # Which field, so the phone can mark it; the words are the web form's.
+        refusal = {"ok": False, "code": "fields_invalid", "error": str(exc), "field": exc.field}
+        return jsonify(refusal), 422
     except ProposalError as exc:
         # The commonest case is a policy that needs more signatures than the vault has signers,
         # which is a governance answer rather than a malformed request.
@@ -834,7 +869,93 @@ def _proposal_summary(proposal, user) -> dict:
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
+        # Plan S13, as stored and unsigned: the phone writes the text again from the detail's
+        # `fields` and refuses when it differs; nothing here is trusted over the signed text.
+        "decision_type": _type_facts(proposal)[0],
+        # A3: everyone in its signed signer set, by id, with a name and whether they hold a key.
+        "signers": _signers_view(proposal),
+        # A4: when it was decided (approved, rejected, withdrawn or expired); null while open.
+        "decided_at": _decided_at(proposal),
+        **(_payment_summary(proposal, user) if proposal.action is not None else {}),
     }
+
+
+def _type_facts(proposal) -> tuple[str, dict | None, int | None]:
+    """Its type, stored fields and template version, as stored (plan S13). Unsigned: a payment's
+    fields are its signed ``action``, and a typed decision's are for the phone to check against
+    its signed text (``mobile/src/logic/decisionTypes.ts``), never the other way round."""
+    if proposal.action is not None:
+        return "payment", None, None
+    stored = proposal.typed
+    if stored is None:
+        return "general", None, None
+    return stored.decision_type, stored.fields(), stored.template_version
+
+
+def _signers_view(proposal) -> list[dict]:
+    """A3: the frozen signer set with names (unsigned) and ``has_key``: whether each holds an
+    active key that can sign now, password-held or on a phone."""
+    ids = sorted(_authorized_ids(proposal))
+    if not ids:
+        return []
+    people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()}
+    keyed = set(
+        db.session.scalars(
+            db.select(Key.owner_id).where(
+                Key.owner_id.in_(ids),
+                Key.role == "sig",
+                Key.status == "active",
+                Key.can_sign.is_(True),
+            )
+        )
+    )
+    return [
+        {
+            "user_id": uid,
+            "name": people[uid].display_name if uid in people else None,
+            "has_key": uid in keyed,
+        }
+        for uid in ids
+    ]
+
+
+def _decided_at(proposal) -> str | None:
+    """When it stopped being open, by its effective status; None while it is open."""
+    lifecycle = proposal.lifecycle
+    when = {
+        "approved": proposal.approved_at,
+        "rejected": proposal.rejected_at,
+        "withdrawn": lifecycle.withdrawn_at if lifecycle is not None else None,
+        "expired": proposal.expires_at,
+    }.get(inbox_service.effective_status(proposal))
+    return when.isoformat() if when is not None else None
+
+
+def _payment_summary(proposal, user) -> dict:
+    """A2 and A17 for a payment's row: its amount for display, and which of the caller's keys
+    the treasury holds (``seat``), so a row can say where it can be approved before the detail is
+    opened. The detail's ``execution.seat_fingerprint`` is the claim the phone checks."""
+    value = proposal.action.value_wei
+    readable = isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 78
+    return {
+        "amount": format_wei(int(value)) if readable else None,
+        "seat": _seat(proposal, user),
+    }
+
+
+def _seat(proposal, user) -> str | None:
+    """``this_device``, ``password``, ``other_device``, or None when the treasury holds no key
+    for ``user``."""
+    treasury = proposal.action.treasury
+    if treasury is None:
+        return None
+    seat = TreasurySigner.query.filter_by(treasury_id=treasury.id, user_id=user.id).one_or_none()
+    if seat is None or seat.key is None:
+        return None
+    device = getattr(g, "api_device", None)
+    if device is not None and seat.key.id == device.key_id:
+        return "this_device"
+    return "password" if seat.key.wrap_domain == "password" else "other_device"
 
 
 def _lifecycle_view(proposal) -> dict:
@@ -1012,8 +1133,13 @@ def proposal_detail(uuid: str):
         detail["execution"] = _execution_view(proposal, user)
         # How the payout stands (Phase 8): shown, never signed.
         detail["payout"] = payout_service.view(proposal)
+    _type, fields, version = _type_facts(proposal)
     detail.update(
         {
+            # Plan S13 (A13): a typed decision's fields and the template version that wrote its
+            # text. Unsigned; null for General and Payment (a payment's are signing_inputs.action).
+            "fields": fields,
+            "template_version": version,
             "action_text": proposal.action_text,
             # The complete canonical inputs, so the device can recompute payload_hash itself and
             # refuse to sign if this server's answer disagrees. Do not trim this to the hash.

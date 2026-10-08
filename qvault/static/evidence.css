@@ -102,6 +102,9 @@
   font-weight: var(--text-decision-weight); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty;
 }
 .q-dtext--dlg { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
+/* A typed decision's field lines (R5, plan S13), under its sentence: still the signed text, a size down. */
+.q-dtext--lines { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
+.q-dtext--lines > span { display: block; }
 .q-dcap { margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 .q-dcap__ok, .q-dcap__bad { font-weight: var(--weight-medium); }
 .q-dcap__ok .q-icon, .q-dcap__bad .q-icon { margin-right: var(--space-4); vertical-align: -2px; }

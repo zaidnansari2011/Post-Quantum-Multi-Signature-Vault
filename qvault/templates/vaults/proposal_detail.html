@@ -63,6 +63,7 @@
 {% set raised %}{{ avatar(names.get(proposal.creator_id, 'Someone'), 20, decorative=True) }}<span>{{ names.get(proposal.creator_id, 'Someone') }}, {{ reltime(proposal.created_at) }}</span>{% endset %}
 {% set code %}<code class="q-code">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches the start of the payload hash on your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button>{% endset %}
 {% set facts = [('Raised by', raised)] %}
+{% if typed.type in ('access', 'contract') %}{% set _ = facts.append(('Type', typed.label)) %}{% endif %}
 {% if proposal.status == 'open' and proposal.expires_at %}
   {% set due %}<span class="{{ 'q-due q-due--soon' if due_soon else 'q-due' }}">{% if due_soon %}{{ icon('warning') }}{% endif %}{{ ui_absolute(proposal.expires_at) }}</span>{% endset %}
   {% set _ = facts.append(('Due', due)) %}
@@ -146,11 +147,24 @@
 
 {#- ------------------------------------------------------------------ 1. the decision text -#}
 <section class="q-dblk" aria-label="Decision text">
+  {%- if typed.fields %}
+  {#- A typed decision's signed text, every character of it: its sentence as the subject, then its
+      field lines a size down. Split only when its fields write exactly this text (typed_view). -#}
+  {%- set lines = proposal.action_text.splitlines() %}
+  <p class="q-dtext">{{ lines[0]|decision_text }}</p>
+  <p class="q-dtext q-dtext--lines">{% for line in lines[1:] %}<span>{{ line|decision_text }}</span>{% endfor %}</p>
+  {%- else %}
   <p class="q-dtext">{{ proposal.action_text|decision_text }}</p>
+  {%- endif %}
   <p class="q-dcap">
-    {%- if binding.ok %}<span class="q-dcap__ok">{{ icon('success') }}Content verified.</span> {% if is_payment %}Generated from the payment below. {% endif %}This is the text every approver signs.
+    {%- if binding.ok %}<span class="q-dcap__ok">{{ icon('success') }}Content verified.</span> {% if is_payment %}Generated from the payment below. {% elif typed.fields %}Written from its {{ typed.label|lower }} fields, which a phone writes again and checks before it signs. {% endif %}This is the text every approver signs.
     {%- else %}<span class="q-dcap__bad">{{ icon('critical') }}Content altered.</span> This isn’t the text the approvers signed.{% endif -%}
   </p>
+  {% if typed.mismatch %}
+  {#- Fields are stored beside the text, unsigned. These don't write the text, so they are not
+      shown at all, and the decision reads as General: only the signed words count. -#}
+  <p class="q-dcap"><span class="q-dcap__bad">{{ icon('warning') }}Its type can’t be shown.</span> The fields stored with it don’t write this text, so it’s shown as a general decision. Only the text above was signed.</p>
+  {% endif %}
   {% if proposal.file %}
   <div class="q-attach">
     {{ icon('docs') }}
@@ -491,7 +505,7 @@
   <h2 class="q-dblk__t" id="det-t">Details</h2>
   <dl class="q-plain">
     <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
-    <div><dt>Type</dt><dd>{{ 'Payment' if is_payment else 'General' }}</dd></div>
+    <div><dt>Type</dt><dd>{{ typed.label }}{% if typed.version %}<span class="q-cap">Its text is written from its fields.</span>{% endif %}</dd></div>
     <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the vault’s rule don’t apply to this decision.</span></dd></div>
     {% if changes_since %}
     {#- R5: the vault's rule changes since this was raised, and which of them reach it: its

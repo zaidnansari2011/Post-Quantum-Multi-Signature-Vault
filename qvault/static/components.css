@@ -842,11 +842,12 @@ th[aria-sort] .q-sort { color: var(--text); }
 
 /* ---------------------------------------------------------------- New decision (vaults/proposal_new.html) */
 
-/* The type: two cards, each its own URL (?kind=payment), so the choice survives a reload. */
+/* The type: a card each (General, Payment, Production access, Contract), each its own URL
+ * (?kind=payment), so the choice survives a reload. Four fit across the form and its preview. */
 .q-typepick { display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-24); }
 .q-typecard {
   display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: var(--space-8); row-gap: var(--space-2);
-  flex: 1 1 240px; max-width: 320px; padding: var(--space-12) var(--space-16);
+  flex: 1 1 200px; max-width: 300px; padding: var(--space-12) var(--space-16);
   border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card);
   background: var(--surface); color: var(--text); text-decoration: none;
   transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
@@ -872,6 +873,9 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 .q-compose__fields { grid-area: fields; min-width: 0; }
 .q-compose__act { grid-area: act; display: flex; gap: var(--space-8); align-items: center; padding-top: var(--space-8); }
 .q-compose__note { margin: 0 0 var(--space-16); color: var(--text-muted); }
+/* Two fields on one line: a value and its currency, a start and an end (decision types, R5). */
+.q-pair { display: grid; grid-template-columns: minmax(0, 1fr) 128px; column-gap: var(--space-16); }
+.q-pair--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* The decision text is what people sign, so it is set as the product sets signed words. */
 .q-compose textarea.q-input {
   min-height: 168px; padding-block: var(--space-8);

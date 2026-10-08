@@ -75,7 +75,7 @@
             {%- if p.file %}<span class="q-wl__clip" role="img" aria-label="Attachment: {{ p.file.filename }}">{{ icon('clip') }}</span>{% endif %}</span>
         </span>
       </td>
-      <td class="q-c-meta">{{ 'Payment' if r.is_payment else 'General' }}</td>
+      <td class="q-c-meta">{{ r.type_label }}</td>
       {%- if payments_shown %}<td class="is-num q-c-aside">{{ r.amount or '' }}</td>{% endif %}
       <td class="q-c-wide-only">{{ signatures(r) }}</td>
       <td class="q-c-status">{{ status(r.status_key, r.status_n) }}</td>

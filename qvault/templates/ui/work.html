@@ -35,7 +35,9 @@
      never a status colour.
 
    type_tag(row)
-     The decision's type as a neutral tag. General, the default, has none (screens.md A.3).
+     The decision's type as a neutral tag. General, the default, has none (screens.md A.3). A
+     Production access or Contract decision's type is the one its fields write its signed text
+     from (inbox_service.decorate, decision_types.typed_view); otherwise it is General.
 #}
 {% from "ui/icons.html" import icon %}
 {% from "ui/status.html" import quorum %}
@@ -79,7 +81,7 @@
 {%- endmacro %}
 
 {% macro type_tag(row) -%}
-{%- if row.is_payment %}<span class="q-tag">Payment</span>{% endif -%}
+{%- if row.decision_type and row.decision_type != 'general' %}<span class="q-tag">{{ row.type_label }}</span>{% endif -%}
 {%- endmacro %}
 
 {% macro _note(row, mode) -%}

@@ -28,8 +28,10 @@ from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
 from qvault.extensions import db
 from qvault.forms import (
+    AccessProposalForm,
     AddMemberForm,
     CommentForm,
+    ContractProposalForm,
     DeleteCommentForm,
     MemberRoleForm,
     PaymentProposalForm,
@@ -55,6 +57,7 @@ from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
     audit_service,
+    decision_types,
     discussion_service,
     eligibility,
     evidence_service,
@@ -75,7 +78,12 @@ from qvault.services import (
 from qvault.services.approval_service import ApprovalError
 from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptError
 from qvault.services.key_service import KeyUnlockError
-from qvault.services.proposal_service import PaymentRequest, ProposalError
+from qvault.services.proposal_service import (
+    FieldsRefused,
+    PaymentRequest,
+    ProposalError,
+    TypedRequest,
+)
 from qvault.services.publication_service import PublicationError
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
@@ -428,27 +436,22 @@ def new_proposal(vid: int):
         # and answers before the request is read, for either kind of decision.
         abort(403)
     again = _raise_again(vault)
-    if request.args.get("kind") == "payment" or (again and again.action is not None):
+    # Raising again keeps the type (and its fields, prefilled below): signatures bind the words,
+    # so the new decision is written afresh from them.
+    prefill = proposal_service.raise_again_prefill(again) if again is not None else None
+    kind = prefill["kind"] if prefill is not None else request.args.get("kind")
+    if kind == "payment":
         return _new_payment(vault, again)
+    if kind in decision_types.STORED_TYPES:
+        return _new_typed(vault, kind, again, prefill)
     form = ProposalForm()
     if again is not None and request.method == "GET":
-        prefill = proposal_service.raise_again_prefill(again)
         form.title.data, form.action_text.data = prefill["title"], prefill["action_text"]
         form.raised_again_from.data = again.proposal_uuid
     if form.validate_on_submit():
-        file_bytes = None
-        filename = None
-        upload = form.file.data
-        if upload is not None and getattr(upload, "filename", ""):
-            file_bytes = upload.read()
-            filename = secure_filename(upload.filename)
-        deadline = form.deadline.data
-        if deadline is not None and deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
-        if deadline is not None and deadline <= datetime.now(UTC):
-            # It would be expired the moment it was raised. Payments are refused the same way by
-            # the D23 policy; a general decision had no check.
-            flash("Choose a due time in the future.", "danger")
+        file_bytes, filename = _upload(form)
+        deadline = _due(form)
+        if deadline is False:
             return _new_decision_page(form, vault, "general", again)
         try:
             proposal = proposal_service.create_proposal(
@@ -469,6 +472,69 @@ def new_proposal(vid: int):
     return _new_decision_page(form, vault, "general", again)
 
 
+def _upload(form) -> tuple[bytes | None, str | None]:
+    """The attached file's bytes and a safe name, or (None, None) when none was chosen."""
+    upload = form.file.data
+    if upload is not None and getattr(upload, "filename", ""):
+        return upload.read(), secure_filename(upload.filename)
+    return None, None
+
+
+def _due(form):
+    """The due time entered, as UTC; None when there is none; False (said once) when it is past."""
+    deadline = form.deadline.data
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
+    if deadline is not None and deadline <= datetime.now(UTC):
+        # It would be expired the moment it was raised. Payments are refused the same way by
+        # the D23 policy; a general decision had no check.
+        flash("Choose a due time in the future.", "danger")
+        return False
+    return deadline
+
+
+def _new_typed(vault, kind: str, again=None, prefill=None):
+    """A Production access or Contract decision (plan S13): its fields write the text."""
+    form = AccessProposalForm() if kind == "access" else ContractProposalForm()
+    keys = [spec.key for spec in decision_types.SPECS[kind]]
+    if again is not None and request.method == "GET":
+        form.title.data = prefill["title"]
+        for key in keys:
+            getattr(form, key).data = prefill["fields"].get(key)
+        form.raised_again_from.data = again.proposal_uuid
+    errors: dict[str, str] = {}
+    if form.validate_on_submit():
+        file_bytes, filename = _upload(form) if kind == "contract" else (None, None)
+        deadline = _due(form)
+        if deadline is False:
+            return _new_decision_page(form, vault, kind, again)
+        try:
+            proposal = proposal_service.create_proposal(
+                vault,
+                current_user,
+                form.title.data,
+                "",
+                deadline=deadline,
+                file_bytes=file_bytes,
+                filename=filename,
+                typed=TypedRequest(kind, {key: getattr(form, key).data for key in keys}),
+                raised_again_from=form.raised_again_from.data or None,
+            )
+        except FieldsRefused as exc:
+            if exc.field in keys:
+                errors[exc.field] = str(exc)
+            else:
+                flash(str(exc), "danger")
+        except ProposalError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash(f"{decision_types.LABELS[kind]} decision created.", "success")
+            return redirect(
+                url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
+            )
+    return _new_decision_page(form, vault, kind, again, errors=errors)
+
+
 def _raise_again(vault):
     """The closed decision being raised again (plan S16), from ``?again=`` on the way in or the
     form's hidden field on the way back; None when there is none, or it can't be (said once)."""
@@ -487,8 +553,9 @@ def _raise_again(vault):
     return source
 
 
-def _new_decision_page(form, vault, kind: str, again=None):
-    """New decision, either type, with the "who approves" preview (plan S14) beside the form."""
+def _new_decision_page(form, vault, kind: str, again=None, errors=None):
+    """New decision, any type, with the "who approves" preview (plan S14) beside the form.
+    ``errors`` are a typed decision's field refusals, by field (plan S13)."""
     payments = kind == "payment" or _payments_possible(vault)
     now = datetime.now(UTC)
     return render_template(
@@ -497,6 +564,8 @@ def _new_decision_page(form, vault, kind: str, again=None):
         vault=vault,
         payments=payments,
         kind=kind,
+        errors=errors or {},
+        access_levels=decision_types.ACCESS_LEVELS,
         preview=proposal_service.who_approves(vault, current_user),
         again=again,
         treasury=treasury_service.linked_treasury(vault) if kind == "payment" else None,
@@ -649,6 +718,8 @@ def proposal_detail(vid: int, pid: str):
         payout=payout,
         vote_form=VoteForm(),
         withdraw_form=WithdrawForm(),
+        # Plan S13: its type, with fields only when they write its signed text again.
+        typed=decision_types.typed_view(proposal),
         # Its discussion (rework R5): unsigned, and drawn apart from the decision text.
         comments=discussion_service.thread(proposal, current_user) if tab == "overview" else [],
         cannot_comment=discussion_service.why_cannot_post(proposal, current_user),

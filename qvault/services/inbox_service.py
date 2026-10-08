@@ -36,12 +36,12 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from qvault.extensions import db
 from qvault.models.execution import Execution
-from qvault.models.proposal import Proposal
+from qvault.models.proposal import DecisionFields, Proposal
 from qvault.models.signature import Signature
 from qvault.models.treasury import ProposalAction
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
-from qvault.services import eligibility
+from qvault.services import decision_types, eligibility
 from qvault.services.signing import format_wei
 from qvault.ui import decision_code, first_name
 
@@ -53,8 +53,8 @@ SHOWN_TABS = ("needs_you", "waiting", "expiring", "done")
 SORTS = ("recent", "oldest", "title", "deadline")
 #: A tab whose natural order is not "newest first": what expires soonest leads Expiring soon.
 DEFAULT_SORT = {"expiring": "deadline"}
-#: The decision types a list can be narrowed to. Production access and Contract arrive in R5.
-KINDS = ("general", "payment")
+#: The decision types a list can be narrowed to (plan S13).
+KINDS = ("general", "payment", "access", "contract")
 PER_PAGE = 25
 MAX_PER_PAGE = 100
 #: "Expiring soon" in the inbox and "Due soon" on Home: open, with a deadline inside this window.
@@ -260,7 +260,18 @@ def _base(user: User, filters: Filters, now: datetime):
         stmt = stmt.where(Proposal.vault_id == filters.vault_id)
     if filters.kind:
         payment = select(ProposalAction.id).where(ProposalAction.proposal_id == Proposal.id)
-        stmt = stmt.where(payment.exists() if filters.kind == "payment" else ~payment.exists())
+        typed = select(DecisionFields.proposal_id).where(DecisionFields.proposal_id == Proposal.id)
+        if filters.kind == "payment":
+            stmt = stmt.where(payment.exists())
+        elif filters.kind == "general":
+            stmt = stmt.where(~payment.exists(), ~typed.exists())
+        else:
+            # By the stored type: a filter narrows a list, it does not vouch for the type. Each
+            # row still shows its type only when its fields write its signed text.
+            stmt = stmt.where(
+                ~payment.exists(),
+                typed.where(DecisionFields.decision_type == filters.kind).exists(),
+            )
     return stmt
 
 
@@ -328,6 +339,7 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
         {uid for ids in snapshots.values() for uid in ids} | {p.creator_id for p in proposals}
     )
     payouts = _payout_states([p.id for p in proposals if p.action is not None])
+    typed = _typed_rows([p.id for p in proposals if p.action is None])
     treasuries_on = bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED"))
     rows = []
     for p in proposals:
@@ -356,6 +368,7 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
             payout_state=payouts.get(p.id),
             treasuries_on=treasuries_on,
         )
+        view = decision_types.typed_view(p, typed.get(p.id))
         rows.append(
             {
                 "proposal": p,
@@ -371,6 +384,9 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
                 "can_sign": authorised and p.vault_id in signer_vaults,
                 "needs_me": needs_me,
                 "is_payment": p.action is not None,
+                # Plan S13: the type its signed text bears out (``decision_types.typed_view``).
+                "decision_type": view.type,
+                "type_label": view.label,
                 "amount": _amount(p),
                 "code": decision_code(p.payload_hash),
                 "raised_by": _name(people, p.creator_id, user),
@@ -384,6 +400,14 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
             }
         )
     return rows
+
+
+def _typed_rows(ids: list[int]) -> dict[int, DecisionFields]:
+    """The stored type and fields of each of ``ids`` that has them, in one query."""
+    if not ids:
+        return {}
+    rows = DecisionFields.query.filter(DecisionFields.proposal_id.in_(ids)).all()
+    return {row.proposal_id: row for row in rows}
 
 
 def status_key(
