@@ -582,6 +582,13 @@ def _record_vote(
         entry["execution_signature_sha256"] = sha256_hex(execution[1])
 
     try:
+        # Hold the decision open while this vote is written. The gate read "open" earlier, but a
+        # withdrawal (or another vote deciding it) can commit in between: this conditional write
+        # takes the row's lock on PostgreSQL and re-reads its status, so a vote never lands on a
+        # decision that closed after the gate looked, and a withdrawal waiting on this lock then
+        # finds the decision decided, or open with this vote in it. SQLite serialises writers.
+        _hold_open(proposal)
+        #
         # Everything from the first row added to the session up to flush() is inside this mapped
         # block, because that is where a race with a concurrently-committed vote by the same signer
         # (one vote_of() could not see) surfaces — and not only at flush(): any query in between,
@@ -592,12 +599,6 @@ def _record_vote(
         # treasury can be unlinked while a password is being checked), must stop the vote rather
         # than be discovered later by an executor holding an approval it cannot carry out.
         # ``record`` checks all of it, and queries only before it adds its row.
-        # Hold the decision open while this vote is written. The gate read "open" earlier, but a
-        # withdrawal (or another vote deciding it) can commit in between: this conditional write
-        # takes the row's lock on PostgreSQL and re-reads its status, so a vote never lands on a
-        # decision that closed after the gate looked, and a withdrawal waiting on this lock then
-        # finds the decision decided, or open with this vote in it. SQLite serialises writers.
-        _hold_open(proposal)
         if execution is not None:
             execution_digest, execution_sig = execution
             try:

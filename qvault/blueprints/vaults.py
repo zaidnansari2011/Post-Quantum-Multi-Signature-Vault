@@ -467,11 +467,15 @@ def _raise_again(vault):
     if not uuid:
         return None
     try:
-        return proposal_service.raise_again_source(vault, uuid)
+        source = proposal_service.raise_again_source(vault, uuid)
     except ProposalError as exc:
         if request.method == "GET":  # a POST is refused by create_proposal, in these words
             flash(str(exc), "danger")
         return None
+    if source.action is not None and not _payments_possible(vault):
+        flash("This vault can't make payments now, so a payment can't be raised again.", "danger")
+        return None
+    return source
 
 
 def _new_decision_page(form, vault, kind: str, again=None):

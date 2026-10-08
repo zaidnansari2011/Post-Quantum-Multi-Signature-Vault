@@ -26,6 +26,7 @@ from qvault.models import Key, LedgerEntry, Notification, Proposal, Signature
 from qvault.services import (
     approval_service,
     auth_service,
+    export_service,
     ledger_service,
     notification_service,
     proposal_service,
@@ -35,6 +36,7 @@ from qvault.services import (
 from qvault.services.approval_service import ApprovalError
 from qvault.services.proposal_service import ProposalError
 from qvault.services.signing import vote_signing_bytes
+from qvault.verify import verify_bundle
 
 
 def _team(prefix, threshold_m=2):
@@ -465,3 +467,18 @@ def test_a_payment_raised_again_starts_from_its_recipient_and_amount(client):
     assert f'value="{RECIPIENT}"' in form
     assert 'value="0.25"' in form
     assert f'name="raised_again_from" type="hidden" value="{pid}"' in form
+
+
+def test_a_withdrawn_decision_still_verifies_offline_as_withdrawn(witnessed):
+    """The withdrawal is a new ledger entry beside the decision's own; nothing signed changed, so
+    its record verifies, and says it was withdrawn with the approvals it had."""
+    ada, brij, _chen, _vault, proposal = _team("bundlewithdrawn")
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    approval_service.withdraw(proposal, ada)
+
+    report = verify_bundle(
+        export_service.build_decision_bundle(proposal),
+        registry=witnessed.extensions["crypto"],
+    )
+    assert report.ok, report.summary
+    assert report.facts["status"] == "withdrawn"
