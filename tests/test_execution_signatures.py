@@ -95,7 +95,7 @@ def _phone_seat(client, user, treasury):
     return key, secret
 
 
-def _device_vote(app, proposal, user, key, secret, decision, *, execution=None):
+def _device_vote(app, proposal, user, key, secret, decision, *, execution=None, reason=None):
     vote = _provider(app).sign(
         secret,
         vote_signing_bytes(
@@ -103,7 +103,7 @@ def _device_vote(app, proposal, user, key, secret, decision, *, execution=None):
         ),
     )
     return approval_service.record_device_vote(
-        proposal, user, key, decision, vote, execution=execution
+        proposal, user, key, decision, vote, execution=execution, reason=reason
     )
 
 
@@ -629,7 +629,7 @@ def test_a_rejection_and_a_plain_decision_never_ask_the_chain(payments_on, chain
     plain = proposal_service.create_proposal(vault, owner, "Rotate the door code", "")
     payments_on.extensions["relayer"] = None  # no chain at all
 
-    approval_service.cast_vote(payment, owner, PASSWORD, "reject")
+    approval_service.cast_vote(payment, owner, PASSWORD, "reject", reason="Not convinced.")
     approval_service.cast_vote(plain, other, PASSWORD, "approve")
     assert approval_service.vote_of(payment, owner.id).decision == "reject"
     assert approval_service.vote_of(plain, other.id).decision == "approve"
@@ -737,10 +737,12 @@ def test_a_rejection_carrying_an_execution_signature_is_refused(payments_on, cli
     genuine = _provider(payments_on).sign(secret, execution_service.digest_for(proposal))
 
     with pytest.raises(ApprovalError, match="Only an approval of a payment"):
-        _device_vote(payments_on, proposal, owner, key, secret, "reject", execution=genuine)
+        _device_vote(
+            payments_on, proposal, owner, key, secret, "reject", execution=genuine, reason="No."
+        )
     assert ExecutionSignature.query.count() == 0
 
-    _device_vote(payments_on, proposal, owner, key, secret, "reject")
+    _device_vote(payments_on, proposal, owner, key, secret, "reject", reason="No.")
     assert approval_service.tally(proposal) == (0, 1)
     assert ExecutionSignature.query.count() == 0
 
@@ -979,7 +981,7 @@ def test_the_same_app_may_still_reject_a_payment(payments_on, client):
 
     vote = client.post(
         f"/api/v1/proposals/{proposal.proposal_uuid}/vote",
-        json={"decision": "reject", "signature_b64": signature},
+        json={"decision": "reject", "signature_b64": signature, "reason": "No."},
         headers={**auth, **PAYMENTS},
     )
 

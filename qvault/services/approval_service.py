@@ -46,6 +46,10 @@ class ApprovalError(ValueError):
     """Raised when a vote cannot be cast (closed proposal, not a signer, already voted, ...)."""
 
 
+#: Plan S16: a rejection says why. The reason is shown beside the vote and is not signed (S9).
+REASON_REQUIRED = "Add a reason for rejecting, so the person who raised it knows what to change."
+REASON_MAX = 255
+
 #: Plan S15's refusal. The API maps "you raised this" to the code ``own_decision``.
 OWN_DECISION = (
     "You raised this decision, and in this vault the person who raises a decision can't approve "
@@ -391,7 +395,9 @@ def is_current_approver(vault_id: int, user_id: int) -> bool:
     return role in SIGNER_ROLES
 
 
-def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
+def _authorize_vote(
+    proposal, signer, decision: str, *, commit: bool, reason: str | None = None
+) -> None:
     """The governance gate every vote passes, whoever held the key.
 
     The order is observable and must not change:
@@ -410,7 +416,9 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
        the rule it was raised under, or the vault's rule now, says so
        (``eligibility.requester_may_approve``);
     8. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
-       and a concurrent vote may not be visible here yet.
+       and a concurrent vote may not be visible here yet;
+    9. a rejection carries a reason (plan S16), at most ``REASON_MAX`` characters. Not signed:
+       ``vote_signing_bytes`` is unchanged (S9).
 
     Every check here comes before a password is tried or a signature is verified.
     """
@@ -439,6 +447,11 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
         raise ApprovalError(OWN_DECISION)
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
+    note = (reason or "").strip()
+    if decision == "reject" and not note:
+        raise ApprovalError(REASON_REQUIRED)
+    if len(note) > REASON_MAX:
+        raise ApprovalError(f"Keep the reason to {REASON_MAX} characters; nothing was recorded.")
 
 
 def _require_device_signing_key(signer, key) -> None:
@@ -681,7 +694,7 @@ def cast_vote(
         subject=proposal.proposal_uuid,
     )
 
-    _authorize_vote(proposal, signer, decision, commit=commit)
+    _authorize_vote(proposal, signer, decision, commit=commit, reason=reason)
 
     key = key_service.active_signing_key(signer)
     if key is None:
@@ -760,7 +773,7 @@ def record_device_vote(
     The phone computes its own digest, but the one checked here is the server's, built only after
     the decision's binding holds: a phone that signed a tampered payment is refused like any other.
     """
-    _authorize_vote(proposal, signer, decision, commit=commit)
+    _authorize_vote(proposal, signer, decision, commit=commit, reason=reason)
     _require_device_signing_key(signer, key)
     pair = None
     if decision == "approve" and execution_service.is_payment(proposal):

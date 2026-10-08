@@ -134,7 +134,7 @@ def test_the_decision_page_follows_the_payout_to_the_transaction(pw):
 def test_a_decision_that_closed_unapproved_is_not_paid(pw):
     proposal = _approved_payment(pw, approvers=0)
     for user in pw.users[:2]:
-        approval_service.cast_vote(proposal, user, PASSWORD, "reject")
+        approval_service.cast_vote(proposal, user, PASSWORD, "reject", reason="Not convinced.")
     view = payout_service.view(proposal)
     assert view["state"] == "not_paid" and "rejected" in view["reason"]
 

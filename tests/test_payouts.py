@@ -480,7 +480,7 @@ def test_an_execution_signature_beside_a_rejection_is_never_used(world):
     proposal = proposal_service.create_proposal(
         world.vault, ada, "Pay the auditor", "", payment=PaymentRequest(RECIPIENT, VALUE)
     )
-    approval_service.cast_vote(proposal, chen, PASSWORD, "reject")
+    approval_service.cast_vote(proposal, chen, PASSWORD, "reject", reason="Not convinced.")
     key = key_service.active_signing_key(chen)
     digest = execution_service.digest_for(proposal)
     seat = TreasurySigner.query.filter_by(treasury_id=world.treasury.id, user_id=chen.id).one()
@@ -628,7 +628,7 @@ def test_one_undecidable_decision_does_not_stop_other_payouts(world):
         world.vault, world.users[0], "other", "", payment=PaymentRequest(RECIPIENT, 1)
     )
     approval_service.cast_vote(stuck, world.users[0], PASSWORD, "approve")
-    approval_service.cast_vote(stuck, world.users[2], PASSWORD, "reject")
+    approval_service.cast_vote(stuck, world.users[2], PASSWORD, "reject", reason="Not convinced.")
     registry = world.app.extensions["crypto"]
     saved = registry._sig.pop("ML-DSA-65")
     try:

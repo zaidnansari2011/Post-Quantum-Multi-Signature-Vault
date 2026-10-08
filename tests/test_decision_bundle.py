@@ -52,7 +52,9 @@ def make_decision(*, m: int = 2, n: int = 3, reject: bool = False):
     )
     if reject:
         for signer in signers[: n - m + 1]:
-            approval_service.cast_vote(proposal, signer, PASSWORD, "reject")
+            approval_service.cast_vote(
+                proposal, signer, PASSWORD, "reject", reason="Not convinced."
+            )
     else:
         for signer in signers[:m]:
             approval_service.cast_vote(proposal, signer, PASSWORD, "approve")
@@ -277,7 +279,7 @@ def test_dropping_an_inconvenient_signature_is_caught(app, witness):
     dissenter = auth_service.register_user("dissent@e.com", "Dissenter", PASSWORD)
     vault_service.add_member(vault, dissenter.email, "signer", actor_id=owner.id)
     proposal = proposal_service.create_proposal(vault, owner, "Motion", "Adopt the motion.")
-    approval_service.cast_vote(proposal, dissenter, PASSWORD, "reject")
+    approval_service.cast_vote(proposal, dissenter, PASSWORD, "reject", reason="Not convinced.")
     approval_service.cast_vote(proposal, owner, PASSWORD, "approve")
 
     honest = export_service.build_decision_bundle(proposal)
