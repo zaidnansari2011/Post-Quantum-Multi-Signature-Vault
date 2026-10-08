@@ -745,8 +745,9 @@ def proposal_detail(vid: int, pid: str):
         can_raise_again=inbox_service.effective_status(proposal)
         in proposal_service.RAISE_AGAIN_FROM
         and proposal_service.may_propose(vault, current_user),
-        # Plan S16: Withdraw is drawn only for whoever raised it, while it is open.
-        can_withdraw=proposal.status == "open" and proposal.creator_id == current_user.id,
+        # Plan S16: Withdraw is drawn only where the service would take it (whoever raised it,
+        # still in the vault and not suspended, while it is open).
+        can_withdraw=approval_service.why_cannot_withdraw(proposal, current_user) is None,
         # Present only immediately after this member signed (or when someone follows a receipt
         # link). Scoped to this proposal inside the service, which is the authorisation check.
         receipt=receipt_service.for_signature_id(proposal, request.args.get("receipt")),

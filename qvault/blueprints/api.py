@@ -863,8 +863,7 @@ def _proposal_summary(proposal, user) -> dict:
         },
         "separation_of_duties": not eligibility.requester_may_approve(proposal),
         # Plan S16 (A11): who may withdraw it, and who did and when (personalStatus row 15).
-        "can_withdraw": proposal.creator_id == user.id
-        and inbox_service.effective_status(proposal) == "open",
+        "can_withdraw": approval_service.why_cannot_withdraw(proposal, user) is None,
         **_lifecycle_view(proposal),
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
