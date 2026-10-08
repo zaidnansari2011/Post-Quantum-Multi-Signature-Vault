@@ -19,7 +19,7 @@
   have drifted. And every derived value is shown with the input that produced it, so you can leave
   this application entirely and get the same answer:
 </p>
-<pre class="pre">echo -n &lt;hex&gt; | xxd -r -p | sha256sum</pre>
+<pre>echo -n &lt;hex&gt; | xxd -r -p | sha256sum</pre>
 <p>
   That command appears under every value small enough to carry it. If a digest on this page were
   invented, one paste into your own terminal would expose it. That, rather than the code, is why
@@ -39,7 +39,7 @@
 <p>
   Casting one vote records nine steps. Read in order they are the whole argument of this system:
 </p>
-<table class="dt">
+<div class="q-table-wrap"><table class="q-table">
   <thead><tr><th style="width:22rem">Step</th><th>What to look at</th></tr></thead>
   <tbody>
     <tr><td>Build the bytes to be signed</td>
@@ -68,7 +68,7 @@
     <tr><td>Sign the checkpoint</td>
         <td>What an independent witness is offered, and what an exported decision carries.</td></tr>
   </tbody>
-</table>
+</table></div>
 
 <h3>Why it is switched off by default</h3>
 <p>

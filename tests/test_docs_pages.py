@@ -53,7 +53,7 @@ def _between(page: str, start: str, end: str) -> str:
 
 def _doc(page: str) -> str:
     """A page's documentation and its contents list: everything but the frame."""
-    return _between(page, '<div class="split">', "</nav>")
+    return _between(page, '<div class="q-docs">', "</nav>")
 
 
 @pytest.mark.parametrize("slug", [slug for slug, _title, _summary in PAGES])
@@ -112,14 +112,14 @@ def test_the_contents_read_the_same_signed_out(app, stranger):
         _on(app, flag, True)
     page = stranger.get("/docs/").get_data(as_text=True)
     assert "Sign out" not in page
-    contents = _between(page, '<table class="dt">', "</table>")
+    contents = _between(page, '<table class="q-table">', "</table>")
     for slug, _title, _summary in PAGES:
         assert f'href="/docs/{slug}"' in contents
 
     _sign_in(stranger)
     signed_in = stranger.get("/docs/").get_data(as_text=True)
     assert "Sign out" in signed_in
-    assert contents == _between(signed_in, '<table class="dt">', "</table>")
+    assert contents == _between(signed_in, '<table class="q-table">', "</table>")
 
 
 def test_the_landing_pages_documentation_link_leads_to_the_contents(stranger):

@@ -1,28 +1,21 @@
 {% extends "base.html" %}
+{% from "ui/navigation.html" import page_header %}
 {% block title %}{{ title }} — Documentation — Q-Vault{% endblock %}
 
 {# The same words signed in or out. The landing page links here, and a visitor deciding whether to
    trust the product is who most of this is written for; it rendered blank to them, because
    base.html gives a visitor only the anon blocks. Signed out, the page keeps its header and its
    contents list and loses only the rail, which belongs to an account. #}
-{% block anon_chrome %}{{ self.chrome() }}{% endblock %}
-{% block anon_bodyclass %}body{% endblock %}
+{% block anon_bodyclass %}q-body{% endblock %}
 {% block anon_content %}{{ self.content() }}{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">{{ title }}</div>
-  </div>
-</div>
-{% endblock %}
-
 {% block content %}
-<div class="split">
-  <div class="doc">{% block doc %}{% endblock %}</div>
-  <nav class="panel" aria-label="Documentation">
-    <div class="panel__head"><span class="label">Contents</span></div>
-    <div class="panel__body doc__nav">
+{{ page_header(title) }}
+<div class="q-docs">
+  <article class="q-prose">{% block doc %}{% endblock %}</article>
+  <nav class="q-panel" aria-label="Documentation">
+    <div class="q-panel__hd"><h2 class="q-panel__t">Contents</h2></div>
+    <div class="q-docnav">
       {% for s, t, _ in pages %}
         <a href="{{ url_for('docs.page', slug=s) }}" {% if s == slug %}aria-current="page"{% endif %}>{{ t }}</a>
       {% endfor %}

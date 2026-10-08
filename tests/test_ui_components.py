@@ -304,6 +304,13 @@ def test_a_short_value_is_not_truncated():
     assert ui.middle_truncate("abc123") == "abc123"
 
 
+def test_a_cut_that_keeps_no_tail_shows_only_the_head():
+    """value[-0:] is the whole string: a head-only cut once printed the head, then all of it."""
+    value = "0123456789abcdef" * 4
+    assert ui.middle_truncate(value, 24, 0) == value[:24] + "…"
+    assert ui.middle_truncate("0123456789abcdef", 16, 0) == "0123456789abcdef"
+
+
 COLUMNS = [
     {"key": "title", "label": "Decision", "sortable": True},
     {"key": "amount", "label": "Amount", "numeric": True},

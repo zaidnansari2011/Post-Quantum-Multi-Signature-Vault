@@ -1,28 +1,24 @@
 {% extends "docs/_layout.html" %}
+{% from "ui/navigation.html" import page_header %}
 {% block title %}Documentation — Q-Vault{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Documentation</div>
-    <div class="head__sub">How the product works and what protects it</div>
-  </div>
-</div>
-{% endblock %}
-
 {% block content %}
-<div style="max-width:44rem">
-  <table class="dt">
-    <tbody>
-      {% for slug, title, summary in pages %}
-      <tr>
-        <td>
-          <a class="dt__link" href="{{ url_for('docs.page', slug=slug) }}">{{ title }}</a>
-          <span class="dt__sub">{{ summary }}</span>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+{{ page_header('Documentation', description='How the product works and what protects it') }}
+<div class="q-doclist">
+  <div class="q-table-wrap">
+    <table class="q-table">
+      <caption class="visually-hidden">Documentation pages</caption>
+      <tbody>
+        {% for slug, title, summary in pages %}
+        <tr>
+          <td>
+            <a href="{{ url_for('docs.page', slug=slug) }}">{{ title }}</a>
+            <span class="q-cap">{{ summary }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

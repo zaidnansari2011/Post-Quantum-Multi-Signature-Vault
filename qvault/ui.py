@@ -158,7 +158,8 @@ def middle_truncate(value: str, head: int = 8, tail: int = 6) -> str:
     value = str(value)
     if len(value) <= head + tail + 1:
         return value
-    return f"{value[:head]}…{value[-tail:]}"
+    # value[-0:] is the whole string, so a cut that keeps no tail must say so explicitly.
+    return f"{value[:head]}…{value[-tail:] if tail else ''}"
 
 
 def initials(name: str | None) -> str:
