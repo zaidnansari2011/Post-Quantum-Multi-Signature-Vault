@@ -266,31 +266,46 @@ def test_each_refusal_names_the_check_that_failed(results):
     assert results["text_describes_another_payment"]["integrity"] == "mismatch:payment_text"
 
 
+def _code(payload_hash: str) -> str:
+    """The decision code of the hash the phone derived (phone-ux §5.11): "A397-71F8"."""
+    head = payload_hash[:8].upper()
+    return f"{head[:4]}-{head[4:]}"
+
+
 def test_the_prompt_names_the_decision_by_its_signed_text_not_its_title(results):
+    # Phone-ux §5.13: the title names the act and the code of the hash the phone derived; the
+    # Android subtitle is the signed text (a payment's signed amount and recipient).
     plain = results["plain_decision"]
-    assert plain["prompt"] == "Approve: Hire a second auditor."
+    assert plain["prompt"]["message"] == f"Approve decision {_code(plain['payload_hash'])}"
+    assert plain["prompt"]["subtitle"] == "Hire a second auditor."
+    assert plain["prompt"]["description"] == "Signs with the key on this phone."
     lunch = results["misleading_title"]
     assert lunch["vote"] == "reached_prompt"
-    assert lunch["prompt"] == "Approve: Rotate the root signing key tonight."
-    assert "lunch" not in lunch["prompt"]
-    assert results["reject_without_a_seat"]["prompt"].startswith("Reject: Pay ")
+    assert lunch["prompt"]["subtitle"] == "Rotate the root signing key tonight."
+    assert "lunch" not in json.dumps(lunch["prompt"]).lower()
+    reject = results["reject_without_a_seat"]
+    assert reject["prompt"]["message"] == f"Reject decision {_code(reject['payload_hash'])}"
+    assert reject["prompt"]["subtitle"].startswith("Pay ")
+    assert reject["prompt"]["description"] == "Signs your rejection with the key on this phone."
 
 
 def test_a_payment_prompt_names_the_amount_and_the_recipient_in_full(results):
     # The payment's own text, less the treasury's address that would otherwise fill the prompt.
     action = CASES["consistent_payment"]["inputs"]["action"]
     subject = payment_text(action).replace(f" from this vault's treasury {action['treasury']}", "")
-    assert results["consistent_payment"]["prompt"] == f"Approve: {subject}"
+    prompt = results["consistent_payment"]["prompt"]
+    assert prompt["subtitle"] == subject
+    assert prompt["message"] == f"Approve payment {_code(results['consistent_payment']['payload_hash'])}"
     assert action["to"] in subject and action["treasury"] not in subject
 
 
 def test_a_long_decision_is_cut_to_fit_the_prompt_and_says_so(results):
     prompt = results["long_text"]["prompt"]
-    summary = prompt.removeprefix("Approve: ")
+    summary = prompt["subtitle"]
     assert summary.endswith("…")
     assert len(summary) <= 80
     assert LONG_TEXT.startswith(summary[:-1].rstrip())
-    assert "Quarterly vendor renewal" not in prompt
+    assert "Quarterly vendor renewal" not in json.dumps(prompt)
 
 
 @pytest.mark.parametrize("text", list(SUMMARIES))

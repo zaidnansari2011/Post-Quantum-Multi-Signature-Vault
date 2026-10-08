@@ -19,7 +19,7 @@ import * as Crypto from 'expo-crypto';
 import { getAlgorithm, setRandomSource } from './crypto/algorithms.ts';
 import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import { fromBase64, toBase64 } from './crypto/bytes.ts';
-import type { NewKeyPair, ProtectionLevel, StoredIdentity } from './custody.ts';
+import type { NewKeyPair, PromptStrings, ProtectionLevel, StoredIdentity } from './custody.ts';
 
 // Installed on import, before anything can sign. This module is the only Custody implementation
 // the app has, so no signing path can reach noble without passing through here first -- which is
@@ -100,24 +100,38 @@ const DECLINED: ReadonlySet<string> = new Set([
  * would be inventing precision the platform does not give us; the label is recorded locally for
  * display only and is never sent to the server.
  *
- * When the handset has no lock at all this returns 'none' rather than throwing -- the caller then
- * falls back to the account password, which is the only factor left.
+ * When the handset has no lock at all this returns 'none' rather than throwing, and the caller
+ * refuses to sign (flows.ts, phone-ux I-9): with no lock there is nothing to confirm it is the owner.
  */
-export async function confirmPresence(promptMessage: string): Promise<ProtectionLevel> {
+export async function confirmPresence(prompt: PromptStrings): Promise<ProtectionLevel> {
   const protection = await detectProtection();
   if (protection === 'none') return 'none';
 
   const result = await LocalAuthentication.authenticateAsync({
-    promptMessage,
+    promptMessage: prompt.message,
+    promptSubtitle: prompt.subtitle,
+    promptDescription: prompt.description,
     cancelLabel: 'Cancel',
     disableDeviceFallback: false,
-    requireConfirmation: false,
+    // Class 3 only (phone-ux §5.13): a Class 2 face unlock is offered the PIN instead. And no
+    // `requireConfirmation: false`: the platform default asks for an explicit confirm after a face
+    // match, which Android reserves passive authentication against for high-risk actions.
+    biometricsSecurityLevel: 'strong',
   });
   if (!result.success) {
     if (DECLINED.has(result.error)) throw new AuthenticationCancelled();
     throw new AuthenticationUnavailable(result.error, result.warning);
   }
   return protection;
+}
+
+/** The biometric hardware the phone lists, for the button's method name (src/logic/methodLabel.ts). */
+export async function supportedHardware(): Promise<number[]> {
+  try {
+    return await LocalAuthentication.supportedAuthenticationTypesAsync();
+  } catch {
+    return [];
+  }
 }
 
 // -- persistence ---------------------------------------------------------------------------------
@@ -174,6 +188,22 @@ export async function deriveKeyPair(algId: string): Promise<{
   const seed = fromBase64(stored);
   if (seed.length !== 32) throw new Error('Stored key seed is corrupt.');
   return getAlgorithm(algId).keygen(seed);
+}
+
+/**
+ * Whether the seed is still here, without deriving a key from it. The session asks at start-up: an
+ * identity whose seed has gone (SecureStore cleared) cannot sign, and says so (phone-ux §6.20).
+ */
+export async function hasSeed(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(SEED_KEY, OPTIONS)) !== null;
+}
+
+/** Forget the token and identity, keeping the seed: re-setup after a session ended (§6.20). */
+export async function forgetSession(): Promise<void> {
+  await Promise.all([
+    SecureStore.deleteItemAsync(TOKEN_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(IDENTITY_KEY, OPTIONS),
+  ]);
 }
 
 /** Remove every trace of this device's identity. Used after revocation or a failed enrolment. */

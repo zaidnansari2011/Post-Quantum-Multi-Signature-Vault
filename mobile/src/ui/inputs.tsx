@@ -49,6 +49,8 @@ export type FieldProps = Omit<TextInputProps, 'style'> & {
    * you type never shifts under the thumb (§5.8). Fields that only report on submit leave it off.
    */
   validates?: boolean;
+  /** A live count on the right of the line under the field: "0 / 255". */
+  count?: string | null;
 };
 
 /** react-native-web draws a square browser outline inside the 2pt ring; the ring replaces it. */
@@ -65,6 +67,7 @@ export function Field({
   onBlur,
   multiline,
   validates = false,
+  count,
   ...props
 }: FieldProps) {
   const t = useTheme();
@@ -112,18 +115,25 @@ export function Field({
         />
         {trailing}
       </View>
-      {error || caption || validates ? (
-      <View style={s.under}>
+      {error || caption || validates || count ? (
+      <View style={[s.under, count ? s.underRow : null]}>
         {error ? (
-          <View style={s.errorRow} accessibilityLiveRegion="polite">
+          <View style={[s.errorRow, count ? s.flex : null]} accessibilityLiveRegion="polite">
             <Icon name="alert" size={16} color={t.color.status.critical.fg} style={s.errorIcon} />
             <Text role="caption" tone="critical" style={s.flex}>
               {error}
             </Text>
           </View>
         ) : caption ? (
-          <Text role="caption" tone="subtle">
+          <Text role="caption" tone="subtle" style={count ? s.flex : null}>
             {caption}
+          </Text>
+        ) : count ? (
+          <View style={s.flex} />
+        ) : null}
+        {count ? (
+          <Text role="caption" tone="muted" tabular>
+            {count}
           </Text>
         ) : null}
       </View>

@@ -13,6 +13,7 @@
 import { PayloadMismatchError, verifyProposalIntegrity } from './flows.ts';
 import type { ProposalDetail } from './api/schemas.ts';
 import type { MismatchReason } from './logic/personalStatus.ts';
+import { SignedContentMemory, signedContentKey } from './logic/signedContent.ts';
 
 export type Checked =
   | { ok: true; hash: string }
@@ -38,4 +39,25 @@ export function checkDecision(detail: ProposalDetail): Checked {
     return { ok: false, reason: 'type_text', expected: detail.payload_hash, actual: hash };
   }
   return { ok: true, hash };
+}
+
+/**
+ * This run's memory of every decision's signed content (I-16). Per process, never persisted, and
+ * cleared when the phone is set up again or removed.
+ */
+export const signedContent = new SignedContentMemory();
+
+/**
+ * `checkDecision`, plus I-16: a decision whose signed content differs from what an earlier fetch in
+ * this run carried fails as `changed`, and stays failed for the run. Every screen and sheet that
+ * shows a decision as genuine, or offers to sign it, asks this.
+ */
+export function checkInRun(detail: ProposalDetail): Checked {
+  const checked = checkDecision(detail);
+  const derived = checked.ok ? checked.hash : checked.actual;
+  const seen = signedContent.see(detail.proposal_uuid, signedContentKey(detail.signing_inputs, derived));
+  if (seen === 'changed') {
+    return { ok: false, reason: 'changed', expected: detail.payload_hash, actual: derived };
+  }
+  return checked;
 }

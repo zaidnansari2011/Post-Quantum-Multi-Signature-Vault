@@ -40,6 +40,8 @@ import VaultScreen from './src/screens/VaultScreen.tsx';
 import NewDecisionScreen from './src/screens/NewDecisionScreen.tsx';
 import NewVaultScreen from './src/screens/NewVaultScreen.tsx';
 import WaitingScreen from './src/screens/WaitingScreen.tsx';
+import SessionEndedScreen from './src/screens/SessionEndedScreen.tsx';
+import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnrolled } from './src/links.ts';
 
 // Set before any request can be made. `extra.apiBaseUrl` lets a teammate point a build at a
 // different server without touching source.
@@ -75,6 +77,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+// A link to a decision already on screen refetches it in place (§2.4 rule 1).
+configureLinks(queryClient);
 
 /**
  * The badge count (phone-ux §2.5).
@@ -171,6 +175,9 @@ function Routes() {
   const { status } = useSession();
   const t = useTheme();
 
+  // A link kept while not enrolled (or while the session had ended) opens once the screens are up.
+  useEffect(() => setLinksEnrolled(status === 'enrolled'), [status]);
+
   if (status === 'loading') {
     return (
       <Screen>
@@ -185,6 +192,8 @@ function Routes() {
   }
 
   if (status === 'anonymous') return <EnrolScreen />;
+  // The key is still on the phone (I-3); this screen says what ended and what setting up again does.
+  if (status === 'ended') return <SessionEndedScreen />;
 
   return (
     <Stack.Navigator
@@ -212,6 +221,8 @@ function Routes() {
             via={route.params.via}
             opened={route.params.opened}
             onBack={() => navigation.goBack()}
+            // Replaces this decision, so Back from the next one lands on the queue (§2.3).
+            onNext={(next) => navigation.replace('Decision', { uuid: next, opened: 'queue' })}
             onOpenTreasuryApprovals={() => navigation.navigate('Tabs', { screen: 'Account' })}
             onRaiseIn={(vaultId, vaultName) => navigation.navigate('NewDecision', { vaultId, vaultName })}
           />
@@ -280,7 +291,7 @@ function Chrome({ children }: { children: ReactNode }) {
     };
   }, [t]);
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} ref={navigationRef} onReady={flushLinks} onStateChange={flushLinks}>
       {children}
       <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
     </NavigationContainer>
@@ -304,6 +315,8 @@ export function QVaultApp({
   const fontsReady = useAppFonts();
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  // Links for the life of the app: the one it started with, and every one while it runs (§2.4).
+  useEffect(() => listenForLinks(), []);
 
   return (
     // The gesture root the sheets' drag needs (§5.9). Modals carry their own, for Android.

@@ -71,8 +71,9 @@ for (const c of input.cases) {
         // Whether the phone has a lock is a check, not a use of the key: a phone with a PIN.
         if (property === 'detectProtection') return async () => 'device_credential';
         if (property === 'confirmPresence') {
-          return (message: string) => {
-            result.prompt = message;
+          // The prompt's strings (src/logic/prompt.ts): message, subtitle and description.
+          return (prompt: unknown) => {
+            result.prompt = prompt;
             throw new Error('custody was used');
           };
         }

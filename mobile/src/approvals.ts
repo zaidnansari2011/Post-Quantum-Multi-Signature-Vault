@@ -10,13 +10,12 @@
 // instant. A detail that fails its integrity check is never used to move a row: the row stays in
 // the main group, where opening it shows the failure.
 
-import { useEffect } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 
 import * as api from './api/endpoints.ts';
 import { ApiError } from './api/client.ts';
 import type { ProposalSummary } from './api/schemas.ts';
-import { checkDecision } from './checks.ts';
+import { checkInRun } from './checks.ts';
 import { formatEth } from './crypto/signing.ts';
 import type { Seat } from './logic/personalStatus.ts';
 import { classifySeat, dueToday, groupApprovals, waitingOnOthers } from './logic/queue.ts';
@@ -27,7 +26,7 @@ import { useEnrolledSession } from './session.tsx';
 export const retryTransport = (count: number, err: unknown) => !(err instanceof ApiError) && count < 2;
 
 export function useApprovals() {
-  const { token, identity, handleUnauthorized } = useEnrolledSession();
+  const { token, identity } = useEnrolledSession();
 
   const awaiting = useQuery({
     queryKey: ['proposals', 'awaiting'],
@@ -56,11 +55,7 @@ export function useApprovals() {
     })),
   });
 
-  // Never during render: a 401 ends the session, which re-renders everything above this.
-  const unauthorised = [awaiting.error, all.error].some((e) => e instanceof ApiError && e.status === 401);
-  useEffect(() => {
-    if (unauthorised) void handleUnauthorized();
-  }, [unauthorised, handleUnauthorized]);
+  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
 
   const others = devices.data?.devices
     .filter((d) => !d.is_current)
@@ -73,7 +68,7 @@ export function useApprovals() {
     const uuid = payments[i]?.proposal_uuid;
     if (!detail || !uuid || detail.proposal_uuid !== uuid) return;
     const action = detail.signing_inputs.action;
-    if (!action || !checkDecision(detail).ok) return;
+    if (!action || !checkInRun(detail).ok) return;
     amounts[uuid] = formatEth(action.value_wei);
     const seat = classifySeat(detail.execution?.seat_fingerprint, identity.fingerprint, others ?? []);
     // Without the device list, a key that is not this phone's could be another phone's: unknown.
