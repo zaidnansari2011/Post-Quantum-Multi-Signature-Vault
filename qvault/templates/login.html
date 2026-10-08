@@ -1,14 +1,9 @@
 {% extends "base.html" %}
-{% from "ui/mark.html" import mark %}
 {% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
 {% block title %}Sign in — Q-Vault{% endblock %}
 {% block anon_content %}
 <div class="q-auth">
-  <div class="q-auth__brand">
-    {{ mark(22) }}
-    <span>Q-Vault</span>
-  </div>
   <h1 class="q-auth__t">Sign in</h1>
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
@@ -24,7 +19,7 @@
     {{ button('Use the demonstration account', 'secondary', size='sm', block=True,
               attrs={'data-fill-email': 'ada@qvault.demo', 'data-fill-password': 'demo-password-2026'}) }}
     <p class="q-small">
-      <code class="q-mono">ada@qvault.demo</code> · <code class="q-mono">demo-password-2026</code>
+      Email <code class="q-mono">ada@qvault.demo</code>, password <code class="q-mono">demo-password-2026</code>
     </p>
   </div>
   {% endif %}

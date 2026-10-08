@@ -14,6 +14,7 @@
     {{ button(clear_form.clear.label.text, 'ghost', type='submit', size='sm', name='clear', value=clear_form.clear.label.text) }}
   </form>
 {% endcall %}
+{% include "_developer_nav.html" %}
 {# One renderer, not two. The first paint and every subsequent poll go through the same JavaScript
    over the same JSON, so a server-rendered version cannot drift away from the live one -- which
    on a page whose whole claim is "what you see is what ran" would be a particularly bad bug. #}
@@ -21,8 +22,11 @@
 
 <div class="q-trace" id="stream"></div>
 
-<div class="q-trace__empty" id="empty">
-  Nothing recorded yet. Sign a decision, upload a file, or rotate a key.
+<div class="q-panel" id="empty">
+  <div class="q-empty">
+    <p class="q-empty__t">Nothing recorded yet</p>
+    <p class="q-empty__c">Sign a decision, upload a file or rotate a key in another window, and each step appears here as it runs.</p>
+  </div>
 </div>
 
 <script>
@@ -88,7 +92,7 @@
     pre.appendChild(code);
     box.appendChild(pre);
     if (src.truncated) {
-      box.appendChild(el('div', 'q-src__more', 'Excerpt truncated — see the file for the rest.'));
+      box.appendChild(el('div', 'q-src__more', 'Excerpt truncated. The rest is in the file.'));
     }
     return box;
   }

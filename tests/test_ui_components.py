@@ -216,6 +216,22 @@ def test_a_radio_group_has_a_legend_and_checks_the_selected_option(app):
     assert not re.search(r'value="approve"\s+checked', html)
 
 
+def test_a_caption_describes_its_choice_and_is_not_part_of_its_name(app):
+    """Inside the label, a caption would be read in the name and again as the description; a
+    radio's whole caption would become its name."""
+    html = render(
+        app,
+        '{% from "ui/forms.html" import radio_group, checkbox %}'
+        '{{ radio_group("role", "Role", [("member", "Member", "Creates vaults")]) }}'
+        '{{ checkbox("sod", "Separation of duties", caption="The raiser cannot approve") }}',
+    )
+    assert re.search(r'<label for="f-role-1">Member</label>', html)
+    assert 'aria-describedby="f-role-1-cap"' in html
+    assert '<span class="q-choice__cap" id="f-role-1-cap">Creates vaults</span>' in html
+    assert '<label for="f-sod">Separation of duties</label>' in html
+    assert 'aria-describedby="f-sod-cap"' in html
+
+
 def test_a_disabled_checkbox_says_so_and_keeps_the_value_it_would_post(app):
     html = render(
         app,
@@ -505,3 +521,43 @@ def test_an_avatar_stack_shows_three_and_counts_the_rest(app):
     assert html.count('class="q-av"') == 3
     assert ">+2</span>" in html
     assert 'aria-label="Ada, Brij, Chen, Dee, Eve"' in html
+
+
+# ------------------------------------------------------------------ recorded figures and dates
+
+
+@pytest.mark.parametrize(
+    "raw, shown",
+    [
+        ("2^128 operations", "2¹²⁸ operations"),
+        ("polynomial - O(n^3) gates", "polynomial – O(n³) gates"),
+        ("6.3e14 core-years", "6.3 × 10¹⁴ core-years"),
+        ("45589x the age of the universe", "45,589× the age of the universe"),
+        ("2.3e+11x the work of RSA-250", "2.3 × 10¹¹ times the work of RSA-250"),
+        # Left alone: an address, a hash fragment, a size.
+        ("0x3cbC1F33 a3e14b 1920x1080", "0x3cbC1F33 a3e14b 1920x1080"),
+    ],
+)
+def test_recorded_figures_are_set_as_a_person_writes_them(raw, shown):
+    assert ui.figures(raw) == shown
+
+
+def test_a_recovered_value_keeps_its_hyphens():
+    assert ui.figures("'BOARD MINUTES - CONFIDENTIAL'", dashes=False) == (
+        "'BOARD MINUTES - CONFIDENTIAL'"
+    )
+
+
+def test_a_standard_and_its_remark_are_split_in_sentence_case():
+    assert ui.standard_note("FIPS 186-5 - classical, NOT post-quantum") == (
+        "FIPS 186-5",
+        "Classical, not post-quantum",
+    )
+    assert ui.standard_note("FIPS 204") == ("FIPS 204", "")
+
+
+def test_a_recorded_iso_time_reads_like_every_other_time():
+    assert ui.absolute_time("2026-08-24T18:42:40.176009+00:00") == "Mon 24 Aug 2026, 18:42 UTC"
+    assert ui.absolute_time("2026-08-24T18:42:40Z") == "Mon 24 Aug 2026, 18:42 UTC"
+    assert ui.day(datetime(2026, 10, 4, 9, 58, tzinfo=UTC)) == "4 Oct 2026"
+    assert ui.absolute_time(None) == "" and ui.absolute_time("not a time") == ""

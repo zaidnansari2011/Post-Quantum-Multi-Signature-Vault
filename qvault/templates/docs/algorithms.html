@@ -13,11 +13,11 @@
 
 <h2>What is used where</h2>
 <ul>
-  <li><strong>ML-DSA</strong> (FIPS 204) — signatures. Every approval, and the seal over the audit
+  <li><strong>ML-DSA</strong> (FIPS 204): signatures. Every approval, and the seal over the audit
     record.</li>
-  <li><strong>ML-KEM</strong> (FIPS 203) — key encapsulation. Wraps the AES key of every file
+  <li><strong>ML-KEM</strong> (FIPS 203): key encapsulation. Wraps the AES key of every file
     stored in a vault.</li>
-  <li><strong>SLH-DSA</strong> (FIPS 205) — a hash-based signature alternative, available as a
+  <li><strong>SLH-DSA</strong> (FIPS 205): a hash-based signature alternative, available as a
     switchable option.</li>
 </ul>
 
@@ -56,7 +56,7 @@
 <p>
   Every key, signature and seal records the algorithm that produced it, and is always verified by
   that same algorithm. Switching the system default therefore changes only which algorithm
-  <em>new</em> keys use. Everything already signed keeps its own and stays valid — nothing is
+  <em>new</em> keys use. Everything already signed keeps its own and stays valid. Nothing is
   re-signed, and the stored signature bytes do not change.
 </p>
 <p>

@@ -73,10 +73,12 @@ def test_the_page_404s_when_the_lab_is_disabled(client, app, admin):
 
 
 def test_the_nav_tab_is_hidden_when_disabled(client, app, admin):
+    # The lab is a Developer tool (plan section 5), so its tab sits beside Trace, not in Security's.
     _login(client, admin.email)
-    assert b"Adversary lab" in client.get("/admin/benchmark").data
-    app.config["ATTACK_LAB_ENABLED"] = False
+    assert b"Adversary lab" in client.get("/trace/").data
     assert b"Adversary lab" not in client.get("/admin/benchmark").data
+    app.config["ATTACK_LAB_ENABLED"] = False
+    assert b"Adversary lab" not in client.get("/trace/").data
 
 
 # --- a stored report is untrusted input ---------------------------------------------------------

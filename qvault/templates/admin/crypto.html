@@ -11,15 +11,14 @@
 
 {% block content %}
 <div class="q-admin">
-{% set issuing %}Issuing <span class="q-tag">{{ cfg.active_signature_alg }}</span>
-  <span class="q-tag">{{ cfg.active_kem_alg }}</span> via <span class="q-tag">{{ backend }}</span>{% endset %}
+{% set issuing = [('Signing new keys with', cfg.active_signature_alg), ('Encrypting with', cfg.active_kem_alg), ('Library', backend)] %}
 {% set state %}
   {%- if verify.total == 0 %}{{ badge('Nothing signed yet') }}
   {%- elif verify.all_pass %}{{ badge(verify.ok ~ '/' ~ verify.total ~ ' artefacts verify', 'success') }}
   {%- else %}{{ badge((verify.total - verify.ok) ~ ' of ' ~ verify.total ~ ' failed', 'critical') }}{% endif %}
   <span class="q-small">{{ verify.elapsed_ms }} ms</span>
 {%- endset %}
-{{ page_header('Security', description=issuing, status=state) }}
+{{ page_header('Security', facts=issuing, status=state) }}
 {% include "admin/_nav.html" %}
 
 {% if verify.total and not verify.all_pass %}
@@ -45,7 +44,7 @@
               {% if m.alg_id == cfg.active_signature_alg %}{{ badge('Issuing', 'success') }}{% endif %}
               <span class="q-cap">{{ m.human_name }}</span>
             </td>
-            <td class="q-nowrap">{{ m.nist_standard }}</td>
+            <td>{% set std, note = ui_standard(m.nist_standard) %}<span class="q-nowrap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
             <td class="is-num">{{ m.security_category }}</td>
             <td>
               <span class="q-nowrap">{{ m.sizes.public_key }} B</span>
@@ -68,8 +67,8 @@
     <div class="q-panel__hd">
       <h2 class="q-panel__t" id="art-t">Stored artefacts</h2>
       <span class="q-small">
-        {{ verify.by_alg|length }} algorithm{{ '' if verify.by_alg|length == 1 else 's' }} in use ·
-        re-verified in {{ verify.elapsed_ms }} ms
+        {{ verify.by_alg|length }} algorithm{{ '' if verify.by_alg|length == 1 else 's' }} in use, all
+        verified again in {{ verify.elapsed_ms }} ms
       </span>
     </div>
     <div class="q-table-wrap">
@@ -83,7 +82,7 @@
           <tr>
             <td>
               <span class="q-strong">{{ a.who }} {{ a.action }} {{ a.what }}</span>
-              <span class="q-cap">{{ a.kind }} · {{ hash(a.fingerprint, 'fingerprint', 16, 0) }}</span>
+              <span class="q-cap q-line">{{ a.kind|capitalize }}, fingerprint {{ hash(a.fingerprint, 'fingerprint', 16, 0) }}</span>
             </td>
             <td><span class="q-tag">{{ a.alg_id }}</span></td>
             <td>
@@ -95,7 +94,7 @@
               {% if a.verified %}{{ badge('Yes', 'success') }}
               {% else %}{{ badge('No', 'critical') }}{% endif %}
             </td>
-            <td class="is-num q-small q-nowrap">{{ a.created_at.strftime('%d %b %H:%M') if a.created_at else '—' }}</td>
+            <td class="q-small q-when">{% if a.created_at %}<time datetime="{{ ui_iso(a.created_at) }}">{{ ui_absolute(a.created_at) }}</time>{% else %}Not recorded{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -120,7 +119,7 @@
               {% if m.alg_id == cfg.active_kem_alg %}{{ badge('Issuing', 'success') }}{% endif %}
               <span class="q-cap">{{ m.human_name }}</span>
             </td>
-            <td class="q-nowrap">{{ m.nist_standard }}</td>
+            <td>{% set std, note = ui_standard(m.nist_standard) %}<span class="q-nowrap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
             <td class="is-num">{{ m.security_category }}</td>
             <td class="is-num">{{ m.sizes.public_key }} B</td>
             <td class="is-num">{{ m.sizes.ciphertext }} B</td>

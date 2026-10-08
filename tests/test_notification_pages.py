@@ -289,6 +289,22 @@ def test_each_empty_tab_says_what_will_appear_and_offers_a_next_step(
     assert words in text and next_step in text
 
 
+def test_an_empty_needs_you_tab_points_to_the_decisions_still_waiting_on_you(client, team):
+    """The sidebar counts decisions awaiting your signature, not notifications; with no request
+    left in the inbox, the tab must not say nothing waits when the sidebar says one does."""
+    _raise(team)
+    Notification.query.delete()
+    db.session.commit()
+    _login(client, team.brij)
+
+    text = _text(client.get("/notifications/?section=needs_you").get_data(as_text=True))
+    assert "Nothing waits on your approval" not in text
+    assert "1 decision still waits on your signature in Approvals." in text
+    assert "Go to Approvals" in text
+    popover = _text(client.get("/notifications/popover").get_data(as_text=True))
+    assert "1 decision waits on your signature in Approvals" in popover
+
+
 def test_the_inbox_pages_older_notifications(client, team):
     for n in range(notification_service.PER_PAGE + 1):
         _raise(team, title=f"Decision {n}")

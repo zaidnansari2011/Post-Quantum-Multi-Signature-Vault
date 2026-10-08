@@ -7,5 +7,5 @@
   {'key': 'admin.benchmark', 'label': 'Performance', 'href': url_for('admin.benchmark')},
 ] %}
 {% if config.ONCHAIN_EXECUTION_ENABLED %}{% set _ = admin_tabs.append({'key': 'admin.chain', 'label': 'Chain', 'href': url_for('admin.chain')}) %}{% endif %}
-{% if config.ATTACK_LAB_ENABLED %}{% set _ = admin_tabs.append({'key': 'admin.attack_lab', 'label': 'Adversary lab', 'href': url_for('admin.attack_lab')}) %}{% endif %}
-{{ tabs(admin_tabs, 'admin.attack_lab' if request.endpoint == 'admin.run_attack_lab' else request.endpoint, 'Security sections') }}
+{#- The adversary lab is a Developer tool, not a Security screen: _developer_nav.html. -#}
+{{ tabs(admin_tabs, request.endpoint, 'Security sections') }}

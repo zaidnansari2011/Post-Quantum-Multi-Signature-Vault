@@ -9,8 +9,8 @@
 
 {% block content %}
 <div class="q-members">
-{% set you_are %}{{ workspace.name }} · you're {{ role_name(me.role) }}{% endset %}
-{% call page_header('Members', description=you_are) %}
+{% set you_are = [('Workspace', workspace.name), ('Your role', role_name(me.role))] %}
+{% call page_header('Members', facts=you_are) %}
   {{ button('Workspace settings', 'secondary', href=url_for('workspace.settings')) }}
   {% if manager %}{{ button('Invite people', 'primary', href=url_for('workspace.invite')) }}{% endif %}
 {% endcall %}
@@ -120,7 +120,7 @@
             {% if row.enrolled %}{{ badge('Enrolled', 'success') }}
             {% else %}{{ badge('No key yet', 'warning') }}{% endif %}
           </td>
-          <td class="q-c-end q-nowrap">{{ m.joined_at.strftime('%d %b %Y') }}</td>
+          <td class="q-c-end q-nowrap">{{ ui_day(m.joined_at) }}</td>
           {% if manager %}
           <td class="q-c-status q-c-actions">
             {% if row.can_act and m.user_id != me.user_id %}

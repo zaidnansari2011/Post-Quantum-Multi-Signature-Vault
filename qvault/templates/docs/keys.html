@@ -21,15 +21,15 @@
 <h2>Changing your password</h2>
 <p>
   Because your password protects your key rather than merely admitting you, changing it
-  re-encrypts your key material. Every key you hold — active and retired — is unwrapped under the
+  re-encrypts your key material. Every key you hold, active and retired, is unwrapped under the
   old password and re-wrapped under the new one, in a single transaction, and the salt is rotated.
   If anything fails, nothing changes.
 </p>
 
 <h2>Two kinds of custody</h2>
 <p>
-  <strong>Server-held keys</strong> — the key that seals the audit record, and each vault's
-  file-encryption key — are wrapped under the server's master key. The scheduler can replace them
+  <strong>Server-held keys</strong> (the key that seals the audit record, and each vault's
+  file-encryption key) are wrapped under the server's master key. The scheduler can replace them
   with nobody present.
 </p>
 <p>

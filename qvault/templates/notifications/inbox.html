@@ -51,6 +51,13 @@
     <p class="q-empty__t">No more notifications</p>
     <p class="q-empty__c">This page is past the end of {{ sections[section] }}.</p>
     {{ button('Back to the newest', 'secondary', size='sm', href=url_for('notifications.inbox', section=section)) }}
+  {% elif section == 'needs_you' and pending_count %}
+    {#- No request here, but the sidebar counts decisions waiting on you (one raised before you
+        joined, or a request you archived): say where they are rather than that there are none. -#}
+    <p class="q-empty__t">No approval requests in your notifications</p>
+    <p class="q-empty__c">{{ pending_count }} {{ 'decision still waits' if pending_count == 1 else 'decisions still wait' }}
+      on your signature in Approvals.</p>
+    {{ button('Go to Approvals', 'secondary', size='sm', href=url_for('approvals.index')) }}
   {% elif section == 'needs_you' %}
     <p class="q-empty__t">Nothing waits on your approval</p>
     <p class="q-empty__c">When someone asks you to approve a decision, it appears here until you

@@ -39,7 +39,7 @@
 <ol>
   <li>the decision text is the text that was hashed;</li>
   <li>every signature is a valid post-quantum signature over exactly that;</li>
-  <li>each signer was authorised when the decision opened — not merely a member today;</li>
+  <li>each signer was authorised when the decision opened, not merely a member today;</li>
   <li>the approval rule frozen at that same moment was satisfied;</li>
   <li>for a payment, each approver's authorisation to pay is over exactly that payment, and is the
       one the record logged; a payment the record says was made is backed by enough of them;</li>
@@ -63,8 +63,8 @@
 <p>
   A bundle names its own keys, so on its own it proves only that <em>some</em> log signed it. To
   make it prove that <em>this</em> log signed it, get the fingerprints from somewhere other than
-  the file — they are on <strong>Audit → Transparency</strong>, and the witness prints its own on
-  startup — and require them:
+  the file (they are on <strong>Audit → Transparency</strong>, and the witness prints its own on
+  startup) and require them:
 </p>
 <pre><code>python -m qvault.verify decision.qvault.json \
     --expect-log 4f2a9c1e77b30d85 \

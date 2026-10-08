@@ -7,6 +7,7 @@ down without losing either end. ``register`` puts them on the Jinja environment.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 #: The closed status vocabulary (plan S6): one word per state, and the tone it always takes. A
@@ -59,10 +60,29 @@ def iso_utc(moment: datetime) -> str:
     return _utc(moment).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def absolute_time(moment: datetime) -> str:
-    """The time a person reads when precision matters: ``Sun 4 Oct 2026, 09:58 UTC``."""
-    moment = _utc(moment)
+def _moment(value: datetime | str | None) -> datetime | None:
+    # A bundle or a recorded run carries its times as ISO text; read it back to a datetime.
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return _utc(value) if isinstance(value, datetime) else None
+
+
+def absolute_time(moment: datetime | str | None) -> str:
+    """The time a person reads when precision matters: ``Sun 4 Oct 2026, 09:58 UTC``. ISO text
+    is accepted too; nothing (or text that is not a time) reads as an empty string."""
+    moment = _moment(moment)
+    if moment is None:
+        return ""
     return f"{moment:%a} {moment.day} {moment:%b %Y, %H:%M} UTC"
+
+
+def day(moment: datetime | str | None) -> str:
+    """A day alone, when the time of day says nothing (joined, created): ``4 Oct 2026``."""
+    moment = _moment(moment)
+    return "" if moment is None else f"{moment.day} {moment:%b %Y}"
 
 
 def due(moment: datetime | None, now: datetime | None = None) -> dict | None:
@@ -162,6 +182,39 @@ def middle_truncate(value: str, head: int = 8, tail: int = 6) -> str:
     return f"{value[:head]}…{value[-tail:] if tail else ''}"
 
 
+_SUPERSCRIPT = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+
+
+def figures(text: str | None, *, dashes: bool = True) -> str:
+    """Numbers in recorded prose written as a person would set them: ``2^128`` as 2¹²⁸,
+    ``O(n^3)`` as O(n³), ``6.3e14`` as 6.3 × 10¹⁴, ``45589x`` as 45,589×, and a spaced hyphen
+    used as a dash as an en dash. ``dashes=False`` for a value quoted as it was recovered."""
+    if not text:
+        return text or ""
+    out = str(text)
+    out = re.sub(r"\b(\d{5,})(?=x\b)", lambda m: f"{int(m[1]):,}", out)
+    out = re.sub(r"(?<=\d)x\b", "×", out)
+    out = re.sub(
+        r"\b(\d+(?:\.\d+)?)e\+?(-?\d+)\b",
+        lambda m: f"{m[1]} × 10{str(int(m[2])).translate(_SUPERSCRIPT)}",
+        out,
+    )
+    out = re.sub(r"(?<=[\w)])\^(-?\d+)", lambda m: m[1].translate(_SUPERSCRIPT), out)
+    # "2.3 × 10¹¹×" would read as a second multiplication.
+    out = re.sub(r"(?<=[⁰¹²³⁴⁵⁶⁷⁸⁹])×", " times", out)
+    if dashes:
+        out = out.replace(" - ", " – ")
+    return out
+
+
+def standard_note(text: str | None) -> tuple[str, str]:
+    """A provider's standard split from its remark: ``"FIPS 186-5 - classical, NOT post-quantum"``
+    reads as ``("FIPS 186-5", "Classical, not post-quantum")``, in sentence case."""
+    head, _, note = (text or "").partition(" - ")
+    note = note.strip().replace("NOT ", "not ")
+    return head.strip(), note[:1].upper() + note[1:]
+
+
 def initials(name: str | None) -> str:
     """One letter for an avatar: the first letter of the name, or ``?`` when there is none."""
     name = (name or "").strip()
@@ -174,6 +227,9 @@ def register(app) -> None:
         ui_tone=tone_of,
         ui_iso=iso_utc,
         ui_absolute=absolute_time,
+        ui_day=day,
+        ui_figures=figures,
+        ui_standard=standard_note,
         ui_truncate=middle_truncate,
         ui_initials=initials,
         ui_due=due,

@@ -21,7 +21,7 @@
       <tbody>
       {% for r in rows %}
         <tr>
-          <td><span class="q-tag">{{ r.alg_id }}</span><span class="q-cap">{{ r.nist_standard }}</span></td>
+          <td><span class="q-tag">{{ r.alg_id }}</span>{% set std, note = ui_standard(r.nist_standard) %}<span class="q-cap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
           <td class="is-num">{{ r.security_category }}</td>
           <td class="is-num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
           <td>
@@ -57,7 +57,7 @@
     <tbody>
     {% for r in rows %}
       <tr>
-        <td><span class="q-tag">{{ r.alg_id }}</span><span class="q-cap">{{ r.nist_standard }}</span></td>
+        <td><span class="q-tag">{{ r.alg_id }}</span>{% set std, note = ui_standard(r.nist_standard) %}<span class="q-cap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
         <td class="is-num">{{ r.security_category }}</td>
         <td class="is-num">{{ '%.3f'|format(r.ops.keygen.median_ms) }}</td>
         <td class="is-num">{{ '%.3f'|format(r.ops.encapsulate.median_ms) }}</td>
@@ -72,18 +72,17 @@
 {% endmacro %}
 
 {% macro run_meta(rep) %}
-<p class="q-panel__bd q-small">
-  {{ rep.parameters.iterations }} iterations · {{ rep.parameters.warmup }} warm-up ·
-  {{ rep.parameters.message_size_bytes }} B messages · {{ rep.backend }} ·
-  {{ rep.environment.implementation }} {{ rep.environment.python }} ·
-  {{ rep.environment.system }} · {{ rep.environment.cpu_count }} CPUs
-</p>
+<dl class="q-kv">
+  <div><dt>Measured</dt><dd>{{ rep.parameters.iterations }} iterations after {{ rep.parameters.warmup }} warm-up, over {{ rep.parameters.message_size_bytes }}-byte messages</dd></div>
+  <div><dt>Library</dt><dd>{{ rep.backend }}</dd></div>
+  <div><dt>Machine</dt><dd>{{ rep.environment.system }}, {{ rep.environment.cpu_count }} CPUs, {{ rep.environment.implementation }} {{ rep.environment.python }}</dd></div>
+</dl>
 {% endmacro %}
 
 {% block content %}
 <div class="q-admin">
-{% set lead %}{% if report and report.signatures %}Reference run {{ report.generated_at[:10] }}{% else %}No reference run recorded{% endif %}{% endset %}
-{% call page_header('Security', description=lead) %}
+{% set has_ref = report and report.signatures %}
+{% call page_header('Security', description=None if has_ref else 'No reference run recorded.', facts=[('Reference run', ui_day(report.generated_at))] if has_ref else []) %}
   <form method="post" action="{{ url_for('admin.run_benchmark') }}" class="q-admin__run">
     {{ form.hidden_tag() }}
     {{ number('iterations', form.iterations.label.text, form.iterations._value(), min=1, max=max_iterations, id=form.iterations.id, inline=True) }}
@@ -97,7 +96,7 @@
 <section class="q-panel q-panel--table" aria-labelledby="live-t">
   <div class="q-panel__hd">
     <h2 class="q-panel__t" id="live-t">Live run</h2>
-    <span class="q-small">{{ live.elapsed_s }} s · capped at {{ max_iterations }} iterations</span>
+    <span class="q-small">Took {{ live.elapsed_s }} seconds. A live run is capped at {{ max_iterations }} iterations.</span>
   </div>
   {{ run_meta(live) }}
   {{ sig_table(live.signatures, 'Signature algorithms, live run') }}
@@ -126,7 +125,7 @@
   {% endfor %}
 {% endfor %}
 {% if truncated %}
-{{ banner('warning', 'Time budget reached for ' ~ (truncated | join(', ')) ~ ' — those figures summarise fewer samples.') }}
+{{ banner('warning', 'Time budget reached for ' ~ (truncated | join(', ')) ~ '. Those figures summarise fewer samples.') }}
 {% endif %}
 
 {% else %}
