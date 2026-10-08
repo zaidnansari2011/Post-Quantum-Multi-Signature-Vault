@@ -19,6 +19,7 @@ import {
   Banner,
   Button,
   CheckboxRow,
+  ColdStartHint,
   CollapsedBar,
   ChipGroup,
   CodeBlock,
@@ -449,6 +450,10 @@ function Structure() {
       </Story>
       <Story title="OfflineBar" pad={false}>
         <OfflineBar since="09:40" />
+      </Story>
+      <Story title="ColdStartHint: the caption at 4 s, and Try again at 20 s">
+        <ColdStartHint stage="hint" />
+        <ColdStartHint stage="retry" onRetry={noop} />
       </Story>
       <Story title="Tab bar: filled when active, badge and unread dot" pad={false}>
         <View style={s.tabbar}>

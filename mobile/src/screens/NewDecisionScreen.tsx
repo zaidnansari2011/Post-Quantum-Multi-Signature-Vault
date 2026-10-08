@@ -36,7 +36,12 @@ import {
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
+import { TransportError } from '../api/client.ts';
+import { isOffline } from '../connectivity.ts';
 import { formatEth, parseEth } from '../crypto/signing.ts';
+import { OfflineNotice } from '../freshness.tsx';
+import { OFFLINE_RAISE } from '../logic/freshness.ts';
+import { vaultsQuery } from '../queries.ts';
 import { describeRaiseRefusal, vaultsToRaiseIn } from '../proposing.ts';
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -88,6 +93,8 @@ export default function NewDecisionScreen({
   const paying = payments && kind === 'payment';
   const [hours, setHours] = useState<number | null>(24);
   const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
+  // Raise could not reach Q-Vault: said in place, and everything typed stays (§2.6).
+  const [unreachable, setUnreachable] = useState(false);
 
   const ready =
     title.trim().length > 0 &&
@@ -111,31 +118,29 @@ export default function NewDecisionScreen({
       onRaised(result.proposal.proposal_uuid);
     },
     onError: (err) => {
-      setError(describeRaiseRefusal(err));
+      if (err instanceof TransportError && isOffline()) setUnreachable(true);
+      else setError(describeRaiseRefusal(err));
       feedback.refused();
     },
   });
 
   // Only fetched when there is a choice to make.
-  const vaultsQuery = useQuery({
-    queryKey: ['vaults'],
-    queryFn: ({ signal }) => api.fetchVaults(token, signal),
-    enabled: chosen === null,
-  });
+  const vaultsList = useQuery({ ...vaultsQuery(token), enabled: chosen === null });
 
   if (chosen === null) {
-    const onAny = vaultsQuery.data?.vaults ?? [];
+    const onAny = vaultsList.data?.vaults ?? [];
     // Only the vaults this person may raise a decision in: a viewer would be refused (403).
     const vaults = vaultsToRaiseIn(onAny);
     return (
       <Screen>
         <NavBar onBack={onBack} title="New decision" />
+        <OfflineNotice at={vaultsList.dataUpdatedAt} />
         <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
           <ContentWidth style={s.stack}>
             <Text role="titleSm" accessibilityRole="header">
               Which vault is this decision for?
             </Text>
-            {vaultsQuery.isLoading ? (
+            {vaultsList.isLoading ? (
               <List>
                 {[0, 1, 2].map((i) => (
                   <View key={i} style={s.skeleton}>
@@ -176,6 +181,7 @@ export default function NewDecisionScreen({
   return (
     <Screen>
       <NavBar onBack={onBack} title="New decision" />
+      <OfflineNotice at={undefined} />
 
       <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
@@ -286,10 +292,12 @@ export default function NewDecisionScreen({
         </ScrollView>
 
         <ActionBar
+          message={unreachable ? { tone: 'neutral', text: OFFLINE_RAISE } : null}
           primary={{
             label: 'Raise decision',
             onPress: () => {
               setError(null);
+              setUnreachable(false);
               raise.mutate();
             },
             disabled: !ready,

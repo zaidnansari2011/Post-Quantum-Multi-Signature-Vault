@@ -11,12 +11,19 @@
 // you" over a failed load. It collapses into a 48pt bar on scroll so the queue gains its height.
 //
 // Nothing signs from here (§1.4 rule 5): a row opens the decision, where the signed text is read.
+//
+// Freshness (§2.6): the list polls every 60 s while this tab is focused, refetches when it comes back
+// into focus, and paints at once from the summaries kept on disk. A list that is only the copy from
+// disk is never taken as an all-clear: until this run has an answer, an empty copy reads "Checking
+// for decisions", and a failed check "Can't check your approvals" over whatever was kept.
 
 import { View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { useIsFocused } from '@react-navigation/native';
 
 import {
   Button,
+  ColdStartHint,
   CollapsedBar,
   DecisionRow,
   DecisionRowSkeleton,
@@ -30,9 +37,10 @@ import {
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
-import * as api from '../api/endpoints.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
-import { retryTransport, useApprovals } from '../approvals.ts';
+import { useApprovals } from '../approvals.ts';
+import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
+import { keys, meQuery, vaultsQuery } from '../queries.ts';
 import { approvalsHeadline, elsewhereSections } from '../logic/queue.ts';
 import { offersRaise } from '../proposing.ts';
 
@@ -51,20 +59,14 @@ export default function HomeScreen({
   const s = useStyles();
   const { token } = useEnrolledSession();
   const header = useCollapsingHeader();
-  const q = useApprovals();
+  const focused = useIsFocused();
+  const q = useApprovals({ poll: focused });
+  useRefreshOnFocus([keys.awaiting, keys.all, keys.vaults]);
 
   // The same list the Vaults tab and the picker read. Someone who only views every vault they are
   // on is not offered a form the server will refuse (a viewer cannot raise a decision).
-  const vaults = useQuery({
-    queryKey: ['vaults'],
-    queryFn: ({ signal }) => api.fetchVaults(token, signal),
-    retry: retryTransport,
-  });
-  const me = useQuery({
-    queryKey: ['me'],
-    queryFn: ({ signal }) => api.fetchMe(token, signal),
-    retry: retryTransport,
-  });
+  const vaults = useQuery(vaultsQuery(token));
+  const me = useQuery(meQuery(token));
   const canRaise = offersRaise(vaults.data?.vaults);
 
   const { needsYou, web, offerFix } = q.groups;
@@ -72,9 +74,14 @@ export default function HomeScreen({
   const sections = elsewhereSections(web, q.seats);
   const onWeb = sections.find((x) => x.kind === 'web')?.rows.length ?? 0;
   const hasList = q.awaiting.data !== undefined;
-  const failed = !hasList && q.awaiting.isError;
-  const loading = !hasList && !failed;
+  const confirmed = q.awaitingConfirmed;
+  // The copy from disk says nothing needs you: not said until this run has checked (research 06 §2).
+  const restoredEmpty = hasList && !confirmed && needsYou.length === 0 && web.length === 0;
+  const failed = q.awaiting.isError && !confirmed;
+  const loading = (!hasList || restoredEmpty) && !failed;
+  const showList = hasList && !restoredEmpty;
   const removed = me.data?.workspace === null;
+  const coldStart = useColdStart(!confirmed && q.awaiting.isFetching);
 
   const headline = approvalsHeadline({
     loading,
@@ -87,7 +94,7 @@ export default function HomeScreen({
     dueToday: q.dueToday,
   });
   const raise = canRaise && !removed ? { icon: 'plus' as const, label: 'New decision', onPress: onRaise } : undefined;
-  const refreshing = (q.awaiting.isRefetching || q.all.isRefetching) && hasList;
+  const refreshing = (q.awaiting.isRefetching || q.all.isRefetching) && confirmed;
   const refresh = () => {
     void q.awaiting.refetch();
     void q.all.refetch();
@@ -111,6 +118,7 @@ export default function HomeScreen({
 
   return (
     <Screen>
+      <OfflineNotice at={q.awaiting.dataUpdatedAt} />
       <View style={s.flex}>
         <CollapsedBar title={headline.short} visible={header.collapsed} action={raise} />
         <Scroll
@@ -126,17 +134,21 @@ export default function HomeScreen({
             action={raise ? { ...raise, filled: true } : undefined}
           />
 
+          {removed ? null : <ColdStartHint stage={coldStart} onRetry={refresh} />}
+
           {removed ? null : failed ? (
-            <View style={s.retry}>
+            <View style={[s.retry, showList ? s.retryAbove : null]}>
               <Button label="Try again" onPress={refresh} />
             </View>
-          ) : loading ? (
+          ) : null}
+
+          {removed ? null : loading ? (
             <List>
               <DecisionRowSkeleton />
               <DecisionRowSkeleton />
               <DecisionRowSkeleton />
             </List>
-          ) : (
+          ) : !showList ? null : (
             <>
               {needsYou.length > 0 ? <List>{needsYou.map((p) => row(p, 'queue'))}</List> : null}
 
@@ -194,5 +206,6 @@ export default function HomeScreen({
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   retry: { alignItems: 'flex-start' },
+  retryAbove: { marginBottom: t.space[24] },
   after: { marginTop: t.space[24] },
 }));

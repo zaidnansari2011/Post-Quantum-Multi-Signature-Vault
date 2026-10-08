@@ -9,6 +9,7 @@ import { View } from 'react-native';
 
 import {
   Banner,
+  ColdStartHint,
   DecisionRow,
   DecisionRowSkeleton,
   EmptyState,
@@ -19,6 +20,8 @@ import {
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useApprovals } from '../approvals.ts';
+import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
+import { keys } from '../queries.ts';
 
 export default function WaitingScreen({
   onBack,
@@ -29,13 +32,17 @@ export default function WaitingScreen({
 }) {
   const s = useStyles();
   const q = useApprovals();
+  useRefreshOnFocus([keys.all, keys.awaiting]);
   const hasList = q.all.data !== undefined;
+  const coldStart = useColdStart(!q.allConfirmed && q.all.isFetching);
 
   return (
     <Screen>
       <NavBar onBack={onBack} title="Waiting on others" />
-      <Scroll refreshing={q.all.isRefetching && hasList} onRefresh={() => void q.all.refetch()}>
+      <OfflineNotice at={q.all.dataUpdatedAt} />
+      <Scroll refreshing={q.all.isRefetching && q.allConfirmed} onRefresh={() => void q.all.refetch()}>
         <View style={s.top}>
+          <ColdStartHint stage={coldStart} onRetry={() => void q.all.refetch()} />
           {!hasList && q.all.isError ? (
             <Banner
               tone="warning"

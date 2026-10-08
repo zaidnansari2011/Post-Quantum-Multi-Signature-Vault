@@ -14,6 +14,13 @@
 //      verify our own signature, and submit (flows.ts, which checks again before the prompt). One
 //      signature at a time: a second tap while one is in flight does nothing.
 //
+// Fresh data before signing (§2.6, I-7): Approve and Reject open their sheet only when the decision
+// on the page is the answer of a network fetch made in this process under a minute ago
+// (`networkFetches`, src/queries.ts). Otherwise the button reads "Checking…", the decision is fetched
+// again, and the sheet opens over that answer. The page polls every 20 s while it is open, not while
+// a sheet is; offline, the action bar says signing needs a connection. Opened without its detail (a
+// restart, offline), the page shows the list's summary until the network copy arrives (D5).
+//
 // What the page says and allows comes from one place, `personalStatus()` (§6.6), never from flags
 // worked out here: the action bar shows Approve only when it returns `sign`. A status this app does
 // not know reads "Unknown" and offers nothing.
@@ -25,13 +32,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Share, View, type LayoutChangeEvent } from 'react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useIsFocused } from '@react-navigation/native';
 import Constants from 'expo-constants';
 
 import {
   ActionBar,
   Banner,
   Button,
+  ColdStartHint,
   DisclosureRow,
   EmptyState,
   Icon,
@@ -58,11 +67,14 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import { getApiBaseUrl } from '../config.ts';
-import { retryTransport, useApprovals } from '../approvals.ts';
+import { useApprovals } from '../approvals.ts';
+import { OfflineNotice, useColdStart, useOffline, useRefreshOnFocus } from '../freshness.tsx';
+import { devicesQuery, holdDecision, keys, networkFetches, proposalQuery } from '../queries.ts';
+import { fetchKey, OFFLINE_DECISION, OFFLINE_SIGNING, POLL_MS } from '../logic/freshness.ts';
 import { checkInRun, type Checked } from '../checks.ts';
 import { voteOnProposal, type VoteOutcome } from '../flows.ts';
 import { type Decision } from '../crypto/signing.ts';
-import type { ProposalDetail } from '../api/schemas.ts';
+import type { ProposalDetail, ProposalSummary, VaultDetail } from '../api/schemas.ts';
 import { reportSigning } from '../links.ts';
 import { useSigningMethod } from '../signingMethod.ts';
 import {
@@ -95,6 +107,12 @@ type Message = { tone: 'neutral' | 'warning' | 'critical'; text: string };
 /** Paint the busy state before the ML-DSA work holds the JS thread (§6.10). */
 const nextFrame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+/** The refetch before a sheet could not get an answer (I-7): nothing opens. */
+const NOT_CHECKED: Message = {
+  tone: 'warning',
+  text: "Couldn't check this decision with Q-Vault, so it can't be signed yet. Try again.",
+};
 
 /** What the bar says when a sheet refuses to open. Tampered says nothing: the page already does. */
 function refusalMessage(refusal: OpenRefusal): Message | null {
@@ -139,7 +157,8 @@ export default function DecisionScreen({
   const { token, identity, custody, markKeyUnusable } = useEnrolledSession();
   const queryClient = useQueryClient();
   const method = useSigningMethod();
-  const queue = useApprovals();
+  const focused = useIsFocused();
+  const offline = useOffline();
 
   // The signing sheet: its frozen snapshot (kept while it animates out), whether it is open, and
   // whether a signature is in flight. `inFlight` guards against a second tap in the same frame,
@@ -155,6 +174,15 @@ export default function DecisionScreen({
     null,
   );
   const [closedBeforeSigned, setClosedBeforeSigned] = useState(false);
+  // "Checking…": the decision is being fetched again before its sheet may open (I-7), and which
+  // sheet will open once it is back.
+  const [checking, setChecking] = useState<SheetKind | null>(null);
+  const [readyToOpen, setReadyToOpen] = useState<SheetKind | null>(null);
+  // While a sheet is open, a signature is in flight or the pre-sheet check runs, nothing refetches
+  // this decision on its own: no polling, no focus refetch (§2.6, I-6).
+  const held = signingOpen || busy || checking !== null;
+  useEffect(() => (held ? holdDecision(uuid) : undefined), [held, uuid]);
+  const queue = useApprovals();
 
   const [outcome, setOutcome] = useState<(VoteOutcome & { decision: Decision; at: string }) | null>(null);
   const [acknowledging, setAcknowledging] = useState(false);
@@ -164,23 +192,19 @@ export default function DecisionScreen({
   const [scrolledPastTitle, setScrolledPastTitle] = useState(false);
 
   const query = useQuery({
-    queryKey: ['proposal', uuid],
-    queryFn: ({ signal }) => api.fetchProposal(token, uuid, signal),
-    retry: retryTransport,
+    ...proposalQuery(token, uuid),
+    refetchInterval: focused && !held ? POLL_MS.decision : false,
   });
-  const devices = useQuery({
-    queryKey: ['devices'],
-    queryFn: ({ signal }) => api.fetchDevices(token, signal),
-    retry: retryTransport,
-  });
+  useRefreshOnFocus([keys.proposal(uuid)], !held);
+  const devices = useQuery(devicesQuery(token));
   const detail = query.data?.proposal;
   const action = detail?.signing_inputs.action;
   const treasury = useQuery({
     queryKey: ['treasury', detail?.vault_id],
     queryFn: ({ signal }) => api.fetchTreasury(token, detail!.vault_id, signal),
     enabled: !!action && detail?.status === 'open',
-    retry: retryTransport,
   });
+  const coldStart = useColdStart(!detail && query.isFetching);
 
   // Every check, on every fetch of the decision: what is shown beside the code must describe the
   // data on screen now, including after a refetch, and signed content that changed between two
@@ -212,6 +236,24 @@ export default function DecisionScreen({
   }, [signingOpen, busy, acknowledging, closeSigning]);
   useEffect(() => () => reportSigning({ sheet: 'none', acknowledging: false, closeSheet: null }), []);
 
+  // The pre-sheet check is back with a fresh answer: open the sheet over it, from this render's copy
+  // of the page (the refetched decision), through the same gate as a direct tap.
+  const openAfterCheck = useRef<((kind: SheetKind) => void) | null>(null);
+  useEffect(() => {
+    if (readyToOpen === null) return;
+    const kind = readyToOpen;
+    setReadyToOpen(null);
+    setChecking(null);
+    openAfterCheck.current?.(kind);
+  }, [readyToOpen]);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+
   // Row 16: the state this screen first saw. Opened from a list that showed it open, and closed by
   // the time it loaded, the first line says it closed before you opened it.
   const firstStatus = useRef<string | null>(null);
@@ -235,9 +277,14 @@ export default function DecisionScreen({
 
   if (!detail || !checked) {
     const gone = query.error instanceof ApiError && (query.error.status === 404 || query.error.status === 403);
+    // Its list summary, if a list has it (D5): title, vault and due time, all unsigned and display
+    // only. Nothing here can be signed; the page proper waits for the network copy.
+    const listed = gone ? null : findSummary(queryClient, uuid);
+    const failed = !!query.error && !unauthorised && !gone;
     return (
       <Screen>
-        <NavBar onBack={onBack} />
+        <NavBar onBack={onBack} title={listed?.summary.vault_name ?? undefined} />
+        <OfflineNotice at={listed?.at} />
         <Scroll refreshing={false} onRefresh={() => void query.refetch()}>
           {gone ? (
             <EmptyState
@@ -245,17 +292,48 @@ export default function DecisionScreen({
               detail="It may have been deleted, or you're no longer in its vault."
               action={<Button label="Go to Approvals" onPress={onBack} />}
             />
-          ) : query.error && !unauthorised ? (
+          ) : listed ? (
+            <View style={s.stack}>
+              <View style={s.titleBlock}>
+                <Text role="titleSm" accessibilityRole="header" numberOfLines={3}>
+                  {listed.summary.title}
+                </Text>
+                {listed.due ? (
+                  <Text role="caption" tone="muted">
+                    {`Due ${listed.due}`}
+                  </Text>
+                ) : null}
+              </View>
+              {offline ? (
+                <InlineMessage tone="neutral" text={OFFLINE_DECISION} />
+              ) : failed ? (
+                <Banner
+                  tone="warning"
+                  title="Can't load this decision."
+                  detail="Check your connection."
+                  actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
+                />
+              ) : (
+                <View style={s.labelled}>
+                  <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
+                  <TextSkeleton />
+                </View>
+              )}
+            </View>
+          ) : failed ? (
             <View style={s.top}>
               <Banner
                 tone="warning"
                 title="Can't load this decision."
-                detail="Check your connection."
+                detail={offline ? OFFLINE_DECISION : 'Check your connection.'}
                 actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
               />
             </View>
           ) : (
-            <DecisionSkeleton />
+            <View>
+              <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
+              <DecisionSkeleton />
+            </View>
           )}
         </Scroll>
       </Screen>
@@ -393,12 +471,21 @@ export default function DecisionScreen({
 
   // -- signing ---------------------------------------------------------------------------------
 
-  const startSigning = (kind: SheetKind) => {
+  const proposalKey = fetchKey(keys.proposal(uuid));
+
+  // Open a sheet over the page's decision, only if a network fetch in this process returned this
+  // very copy under a minute ago (I-7). `afterCheck`: straight after the pre-sheet refetch, when a
+  // decision that has closed meanwhile simply shows its new state, with no extra message.
+  const startSigning = (kind: SheetKind, afterCheck = false) => {
     if (inFlight.current || signingOpen) return;
     setBarMessage(null);
+    if (!networkFetches.signable(proposalKey, query.data, Date.now())) {
+      setBarMessage(NOT_CHECKED);
+      return;
+    }
     const attempt = openSigningSheet({ detail, kind, actions, identity, method, via });
     if (!attempt.ok) {
-      const message = refusalMessage(attempt.refusal);
+      const message = afterCheck && attempt.refusal === 'not_offered' ? null : refusalMessage(attempt.refusal);
       if (message) {
         setBarMessage(message);
         feedback.refused();
@@ -409,6 +496,28 @@ export default function DecisionScreen({
     setProblem(null);
     setReasonMissing(false);
     setSigningOpen(true);
+  };
+  openAfterCheck.current = (kind) => startSigning(kind, true);
+
+  /** Approve or Reject tapped: open at once if the copy is fresh, otherwise check first (I-7). */
+  const requestSigning = (kind: SheetKind) => {
+    if (inFlight.current || signingOpen || checking !== null || offline) return;
+    if (networkFetches.signable(proposalKey, query.data, Date.now())) {
+      startSigning(kind);
+      return;
+    }
+    setBarMessage(null);
+    setChecking(kind);
+    // Cancels any fetch in flight and asks again: only an answer to a request made now counts.
+    void query.refetch({ cancelRefetch: true }).then((result) => {
+      if (!mounted.current) return;
+      if (result.isSuccess && networkFetches.signable(proposalKey, result.data, Date.now())) {
+        setReadyToOpen(kind);
+        return;
+      }
+      setChecking(null);
+      if (!(result.error instanceof ApiError && result.error.status === 401)) setBarMessage(NOT_CHECKED);
+    });
   };
 
   const confirm = async (reason: string) => {
@@ -530,6 +639,7 @@ export default function DecisionScreen({
           },
         ]}
       />
+      <OfflineNotice at={query.dataUpdatedAt} />
 
       <Scroll onScroll={onScroll} scrollEventThrottle={16} refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
         <View style={s.stack}>
@@ -572,7 +682,12 @@ export default function DecisionScreen({
             </Text>
           </View>
 
-          {tampered ? (
+          {tampered && checked.reason === 'changed' ? (
+            // I-16: the later text is never shown in place of the one the person was reading.
+            <Text role="caption" tone="critical">
+              {'Q-Vault sent different text for this decision after you opened it, so neither version is shown here.'}
+            </Text>
+          ) : tampered ? (
             <View style={s.labelled}>
               <Text role="caption" tone="critical">
                 {"This is the text the server sent. It doesn't match what would be signed."}
@@ -660,10 +775,12 @@ export default function DecisionScreen({
       <Bar
         actions={actions}
         busy={busy}
+        checking={checking}
+        offline={offline}
         compact={compactBar}
         message={barMessage}
-        onApprove={() => startSigning('approve')}
-        onReject={() => startSigning('reject')}
+        onApprove={() => requestSigning('approve')}
+        onReject={() => requestSigning('reject')}
         onReport={report}
         onOpenWeb={openWeb}
         onFix={onOpenTreasuryApprovals}
@@ -733,6 +850,8 @@ export default function DecisionScreen({
 function Bar({
   actions,
   busy,
+  checking,
+  offline,
   compact,
   message,
   onApprove,
@@ -744,6 +863,10 @@ function Bar({
 }: {
   actions: ReturnType<typeof personalStatus>['actions'];
   busy: boolean;
+  /** Which button is fetching the decision again before its sheet may open (I-7). */
+  checking: SheetKind | null;
+  /** No connection: signing is not offered, and the bar says why (§2.6). */
+  offline: boolean;
   /** Large text: buttons only (the line is the personal line again, and the link is on the page). */
   compact: boolean;
   /** An action's error after its sheet closed. */
@@ -755,13 +878,30 @@ function Bar({
   onFix: () => void;
   onRaiseAgain: () => void;
 }) {
+  if (offline && (actions.kind === 'sign' || actions.kind === 'web')) {
+    // The phone checks a decision against the network before any sheet (I-7): none offline.
+    return <ActionBar message={message} line={OFFLINE_SIGNING} />;
+  }
+  const held = busy || checking !== null;
+  const reject = {
+    label: checking === 'reject' ? 'Checking…' : 'Reject',
+    variant: 'dangerSecondary' as const,
+    onPress: onReject,
+    busy: checking === 'reject',
+    disabled: held && checking !== 'reject',
+  };
   switch (actions.kind) {
     case 'sign':
       return (
         <ActionBar
           message={message}
-          secondary={{ label: 'Reject', variant: 'dangerSecondary', onPress: onReject, disabled: busy }}
-          primary={{ label: 'Approve', onPress: onApprove, disabled: busy }}
+          secondary={reject}
+          primary={{
+            label: checking === 'approve' ? 'Checking…' : 'Approve',
+            onPress: onApprove,
+            busy: checking === 'approve',
+            disabled: held && checking !== 'approve',
+          }}
         />
       );
     case 'web':
@@ -770,7 +910,7 @@ function Bar({
         <ActionBar
           message={message}
           line={compact ? null : actions.line}
-          secondary={{ label: 'Reject', variant: 'dangerSecondary', onPress: onReject, disabled: busy }}
+          secondary={reject}
         >
           {actions.fix && !compact ? <TextLink label="Approve treasury payments on this phone" onPress={onFix} /> : null}
         </ActionBar>
@@ -811,6 +951,41 @@ function raisedLine(detail: ProposalDetail, viewerId: number, now: number): stri
   return `Raised ${when}`;
 }
 
+/**
+ * A decision's summary from a list in the cache, and when that list was fetched: the queue, the
+ * record, or a vault's page. Display only (D5).
+ */
+function findSummary(
+  client: QueryClient,
+  uuid: string,
+): { summary: ProposalSummary; at: number | undefined; due: string | null } | null {
+  for (const queryKey of [keys.awaiting, keys.all]) {
+    const state = client.getQueryState<{ proposals: ProposalSummary[] }>(queryKey);
+    const found = state?.data?.proposals.find((p) => p.proposal_uuid === uuid);
+    if (found) return { summary: found, at: state!.dataUpdatedAt, due: dueWhen(found.expires_at, Date.now()) };
+  }
+  for (const [queryKey, data] of client.getQueriesData<{ vault: VaultDetail }>({ queryKey: ['vault'] })) {
+    const found = data?.vault.proposals.find((p) => p.proposal_uuid === uuid);
+    if (found) {
+      const at = client.getQueryState(queryKey)?.dataUpdatedAt;
+      return { summary: found, at, due: dueWhen(found.expires_at, Date.now()) };
+    }
+  }
+  return null;
+}
+
+/** The signed text's place while it loads under a summary. */
+function TextSkeleton() {
+  const s = useStyles();
+  return (
+    <View style={s.textSkeleton}>
+      <Skeleton width="95%" height={22} />
+      <Skeleton width="90%" height={22} />
+      <Skeleton width="70%" height={22} />
+    </View>
+  );
+}
+
 /** The decision's shape while it loads (§6.6): status line, two title lines, five text lines, quorum. */
 function DecisionSkeleton() {
   const s = useStyles();
@@ -835,4 +1010,5 @@ const useStyles = makeStyles((t) => ({
   titleBlock: { gap: t.space[4] },
   labelled: { gap: t.space[8] },
   quorum: { gap: t.space[8] },
+  textSkeleton: { gap: t.space[12] },
 }));

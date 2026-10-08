@@ -39,8 +39,11 @@ NATIVE_AT_RUNTIME_2 = {
 # The rework's runtime (phone-ux §10.2, N2): its own runtimeVersion, so neither branch's
 # over-the-air update can land on the other's APK. Until the rework APK's native additions land
 # (N5 to N18), it carries runtime 2's modules plus react-native-worklets, which the runtime-2 APK
-# already links through Reanimated and the rework declares at that same version (§5.9).
-NATIVE_AT_REWORK_1 = NATIVE_AT_RUNTIME_2 | {"react-native-worklets"}
+# already links through Reanimated and the rework declares at that same version (§5.9), and
+# expo-file-system, which every APK already links through `expo` itself (expo 57.0.15 depends on
+# expo-file-system ~57.0.5, the version the rework declares for the encrypted summary cache, §2.6;
+# src/persist.ts also loads it lazily and writes nothing if the module is missing).
+NATIVE_AT_REWORK_1 = NATIVE_AT_RUNTIME_2 | {"react-native-worklets", "expo-file-system"}
 PINNED = {RUNTIME_VERSION: NATIVE_AT_RUNTIME_2, "rework-1": NATIVE_AT_REWORK_1}
 
 # react-native-web is the browser renderer: it ships no native code.
@@ -69,6 +72,17 @@ def test_the_rework_declares_worklets_at_the_version_the_apk_links():
     package = json.loads((MOBILE_DIR / "package.json").read_text(encoding="utf-8"))
     if "react-native-worklets" in package["dependencies"]:
         assert package["dependencies"]["react-native-worklets"] == "0.10.4"
+
+
+def test_the_rework_declares_file_system_at_the_range_expo_links():
+    """§2.6: the summary cache uses expo-file-system, which `expo` already depends on and links."""
+    package = json.loads((MOBILE_DIR / "package.json").read_text(encoding="utf-8"))
+    declared = package["dependencies"].get("expo-file-system")
+    expo_package = MOBILE_DIR / "node_modules" / "expo" / "package.json"
+    if declared is None or not expo_package.exists():
+        return
+    expo = json.loads(expo_package.read_text(encoding="utf-8"))
+    assert declared == expo["dependencies"]["expo-file-system"]
 
 
 def test_the_app_imports_no_clipboard_module_at_runtime_2():

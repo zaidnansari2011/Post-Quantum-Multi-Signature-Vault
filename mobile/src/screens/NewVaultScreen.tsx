@@ -33,6 +33,7 @@ import {
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import type { Person } from '../api/schemas.ts';
+import { OfflineNotice } from '../freshness.tsx';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
@@ -97,6 +98,7 @@ export default function NewVaultScreen({
   return (
     <Screen>
       <NavBar onBack={onBack} title="New vault" />
+      <OfflineNotice at={undefined} />
 
       <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
