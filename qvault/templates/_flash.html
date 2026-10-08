@@ -10,17 +10,23 @@
    (base.html), which is empty at load, once the page is ready. Without JavaScript the toast is
    simply part of the page. #}
 {% from "ui/feedback.html" import toast %}
+{% from "ui/icons.html" import icon %}
 {% set TOAST_MAX = 90 %}
+{#- A category names a tone; one the product does not use reads as neutral rather than failing. -#}
+{% set TONE = {'error': 'critical', 'danger': 'critical', 'warning': 'warning', 'persist': 'success',
+               'success': 'success', 'info': 'info', 'message': 'info'} %}
+{% set ICON = {'critical': 'critical', 'warning': 'warning', 'success': 'success', 'info': 'info', 'neutral': 'info'} %}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% set toasts = [] %}
   {% for category, message in messages %}
     {% if category in ('success', 'info', 'message') and message | length <= TOAST_MAX %}
       {% set _ = toasts.append((category, message)) %}
     {% else %}
-    {% set tone = {'error': 'danger', 'persist': 'success', 'message': 'info'}.get(category, category) %}
-    <div class="alert alert-{{ tone }}" role="{{ 'alert' if tone in ('danger', 'warning') else 'status' }}">
-      <span>{{ message }}</span>
-      <button type="button" class="btn-close" data-dismiss aria-label="Dismiss">&times;</button>
+    {% set tone = TONE.get(category, 'neutral') %}
+    <div class="q-banner q-banner--{{ tone }} q-flash" role="{{ 'alert' if tone in ('critical', 'warning') else 'status' }}" data-flash>
+      {{ icon(ICON[tone]) }}
+      <span class="q-flash__m">{{ message }}</span>
+      <button class="q-ib q-flash__x" type="button" data-dismiss aria-label="Dismiss">{{ icon('close') }}</button>
     </div>
     {% endif %}
   {% endfor %}

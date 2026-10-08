@@ -11,7 +11,9 @@ docs/plans/saas-rework/baseline/. Run it against a local server over the demo da
 Decision pages are found by following the links on each vault's page, one per status (open,
 approved, rejected, expired, paid), so the set does not depend on the demo's random ids. The
 treasury screens (new payment, the chain page, a paid decision) exist only with
-``ONCHAIN_EXECUTION_ENABLED=true``; without it they answer 404 and are shot as such. Needs
+``ONCHAIN_EXECUTION_ENABLED=true``; without it they answer 404 and are shot as such. The public
+record is found through a decision's public link, so it is shot only when one decision has been
+shared; ``--every-phone`` adds every screen at phone width, not only the ones in PHONE. Needs
 Playwright with Chromium (``pip install playwright && playwright install chromium``).
 """
 
@@ -30,6 +32,8 @@ ANON = [
     ("03_register", "/register"),
     ("04_verify_anon", "/verify/"),
     ("05_not_found", "/no-such-page"),
+    ("06_docs_page_anon", "/docs/approvals"),
+    ("07_invite_unknown", "/invite/not-a-real-invitation"),
 ]
 AUTHED = [
     ("10_home", "/"),
@@ -49,6 +53,18 @@ AUTHED = [
     ("34_account", "/account/"),
     ("35_docs", "/docs/"),
     ("36_trace", "/trace/"),
+    ("37_docs_page", "/docs/verifying"),
+    ("38_members", "/workspace/members"),
+    ("39_invite", "/workspace/invite"),
+    ("40_workspace_settings", "/workspace/settings"),
+    ("41_notifications", "/notifications/"),
+    ("42_notification_prefs", "/account/notifications"),
+    ("43_account_security", "/account/security"),
+]
+#: Screens whose address is found on another page: the first link matching the pattern.
+FOUND = [
+    ("44_remove_member", "/workspace/members", r"^/workspace/members/\d+/remove$"),
+    ("45_public_record", None, r"^(?:https?://[^/]+)?/d/[0-9a-f-]{36}$"),
 ]
 VAULT_TABS = [
     ("13_vault_decisions", ""),
@@ -75,6 +91,19 @@ PROPOSAL_LINK = re.compile(r"^/vaults/(\d+)/proposals/[0-9a-f-]{36}$")
 ROW_TEXT = (
     "els => els.map(e => [e.getAttribute('href'), (e.closest('tr, li, article') || e).innerText])"
 )
+
+
+def first_link(page: Page, base: str, pages: list[str], pattern: str) -> str | None:
+    """The first link on these pages whose href matches pattern, as a path on this server."""
+    for path in pages:
+        page.goto(base + path, wait_until="networkidle")
+        for href in page.eval_on_selector_all(
+            "a[href], input[readonly][value]",
+            "els => els.map(e => e.getAttribute('href') || e.getAttribute('value'))",
+        ):
+            if href and re.match(pattern, href):
+                return re.sub(r"^https?://[^/]+", "", href)
+    return None
 
 
 def discover(page: Page, base: str) -> tuple[int, dict[str, str]]:
@@ -123,8 +152,13 @@ def shoot(
     themes: list[str],
     only: tuple[str, ...] = (),
     full_page: bool = True,
+    every_phone: bool = False,
 ) -> None:
     out.mkdir(parents=True, exist_ok=True)
+
+    def at_phone(name: str) -> bool:
+        return every_phone or name.startswith(PHONE)
+
     with sync_playwright() as p:
         browser = p.chromium.launch()
         for theme in themes:
@@ -136,7 +170,7 @@ def shoot(
                 page = ctx.new_page()
                 screens = list(ANON)
                 for name, path in screens:
-                    if (label == "desk" or name.startswith(PHONE)) and _wanted(name, only):
+                    if (label == "desk" or at_phone(name)) and _wanted(name, only):
                         take(page, base, out, f"{label}_{name}{suffix}", path, full_page)
                 page.goto(base + "/login", wait_until="networkidle")
                 page.fill('input[name="email"]', email)
@@ -152,8 +186,17 @@ def shoot(
                         screens.append((f"{18 + i}_decision_{status}", decisions[status]))
                     else:
                         print(f"{label}{suffix}: no {status} decision found; skipped")
+                for name, where, pattern in FOUND:
+                    if not _wanted(name, only):
+                        continue
+                    pages = [where] if where else list(decisions.values())
+                    found = first_link(page, base, pages, pattern)
+                    if found:
+                        screens.append((name, found))
+                    else:
+                        print(f"{label}{suffix}: no link for {name}; skipped")
                 for name, path in screens:
-                    if (label == "desk" or name.startswith(PHONE)) and _wanted(name, only):
+                    if (label == "desk" or at_phone(name)) and _wanted(name, only):
                         take(page, base, out, f"{label}_{name}{suffix}", path, full_page)
                 ctx.close()
         browser.close()
@@ -187,6 +230,11 @@ def main() -> int:
         action="store_true",
         help="capture the viewport only, not the full page (smaller files for a review set)",
     )
+    parser.add_argument(
+        "--every-phone",
+        action="store_true",
+        help="shoot every screen at phone width too, not only the ones in PHONE",
+    )
     args = parser.parse_args()
     themes = ["light", "dark"] if args.theme == "both" else [args.theme]
     shoot(
@@ -197,6 +245,7 @@ def main() -> int:
         themes,
         only=tuple(args.only),
         full_page=not args.first_screen,
+        every_phone=args.every_phone,
     )
     return 0
 

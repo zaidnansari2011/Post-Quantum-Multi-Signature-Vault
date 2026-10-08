@@ -250,10 +250,23 @@ def _owned_vaults(workspace) -> list[Vault]:
     ]
 
 
-def _render_invite(workspace, me, *, email="", role="member", chosen=None, status=200):
+#: Which field an invitation's refusal belongs to, so the message sits under it (aria-invalid,
+#: aria-describedby) and takes the focus; anything else is a banner above the form.
+_INVITE_FIELD_ERRORS = {
+    "bad_email": "email",
+    "already_member": "email",
+    "already_invited": "email",
+    "bad_role": "role",
+    "not_allowed": "role",
+    "auditor_approver": "role",
+}
+
+
+def _render_invite(workspace, me, *, email="", role="member", chosen=None, status=200, errors=None):
     return (
         render_template(
             "workspace/invite.html",
+            errors=errors or {},
             workspace=workspace,
             roles=_assignable_roles(me),
             role_help=ROLE_HELP,
@@ -300,8 +313,13 @@ def invite():
             workspace, current_user, email, role, list(chosen.items())
         )
     except WorkspaceError as exc:
-        flash(exc.message, "error")
-        return _render_invite(workspace, me, email=email, role=role, chosen=chosen, status=400)
+        where = _INVITE_FIELD_ERRORS.get(exc.code)
+        if where is None:
+            flash(exc.message, "error")
+        errors = {where: exc.message} if where else {}
+        return _render_invite(
+            workspace, me, email=email, role=role, chosen=chosen, status=400, errors=errors
+        )
     return _render_link(invitation, token, resent=False)
 
 
@@ -346,28 +364,42 @@ def revoke(iid: int):
 # Settings
 
 
+def _render_settings(workspace, me, *, name=None, name_error=None, status=200):
+    return (
+        render_template(
+            "workspace/settings.html",
+            workspace=workspace,
+            me=me,
+            manager=ws.can_manage(me),
+            vault_count=len(ws.vault_ids_of(workspace)),
+            my_vaults=ws.vaults_of(current_user.id, workspace),
+            role_name=ws.role_name,
+            name_value=workspace.name if name is None else name,
+            name_error=name_error,
+        ),
+        status,
+    )
+
+
 @bp.get("/workspace/settings")
 @login_required
 def settings():
     workspace, me = _mine()
-    return render_template(
-        "workspace/settings.html",
-        workspace=workspace,
-        me=me,
-        manager=ws.can_manage(me),
-        vault_count=len(ws.vault_ids_of(workspace)),
-        my_vaults=ws.vaults_of(current_user.id, workspace),
-        role_name=ws.role_name,
-    )
+    return _render_settings(workspace, me)
 
 
 @bp.post("/workspace/settings/general")
 @login_required
 def save_general():
-    workspace, _ = _mine()
+    workspace, me = _mine()
+    name = request.form.get("name", "")
     try:
-        ws.rename_workspace(workspace, request.form.get("name", ""), actor=current_user)
+        ws.rename_workspace(workspace, name, actor=current_user)
     except WorkspaceError as exc:
+        if exc.code in ("name_required", "name_too_long"):
+            # Sent back with the name as typed and the reason under the field, not as a banner
+            # on a fresh page, so the field is marked and takes the focus.
+            return _render_settings(workspace, me, name=name, name_error=exc.message, status=400)
         flash(exc.message, "error")
     else:
         flash("Workspace name saved.", "success")

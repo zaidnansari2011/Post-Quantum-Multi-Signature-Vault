@@ -6,20 +6,20 @@
   anything in it happens. Decisions live inside a vault and inherit its rule.
 </p>
 
-<h3>Roles</h3>
+<h2>Roles</h2>
 <ul>
-  <li><strong>Owner</strong> — created the vault. Can add and remove members, change roles, and set
+  <li><strong>Owner</strong>: created the vault. Can add and remove members, change roles, and set
     the threshold. Counts as an approver. There is exactly one, and they cannot be removed.</li>
-  <li><strong>Can approve</strong> — proposes and signs decisions. These are the people the
+  <li><strong>Can approve</strong>: proposes and signs decisions. These are the people the
     threshold counts.</li>
-  <li><strong>View only</strong> — sees the vault and its decisions but cannot propose or sign.
+  <li><strong>View only</strong>: sees the vault and its decisions but cannot propose or sign.
     Nothing is ever reported as waiting on them.</li>
 </ul>
 
-<h3>The threshold</h3>
+<h2>The threshold</h2>
 <p>
   The threshold is how many approvals a decision needs. It cannot exceed the number of people who
-  can approve — a vault whose threshold nobody could ever meet would deadlock every future
+  can approve. A vault whose threshold nobody could ever meet would deadlock every future
   decision, so the product refuses that rather than allowing it.
 </p>
 <p>
@@ -27,7 +27,7 @@
   was created with.
 </p>
 
-<h3>Changing membership</h3>
+<h2>Changing membership</h2>
 <p>
   Membership changes are about the vault's future, never its past. Every decision froze its own
   list of eligible approvers when it opened, so removing someone does not invalidate a signature
@@ -36,7 +36,7 @@
 </p>
 <p>
   That is deliberate. If removing a member could retroactively strip their approval, an
-  administrator could reverse a decision by editing a membership list — which is precisely what
+  administrator could reverse a decision by editing a membership list, which is precisely what
   the frozen list exists to prevent.
 </p>
 <p>
@@ -44,11 +44,11 @@
   approvers than the threshold requires.
 </p>
 
-<h3>Files</h3>
+<h2>Files</h2>
 <p>
   Each vault has its own ML-KEM key pair, used to protect files attached to its decisions. That
   private key is held by the server under its master key rather than by any individual, because
-  every member of the vault needs to be able to read the files — a password-locked personal key
+  every member of the vault needs to be able to read the files, and a password-locked personal key
   could not do that. Your <em>signing</em> key is the opposite: only your password opens it.
 </p>
 {% endblock %}
