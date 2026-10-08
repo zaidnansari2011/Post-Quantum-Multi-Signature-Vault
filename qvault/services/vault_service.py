@@ -20,6 +20,8 @@ path here pretends otherwise: the owner simply cannot be removed or demoted.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
@@ -30,7 +32,7 @@ from qvault.models.key import Key
 from qvault.models.proposal import Proposal
 from qvault.models.signature import Signature
 from qvault.models.user import User
-from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember, VaultPolicy
+from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember, VaultPolicy, VaultRule
 from qvault.security import master_key
 from qvault.services import ledger_service, notification_service, workspace_service
 from qvault.services.rotation_policy import rotation_deadline
@@ -97,6 +99,15 @@ def create_vault(
 
     db.session.add(VaultMember(vault_id=vault.id, user_id=owner.id, member_role="owner"))
     db.session.add(VaultPolicy(vault_id=vault.id, threshold_m=threshold_m))
+    # Plan S15: a new vault takes its workspace's default (stored by R3). The workspace's
+    # ``sod_default`` is separation of duties, so it is the opposite of this rule.
+    home = workspace_service.current_workspace(owner)
+    db.session.add(
+        VaultRule(
+            vault_id=vault.id,
+            requester_can_approve=not (home is not None and home.sod_default),
+        )
+    )
 
     ledger_service.append(
         "vault_created",
@@ -330,6 +341,46 @@ def set_threshold(vault: Vault, threshold_m: int, *, actor_id: int, commit: bool
     notification_service.threshold_changed(vault, previous=previous, actor_id=actor_id, entry=entry)
     if commit:
         db.session.commit()
+
+
+def set_requester_can_approve(
+    vault: Vault, allowed: bool, *, actor_id: int, commit: bool = True
+) -> bool:
+    """Plan S15: set "The person who raises a decision can also approve it". Returns whether it
+    changed. The route lets only the vault's owner call this.
+
+    Allowed even when it leaves every new decision unable to pass (a threshold equal to the
+    number of approvers): the vault and New decision say so, and raising one is refused, so the
+    owner can fix the threshold or the approvers in either order.
+    """
+    allowed = bool(allowed)
+    rule = db.session.get(VaultRule, vault.id)
+    previous = True if rule is None else bool(rule.requester_can_approve)
+    if previous == allowed:
+        return False
+    if rule is None:
+        db.session.add(VaultRule(vault_id=vault.id, requester_can_approve=allowed))
+    else:
+        rule.requester_can_approve = allowed
+        rule.updated_at = datetime.now(UTC)
+    ledger_service.append(
+        "vault_rule_changed",
+        {
+            "vault_id": vault.id,
+            "rule": "requester_can_approve",
+            "from": previous,
+            "to": allowed,
+        },
+        actor=f"user:{actor_id}",
+        actor_id=actor_id,
+        vault_id=vault.id,
+        ref_type="vault",
+        ref_id=str(vault.id),
+        commit=False,
+    )
+    if commit:
+        db.session.commit()
+    return True
 
 
 ROLE_WORDS = {"owner": "Owner", "signer": "Approver", "viewer": "Viewer"}

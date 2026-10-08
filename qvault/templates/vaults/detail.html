@@ -4,15 +4,15 @@
 {% from "ui/status.html" import status %}
 {% from "ui/avatars.html" import avatar, avatar_stack %}
 {% from "ui/data.html" import data_table, hash, reltime %}
-{% from "ui/forms.html" import field, select %}
+{% from "ui/forms.html" import field, select, checkbox %}
+{% from "ui/feedback.html" import banner %}
 {% from "ui/work.html" import due, deadline, signatures, rule %}
 {% from "ui/icons.html" import icon %}
 {% block title %}{{ vault.name }} — Q-Vault{% endblock %}
 {% block crumbs %}{{ breadcrumbs([('Vaults', url_for('vaults.list_vaults')), (vault.name, None)]) }}{% endblock %}
 
 {#- A vault (rework R2, plan section 5): the overview header states its rule and who approves,
-    then the tabs. The separation-of-duties line joins the header with S15 (R5); until then the
-    header says nothing about it rather than something that is not yet true. -#}
+    then the tabs. The header also says who may approve their own decision (S15, R5). -#}
 {% block content %}
 {% set approvers = vault.signer_members() | map(attribute='user') | list %}
 {% set approver_names = [] %}
@@ -22,6 +22,7 @@
 {% set approvers_fact %}{%- set approver_full = [] %}{% for u in approvers %}{% set _ = approver_full.append(u.display_name or u.email) %}{% endfor %}{{ avatar_stack(approver_full, 4, 20) }}<span>{{ ui_names(approver_names) }}</span>{% endset %}
 {% set _ = facts.append(('Approvers', approvers_fact)) %}
 {% set _ = facts.append(('Your role', role_word)) %}
+{% set _ = facts.append(('Raising', 'Whoever raises a decision can also approve it' if requester_can_approve else 'Whoever raises a decision can’t approve it')) %}
 {% if linked %}
 {% set treasury_fact %}Sepolia {{ hash(linked.address, 'treasury address', 6, 4) }}{% endset %}
 {% set _ = facts.append(('Treasury', treasury_fact)) %}
@@ -42,6 +43,13 @@
 {% if is_owner %}{% set _ = tab_items.append({'key': 'settings', 'label': 'Settings', 'href': url_for('vaults.vault_detail', vid=vault.id, tab='settings')}) %}{% endif %}
 {{ tabs(tab_items, tab, 'Vault sections') }}
 <div class="q-vault__body">
+{% if impossible %}
+{#- S15 with a threshold of every approver: one approver (whoever raises it) is always out of
+    reach, so New decision refuses. Said here, to everyone, rather than only on refusal. -#}
+{{ banner('warning', 'No decision raised here can pass',
+  'It needs all ' ~ n_signers ~ ' approvers, and whoever raises a decision can’t approve it. ' ~
+  ('Lower the threshold, add an approver, or let the person who raises a decision approve it in Settings.' if is_owner else 'The vault’s owner can lower the threshold, add an approver, or let the person who raises a decision approve it.')) }}
+{% endif %}
 
 {% if tab == 'decisions' %}
   {% set payments_shown = rows | selectattr('is_payment') | list %}
@@ -307,6 +315,12 @@
         {{ select('threshold_m', 'Approvals required', choices, threshold_form.threshold_m.data or vault.policy.threshold_m,
                   caption='Applies to decisions raised from now on. Open decisions keep the rule they were raised with.') }}
         {{ button('Save rule', 'secondary', type='submit') }}
+      </form>
+      <form class="q-panel__bd" method="post" action="{{ url_for('vaults.set_requester_rule', vid=vault.id) }}">
+        {{ rule_form.hidden_tag() }}
+        {{ checkbox('requester_can_approve', 'The person who raises a decision can also approve it', checked=requester_can_approve, value='y', id='f-requester-can-approve',
+                    caption='When this is off, every decision needs its approvals from people other than whoever raised it. Turning it off applies to decisions already open; turning it on doesn’t reopen them to whoever raised them.') }}
+        {{ button('Save', 'secondary', type='submit') }}
       </form>
     </section>
     {% set vault_facts = [

@@ -690,7 +690,7 @@ def test_turning_on_separation_of_duties_from_settings(app, client, team):
     client.post("/workspace/settings/vaults", data={"sod_default": "on"})
 
     assert workspace.sod_default is True
-    assert "Vaults don't apply it yet" in _text(client.get("/workspace/settings"))
+    assert "New vaults start with it" in _text(client.get("/workspace/settings"))
 
 
 def test_a_member_sees_settings_but_cannot_change_them(app, client, team):

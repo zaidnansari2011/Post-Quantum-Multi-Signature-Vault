@@ -54,8 +54,8 @@
         </label>
         <p class="field__help" style="margin:.6rem 0 .8rem">
           {% if workspace.sod_default %}On{% else %}Off{% endif %}.
-          Saved as the default for new vaults. Vaults don't apply it yet, and it never changes a
-          vault that already exists.
+          New vaults start with it. It never changes a vault that already exists: each vault’s
+          owner sets theirs in its settings.
         </p>
         {% if manager %}<button class="btn btn--ghost btn--sm" type="submit">Save</button>{% endif %}
       </form>

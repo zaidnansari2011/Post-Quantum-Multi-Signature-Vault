@@ -291,7 +291,9 @@ def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
         "table invitations is not in the baseline",
         "table notification_preferences is not in the baseline",
         "table notifications is not in the baseline",
+        "table proposal_lifecycle is not in the baseline",
         "table user_settings is not in the baseline",
+        "table vault_rules is not in the baseline",
         "table workspace_members is not in the baseline",
         "table workspaces is not in the baseline",
     ]

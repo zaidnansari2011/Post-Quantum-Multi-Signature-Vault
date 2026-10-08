@@ -87,6 +87,13 @@ class ThresholdForm(FlaskForm):
     submit = SubmitField("Save")
 
 
+class VaultRuleForm(FlaskForm):
+    """Plan S15: "The person who raises a decision can also approve it". Unchecked is off."""
+
+    requester_can_approve = BooleanField("The person who raises a decision can also approve it")
+    submit = SubmitField("Save")
+
+
 class ProfileForm(FlaskForm):
     display_name = StringField("Display name", validators=[DataRequired(), Length(max=255)])
     submit = SubmitField("Save")

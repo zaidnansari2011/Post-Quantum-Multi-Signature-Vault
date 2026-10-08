@@ -437,6 +437,8 @@
       {%- elif proposal.status == 'open' %}An approver. You sign with your {{ 'password key' if my_key and my_key.wrap_domain != 'device' else 'key' }}{% if my_key %}, {{ my_key.alg_id }}{% endif %}.
       {%- else %}An approver. You didn’t sign this.{% endif -%}
     </dd></div>
+    {% elif own_decision %}
+    <div><dt>You</dt><dd>You raised this<span class="q-cap">In {{ vault.name }}, whoever raises a decision can’t approve or reject it.</span></dd></div>
     {% elif was_signer %}
     <div><dt>You</dt><dd>No longer an approver<span class="q-cap">You were one of its approvers when it was raised, and can’t sign it now. A vote you cast before still counts.</span></dd></div>
     {% else %}

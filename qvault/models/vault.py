@@ -41,6 +41,10 @@ class Vault(db.Model):
     policy = db.relationship(
         "VaultPolicy", back_populates="vault", uselist=False, cascade="all, delete-orphan"
     )
+    # Its rules beyond M-of-N (plan S15). None for a vault created before R5: see VaultRule.
+    rule = db.relationship(
+        "VaultRule", back_populates="vault", uselist=False, cascade="all, delete-orphan"
+    )
     proposals = db.relationship("Proposal", back_populates="vault", cascade="all, delete-orphan")
 
     def signer_members(self) -> list[VaultMember]:
@@ -85,3 +89,22 @@ class VaultPolicy(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
 
     vault = db.relationship("Vault", back_populates="policy")
+
+
+class VaultRule(db.Model):
+    """A vault's rules beyond its threshold (rework R5). One row per vault created since R5.
+
+    A table of its own rather than columns on ``vaults``: ``create_all`` adds a new table to an
+    existing database but never a column, and no row is exactly how a vault created before R5
+    reads, so nothing changes under an existing vault.
+    """
+
+    __tablename__ = "vault_rules"
+
+    vault_id = db.Column(db.Integer, db.ForeignKey("vaults.id"), primary_key=True)
+    #: Plan S15, "The person who raises a decision can also approve it". False is separation of
+    #: duties. A vault with no row reads True: existing vaults keep the behaviour they had.
+    requester_can_approve = db.Column(db.Boolean, nullable=False, default=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    vault = db.relationship("Vault", back_populates="rule")

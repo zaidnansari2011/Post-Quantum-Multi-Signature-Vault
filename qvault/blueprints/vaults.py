@@ -41,6 +41,7 @@ from qvault.forms import (
     ThresholdForm,
     UnpublishForm,
     VaultForm,
+    VaultRuleForm,
     VoteForm,
 )
 from qvault.models.proposal import Proposal
@@ -184,6 +185,10 @@ def vault_detail(vid: int):
         remove_form=RemoveMemberForm(),
         threshold_form=ThresholdForm(threshold_m=vault.policy.threshold_m),
         n_signers=len(vault.signer_ids()),
+        # Plan S15, and whether it leaves every new decision unable to pass (eligibility.py).
+        requester_can_approve=eligibility.vault_allows_requester(vault),
+        impossible=eligibility.impossible_to_pass(vault),
+        rule_form=VaultRuleForm(),
         treasury=treasury,
         treasury_status=(
             payout_service.treasury_status(linked, current_app.extensions.get("relayer"))
@@ -376,6 +381,30 @@ def set_threshold(vid: int):
     return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
 
 
+@bp.post("/<int:vid>/settings/requester")
+@login_required
+def set_requester_rule(vid: int):
+    """Plan S15: the vault's owner sets whether the person who raises a decision can approve it."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = VaultRuleForm()
+    if not form.validate_on_submit():
+        flash("That didn’t save. Reload the page and try again.", "danger")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+    allowed = bool(form.requester_can_approve.data)
+    if vault_service.set_requester_can_approve(vault, allowed, actor_id=current_user.id):
+        if allowed:
+            flash("The person who raises a decision can now approve it too.", "success")
+        else:
+            flash(
+                "The person who raises a decision can no longer approve or reject it, including "
+                "decisions already open.",
+                "success",
+            )
+        if eligibility.impossible_to_pass(vault):
+            flash(eligibility.CANNOT_PASS_UNDER_SOD, "warning")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+
+
 def _payments_possible(vault) -> bool:
     return _treasuries_on() and treasury_service.linked_treasury(vault) is not None
 
@@ -548,6 +577,9 @@ def proposal_detail(vid: int, pid: str):
         still_ids=list(outlook.still),
         cannot_pass=proposal.status == "open" and not outlook.reachable,
         needed=outlook.needed,
+        # Plan S15: the person who raised it, when they may not approve it.
+        own_decision=current_user.id == proposal.creator_id
+        and not eligibility.requester_may_approve(proposal),
         was_signer=not is_signer and current_user.id in evidence_service.approver_ids(proposal),
         due_soon=proposal.status == "open" and due is not None and due - now <= DUE_SOON,
         approve_lines=evidence.approve_consequence(
