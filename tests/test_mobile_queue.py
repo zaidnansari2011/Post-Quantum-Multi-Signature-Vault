@@ -203,6 +203,17 @@ def _calls() -> list[dict]:
         {**q, "viewerCanApprove": False, "stillToApprove": ["Brij"]},
     )
     call(
+        "q_rejection_said_above",
+        "quorumSentence",
+        {
+            **q,
+            "rejections": 1,
+            "viewerCanApprove": False,
+            "stillToApprove": None,
+            "mentionRejections": False,
+        },
+    )
+    call(
         "q_met",
         "quorumSentence",
         {**q, "approvals": 2, "viewerCanApprove": False, "stillToApprove": None},
@@ -464,6 +475,10 @@ def test_the_other_approvers_are_named_when_known(results):
         == "One more approval approves this. Brij or Chen can also approve."
     )
     assert results["q_names_viewer_cannot"] == "One more approval approves this. Brij can approve."
+
+
+def test_the_rejection_clause_is_left_to_the_personal_line_when_it_says_it(results):
+    assert results["q_rejection_said_above"] == "One more approval approves this."
 
 
 def test_no_quorum_sentence_once_it_is_decided(results):

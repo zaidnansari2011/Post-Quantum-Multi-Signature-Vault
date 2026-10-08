@@ -310,6 +310,7 @@ export default function DecisionScreen({
         isPayment,
         viewerCanApprove: actions.kind === 'sign',
         stillToApprove,
+        mentionRejections: personal.row !== 5,
       })
     : null;
 
@@ -435,7 +436,12 @@ export default function DecisionScreen({
               <ListRow
                 icon="document"
                 title="Attached file"
-                caption="Bound into the signature. Read the attached file on the web before approving."
+                caption={
+                  actions.kind === 'sign'
+                    ? 'Bound into the signature. Read the attached file on the web before approving.'
+                    : 'Bound into the signature. Open it on the web.'
+                }
+                captionLines={6}
                 onPress={openWeb}
                 accessibilityHint="Opens the decision on the web"
               />
@@ -448,7 +454,8 @@ export default function DecisionScreen({
                 filled={approvals}
                 required={policy.M}
                 size={14}
-                rejections={rejections}
+                // Said once: in the sentence while it is open, as the seal's caption once decided.
+                rejections={quorum ? 0 : rejections}
                 celebrate={outcome !== null && approvals >= policy.M}
               />
               {quorum ? (

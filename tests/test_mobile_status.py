@@ -205,7 +205,7 @@ CASES = {
         5,
         "Waiting on 2",
         "neutral",
-        "You rejected this 10:24. It's rejected only if one more reject.",
+        "You rejected this 10:24. It's rejected only if one more rejects.",
         "none",
     ),
     "5_rejected_wide_policy": (
@@ -527,6 +527,36 @@ CASES = {
         "Rejected",
         "critical",
         "Rejected by Brij and Chen before your signature arrived.",
+        "none",
+    ),
+    "16_a_failed_payout_still_says_nothing_was_sent": (
+        _case(
+            {
+                **APPROVED_BY_TWO,
+                **PAYMENT,
+                "votes": [_vote(HASSAN, "approve"), _vote(GRACIAN, "approve")],
+                "payout": {
+                    "state": "failed",
+                    "reason": "insufficient balance",
+                    "finished_at": None,
+                },
+            },
+            closed_before="opened",
+        ),
+        16,
+        "Failed",
+        "critical",
+        "Approved by Hassan and Gracian before you opened this. The treasury didn't hold enough "
+        "to pay. Nothing was sent. Top it up, then raise it again.",
+        "none",
+    ),
+    # An unknown status is never put into a sentence, even when it closed while you were away.
+    "16_unknown_status_opened_from_the_queue": (
+        _case({"status": "frozen"}, closed_before="opened"),
+        0,
+        "Unknown",
+        "neutral",
+        None,
         "none",
     ),
     # Row 17: an unknown decision type still signs, on its signed text alone.

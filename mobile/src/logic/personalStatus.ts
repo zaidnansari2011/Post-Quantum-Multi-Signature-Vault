@@ -220,9 +220,14 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
 
   if (status !== 'open') {
     const closed = closedState(d, status, viewerId, raisedByMe, closedOn, approvals, M, vote, now);
-    // Row 16: it closed between this person opening (or signing) it and now.
-    if (input.closedBefore && !vote) {
-      return done(16, closed.badge, closedBeforeLine(d, status, viewerId, input.closedBefore), NONE);
+    // Row 16: it closed between this person opening (or signing) it and now. Only for a state this
+    // app knows: an unknown one stays row 0, and its raw word is never put into a sentence.
+    if (input.closedBefore && !vote && closed.row !== 0) {
+      const prefix = closedBeforeLine(d, status, viewerId, input.closedBefore);
+      // A payout's own sentence (queued, paid, failed) still follows: "before you opened this"
+      // must not hide that the money did not move (§6.6, "Prefixed").
+      const payout = closed.row >= 10 && closed.row <= 12 && closed.line ? ` ${closed.line}` : '';
+      return done(16, closed.badge, `${prefix}${payout}`, NONE);
     }
     return done(closed.row, closed.badge, closed.line, closed.actions);
   }
@@ -246,7 +251,7 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
     const when = whenYouDid(myTime, now);
     const k = N - M + 1 - rejections;
     const lead = when ? `You rejected this ${when}.` : 'You rejected this.';
-    return done(5, waiting, `${lead} It's rejected only if ${countWord(k)} more reject.`, NONE);
+    return done(5, waiting, `${lead} It's rejected only if ${countWord(k)} more ${k === 1 ? 'rejects' : 'reject'}.`, NONE);
   }
 
   // Row 3: separation of duties.

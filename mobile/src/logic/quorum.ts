@@ -19,6 +19,11 @@ export type QuorumInput = {
   viewerCanApprove: boolean;
   /** A3's names of the signers who have not voted, less the viewer; null while unknown. */
   stillToApprove: string[] | null;
+  /**
+   * False when the personal line above already says how many more rejections end it (the viewer
+   * rejected, §6.6 row 5), so the page does not say it twice.
+   */
+  mentionRejections?: boolean;
 };
 
 /**
@@ -42,7 +47,7 @@ export function quorumSentence(q: QuorumInput): string | null {
     const names = orList(q.stillToApprove);
     parts.push(q.viewerCanApprove ? `${names} can also approve.` : `${names} can approve.`);
   }
-  if (q.rejections > 0) {
+  if (q.rejections > 0 && q.mentionRejections !== false) {
     const counted = q.rejections === 1 ? '1 rejection.' : `${q.rejections} rejections.`;
     parts.push(`${counted} It's rejected if ${countWord(k)} more ${k === 1 ? 'rejects' : 'reject'}.`);
   }
