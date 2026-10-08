@@ -55,3 +55,21 @@ signed "valid until" has passed, so its approve sheet says the treasury won't pa
 | `s12`, `s13` | §6.19 | Remove this phone with a treasury holding its key ("I understand" required); the server unreachable, nothing removed, "Remove from this phone only" offered |
 | `a09` | §6.3 | Payments this phone can't sign, grouped by where they can be approved: "Approve on the web", and "Your key isn't on this treasury" |
 | `d07a` (re-shot) | §6.6 row 7 | At 2.0 the bar keeps only Reject; the one-time switch moves onto the page |
+
+# P2 step 3: freshness (phone-ux §2.6)
+
+Shot by `mobile/tools/web-shots/fresh.py` against the same disposable backend. "Offline" is every
+`/api/` request aborted in the browser; time is moved on with Playwright's clock (the 20 s and
+60 s polls, the minute the signing gate allows), never by a hook in the app. The restored states
+start from the browser state a normal run left behind, which holds the encrypted summary cache.
+First screen only; `audit_fresh.json` in each folder is the target audit for these shots.
+
+| Shot | phone-ux | What it shows |
+| --- | --- | --- |
+| `f01` | §2.6 | Approvals, then the connection goes: the 60 s poll fails and the offline bar says when the list was fetched |
+| `f02a`, `f02b` | §2.6 | A first run whose answer is late: the caption at 4 s, and Try again at 20 s |
+| `f03` | §2.6, D4 | A restart with no connection: the queue painted from the encrypted cache, "Can't check your approvals", and the cache's time |
+| `f04` | §2.6 | A decision open when the connection goes: the action bar says signing needs a connection |
+| `f05` | §2.6, D5 | A restart with no connection, opening a decision from the cached queue: its summary, and the full decision when back online |
+| `f06` | §2.6, I-7 | The copy on the page is over a minute old: Approve fetches it again first ("Checking…") |
+| `f07` | §2.6, I-16 | The 20 s poll brings different signed text: tampered, and neither version is shown as the decision |

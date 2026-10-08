@@ -75,8 +75,9 @@ export default function HomeScreen({
   const onWeb = sections.find((x) => x.kind === 'web')?.rows.length ?? 0;
   const hasList = q.awaiting.data !== undefined;
   const confirmed = q.awaitingConfirmed;
-  // The copy from disk says nothing needs you: not said until this run has checked (research 06 §2).
-  const restoredEmpty = hasList && !confirmed && needsYou.length === 0 && web.length === 0;
+  // The copy from disk says nothing needs your signature: not said until this run has checked
+  // (research 06 §2's false all-clear), so it reads as still checking.
+  const restoredEmpty = hasList && !confirmed && needsYou.length === 0;
   const failed = q.awaiting.isError && !confirmed;
   const loading = (!hasList || restoredEmpty) && !failed;
   const showList = hasList && !restoredEmpty;

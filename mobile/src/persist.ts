@@ -115,10 +115,13 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Put the persisted summaries into the cache, before any screen asks for them. Restored queries keep
- * the time they were fetched, so they are stale and refetch at once; they are never a decision body,
- * and they write nothing to the signing gate's record (I-7). Any failure means "no cache".
+ * the time they were fetched (the offline bar says it) and are marked invalid, so each refetches as
+ * soon as a screen shows it, however recent that time; they are never a decision body, and they
+ * write nothing to the signing gate's record (I-7). Any failure means "no cache". Nothing is put in
+ * after `until`: start-up stops waiting then, and a late copy could otherwise land over a failed
+ * fetch and stand in for an answer.
  */
-export async function restoreSummaries(client: QueryClient, userId: number): Promise<void> {
+export async function restoreSummaries(client: QueryClient, userId: number, until: number): Promise<void> {
   const started = generation;
   try {
     const s = await store();
@@ -135,11 +138,12 @@ export async function restoreSummaries(client: QueryClient, userId: number): Pro
       return;
     }
     const entries = readCacheBody(text, buster, Date.now());
-    if (!entries || started !== generation) return;
+    if (!entries || started !== generation || Date.now() > until) return;
     for (const entry of entries) {
       // A network answer that beat the disk wins.
-      if (client.getQueryData(entry.key) !== undefined) continue;
+      if (client.getQueryState(entry.key) !== undefined) continue;
       client.setQueryData(entry.key, entry.data, { updatedAt: entry.at });
+      void client.invalidateQueries({ queryKey: entry.key, exact: true, refetchType: 'none' });
     }
   } catch {
     // Nothing restored.
