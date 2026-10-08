@@ -95,7 +95,7 @@ def test_the_page_labels_comments_unsigned_and_escapes_them(client):
 def test_control_characters_that_could_disguise_a_comment_are_removed(app):
     _ada, brij, _chen, _dev, _vault, proposal = _team("controls")
     comment = discussion_service.post(
-        proposal, brij, "Approve‮ evil​ text\x00\r\n\r\n\r\n\r\nend  "
+        proposal, brij, "Approve\u202e evil\u200b text\x00\r\n\r\n\r\n\r\nend  "
     )
     assert comment.body == "Approve evil text\n\nend"
 
