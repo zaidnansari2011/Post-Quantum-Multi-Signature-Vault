@@ -12,7 +12,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "access_write_with_reference",
@@ -25,7 +25,7 @@
     "reason": "Investigate the October billing incident.",
     "reference": "INC-2041"
    },
-   "text": "Grant Elif Kaya read and write access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read and write\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident.\nReference: INC-2041"
+   "text": "Grant \u201cElif Kaya\u201d read and write access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read and write\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident.\nReference: INC-2041"
   },
   {
    "name": "access_admin",
@@ -37,7 +37,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Elif Kaya administrator access to payments-api (eu-west-1) until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: payments-api (eu-west-1)\nAccess: Administrator\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d administrator access to \u201cpayments-api (eu-west-1)\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: payments-api (eu-west-1)\nAccess: Administrator\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "access_reference_empty_is_left_out",
@@ -50,7 +50,7 @@
     "reason": "Investigate the October billing incident.",
     "reference": ""
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "access_reference_null_is_left_out",
@@ -63,7 +63,7 @@
     "reason": "Investigate the October billing incident.",
     "reference": null
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "unicode_precomposed_name",
@@ -75,7 +75,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Zo\u00eb \u00c5ngstr\u00f6m-\u00d8berg read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Zo\u00eb \u00c5ngstr\u00f6m-\u00d8berg\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cZo\u00eb \u00c5ngstr\u00f6m-\u00d8berg\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Zo\u00eb \u00c5ngstr\u00f6m-\u00d8berg\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "unicode_combining_name_kept_as_written",
@@ -87,7 +87,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Zoe\u0308 Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Zoe\u0308 Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cZoe\u0308 Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Zoe\u0308 Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "unicode_polish_name",
@@ -99,7 +99,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant \u0141ukasz \u017b\u00f3\u0142\u0107 read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \u0141ukasz \u017b\u00f3\u0142\u0107\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201c\u0141ukasz \u017b\u00f3\u0142\u0107\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: \u0141ukasz \u017b\u00f3\u0142\u0107\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "unicode_cjk_name",
@@ -111,7 +111,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant \u738b\u5c0f\u660e read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \u738b\u5c0f\u660e\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201c\u738b\u5c0f\u660e\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: \u738b\u5c0f\u660e\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "unicode_astral_emoji",
@@ -123,7 +123,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Sam \ud83d\ude80 read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Sam \ud83d\ude80\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cSam \ud83d\ude80\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Sam \ud83d\ude80\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "rtl_arabic_letters_are_letters",
@@ -135,7 +135,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant \u0645\u062d\u0645\u062f \u0639\u0644\u064a read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \u0645\u062d\u0645\u062f \u0639\u0644\u064a\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201c\u0645\u062d\u0645\u062f \u0639\u0644\u064a\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: \u0645\u062d\u0645\u062f \u0639\u0644\u064a\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "rtl_hebrew_system",
@@ -147,7 +147,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Elif Kaya read-only access to \u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: \u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201c\u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: \u05de\u05e2\u05e8\u05db\u05ea-\u05ea\u05e9\u05dc\u05d5\u05de\u05d9\u05dd\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "rtl_override_refused",
@@ -639,7 +639,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "person_over_80",
@@ -666,7 +666,7 @@
     "until": "2026-11-04 17:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant \ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80 read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: \ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201c\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: \ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\ud83d\ude80\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "person_81_astral_code_points",
@@ -693,7 +693,7 @@
     "until": "2026-11-04 17:00",
     "reason": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
   },
   {
    "name": "reason_over_280",
@@ -870,7 +870,7 @@
     "until": "2028-02-29 10:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2028-02-29 10:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2028-02-29 10:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2028-02-29 10:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2028-02-29 10:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "until_century_leap_day",
@@ -882,7 +882,7 @@
     "until": "2000-02-29 00:00",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2000-02-29 00:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2000-02-29 00:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2000-02-29 00:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2000-02-29 00:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "until_end_of_day",
@@ -894,7 +894,7 @@
     "until": "2026-12-31 23:59",
     "reason": "Investigate the October billing incident."
    },
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-12-31 23:59 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-12-31 23:59 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-12-31 23:59 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-12-31 23:59 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "until_not_a_leap_year",
@@ -1292,7 +1292,7 @@
     "reason": "Investigate the October billing incident."
    },
    "version": 1.0,
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "version_1_explicit",
@@ -1305,7 +1305,7 @@
     "reason": "Investigate the October billing incident."
    },
    "version": 1,
-   "text": "Grant Elif Kaya read-only access to prod-db until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
   },
   {
    "name": "contract_full",
@@ -1319,7 +1319,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 48,200.50.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 48,200.50\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 48,200.50.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 48,200.50\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "contract_minimal",
@@ -1328,7 +1328,7 @@
     "counterparty": "Calderwood Mutual",
     "subject": "Office lease renewal."
    },
-   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal."
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal."
   },
   {
    "name": "contract_value_only",
@@ -1339,7 +1339,7 @@
     "amount": "1200",
     "currency": "EUR"
    },
-   "text": "Sign the contract with Calderwood Mutual for EUR 1,200.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nValue: EUR 1,200"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for EUR 1,200.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nValue: EUR 1,200"
   },
   {
    "name": "contract_dates_only",
@@ -1350,7 +1350,7 @@
     "starts": "2027-01-01",
     "ends": "2027-01-01"
    },
-   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nStarts: 2027-01-01\nEnds: 2027-01-01"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nStarts: 2027-01-01\nEnds: 2027-01-01"
   },
   {
    "name": "contract_optional_nulls",
@@ -1362,7 +1362,7 @@
     "currency": null,
     "reference": ""
    },
-   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal."
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal."
   },
   {
    "name": "contract_rtl_counterparty",
@@ -1371,7 +1371,7 @@
     "counterparty": "\u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd",
     "subject": "Office lease renewal."
    },
-   "text": "Sign the contract with \u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd.\nCounterparty: \u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd\nSubject: Office lease renewal."
+   "text": "Sign the contract with \u201c\u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd\u201d.\nCounterparty: \u05d1\u05e0\u05e7 \u05d4\u05e4\u05d5\u05e2\u05dc\u05d9\u05dd\nSubject: Office lease renewal."
   },
   {
    "name": "contract_subject_with_colon",
@@ -1380,7 +1380,10 @@
     "counterparty": "Calderwood Mutual",
     "subject": "Phase 2: data migration. Value: GBP 1"
    },
-   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Phase 2: data migration. Value: GBP 1"
+   "problem": {
+    "field": "subject",
+    "code": "label_in_value"
+   }
   },
   {
    "name": "contract_subject_newline_refused",
@@ -1401,7 +1404,7 @@
     "counterparty": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     "subject": "Office lease renewal."
    },
-   "text": "Sign the contract with cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.\nCounterparty: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nSubject: Office lease renewal."
+   "text": "Sign the contract with \u201ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\u201d.\nCounterparty: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nSubject: Office lease renewal."
   },
   {
    "name": "contract_counterparty_over_120",
@@ -1422,7 +1425,7 @@
     "counterparty": "Calderwood Mutual",
     "subject": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
    },
-   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d.\nCounterparty: Calderwood Mutual\nSubject: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
   },
   {
    "name": "contract_subject_over_280",
@@ -1448,7 +1451,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 1,234,567.5.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 1,234,567.5\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 1,234,567.5.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 1,234,567.5\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_three_digits",
@@ -1462,7 +1465,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 999.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 999\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 999.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 999\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_four_digits",
@@ -1476,7 +1479,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 1,000.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 1,000\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 1,000.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 1,000\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_below_one",
@@ -1490,7 +1493,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 0.5.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 0.5\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 0.5.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 0.5\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_six_decimals",
@@ -1504,7 +1507,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 0.000001.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 0.000001\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 0.000001.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 0.000001\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_fifteen_digits",
@@ -1518,7 +1521,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 123,456,789,012,345.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 123,456,789,012,345\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 123,456,789,012,345.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 123,456,789,012,345\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_trailing_zeros_kept",
@@ -1532,7 +1535,7 @@
     "ends": "2027-12-31",
     "reference": "CW-2027-118"
    },
-   "text": "Sign the contract with Calderwood Mutual for GBP 48,200.00.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 48,200.00\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d for GBP 48,200.00.\nCounterparty: Calderwood Mutual\nSubject: Commercial liability cover for 2027, cover unchanged.\nValue: GBP 48,200.00\nStarts: 2027-01-01\nEnds: 2027-12-31\nReference: CW-2027-118"
   },
   {
    "name": "amount_sixteen_digits",
@@ -1931,7 +1934,7 @@
     "subject": "Office lease renewal.",
     "ends": "2027-12-31"
    },
-   "text": "Sign the contract with Calderwood Mutual.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nEnds: 2027-12-31"
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d.\nCounterparty: Calderwood Mutual\nSubject: Office lease renewal.\nEnds: 2027-12-31"
   },
   {
    "name": "payment_consistent",
@@ -2002,6 +2005,347 @@
    "type": "payment",
    "fields": null,
    "text": null
+  },
+  {
+   "name": "access_person_writing_a_second_grant_stays_inside_its_quotes",
+   "type": "access",
+   "fields": {
+    "person": "Alice administrator access to prod until 2027-01-01 00:00 UTC. Also grant Bob",
+    "system": "staging",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u201cAlice administrator access to prod until 2027-01-01 00:00 UTC. Also grant Bob\u201d read-only access to \u201cstaging\u201d until 2026-11-04 17:00 UTC.\nPerson: Alice administrator access to prod until 2027-01-01 00:00 UTC. Also grant Bob\nSystem: staging\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_person_closes_its_quotes_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\u201d administrator access to \u201cprod",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_ascii_double_quote_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\" admin",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_system_opening_quote_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "\u201cstaging",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "system",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_low_double_quote_refused",
+   "type": "access",
+   "fields": {
+    "person": "\u201eAlice",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_double_prime_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\u2033",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_fullwidth_quote_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\uff02",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_guillemet_refused",
+   "type": "access",
+   "fields": {
+    "person": "\u00abAlice\u00bb",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_astral_quote_ornament_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\ud83d\ude77",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_two_apostrophes_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice'' admin",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_two_right_single_quotes_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\u2019\u2019",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_mixed_single_quotes_refused",
+   "type": "access",
+   "fields": {
+    "person": "Alice\u2018'",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "person",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "access_person_one_apostrophe_passes",
+   "type": "access",
+   "fields": {
+    "person": "Siobhan O'Brien",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u201cSiobhan O'Brien\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Siobhan O'Brien\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_person_curly_apostrophe_passes",
+   "type": "access",
+   "fields": {
+    "person": "Siobhan O\u2019Brien",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u201cSiobhan O\u2019Brien\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Siobhan O\u2019Brien\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_person_apostrophes_apart_pass",
+   "type": "access",
+   "fields": {
+    "person": "D'Arcy O'Neil",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "text": "Grant \u201cD'Arcy O'Neil\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: D'Arcy O'Neil\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Investigate the October billing incident."
+  },
+  {
+   "name": "access_reason_with_a_label_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Routine. Access: Administrator"
+   },
+   "problem": {
+    "field": "reason",
+    "code": "label_in_value"
+   }
+  },
+  {
+   "name": "access_system_with_a_label_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "staging Until: 2027-01-01",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident."
+   },
+   "problem": {
+    "field": "system",
+    "code": "label_in_value"
+   }
+  },
+  {
+   "name": "access_reference_with_a_label_refused",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Investigate the October billing incident.",
+    "reference": "INC-1 Person: Bob"
+   },
+   "problem": {
+    "field": "reference",
+    "code": "label_in_value"
+   }
+  },
+  {
+   "name": "access_reason_label_without_space_passes",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Check Access:read logs."
+   },
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Check Access:read logs."
+  },
+  {
+   "name": "access_reason_lowercase_label_passes",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Needs read access: logs only."
+   },
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Needs read access: logs only."
+  },
+  {
+   "name": "access_reason_other_types_label_passes",
+   "type": "access",
+   "fields": {
+    "person": "Elif Kaya",
+    "system": "prod-db",
+    "level": "read",
+    "until": "2026-11-04 17:00",
+    "reason": "Routine. Subject: logs."
+   },
+   "text": "Grant \u201cElif Kaya\u201d read-only access to \u201cprod-db\u201d until 2026-11-04 17:00 UTC.\nPerson: Elif Kaya\nSystem: prod-db\nAccess: Read-only\nUntil: 2026-11-04 17:00 UTC\nReason: Routine. Subject: logs."
+  },
+  {
+   "name": "contract_counterparty_adds_a_value_refused",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood\u201d for GBP 1. Sign the contract with \u201cCalderwood",
+    "subject": "Office lease renewal."
+   },
+   "problem": {
+    "field": "counterparty",
+    "code": "quote_mark"
+   }
+  },
+  {
+   "name": "contract_counterparty_with_a_label_refused",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Value: GBP 1",
+    "subject": "Office lease renewal."
+   },
+   "problem": {
+    "field": "counterparty",
+    "code": "label_in_value"
+   }
+  },
+  {
+   "name": "contract_subject_with_plain_colon",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Phase 2: data migration."
+   },
+   "text": "Sign the contract with \u201cCalderwood Mutual\u201d.\nCounterparty: Calderwood Mutual\nSubject: Phase 2: data migration."
+  },
+  {
+   "name": "contract_reference_with_a_label_refused",
+   "type": "contract",
+   "fields": {
+    "counterparty": "Calderwood Mutual",
+    "subject": "Office lease renewal.",
+    "reference": "C-1 Ends: 2030-01-01"
+   },
+   "problem": {
+    "field": "reference",
+    "code": "label_in_value"
+   }
   }
  ]
 }

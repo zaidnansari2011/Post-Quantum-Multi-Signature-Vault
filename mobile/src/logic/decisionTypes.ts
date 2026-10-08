@@ -12,6 +12,11 @@
 //   - a free-text field is one line: no line break; no control, invisible, bidirectional,
 //     private-use or noncharacter code point (the fixed list below, not a Unicode category); only
 //     the ordinary space, never at either end and never two together. Letters of any script pass;
+//   - no free-text field holds a double quotation mark, or anything drawn like one (two single
+//     quotation marks together among them), because the first line puts each free-text value
+//     between “ and ”: a value can never close its own quotes and say what its fields do not;
+//   - no free-text field holds one of its type's own labels followed by ": " (Reason: ), so a
+//     value never reads as a line of the text;
 //   - lengths count code points, not UTF-16 units;
 //   - dates are YYYY-MM-DD and times YYYY-MM-DD HH:MM in UTC, real calendar dates from 2000;
 //   - an amount is a plain decimal (48200.50), shown grouped (48,200.50), with a currency code;
@@ -100,6 +105,18 @@ const HIDDEN_RANGES: Array<[number, number]> = [
   [0xf0000, 0x10ffff], // supplementary private use
 ];
 
+/** Double quotation marks and what draws like one (the server's DOUBLE_QUOTES). */
+const DOUBLE_QUOTES = new Set([
+  0x0022, 0x00ab, 0x00bb, 0x02ba, 0x02dd, 0x02ee, 0x05f4, 0x201c, 0x201d, 0x201e, 0x201f, 0x2033,
+  0x2036, 0x275d, 0x275e, 0x2e42, 0x3003, 0x301d, 0x301e, 0x301f, 0xff02, 0x1f676, 0x1f677, 0x1f678,
+]);
+
+/** Single quotation marks and apostrophes: one is allowed (O’Brien), two together are not. */
+const SINGLE_QUOTES = new Set([
+  0x0027, 0x0060, 0x00b4, 0x02b9, 0x02bb, 0x02bc, 0x02bd, 0x2018, 0x2019, 0x201a, 0x201b, 0x2032,
+  0x2035, 0x2039, 0x203a, 0xff07,
+]);
+
 /** Spaces other than U+0020: they look like one and are not. The Braille blank draws as one. */
 const OTHER_SPACES = new Set([
   0x00a0, 0x1680, 0x202f, 0x205f, 0x2800, 0x3000,
@@ -142,25 +159,29 @@ function realDate(text: string): boolean {
   return day >= 1 && day <= days;
 }
 
-function textProblem(value: string, maxLen: number): string | null {
+function textProblem(value: string, maxLen: number, labels: string[]): string | null {
   let length = 0;
+  let afterSingle = false;
   // `for...of` walks code points; a lone surrogate comes through on its own and is hidden.
   for (const ch of value) {
     const cp = ch.codePointAt(0)!;
     if (LINE_BREAKS.has(cp)) return 'line_break';
     if (hidden(cp)) return 'hidden_character';
     if (OTHER_SPACES.has(cp)) return 'spacing';
+    if (DOUBLE_QUOTES.has(cp) || (afterSingle && SINGLE_QUOTES.has(cp))) return 'quote_mark';
+    afterSingle = SINGLE_QUOTES.has(cp);
     length += 1;
   }
   if (value.startsWith(' ') || value.endsWith(' ') || value.includes('  ')) return 'spacing';
   if (length > maxLen) return 'too_long';
+  if (labels.some((label) => value.includes(`${label}: `))) return 'label_in_value';
   return null;
 }
 
-function valueProblem(spec: Spec, value: string): string | null {
+function valueProblem(spec: Spec, value: string, labels: string[]): string | null {
   switch (spec.kind) {
     case 'text':
-      return textProblem(value, spec.maxLen ?? 0);
+      return textProblem(value, spec.maxLen ?? 0, labels);
     case 'choice':
       return Object.prototype.hasOwnProperty.call(ACCESS_LEVELS, value) ? null : 'choice';
     case 'datetime':
@@ -189,6 +210,7 @@ export function checkFields(type: unknown, fields: unknown, version: unknown = T
   if (version !== TEMPLATE_VERSION) return { field: null, code: 'unknown_version' };
   if (!isFields(fields)) return { field: null, code: 'not_an_object' };
   const specs = SPECS[type];
+  const labels = specs.map((spec) => spec.label);
   if (Object.keys(fields).some((key) => !specs.some((spec) => spec.key === key))) {
     return { field: null, code: 'unknown_field' };
   }
@@ -199,7 +221,7 @@ export function checkFields(type: unknown, fields: unknown, version: unknown = T
     }
     const value = own(fields, spec.key);
     if (typeof value !== 'string') return { field: spec.key, code: 'not_text' };
-    const code = valueProblem(spec, value);
+    const code = valueProblem(spec, value, labels);
     if (code !== null) return { field: spec.key, code };
   }
   if (type === 'contract') {
@@ -245,15 +267,16 @@ export function fieldRows(type: 'access' | 'contract', fields: Fields): FieldRow
   return rows;
 }
 
+/** The sentence the prompt quotes: each free-text value between “ and ”, which no value holds. */
 function firstLine(type: 'access' | 'contract', fields: Fields): string {
   if (type === 'access') {
     const phrase = ACCESS_LEVELS[fields.level as string][1];
-    return `Grant ${fields.person as string} ${phrase} access to ${fields.system as string} until ${fields.until as string} UTC.`;
+    return `Grant “${fields.person as string}” ${phrase} access to “${fields.system as string}” until ${fields.until as string} UTC.`;
   }
   const value = given(fields, 'amount')
     ? ` for ${fields.currency as string} ${grouped(fields.amount as string)}`
     : '';
-  return `Sign the contract with ${fields.counterparty as string}${value}.`;
+  return `Sign the contract with “${fields.counterparty as string}”${value}.`;
 }
 
 /**
