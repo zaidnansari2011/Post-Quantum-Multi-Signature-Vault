@@ -230,11 +230,31 @@ def vote_answer(result):
 # -- the run ----------------------------------------------------------------------------------
 
 
-def go(browser, ada, name, target, rewrite, steps, awaiting=None, link=None, extra_routes=None):
+def go(
+    browser,
+    ada,
+    name,
+    target,
+    rewrite,
+    steps,
+    awaiting=None,
+    link=None,
+    extra_routes=None,
+    auth=None,
+    drop_seed=False,
+):
+    """`auth`: the harness prompt's answer ('cancel', 'lockout', 'nolock'); `drop_seed`: the
+    keystore has lost the seed (§6.20's key missing). Both set before the app's scripts run."""
     if ONLY and name not in ONLY:
         return
     ctx, page = new_page(browser, ada)
     try:
+        if auth:
+            page.add_init_script(f"localStorage.setItem('webshots.auth', {json.dumps(auth)});")
+        if drop_seed:
+            page.add_init_script(
+                "localStorage.removeItem('webshots.securestore.qvault.device.seed.v1');"
+            )
         queue = awaiting if awaiting is not None else [summary(target)]
         page.route(
             re.compile(r".*/api/v1/proposals\?state=awaiting.*"),
@@ -393,15 +413,105 @@ with sync_playwright() as p:
         extra_routes=[(r".*/vote$", vote_answer(lambda _d: ("open", 0, 1)))],
     )
 
-    # Failures: nothing reached the server (inline, retry is one tap); decided before it arrived.
+    # Failures. The vote is sent and no answer comes back: the sheet says Q-Vault may have it and
+    # asks again (held here, to shoot "Checking…"), then says what Q-Vault's own record shows.
+    sent = {"voted": False, "held": []}
+
+    def vote_lost(route):
+        if route.request.method != "POST":
+            return route.fallback()
+        sent["voted"] = True
+        route.abort()
+
+    def detail_after_vote(route):
+        if not sent["voted"]:
+            return route.fallback()
+        sent["held"].append(route)
+
+    def transport(page):
+        open_decision(page, GENERAL)
+        button(page, "Approve").click()
+        page.wait_for_timeout(700)
+        sign(page, "Sign with")
+        page.wait_for_timeout(1500)
+        shot(page, "s09a_sign_unanswered_checking", wait_ms=300)
+        for route in sent["held"]:
+            resp = route.fetch()
+            body = resp.json()
+            needs(body["proposal"])
+            route.fulfill(response=resp, json=body)
+        sent["held"].clear()
+        sent["voted"] = False
+        page.wait_for_timeout(1200)
+        quiet(page)
+        shot(page, "s09_sign_failed_transport")
+
     go(
         browser,
         ada,
         "s09_sign_failed_transport",
         general,
         needs,
-        signs("Approve", "Sign with", "s09_sign_failed_transport"),
-        extra_routes=[(r".*/vote$", vote_answer("abort"))],
+        transport,
+        extra_routes=[
+            (r".*/vote$", vote_lost),
+            (r".*/api/v1/proposals/" + general["proposal_uuid"] + "$", detail_after_vote),
+        ],
+    )
+
+    # The prompt cancelled; locked out; no screen lock at all; then the server's refusals.
+    def fails(name, label="Approve", sheet_button="Sign"):
+        def run(page):
+            open_decision(page, GENERAL)
+            button(page, label).click()
+            page.wait_for_timeout(700)
+            sign(page, sheet_button)
+            page.wait_for_timeout(2000)
+            quiet(page)
+            shot(page, name, wait_ms=800)
+
+        return run
+
+    for name, auth in (
+        ("x01_biometric_cancelled", "cancel"),
+        ("x02_biometric_locked", "lockout"),
+        ("x03_no_screen_lock", "nolock"),
+    ):
+        go(browser, ada, name, general, needs, fails(name), auth=auth)
+    for name, answer in (
+        ("x04_chain_unavailable", ("error", 503, "chain_unavailable")),
+        ("x05_not_a_signer", ("error", 403, "not_a_signer")),
+        ("x06_key_cant_sign_banner", ("error", 403, "device_key_not_active")),
+    ):
+        go(
+            browser,
+            ada,
+            name,
+            general,
+            needs,
+            fails(name),
+            extra_routes=[(r".*/vote$", vote_answer(answer))],
+        )
+
+    # The banner's "Set up this phone again": the ended screen for a key the server refused.
+    def key_unusable(page):
+        open_decision(page, GENERAL)
+        button(page, "Approve").click()
+        page.wait_for_timeout(700)
+        sign(page, "Sign")
+        page.get_by_role("button", name="Set up this phone again").first.wait_for(timeout=60000)
+        page.get_by_role("button", name="Set up this phone again").first.click()
+        page.get_by_text("Q-Vault didn't accept a signature from it").wait_for(timeout=30000)
+        shot(page, "x07_ended_key_unusable")
+
+    go(
+        browser,
+        ada,
+        "x07_ended_key_unusable",
+        general,
+        needs,
+        key_unusable,
+        extra_routes=[(r".*/vote$", vote_answer(("error", 403, "device_key_not_active")))],
     )
 
     closed_now = {"closed": False}
@@ -461,13 +571,6 @@ with sync_playwright() as p:
         extra_routes=[(r".*/api/v1/proposals/" + pay_none["proposal_uuid"] + "$", clone_payment(pay_none["proposal_uuid"], None))],
     )
 
-    # Row 7 at large text: the bar keeps its button; the one-time switch moves onto the page.
-    def row7(page):
-        open_decision(page, PAYMENT)
-        shot(page, "d07a_payment_password_key")
-
-    go(browser, ada, "d07a_payment_password_key", payment, pay(PASSWORD_KEY), row7)
-
     # Session ended: every request answered 401, as the server does for an expired token.
     def ended(page):
         page.get_by_text("Set up this phone again").first.wait_for(timeout=60000)
@@ -487,6 +590,31 @@ with sync_playwright() as p:
             )
         ],
     )
+
+    # The other endings (§6.20): a removal the server names (A9's device_revoked, answered here),
+    # and a keystore that lost the seed while the phone stayed enrolled.
+    def ended_as(name):
+        def run(page):
+            page.get_by_text("Set up this phone again").first.wait_for(timeout=60000)
+            shot(page, name)
+
+        return run
+
+    go(
+        browser,
+        ada,
+        "x08_ended_revoked",
+        general,
+        needs,
+        ended_as("x08_ended_revoked"),
+        extra_routes=[
+            (
+                r".*/api/v1/(me|devices|vaults|proposals).*",
+                lambda r: r.fulfill(status=401, json={"ok": False, "code": "device_revoked", "error": "x"}),
+            )
+        ],
+    )
+    go(browser, ada, "x09_ended_key_missing", general, needs, ended_as("x09_ended_key_missing"), drop_seed=True)
 
     # Remove this phone: a treasury holds this phone's key; then the server can't be reached.
     def me_device(route):
@@ -523,12 +651,23 @@ with sync_playwright() as p:
         page.wait_for_timeout(1500)
         quiet(page)
         shot(page, "s12_remove_this_phone")
+        # Pressed before ticking: the button is live and says why nothing happened.
+        page.get_by_role("button", name="Remove this phone").last.click()
+        page.wait_for_timeout(700)
+        shot(page, "s12b_remove_needs_the_tick")
         page.get_by_role("checkbox", name=re.compile("I understand")).or_(
             page.get_by_text("I understand")
         ).first.click()
         page.get_by_role("button", name="Remove this phone").last.click()
         page.wait_for_timeout(1500)
         shot(page, "s13_remove_failed_offline")
+
+    revoke_401 = {"on": False}
+
+    def revoke_unauthorised(route):
+        if not revoke_401["on"]:
+            return route.fallback()
+        route.fulfill(status=401, json={"ok": False, "code": "token_invalid", "error": "x"})
 
     go(
         browser,
@@ -540,6 +679,38 @@ with sync_playwright() as p:
         extra_routes=[
             (r".*/api/v1/me$", me_device),
             (r".*/api/v1/vaults/\d+/treasury$", treasury_with_me),
+        ],
+    )
+    # The same, with the server answering the removal 401 (session expired, or already removed on
+    # the web): the sheet explains and offers "Remove from this phone only". Answered here, never
+    # by the server, so the harness device is never removed.
+    revoke_401["on"] = True
+
+    def remove_401(page):
+        page.get_by_role("tab", name=re.compile("^Account")).first.click()
+        page.wait_for_timeout(800)
+        quiet(page)
+        button(page, "Remove this phone").click()
+        page.wait_for_timeout(1500)
+        quiet(page)
+        page.get_by_role("checkbox", name=re.compile("I understand")).or_(
+            page.get_by_text("I understand")
+        ).first.click()
+        page.get_by_role("button", name="Remove this phone").last.click()
+        page.wait_for_timeout(1500)
+        shot(page, "s14_remove_session_gone")
+
+    go(
+        browser,
+        ada,
+        "s14_remove_session_gone",
+        general,
+        needs,
+        remove_401,
+        extra_routes=[
+            (r".*/api/v1/me$", me_device),
+            (r".*/api/v1/vaults/\d+/treasury$", treasury_with_me),
+            (r".*/api/v1/devices/\d+/revoke$", revoke_unauthorised),
         ],
     )
     browser.close()

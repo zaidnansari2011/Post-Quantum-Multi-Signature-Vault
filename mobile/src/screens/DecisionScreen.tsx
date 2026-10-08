@@ -715,13 +715,15 @@ export default function DecisionScreen({
           {tampered ? (
             <TamperPanel reason={checked.reason} />
           ) : (
-            <StatusLine badge={personal.badge} when={whenText} soon={soon} passed={passed && open} line={personalLine} />
+            <View style={s.labelled}>
+              <StatusLine badge={personal.badge} when={whenText} soon={soon} passed={passed && open} line={personalLine} />
+              {actions.kind === 'web' && actions.fix ? (
+                // Row 7's one-time switch, right under the line that explains it (the bar keeps
+                // only buttons, so it never repeats that line).
+                <TextLink label="Approve treasury payments on this phone" onPress={onOpenTreasuryApprovals} />
+              ) : null}
+            </View>
           )}
-          {actions.kind === 'web' && actions.fix ? (
-            // Row 7's one-time switch, on the page under the line that explains it (the bar keeps
-            // only buttons, so it never repeats that line).
-            <TextLink label="Approve treasury payments on this phone" onPress={onOpenTreasuryApprovals} />
-          ) : null}
 
           {keyBanner ? (
             <Banner

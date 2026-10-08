@@ -96,9 +96,11 @@ export function onRemoveResult(result: RemoveResult): RemovePlan {
     case 'not_found':
       return { deletes: EVERYTHING, message: null, offerLocalOnly: false };
     case 'unreachable':
+      // No answer says nothing about whether the request arrived: a reply lost on the way back
+      // leaves a phone the server has already removed. So "may not have been", never "wasn't".
       return {
         deletes: NOTHING,
-        message: "Can't reach Q-Vault, so this phone wasn't removed. Try again.",
+        message: "Q-Vault didn't answer, so this phone may not have been removed. Try again.",
         offerLocalOnly: true,
       };
     case 'unauthorized':

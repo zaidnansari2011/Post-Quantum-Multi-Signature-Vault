@@ -63,7 +63,8 @@ export function checkInRun(detail: ProposalDetail, route: string = detail.propos
   const derived = checked.ok ? checked.hash : checked.actual;
   if (detail.proposal_uuid !== route || detail.signing_inputs.proposal_id !== route) {
     signedContent.markChanged(route);
-    return { ok: false, reason: 'other_decision', expected: route, actual: detail.proposal_uuid };
+    // The hashes, as for every failure, so a report and the Hashes tab say what was derived.
+    return { ok: false, reason: 'other_decision', expected: detail.payload_hash, actual: derived };
   }
   const seen = signedContent.see(route, signedContentKey(detail.signing_inputs, derived));
   if (seen === 'changed') {

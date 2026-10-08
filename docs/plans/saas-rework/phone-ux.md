@@ -2215,8 +2215,9 @@ There is one destructive action, replacing "Sign out" and "Revoke this device" (
 3. Wipe the persisted cache.
 4. Return to onboarding step 1.
 
-On a network failure the sheet stays open: "Can't reach Q-Vault, so this phone wasn't removed. Try
-again." **The key is never deleted locally while the server still counts it as active**, unless the
+On a network failure the sheet stays open: "Q-Vault didn't answer, so this phone may not have been
+removed. Try again." (no answer says nothing about whether the request arrived: its reply may be what
+was lost). **The key is never deleted locally while the server still counts it as active**, unless the
 person chooses "Remove from this phone only" (quiet, shown only after a failure), whose copy says the
 web will still list it.
 

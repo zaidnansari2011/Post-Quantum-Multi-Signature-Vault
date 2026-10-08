@@ -57,7 +57,7 @@ export function useApprovals({ poll = false }: { poll?: boolean } = {}) {
     const uuid = payments[i]?.proposal_uuid;
     if (!detail || !uuid || detail.proposal_uuid !== uuid) return;
     const action = detail.signing_inputs.action;
-    if (!action || !checkInRun(detail).ok) return;
+    if (!action || !checkInRun(detail, uuid).ok) return;
     amounts[uuid] = formatEth(action.value_wei);
     const seat = classifySeat(detail.execution?.seat_fingerprint, identity.fingerprint, others ?? []);
     // Without the device list, a key that is not this phone's could be another phone's: unknown.
