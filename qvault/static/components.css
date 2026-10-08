@@ -140,6 +140,8 @@ textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6)
 .q-cb:disabled::before { background: var(--text-disabled); }
 .q-choice { display: flex; gap: var(--space-8); align-items: flex-start; }
 .q-choice label { cursor: pointer; }
+.q-choice__txt { min-width: 0; }
+.q-choice__txt > label { display: block; }
 .q-choice__cap { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 .q-choices { display: grid; gap: var(--space-8); border: 0; margin: 0 0 var(--space-16); padding: 0; min-width: 0; }
 .q-choices > legend { padding: 0; margin-bottom: var(--space-6); font-weight: var(--weight-medium); }
@@ -1066,6 +1068,7 @@ a.q-typecard:hover { background: var(--fill); color: var(--text); }
 @media (max-width: 767px) {
   /* Tabs that run off a phone's edge fade there and scroll, so the hidden ones read as more. */
   .q-tabs { scroll-padding-inline: var(--gutter); mask-image: linear-gradient(to right, var(--text) 85%, transparent); }
+  .q-tabs.is-end { mask-image: none; }
   .q-toolbar .q-field--inline:first-of-type { flex-basis: 100%; }
   .q-toolbar .q-field--inline { flex: 1 1 40%; }
   .q-date__btn { right: 0; top: 0; width: 40px; height: 100%; }

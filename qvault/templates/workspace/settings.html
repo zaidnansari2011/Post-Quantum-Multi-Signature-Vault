@@ -6,8 +6,8 @@
 {% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Workspace settings', None)]) }}{% endblock %}
 
 {% block content %}
-{% set you_are %}{{ workspace.name }} · you're {{ role_name(me.role) }}{% endset %}
-{{ page_header('Workspace settings', description=you_are) }}
+{% set you_are = [('Workspace', workspace.name), ('Your role', role_name(me.role))] %}
+{{ page_header('Workspace settings', facts=you_are) }}
 
 <div class="q-acct">
   <section class="q-panel" aria-labelledby="ws-general">
@@ -16,14 +16,14 @@
       {% if manager %}
       <form method="post" action="{{ url_for('workspace.save_general') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        {{ field('name', 'Name', value=workspace.name, id='name', required=True,
+        {{ field('name', 'Name', value=name_value, id='name', required=True, error=name_error,
                  caption='Shown to everyone in the workspace and on invitations.', attrs={'maxlength': 120}) }}
         {{ button('Save', 'secondary', type='submit') }}
       </form>
       {% else %}
       <dl class="q-kv">
         <div><dt>Name</dt><dd>{{ workspace.name }}</dd></div>
-        <div><dt>Created</dt><dd>{{ workspace.created_at.strftime('%d %b %Y') }}</dd></div>
+        <div><dt>Created</dt><dd>{{ ui_day(workspace.created_at) }}</dd></div>
       </dl>
       <p class="q-note">Only owners and admins can change workspace settings.</p>
       {% endif %}

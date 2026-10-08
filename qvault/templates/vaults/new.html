@@ -15,7 +15,7 @@
         {{ wtf_field(form.name) }}
         {{ wtf_field(form.description, attrs={'rows': 2}) }}
         {{ number('threshold_m', form.threshold_m.label.text, form.threshold_m._value(), min=1, max=50, required=True,
-                  id=form.threshold_m.id, caption='You are the first approver. Add more members afterwards.',
+                  id=form.threshold_m.id, caption='How many approvals a decision in this vault needs. You are the first approver; add more members afterwards.',
                   error=form.threshold_m.errors) }}
         <div class="q-btnrow">
           {{ button(form.submit.label.text, 'primary', type='submit', name='submit', value=form.submit.label.text) }}

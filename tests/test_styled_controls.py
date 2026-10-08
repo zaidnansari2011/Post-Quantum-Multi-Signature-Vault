@@ -200,10 +200,29 @@ def test_the_date_filters_are_text_inputs_that_post_an_iso_day(app, client, team
     start = re.search(r'<input[^>]*id="f-from"[^>]*>', html).group(0)
     assert 'name="from"' in start and 'type="text"' in start and 'value="2026-01-02"' in start
     assert r'pattern="\d{4}-\d{2}-\d{2}"' in start
-    # The route drops a value that is not a date, so the field comes back empty, not echoed.
+    # The route drops a value that is not a date, and the field shows it back as refused (not
+    # silently emptied), so the person sees the log is not filtered by it.
     end = re.search(r'<input[^>]*id="f-to"[^>]*>', html).group(0)
-    assert "value=" not in end
+    assert 'value="not-a-date"' in end and 'aria-invalid="true"' in end
+    assert re.search(r'id="f-to-bad" data-due-read>Type it as 2026-10-13\.</p>', html)
     assert 'data-mode="date"' in html and "data-autosubmit" in html
+
+
+def test_a_day_that_does_not_exist_is_refused_not_applied(app, client, team):
+    """ "2026-13-40" fits the pattern, and compared as text it would quietly filter the log."""
+    from qvault.services.audit_service import Filters
+
+    assert Filters.from_request({"from": "2026-13-40"}).date_from == ""
+    assert Filters.from_request({"to": "2026-02-30"}).date_to == ""
+    _login(client, "ada@e.com")
+    html = client.get("/ledger/?from=2026-13-40").get_data(as_text=True)
+    start = re.search(r'<input[^>]*id="f-from"[^>]*>', html).group(0)
+    assert 'value="2026-13-40"' in start and 'aria-invalid="true"' in start
+    assert "entries match these filters" not in html
+    # A good day is shown plainly.
+    html = client.get("/ledger/?from=2026-02-28").get_data(as_text=True)
+    start = re.search(r'<input[^>]*id="f-from"[^>]*>', html).group(0)
+    assert 'value="2026-02-28"' in start and "aria-invalid" not in start
 
 
 def test_the_verify_file_drop_knows_the_routes_limit_and_formats(app, client):
@@ -242,6 +261,27 @@ def test_number_inputs_keep_their_name_value_and_bounds(app, client, team):
     tag = re.search(r'<input[^>]*name="iterations"[^>]*>', bench, re.S).group(0)
     assert 'type="number"' in tag and 'value="3"' in tag and 'min="1"' in tag
     assert '<label class="visually-hidden" for="iterations">Iterations</label>' in bench
+
+
+def test_the_tamper_entry_is_still_required_as_its_form_declared(app, client, team):
+    """WTForms' DataRequired drew `required` on the bare field; the stepper must keep it."""
+    app.config["ENABLE_TAMPER_DEMO"] = True
+    _login(client, "ada@e.com")
+    html = client.get("/ledger/").get_data(as_text=True)
+    tag = re.search(r'<input[^>]*name="target_seq"[^>]*>', html, re.S).group(0)
+    assert 'type="number"' in tag and 'min="1"' in tag and "required" in tag
+
+
+def test_a_threshold_of_zero_says_what_is_wrong_not_that_it_is_missing(app, client, team):
+    _login(client, "ada@e.com")
+    html = client.post("/vaults/new", data={"name": "Ops", "threshold_m": "0"}).get_data(
+        as_text=True
+    )
+    assert "Choose a number from 1 to 50." in html and "This field is required." not in html
+    html = client.post("/vaults/new", data={"name": "Ops", "threshold_m": ""}).get_data(
+        as_text=True
+    )
+    assert "Say how many approvals a decision needs." in html
 
 
 def test_a_new_vault_still_posts_its_threshold(app, client, team):
@@ -285,3 +325,38 @@ def test_the_treasury_key_choice_is_a_radio_group_with_password_chosen(app, clie
     html = client.get("/account/security").get_data(as_text=True)
     assert "<legend>The key a treasury registers for you</legend>" in html
     assert re.search(r'name="choice" value="password"\s+checked', html)
+
+
+# ------------------------------------------------------------------ refusals on their fields
+
+
+def test_a_refused_invitation_marks_the_field_it_is_about(app, client, team):
+    _login(client, "ada@e.com")
+    r = client.post("/workspace/invite", data={"email": "cleo@e.com", "role": "member"})
+    html = r.get_data(as_text=True)
+    assert r.status_code == 400
+    tag = re.search(r'<input[^>]*id="email"[^>]*>', html).group(0)
+    assert 'aria-invalid="true"' in tag and 'aria-describedby="email-cap email-err"' in tag
+    assert re.search(r'id="email-err">.*?cleo@e\.com is already a member', html, re.S)
+    assert 'value="cleo@e.com"' in tag
+
+
+def test_a_refused_workspace_name_comes_back_on_its_field(app, client, team):
+    workspace, *_ = team
+    _login(client, "ada@e.com")
+    r = client.post("/workspace/settings/general", data={"name": "   "})
+    html = r.get_data(as_text=True)
+    assert r.status_code == 400
+    tag = re.search(r'<input[^>]*id="name"[^>]*>', html).group(0)
+    assert 'aria-invalid="true"' in tag and "Give the workspace a name." in html
+    assert workspace.name != ""
+
+
+def test_an_email_already_registered_is_said_on_the_email_field(app, client, team):
+    r = client.post(
+        "/register",
+        data={"display_name": "A", "email": "ada@e.com", "password": PW, "confirm": PW},
+    )
+    html = r.get_data(as_text=True)
+    tag = re.search(r'<input[^>]*id="email"[^>]*>', html).group(0)
+    assert 'aria-invalid="true"' in tag and "That email is already registered." in html
