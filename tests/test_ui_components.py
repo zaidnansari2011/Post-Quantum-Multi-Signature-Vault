@@ -171,6 +171,77 @@ def test_a_radio_group_has_a_legend_and_checks_the_selected_option(app):
     assert not re.search(r'value="approve"\s+checked', html)
 
 
+def test_a_disabled_checkbox_says_so_and_keeps_the_value_it_would_post(app):
+    html = render(
+        app,
+        '{% from "ui/forms.html" import checkbox %}'
+        '{{ checkbox("sod", "Separation of duties", checked=True, value="on", disabled=True) }}',
+    )
+    assert 'name="sod" value="on" checked disabled' in html
+
+
+def test_a_number_stays_a_native_number_input_with_its_bounds(app):
+    """The arrow keys, the spinbutton role and the phone's keypad come from the native input; the
+    − and + buttons are drawn hidden and out of the tab order, and qvault.js shows them."""
+    html = render(
+        app,
+        '{% from "ui/forms.html" import number %}'
+        '{{ number("threshold_m", "Approvals required", 2, min=1, max=50, required=True,'
+        ' caption="Of the vault\'s approvers.") }}',
+    )
+    assert '<label class="q-field__label" for="f-threshold_m">Approvals required</label>' in html
+    tag = re.search(r"<input[^>]*>", html).group(0)
+    assert 'type="number"' in tag and 'name="threshold_m"' in tag and 'value="2"' in tag
+    assert 'min="1"' in tag and 'max="50"' in tag and "required" in tag
+    assert 'aria-describedby="f-threshold_m-cap"' in tag
+    buttons = re.findall(r"<button[^>]*>", html)
+    assert len(buttons) == 2
+    assert all('type="button"' in b and 'tabindex="-1"' in b and " hidden" in b for b in buttons)
+    assert 'aria-label="Decrease approvals required"' in html
+    assert 'aria-label="Increase approvals required"' in html
+
+
+def test_an_empty_number_posts_nothing_rather_than_a_placeholder_value(app):
+    html = render(app, '{% from "ui/forms.html" import number %}{{ number("n", "N", "") }}')
+    assert "value=" not in re.search(r"<input[^>]*>", html).group(0)
+
+
+def test_a_date_field_is_a_typed_day_with_a_calendar_not_a_native_picker(app):
+    html = render(
+        app,
+        '{% from "ui/forms.html" import date_field %}'
+        '{{ date_field("from", "From", "2026-10-13", id="f-from") }}',
+    )
+    tag = re.search(r"<input[^>]*>", html).group(0)
+    assert 'type="text"' in tag and 'name="from"' in tag and 'value="2026-10-13"' in tag
+    assert r'pattern="\d{4}-\d{2}-\d{2}"' in tag
+    assert 'aria-describedby="f-from-bad"' in tag, "the message for a bad date is read with it"
+    assert 'data-due-field data-mode="date"' in html
+    assert 'aria-label="Choose a date: From"' in html and 'aria-controls="f-from-pop"' in html
+    assert '<p class="q-field__err q-date__bad" id="f-from-bad" data-due-read></p>' in html
+
+
+def test_a_file_drop_carries_the_accept_list_and_the_size_limit(app):
+    html = render(
+        app,
+        '{% from "ui/forms.html" import file_drop %}'
+        '{{ file_drop("bundle", "File", accept=".json,application/json", max_bytes=4194304,'
+        ' caption="Up to 4 MB.") }}',
+    )
+    tag = re.search(r"<input[^>]*>", html, re.S).group(0)
+    assert 'type="file"' in tag and 'name="bundle"' in tag
+    assert 'accept=".json,application/json"' in tag and 'data-max-bytes="4194304"' in tag
+    assert 'aria-labelledby="f-bundle-l"' in tag
+    assert 'aria-describedby="f-bundle-bad f-bundle-cap"' in tag
+    assert 'id="f-bundle-bad" data-drop-err' in html
+
+
+def test_a_file_drop_without_limits_draws_neither(app):
+    html = render(app, '{% from "ui/forms.html" import file_drop %}{{ file_drop("file", "A") }}')
+    tag = re.search(r"<input[^>]*>", html, re.S).group(0)
+    assert "accept=" not in tag and "data-max-bytes" not in tag and "required" not in tag
+
+
 # ------------------------------------------------------------------------------ data
 
 
