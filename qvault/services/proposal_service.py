@@ -240,8 +240,11 @@ def create_proposal(
         )
     # Plan S15, frozen with the decision (``eligibility``): whether its requester may approve it.
     requester_can_approve = eligibility.vault_allows_requester(vault)
-    if eligibility.impossible_to_pass(vault, signers=required_n):
-        raise ProposalError(eligibility.CANNOT_PASS_UNDER_SOD)
+    # Refused when too few people could approve it now (S15, suspended approvers, auditors): it
+    # would be born unable to pass (``eligibility.cannot_raise``).
+    refusal = eligibility.cannot_raise(vault, creator.id)
+    if refusal is not None:
+        raise ProposalError(refusal)
 
     now = datetime.now(UTC)
     action = None
@@ -473,8 +476,10 @@ def who_approves(vault: Vault, user) -> dict:
     when it is raised (every eligible approver but the requester).
 
     ``separation`` is plan S15: the person raising it can't approve it, so they leave ``names``
-    (the rule reads "Any 2 of Brij and Chen") and the preview says so. ``impossible`` is the
-    threshold that rule makes unreachable; raising is then refused (``eligibility``).
+    and ``people`` (the rule reads "Any 2 of Brij and Chen") and the preview says so. ``names``
+    are the people who could approve it now (``eligibility.able_to_approve``): an approver
+    suspended from the workspace, or an auditor there, is left out. ``impossible`` is a threshold
+    they can't reach, and ``why`` says why after "It can't pass:"; raising is then refused.
     """
     ids = vault.signer_ids()
     people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()} if ids else {}
@@ -483,8 +488,10 @@ def who_approves(vault: Vault, user) -> dict:
         person = people.get(uid)
         return first_name(person.display_name or person.email) if person else "Someone"
 
-    others = [uid for uid in ids if uid != user.id]
     separation = not eligibility.vault_allows_requester(vault)
+    able = eligibility.able_to_approve(vault, user.id)
+    others = [uid for uid in ids if uid != user.id and uid in able]
+    why = eligibility.why_cannot_pass_if_raised(vault, user.id)
     return {
         "m": vault.policy.threshold_m,
         "n": len(ids),
@@ -494,12 +501,12 @@ def who_approves(vault: Vault, user) -> dict:
                 "full": people[uid].display_name if uid in people else "",
                 "you": uid == user.id,
             }
-            for uid in sorted(ids, key=lambda i: (i == user.id, name(i)))
+            for uid in sorted(able, key=lambda i: (i == user.id, name(i)))
         ],
-        "names": [name(uid) for uid in others]
-        + (["you"] if user.id in ids and not separation else []),
+        "names": [name(uid) for uid in others] + (["you"] if user.id in able else []),
         "includes_you": user.id in ids,
         "separation": separation,
-        "impossible": eligibility.impossible_to_pass(vault, signers=len(ids)),
+        "impossible": why is not None,
+        "why": why,
         "asked": [name(uid) for uid in others],
     }

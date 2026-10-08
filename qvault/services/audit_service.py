@@ -395,10 +395,16 @@ def rule_changes(vault: Vault, *, after_seq: int | None = None, limit: int = 20)
         diff = rule_diff(e, names)
         if diff is None:
             continue
+        try:
+            subject = json.loads(e.payload_json).get("user_id")
+        except (TypeError, ValueError, AttributeError):
+            subject = None
         out.append(
             {
                 "entry": e,
                 "event": e.event_type,
+                # Whom a membership change was about (None for the vault's own rules).
+                "user_id": subject if isinstance(subject, int) else None,
                 "who": names.get(e.actor_id, "Someone") if e.actor != "SYSTEM" else "The system",
                 "when": _parse_time(e.timestamp),
                 "diff": diff,

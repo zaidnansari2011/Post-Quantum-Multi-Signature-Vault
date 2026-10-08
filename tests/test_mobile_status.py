@@ -232,6 +232,73 @@ CASES = {
         "You're not an approver on this decision.",
         "none",
     ),
+    # R5: too few people can still approve it, so "Can't pass" in place of "Waiting on N". A
+    # derived word: the decision is still open, and someone who can sign it is still asked to.
+    "3_raised_it_cannot_pass": (
+        _case(
+            {
+                "raised_by": {"id": ME, "name": "Zaid"},
+                "separation_of_duties": True,
+                "can_still_pass": False,
+            }
+        ),
+        3,
+        "Can't pass",
+        "warning",
+        "You raised this, so you can't approve it.",
+        "remind",
+    ),
+    "4_approved_cannot_pass": (
+        _case(
+            {
+                "approvals": 1,
+                "signed_by_me": True,
+                "votes": [_vote(ME, "approve", TODAY_1024)],
+                "can_still_pass": False,
+            }
+        ),
+        4,
+        "Can't pass",
+        "warning",
+        "You approved 10:24.",
+        "none",
+    ),
+    "6_not_an_approver_cannot_pass": (
+        _case(
+            {
+                "can_sign": False,
+                "policy": {"M": 2, "N": 3, "signers": [HASSAN, BRIJ, CHEN]},
+                "can_still_pass": False,
+            }
+        ),
+        6,
+        "Can't pass",
+        "warning",
+        "You're not an approver on this decision.",
+        "none",
+    ),
+    "2_needs_you_even_when_it_cannot_pass": (
+        _case({"can_still_pass": False}),
+        2,
+        "Needs your signature",
+        "warning",
+        None,
+        "sign",
+    ),
+    "6_still_passable_says_waiting": (
+        _case(
+            {
+                "can_sign": False,
+                "policy": {"M": 2, "N": 3, "signers": [HASSAN, BRIJ, CHEN]},
+                "can_still_pass": True,
+            }
+        ),
+        6,
+        "Waiting on 2",
+        "neutral",
+        "You're not an approver on this decision.",
+        "none",
+    ),
     # Row 7: the treasury holds another key.
     "7_password_key": (
         _case(PAYMENT, seat={"kind": "password"}),
@@ -542,7 +609,7 @@ CASES = {
 
 BADGES = re.compile(
     r"^(Needs your signature|Waiting on \d+|Approved|Queued|Paid|Failed|Rejected|Expired|"
-    r"Withdrawn|Unknown)$"
+    r"Withdrawn|Can't pass|Unknown)$"
 )
 
 
@@ -627,6 +694,15 @@ def test_every_badge_is_from_the_closed_vocabulary(results):
         if got["badge"] is not None:
             assert BADGES.match(got["badge"]["word"]), (name, got["badge"])
             assert got["badge"]["tone"] in {"success", "warning", "critical", "info", "neutral"}
+
+
+def test_the_phone_says_cannot_pass_in_the_webs_word_and_tone(results):
+    """The derived word is the web's (qvault/ui.py STATUS), in the phone's straight apostrophe."""
+    from qvault.ui import status_of
+
+    word, tone = status_of("cannot_pass")
+    got = results["4_approved_cannot_pass"]["badge"]
+    assert got == {"word": word.replace(chr(0x2019), "'"), "tone": tone}
 
 
 def test_no_line_claims_the_code_proves_anything(results):

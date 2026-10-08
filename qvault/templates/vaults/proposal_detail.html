@@ -110,14 +110,15 @@
 {% endif %}
 
 {% if cannot_pass %}
-{#- Too few people who can still approve it are left (approvers demoted, removed or suspended,
-    or, under S15, a rejection): it is not rejected early, since its signed rule says when it is,
-    so it says why it can't pass and how it ends (eligibility.py). -#}
+{#- Too few people who can still approve it are left: it is not rejected early, since its signed
+    rule says when it is, so it says why it can't pass, from the people and what stops each now
+    (eligibility.shortfall, never a list of what might have happened), and how it ends. -#}
 {% set k = still_ids | length %}
 <div class="q-dbanner">
 {% set who_ends = 'you withdraw it' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') ~ ' withdraws it' %}
 {{ banner('warning', 'This ' ~ noun ~ ' can no longer pass',
-  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can still approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left: since it was raised, approvers have rejected it, or been removed, made viewers or suspended. Votes already cast still count. '
+  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can still approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left. '
+  ~ (shortfall | join(' ')) ~ (' ' if shortfall else '') ~ 'Votes already cast still count. '
   ~ ('It stays open until it expires ' ~ ui_absolute(proposal.expires_at) ~ ', or until ' ~ who_ends ~ '.' if proposal.expires_at else 'It stays open until ' ~ who_ends ~ '.')) }}
 </div>
 {% endif %}
@@ -506,7 +507,7 @@
   <dl class="q-plain">
     <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
     <div><dt>Type</dt><dd>{{ typed.label }}{% if typed.version %}<span class="q-cap">Its text is written from its fields.</span>{% endif %}</dd></div>
-    <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the vault’s rule don’t apply to this decision.</span></dd></div>
+    <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
     {% if changes_since %}
     {#- R5: the vault's rule changes since this was raised, and which of them reach it: its
         threshold and signer set are frozen, but who may sign is checked again at signing. -#}
@@ -514,11 +515,15 @@
       <ul class="q-since">
       {% for c in changes_since %}
         <li>{{ rule_diff(c.diff) }}<span class="q-cap">
-          {%- if c.event == 'vault_threshold_changed' %}Doesn’t apply here: this {{ noun }} keeps the rule it was raised with.
-          {%- elif c.event == 'vault_rule_changed' and c.diff.after == 'No' %}Applies here too: whoever raised it can’t approve it.
-          {%- elif c.event == 'vault_rule_changed' %}Doesn’t reopen this {{ noun }} to whoever raised it.
-          {%- elif c.event == 'member_added' or c.diff.after == 'Approver' %}Doesn’t apply here: only its approvers when it was raised can sign it.
-          {%- else %}Applies here: only someone who is still an approver can sign it.{% endif %}
+          {#- Decided from this decision's own facts (vaults._with_effects). -#}
+          {%- if c.effect == 'kept_rule' %}Doesn’t apply here: this {{ noun }} keeps the rule it was raised with.
+          {%- elif c.effect == 'sod_on' %}Applies here too: whoever raised it can’t approve it.
+          {%- elif c.effect == 'sod_off' %}Applies here: whoever raised it can approve it again.
+          {%- elif c.effect == 'sod_off_frozen' %}Doesn’t reopen this {{ noun }} to whoever raised it: it was raised while they couldn’t approve it.
+          {%- elif c.effect == 'not_in_set' %}Doesn’t apply here: only its approvers when it was raised can sign it.
+          {%- elif c.effect == 'approver_again' %}Applies here: they were one of its approvers when it was raised, so being one again lets them sign it.
+          {%- elif c.effect == 'no_longer' %}Applies here: only someone who is still an approver can sign it.
+          {%- else %}Doesn’t apply here: they still can’t sign it.{% endif %}
           {{ c.who }}, {{ ui_absolute(c.when) if c.when }}.</span></li>
       {% endfor %}
       </ul>

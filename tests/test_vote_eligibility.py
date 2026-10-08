@@ -481,7 +481,7 @@ def test_a_decision_that_can_no_longer_pass_says_so_and_stays_open(client):
 
     # Home's "Waiting on others" row says so too.
     home = client.get("/").get_data(as_text=True)
-    assert "Can’t pass: too few approvers left" in home
+    assert "Too few approvers left" in home
 
 
 def test_a_decision_that_can_still_pass_shows_no_warning(client):
@@ -502,3 +502,88 @@ def test_the_api_says_when_a_decision_can_no_longer_pass(app, client):
     assert detail["proposal"]["can_still_approve"] == [ada.id]
     assert detail["proposal"]["can_sign"] is True
     assert detail["proposal"]["status"] == "open"
+
+
+# --- "Can't pass": a derived word in the closed vocabulary, and why, from the facts ---------------
+
+
+def test_lists_the_header_and_the_api_say_cant_pass_instead_of_waiting(app, client):
+    """Brij, made a viewer, reads every list and the decision's header: Can't pass, not Waiting
+    on 2. A derived word: the decision stays open and its signed format is untouched."""
+    ada, brij, _chen, vault, proposal = _cannot_pass("listcantpass")
+    _body, _secret, auth = _enrol_over_http(client, brij)
+
+    row = inbox_service.decorate([proposal], brij, inbox_service.signer_vault_ids(brij))[0]
+    assert (row["status_key"], row["status_n"]) == ("cannot_pass", None)
+    assert proposal.status == "open"
+
+    rows = client.get("/api/v1/proposals?state=all", headers=auth).get_json()["proposals"]
+    summary = next(r for r in rows if r["proposal_uuid"] == proposal.proposal_uuid)
+    assert summary["display_status"] == {
+        "key": "cannot_pass",
+        "word": "Can’t pass",
+        "tone": "warning",
+    }
+    assert summary["status"] == "open" and summary["can_still_pass"] is False
+    assert summary["cannot_pass_why"] == ["Chen and you are no longer approvers of this vault."]
+
+    client.post("/login", data={"email": brij.email, "password": PASSWORD})
+    listed = client.get("/approvals/?tab=all").get_data(as_text=True)
+    assert "Can’t pass" in listed and "Waiting on 2" not in listed
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    header = page.split('class="q-dbanner"', 1)[0]
+    assert "Can’t pass" in header and "Waiting on" not in header
+
+
+def test_someone_who_can_still_sign_is_still_asked_to(app):
+    ada, _brij, _chen, _vault, proposal = _cannot_pass("cantpassneedsyou")
+    row = inbox_service.decorate([proposal], ada, inbox_service.signer_vault_ids(ada))[0]
+    assert row["status_key"] == "needs_you"
+
+
+def test_a_decision_that_can_still_pass_still_says_waiting(app):
+    _ada, brij, chen, _vault, proposal = _three("stillwaiting")
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    row = inbox_service.decorate([proposal], brij, inbox_service.signer_vault_ids(brij))[0]
+    assert (row["status_key"], row["status_n"]) == ("waiting", 1)
+
+
+def test_the_banner_names_who_cant_approve_and_why(client):
+    """The banner said "since it was raised, approvers have rejected it, or been removed, made
+    viewers or suspended" whatever the cause. It now says what holds, person by person."""
+    ada, brij, chen, vault, proposal = _cannot_pass("whycantpass")
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    assert "Brij and Chen are no longer approvers of this vault." in page
+    assert "since it was raised" not in page
+    assert "suspended" not in page.split("can no longer pass", 1)[1].split("</div>", 1)[0]
+
+
+def test_the_banner_says_when_separation_of_duties_is_the_cause(client):
+    ada, brij, chen, vault, proposal = _three("sodcantpass", threshold_m=3)
+    vault_service.set_requester_can_approve(vault, False, actor_id=ada.id)
+    client.post("/login", data={"email": brij.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    banner = page.split("can no longer pass", 1)[1].split("</div>", 1)[0]
+    assert "Ada raised it, and here the person who raises a decision can’t approve it." in banner
+    assert "no longer an approver" not in banner
+
+
+def test_the_banner_names_a_suspension_and_a_rejection(client):
+    ada, brij, chen, vault, proposal = _three("mixcantpass", threshold_m=2)
+    vault_service.set_requester_can_approve(vault, True, actor_id=ada.id)
+    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Too early.")
+    _suspend(vault, ada, chen)
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    banner = page.split("can no longer pass", 1)[1].split("</div>", 1)[0]
+    assert "Chen is suspended from the workspace." in banner
+    assert "Brij rejected it." in banner
