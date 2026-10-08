@@ -283,7 +283,10 @@
 .q-wcard__t { margin: 0; font-weight: var(--text-body-strong-weight); }
 @media (max-width: 767px) { .q-audit-sum { grid-template-columns: minmax(0, 1fr); } }
 
-.q-filters { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-8) var(--space-12); margin-bottom: var(--space-16); }
+/* Aligned to the top, not the bottom: a date filter's error line under its input must not lift
+ * that field above its neighbours. A button has no label, so it drops by one label's height. */
+.q-filters { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-8) var(--space-12); margin-bottom: var(--space-16); }
+.q-filters > .q-btn, .q-filters > noscript > .q-btn { margin-top: calc(var(--text-caption-line) + var(--space-6)); }
 .q-filters .q-field { margin: 0; min-width: 150px; flex: 0 1 200px; }
 .q-filters .q-field__label { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); font-weight: var(--weight-medium); }
 .q-filters__count { margin: 0 0 var(--space-8); color: var(--text-muted); }

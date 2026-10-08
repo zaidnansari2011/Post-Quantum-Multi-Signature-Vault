@@ -25,7 +25,8 @@ def register():
                 form.email.data, form.display_name.data, form.password.data
             )
         except EmailTakenError:
-            flash("That email is already registered.", "danger")
+            # On the field, not in a banner: it is marked invalid, described, and takes the focus.
+            form.email.errors = [*form.email.errors, "That email is already registered."]
             return render_template("register.html", form=form)
         login_user(user)
         flash("Account created — your post-quantum signing keypair has been generated.", "success")

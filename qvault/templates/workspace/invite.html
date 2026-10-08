@@ -16,10 +16,10 @@
     <section class="q-panel" aria-labelledby="inv-who">
       <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-who">Who</h2></div>
       <div class="q-panel__bd">
-        {{ field('email', 'Email', type='email', value=email, id='email', required=True,
+        {{ field('email', 'Email', type='email', value=email, id='email', required=True, error=errors.get('email'),
                  caption='Only an account with this address can accept the invitation.', attrs={'autocomplete': 'off'}) }}
         {%- set role_options = [] %}{% for r in roles %}{% set _ = role_options.append((r, role_name(r), role_help[r])) %}{% endfor %}
-        {{ radio_group('role', 'Workspace role', role_options, selected=role) }}
+        {{ radio_group('role', 'Workspace role', role_options, selected=role, error=errors.get('role')) }}
       </div>
     </section>
 

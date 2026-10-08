@@ -28,11 +28,13 @@
      data-due-echo="<id>" show the same words (the "who approves" preview). The calendar button
      is drawn hidden and qvault.js shows it, so without the script there is no dead button.
 
-   date_field(name, label, value=None, caption=None, error=None, id=None)
+   date_field(name, label, value=None, caption=None, error=None, id=None, bad=False)
      A calendar day, "YYYY-MM-DD", for a filter. Like due_field it is a text input with a
      calendar button and no native date control, so it posts the same string a native date input
      posts, typed or picked. Picking a day writes the input and fires change (a data-autosubmit
      form submits on it); a value that is not a date says so under the field.
+     bad     the route refused value as not a day (a hand-made URL, or a form sent without the
+             script): it is shown as typed, marked invalid, with the same words qvault.js uses.
 
    number(name, label, value=None, min=None, max=None, step=None, caption=None, error=None,
           required=False, id=None, attrs={}, inline=False)
@@ -148,17 +150,18 @@
 </div>
 {%- endmacro %}
 
-{% macro date_field(name, label, value=None, caption=None, error=None, id=None) -%}
+{% macro date_field(name, label, value=None, caption=None, error=None, id=None, bad=False) -%}
 {%- set fid = id or 'f-' ~ name -%}
 <div class="q-field" data-due-field data-mode="date">
   <label class="q-field__label" for="{{ fid }}">{{ label }}</label>
   <span class="q-date">
     <input class="q-input q-date__in" id="{{ fid }}" name="{{ name }}" type="text" inputmode="numeric" autocomplete="off"
-      spellcheck="false" maxlength="10" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"{% if value %} value="{{ value }}"{% endif %}{{ _described(fid, caption, error, fid ~ '-bad') }}>
+      spellcheck="false" maxlength="10" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"{% if value %} value="{{ value }}"{% endif %}{{ _described(fid, caption, error, fid ~ '-bad') }}
+      {%- if bad and not error %} aria-invalid="true" data-bad{% endif %}>
     <button class="q-date__btn" type="button" data-due-open aria-haspopup="dialog" aria-expanded="false" aria-controls="{{ fid }}-pop" aria-label="Choose a date: {{ label }}" title="Choose a date" hidden>{{ icon('calendar') }}</button>
     <span class="q-date__pop" id="{{ fid }}-pop" role="dialog" aria-label="Choose {{ label[:1]|lower ~ label[1:] }}" data-due-pop hidden></span>
   </span>
-  <p class="q-field__err q-date__bad" id="{{ fid }}-bad" data-due-read></p>
+  <p class="q-field__err q-date__bad" id="{{ fid }}-bad" data-due-read>{% if bad %}Type it as 2026-10-13.{% endif %}</p>
   {%- if caption %}
   <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>
   {%- endif %}
@@ -231,7 +234,9 @@
   <input class="{{ kind }}" type="checkbox" id="{{ fid }}" name="{{ name }}" value="{{ value }}"
     {%- if role %} role="{{ role }}"{% endif %}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}
     {%- if caption %} aria-describedby="{{ fid }}-cap"{% endif %}{{ attrs|xmlattr }}>
-  <label for="{{ fid }}">{{ label }}{% if caption %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ caption }}</span>{% endif %}</label>
+  {#- The caption sits beside the label, not inside it: inside, it would be read twice, once in
+      the name and again as the description. -#}
+  <span class="q-choice__txt"><label for="{{ fid }}">{{ label }}</label>{% if caption %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ caption }}</span>{% endif %}</span>
 </div>
 {%- endmacro %}
 
@@ -269,9 +274,11 @@
   {%- for option in options %}
   {%- set fid = 'f-' ~ name ~ '-' ~ loop.index %}
   <div class="q-choice">
+    {%- set cap = option[2] if option|length > 2 else None %}
     <input class="q-rd" type="radio" id="{{ fid }}" name="{{ name }}" value="{{ option[0] }}"
-      {%- if selected is not none and option[0]|string == selected|string %} checked{% endif %}>
-    <label for="{{ fid }}">{{ option[1] }}{% if option|length > 2 and option[2] %}<span class="q-choice__cap">{{ option[2] }}</span>{% endif %}</label>
+      {%- if selected is not none and option[0]|string == selected|string %} checked{% endif %}
+      {%- if cap %} aria-describedby="{{ fid }}-cap"{% endif %}>
+    <span class="q-choice__txt"><label for="{{ fid }}">{{ option[1] }}</label>{% if cap %}<span class="q-choice__cap" id="{{ fid }}-cap">{{ cap }}</span>{% endif %}</span>
   </div>
   {%- endfor %}
   {%- if error %}

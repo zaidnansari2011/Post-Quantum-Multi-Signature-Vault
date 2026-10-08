@@ -257,7 +257,17 @@
     if (!el) return;
     var day = el.closest('[data-due-field][data-mode="date"]');
     if (day) checkDay(day, true);
-    if (el.checkValidity()) el.form.requestSubmit();
+    if (!el.checkValidity()) return;
+    // Another filter changed while a date filter holds something that is not a date (typed, or
+    // refused by the route and shown back): the log is not filtered by it either way, so it is
+    // cleared rather than left to stop the form sending at all.
+    if (!day) {
+      el.form.querySelectorAll('[data-due-field][data-mode="date"]').forEach(function (other) {
+        var input = other.querySelector('.q-date__in');
+        if (!input.checkValidity()) { input.value = ''; checkDay(other, true); }
+      });
+    }
+    el.form.requestSubmit();
   });
 
   // A button marked data-busy-on-submit shows it is working and cannot be pressed twice; the
@@ -610,6 +620,15 @@
     if (field && e.target.classList.contains('q-date__in')) readBack(field);
   });
 
+  // Tabbing (or clicking a control) out of the field closes its calendar, so an open dialog is
+  // never left behind the focus. Only when focus lands somewhere: a click on nothing focusable
+  // is the click handler's to judge, and a button that takes no focus on click (Safari) would
+  // otherwise close the calendar before its own click arrived.
+  doc.addEventListener('focusout', function (e) {
+    var field = e.target.closest && e.target.closest('[data-due-field]');
+    if (field && e.relatedTarget && !field.contains(e.relatedTarget)) closeDue(field, false);
+  });
+
   doc.addEventListener('change', function (e) {
     var field = e.target.closest && e.target.closest('[data-due-field][data-mode="date"]');
     if (field && e.target.classList.contains('q-date__in')) checkDay(field, true);
@@ -791,9 +810,32 @@
       refused = refused.querySelector('input:checked') || refused.querySelector('input');
     }
     if (refused && (doc.activeElement === doc.body || !doc.activeElement)) refused.focus();
+    // A tab strip wider than a phone scrolls sideways: bring the current tab into view, so the
+    // page never opens on a strip whose chosen tab is cut off. Its right edge fades to say there
+    // is more; at the end of the scroll there is not, so the fade comes off (.is-end).
+    doc.querySelectorAll('.q-tabs').forEach(function (strip) {
+      var edge = function () {
+        strip.classList.toggle('is-end', strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1);
+      };
+      strip.addEventListener('scroll', edge, { passive: true });
+      var current = strip.querySelector('[aria-current="page"]');
+      if (current && strip.scrollWidth > strip.clientWidth) {
+        var box = strip.getBoundingClientRect();
+        var tab = current.getBoundingClientRect();
+        if (tab.left < box.left || tab.right > box.right - box.width * 0.15) {
+          strip.scrollLeft += tab.left - box.left - (box.width - tab.width) / 2;
+        }
+      }
+      edge();
+    });
     refreshTimes();
     window.setInterval(refreshTimes, 60000);
-    doc.querySelectorAll('[data-due-field]').forEach(readBack);
+    // A date filter the page came back holding (from the URL) is checked as finished, so a value
+    // that is not a date shows its message and aria-invalid now, not only once it is edited.
+    doc.querySelectorAll('[data-due-field]').forEach(function (field) {
+      if (isDay(field) && field.querySelector('.q-date__in').value.trim() !== '') checkDay(field, true);
+      else readBack(field);
+    });
     // The calendar button is drawn hidden: without this script it would do nothing.
     doc.querySelectorAll('[data-due-open][hidden]').forEach(function (b) { b.hidden = false; });
     doc.querySelectorAll('[data-stepper]').forEach(function (box) {

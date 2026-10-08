@@ -7,11 +7,15 @@ several; exactly one h1, and no heading that skips a level on the way down; a na
 select, textarea, button, link and menu trigger; alt on every image; a hidden or named SVG; no
 repeated id, and no reference (label for, aria-labelledby, aria-describedby, aria-controls) to an
 id that is not there; nothing focusable inside aria-hidden; tables with a caption and scoped
-headers; and link text that says where it goes ("here" does not).
+headers; link text that says where it goes ("here" does not); and no description that only repeats
+the name it describes (a caption inside its own label is read twice).
 
 The names are computed the way a browser would for these cases (aria-labelledby, aria-label, a
-label, the text, an image's alt, the title), skipping anything aria-hidden. Visually hidden text
-counts: a screen reader reads it.
+label, a fieldset's legend, the text, an image's alt, the title), skipping anything aria-hidden or
+hidden. Visually hidden text counts: a screen reader reads it.
+
+Pages are drawn as an administrator, as a member and as an auditor, signed out, and in the states
+a refused form comes back in (each with its field marked invalid), and as every error page.
 
 The decision page, New decision and the vault page are another stream's (R5) while this one runs.
 Their problems are not fixed here; they are listed in R5_KNOWN below, so the guard still reports
@@ -130,7 +134,13 @@ def parse(html: str) -> Node:
 
 
 def _hidden(node: Node) -> bool:
-    return node.get("aria-hidden") == "true" or node.tag in ("script", "style", "template")
+    # The hidden attribute takes an element out of the accessibility tree exactly as
+    # aria-hidden does (display: none), so neither gives a name its words.
+    return (
+        node.get("aria-hidden") == "true"
+        or "hidden" in node.attrs
+        or node.tag in ("script", "style", "template")
+    )
 
 
 def text_of(node: Node, by_id: dict) -> str:
@@ -170,6 +180,9 @@ def name_of(node: Node, by_id: dict, label_for: dict) -> str:
         return name or (node.get("title") or "").strip()
     if node.tag == "img":
         return (node.get("alt") or "").strip()
+    if node.tag == "fieldset":
+        legend = next((c for c in node.children if isinstance(c, Node) and c.tag == "legend"), None)
+        return text_of(legend, by_id) if legend is not None else ""
     return text_of(node, by_id) or (node.get("title") or "").strip()
 
 
@@ -302,6 +315,15 @@ def problems(html: str) -> list[str]:
             for cell in cells:
                 if cell.tag in ("th", "td") and cell.parent.tag != "tr":
                     found.append(f"{cell.tag} outside a row: {_describe(cell)}")
+        # A description that repeats the name: read once as the name and again after it.
+        if tag in ("input", "select", "textarea", "button", "a", "fieldset"):
+            name = name_of(node, ids, label_for)
+            for ref in (node.get("aria-describedby") or "").split():
+                said = text_of(ids[ref], ids) if ref in ids else ""
+                if said and name and said in name:
+                    found.append(
+                        f'description repeated in the name: "{said[:40]}" on {_describe(node)}'
+                    )
         # Nothing focusable where a screen reader is told there is nothing.
         if node.get("aria-hidden") == "true":
             for inner in [node, *node.walk()]:
@@ -342,7 +364,11 @@ def world(app):
     checkpoint_service.maybe_checkpoint()
     workspace = workspace_service.current_workspace(ada)
     _, token = workspace_service.create_invitation(workspace, ada, "sam@e.com", "member", ())
+    # Cleo registered second, so she is a Member of the workspace; Ida is made its Auditor.
+    ida = _register("ida@e.com", "Ida Bauer")
+    workspace_service.change_role(workspace, ida.id, "auditor", actor=ada)
     return {
+        "ada": ada,
         "vault": vault,
         "open": open_,
         "approved": approved,
@@ -452,6 +478,89 @@ def _posted(client, w) -> dict[str, str]:
     return {key: r.get_data(as_text=True) for key, r in sent.items()}
 
 
+def _refused_signed_out(client) -> dict[str, str]:
+    """The signed-out forms, sent back refused."""
+    sent = {
+        "sign in, refused": client.post(
+            "/login", data={"email": "ada@e.com", "password": "not-the-password"}
+        ),
+        "sign in, unreadable": client.post("/login", data={"email": "ada", "password": ""}),
+        "register, refused": client.post(
+            "/register",
+            data={"display_name": "", "email": "ada", "password": "short", "confirm": "other"},
+        ),
+        "register, taken": client.post(
+            "/register",
+            data={"display_name": "Ada", "email": "ada@e.com", "password": PW, "confirm": PW},
+        ),
+    }
+    for key, r in sent.items():
+        assert r.status_code in (200, 400), f"{key} answered {r.status_code}"
+    return {key: r.get_data(as_text=True) for key, r in sent.items()}
+
+
+def _refused_signed_in(client) -> dict[str, str]:
+    """The administrator's forms, sent back refused, and a filter holding a day that is not one."""
+    sent = {
+        "new vault, refused": client.post("/vaults/new", data={"name": "", "threshold_m": "0"}),
+        "invite, refused": client.post("/workspace/invite", data={"email": "x", "role": "member"}),
+        "invite, already a member": client.post(
+            "/workspace/invite", data={"email": "cleo@e.com", "role": "member"}
+        ),
+        "workspace settings, refused": client.post(
+            "/workspace/settings/general", data={"name": "  "}
+        ),
+        "audit, a day that does not exist": client.get("/ledger/?from=2026-13-40"),
+    }
+    for key, r in sent.items():
+        assert r.status_code in (200, 400), f"{key} answered {r.status_code}"
+    return {key: r.get_data(as_text=True) for key, r in sent.items()}
+
+
+def _error_pages(app, client, user=None) -> dict[str, str]:
+    """Every error page the HTML surface draws: 403 (as a member), 404 elsewhere, and these."""
+    from flask_login import login_user
+    from flask_wtf.csrf import CSRFError
+    from werkzeug.exceptions import InternalServerError
+
+    from qvault.errors import render_error_page
+
+    pages = {"error 405": client.get("/workspace/settings/general")}
+    limit = app.config["MAX_CONTENT_LENGTH"]
+    app.config["MAX_CONTENT_LENGTH"] = 1024
+    pages["error 413"] = client.post("/verify/", data={"bundle_text": "x" * 4096})
+    app.config["MAX_CONTENT_LENGTH"] = limit
+    app.config["WTF_CSRF_ENABLED"] = True
+    pages["error, form expired"] = client.post("/login", data={"email": "ada@e.com"})
+    app.config["WTF_CSRF_ENABLED"] = False
+    out = {}
+    for key, r in pages.items():
+        expected = {"error 405": 405, "error 413": 413, "error, form expired": 400}[key]
+        assert r.status_code == expected, f"{key} answered {r.status_code}"
+        out[key] = r.get_data(as_text=True)
+    # A 500 and the CSRF page drawn directly: nothing in the app fails on purpose.
+    for key, exc in (("error 500", InternalServerError()), ("error, csrf", CSRFError())):
+        with app.test_request_context("/"):
+            if user is not None:
+                login_user(user)
+            out[key] = render_error_page(exc).get_data(as_text=True)
+    return out
+
+
+def _marked(rendered: dict[str, str], *, banner_only=()) -> list[str]:
+    """Each refused form says what is wrong where it is wrong: a field marked aria-invalid (tied
+    to its message by aria-describedby, and focused by qvault.js). A refusal that must not say
+    which field (wrong credentials) is an alert banner instead."""
+    missing = []
+    for key, html in rendered.items():
+        if key in banner_only:
+            if 'role="alert"' not in html:
+                missing.append(f"{key}: no alert")
+        elif 'aria-invalid="true"' not in html:
+            missing.append(f"{key}: no field marked invalid")
+    return missing
+
+
 def _report(rendered: dict[str, str]) -> set[tuple[str, str]]:
     return {(key, p) for key, html in rendered.items() for p in problems(html)}
 
@@ -461,16 +570,38 @@ def _report(rendered: dict[str, str]) -> set[tuple[str, str]]:
 
 def test_every_signed_out_page_passes_the_structural_checks(app, client, world):
     rendered = _render(client, signed_out_pages(client, world))
+    refused = _refused_signed_out(client)
+    rendered.update(refused)
+    rendered.update(_error_pages(app, client))
     assert sorted(_report(rendered)) == []
+    assert _marked(refused, banner_only=("sign in, refused",)) == []
 
 
 def test_every_signed_in_page_passes_the_structural_checks_but_r5s_known_ones(app, client, world):
     _login(client, "ada@e.com")
     rendered = _render(client, signed_in_pages(client, world))
     rendered.update(_posted(client, world))
+    refused = _refused_signed_in(client)
+    rendered.update(refused)
+    rendered.update(_error_pages(app, client, world["ada"]))
     found = _report(rendered)
     assert sorted(found - R5_KNOWN) == [], "new problems"
     assert sorted(R5_KNOWN - found) == [], "fixed: delete these from R5_KNOWN"
+    assert _marked(refused) == []
+
+
+@pytest.mark.parametrize("email", ["cleo@e.com", "ida@e.com"], ids=["member", "auditor"])
+def test_a_member_and_an_auditor_see_pages_that_pass_too(app, client, world, email):
+    """The same screens drawn for someone who is not an administrator: other branches of the
+    templates (read-only settings, no invite button, Security refused with a 403)."""
+    _login(client, email)
+    rendered = {}
+    for key, path in signed_in_pages(client, world).items():
+        r = client.get(path)
+        assert r.status_code in (200, 403, 404), f"{key}: {path} answered {r.status_code}"
+        rendered[key] = r.get_data(as_text=True)
+    assert "have access to this page" in rendered["security, algorithms"]
+    assert sorted(_report(rendered) - R5_KNOWN) == []
 
 
 def test_signed_in_page_titles_are_unique_and_name_the_screen(app, client, world):
@@ -513,6 +644,13 @@ def test_signed_in_page_titles_are_unique_and_name_the_screen(app, client, world
             '<html lang=en><main><h1>A</h1><input aria-describedby="gone"></main>',
             "names no element",
         ),
+        # A caption inside its own label: the name already says it, the description repeats it.
+        ('<html lang=en><main><h1>A</h1><input type="checkbox" id="c" aria-describedby="c-cap">'
+         '<label for="c">Agree<span id="c-cap">It cannot be undone.</span></label></main>',
+         "description repeated in the name"),  # fmt: skip
+        # A hidden element gives no name, exactly like an aria-hidden one.
+        ("<html lang=en><main><h1>A</h1><button><span hidden>Close</span></button></main>",
+         "no accessible name: <button>"),  # fmt: skip
     ],
 )
 def test_the_guard_catches_each_kind_of_problem(html, expected):
