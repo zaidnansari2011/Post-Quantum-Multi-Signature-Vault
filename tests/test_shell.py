@@ -200,13 +200,19 @@ def _toasts(page: str) -> str:
     return found.group(0) if found else ""
 
 
+def _inline(tone: str, role: str, text: str) -> str:
+    """An inline flash: the banner in its tone and role, then its icon, then the message."""
+    return (
+        rf'<div class="q-banner q-banner--{tone} q-flash" role="{role}" data-flash>\s*'
+        rf'<svg[^>]*>.*?</svg>\s*<span class="q-flash__m">{text}'
+    )
+
+
 def test_a_short_confirmation_is_a_toast_and_an_error_stays_inline(app, client):
     page = _flashed(client, ("success", "Vault created"), ("danger", "That did not work"))
     toasts = _toasts(page)
     assert "Vault created" in toasts and "That did not work" not in toasts
-    assert re.search(
-        r'<div class="alert alert-danger" role="alert">\s*<span>That did not work</span>', page
-    )
+    assert re.search(_inline("critical", "alert", "That did not work</span>"), page, re.S)
 
 
 def test_a_long_confirmation_stays_inline_rather_than_fading(app, client):
@@ -218,17 +224,13 @@ def test_a_long_confirmation_stays_inline_rather_than_fading(app, client):
     assert len(long) > 90
     page = _flashed(client, ("success", long), ("info", "Saved"))
     assert long not in _toasts(page) and "Saved" in _toasts(page)
-    assert re.search(
-        r'<div class="alert alert-success" role="status">\s*<span>' + re.escape(long), page
-    )
+    assert re.search(_inline("success", "status", re.escape(long)), page, re.S)
 
 
 def test_a_persist_confirmation_stays_inline_however_short(app, client):
     page = _flashed(client, ("persist", "12 of 12 attacks behaved as expected."))
     assert not _toasts(page) and "data-toast" not in page
-    assert re.search(
-        r'<div class="alert alert-success" role="status">\s*<span>12 of 12 attacks', page
-    )
+    assert re.search(_inline("success", "status", "12 of 12 attacks"), page, re.S)
     assert "data-dismiss" in page
 
 

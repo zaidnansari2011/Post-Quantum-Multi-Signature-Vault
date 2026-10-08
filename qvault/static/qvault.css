@@ -1,72 +1,35 @@
 /* Q-Vault: the compatibility layer (rework R1).
    ============================================================================================
-   Every class the existing screens use, restyled from the design tokens in tokens.css, so the whole
-   product wears the new look, in light and dark, without a template change. Class names are kept
-   exactly: templates and tests depend on them. As screens move onto the component library
-   (components.css and templates/ui/), the rules they no longer use are deleted from here.
+   The old unprefixed classes, restyled from the design tokens in tokens.css, for the markup that
+   has not moved onto the component library yet. Since the R1 conversion every screen but one is on
+   the components (components.css, evidence.css, screens.css and templates/ui/), and the rules no
+   template uses any more were deleted from here. What is left serves exactly two places:
+
+   - vaults/detail.html, the vault page's Treasury tab (R5 converts it): .panel, .split, .stack,
+     .meta, .chip, .tag, .btn, .field and .input, and the text helpers it uses.
+   - .body, the page region a template names when it overrides base.html's bodyclass block
+     (vaults/proposal_detail.html: "body q-dpage"). base.html itself uses .q-body.
+
+   When those two move over, this file is deleted and nothing else changes. Class names are kept
+   exactly: templates and tests depend on them.
 
    The rules this file follows (plan section 6, decisions S1 to S6):
 
    1. Colour comes from tokens only. No colour value is written below; tests/test_design_tokens.py
       fails the build if one is. Dark mode is therefore free: the tokens change, these rules do not.
-   2. One accent, for identity and interaction only: the primary button, links, focus, the active
-      navigation item and tab. Never for a data value or a status. Status keeps its closed set of
-      five tones (neutral, info, success, warning, critical).
-   3. The type scale has seven steps on a 4px line-height grid, in sentence case. Uppercase eyebrows
-      are gone; a section title is body-strong, a label is a caption. Public Sans for the interface,
-      tabular figures for every number, JetBrains Mono for hashes, keys and IDs only.
-   4. Cards and tables are flat with a hairline border. Shadows belong to overlays, not to cards.
-      Radius follows the role: 4 badges, 6 controls, 8 cards, 12 dialogs.
+   2. One accent, for identity and interaction only. Status keeps its closed set of five tones.
+   3. The type scale's steps only, in sentence case, tabular figures for numbers, mono for hashes.
+   4. Cards are flat with a hairline border. Radius follows the role: 4 badges, 6 controls, 8 cards.
    ============================================================================================ */
-
-/* The old vocabulary, as aliases of the tokens. A few templates still name these in inline styles
-   (style="color:var(--waiting)"), and they read the same in both themes because they resolve
-   through the tokens. Do not use them in new code. */
-:root {
-  --paper: var(--bg);
-  --sunk: var(--fill);
-  --sunk-2: var(--fill-hover);
-  --rule: var(--border);
-  --rule-2: var(--border);
-  --ink: var(--text);
-  --ink-2: var(--text-muted);
-  --ink-3: var(--text-subtle);
-  --chrome: var(--chrome-bg);
-  --chrome-2: var(--chrome-bg-raised);
-  --chrome-rule: var(--chrome-border);
-  --chrome-ink: var(--chrome-text);
-  --chrome-ink-2: var(--chrome-text-muted);
-  --sealed: var(--status-success-fg);
-  --sealed-tint: var(--status-success-bg);
-  --sealed-line: var(--status-success-border);
-  --waiting: var(--status-warning-fg);
-  --waiting-tint: var(--status-warning-bg);
-  --waiting-line: var(--status-warning-border);
-  --broken: var(--status-critical-fg);
-  --broken-tint: var(--status-critical-bg);
-  --broken-line: var(--status-critical-border);
-  --display: var(--font-sans);
-  --sans: var(--font-sans);
-  --mono: var(--font-mono);
-  --radius: var(--radius-control);
-  --side-w: var(--sidebar-w);
-}
 
 /* ============================================================================================
    TEXT HELPERS
    ============================================================================================ */
 
-.mono, code { font-family: var(--font-mono); font-size: var(--text-code-size); font-variant-ligatures: none; }
-/* A number is not an identifier: tabular figures in the interface face, not mono. */
-.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-size: var(--text-code-size); font-variant-ligatures: none; }
 .muted { color: var(--text-subtle); }
-.dim { color: var(--text-muted); }
-.small, .tiny { font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
-.nowrap { white-space: nowrap; }
-.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.right { text-align: right; }
+.small { font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
 .push { margin-left: auto; }
-.measure { max-width: 68ch; }
 
 /* A section title, in sentence case: it used to be an uppercase eyebrow. */
 .label {
@@ -75,153 +38,10 @@
 }
 
 /* ============================================================================================
-   PAGE CHROME: the header and body regions inside the shell. The shell itself (sidebar, top bar,
-   drawer) is components.css's .q-shell, drawn by base.html.
+   THE PAGE REGION, for a template that names it in its bodyclass block.
    ============================================================================================ */
-
-/* Page header: title, a meta line, the screen's one figure, and its actions. It sits on the page,
-   not on a white band: the content below it is what gets a surface. */
-.head {
-  display: flex; align-items: center; gap: var(--space-8) var(--space-24); flex-wrap: wrap;
-  padding: var(--space-20) var(--space-24) var(--space-16);
-  border-bottom: var(--border-width) solid var(--border);
-}
-.head__title {
-  font-size: var(--text-title-size); line-height: var(--text-title-line);
-  font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); color: var(--text);
-}
-.head__sub { margin-top: var(--space-2); color: var(--text-muted); }
-.head__actions { margin-left: auto; display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; }
-
-/* The one moment of scale on the screen: the tally on a decision, the Merkle root on Audit. */
-.head__figure {
-  display: flex; flex-direction: column; align-items: flex-end;
-  padding-right: var(--space-24); border-right: var(--border-width) solid var(--border);
-}
-.head__figure b {
-  font-size: var(--text-figure-size); line-height: var(--text-figure-line);
-  font-weight: var(--text-figure-weight); letter-spacing: var(--text-figure-tracking);
-  font-variant-numeric: tabular-nums; color: var(--text);
-}
-.head__figure span {
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
-  color: var(--text-subtle); white-space: nowrap;
-}
-.head__figure--sealed b { color: var(--status-success-fg); }
-.head__figure--broken b { color: var(--status-critical-fg); }
-
-.crumbs {
-  display: flex; gap: var(--space-6); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle);
-}
-.crumbs a { color: var(--text-muted); text-decoration: none; }
-.crumbs a:hover { color: var(--text); text-decoration: underline; }
 
 .body { padding: var(--space-24) var(--space-24) var(--space-48); flex: 1; }
-.body--flush { padding: 0 0 var(--space-48); }
-
-/* ============================================================================================
-   TOOLBAR AND TABS
-   ============================================================================================ */
-
-.toolbar {
-  display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap;
-  padding: var(--space-12) var(--space-24); border-bottom: var(--border-width) solid var(--border);
-}
-.toolbar__search { position: relative; flex: 1 1 15rem; max-width: 26rem; }
-.toolbar__search input { padding-left: var(--space-32); }
-.toolbar__search svg {
-  position: absolute; left: var(--space-12); top: 50%; transform: translateY(-50%);
-  color: var(--text-subtle); pointer-events: none;
-}
-.toolbar__count {
-  margin-left: auto; white-space: nowrap;
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle);
-}
-
-.tabs {
-  display: flex; gap: var(--space-8); padding: 0 var(--space-16);
-  border-bottom: var(--border-width) solid var(--border); overflow-x: auto;
-}
-.tab {
-  position: relative; display: inline-flex; align-items: center; gap: var(--space-6); flex: none;
-  min-height: var(--row-h); padding: 0 var(--space-8);
-  color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap;
-}
-.tab:hover { color: var(--text); }
-.tab[aria-current="page"] { color: var(--text); }
-/* The accent marks the current tab, as it marks the current page in the sidebar. */
-.tab[aria-current="page"]::after {
-  content: ""; position: absolute; left: var(--space-8); right: var(--space-8); bottom: -1px;
-  height: 2px; border-radius: 2px 2px 0 0; background: var(--accent);
-}
-.tab__n {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 var(--space-4);
-  border-radius: var(--radius-badge); background: var(--fill); color: var(--text-muted);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ============================================================================================
-   DATA TABLE: the workhorse. 40px rows, a sticky header, hairline rules.
-   ============================================================================================ */
-
-.dt { width: 100%; border-collapse: collapse; }
-.dt th {
-  position: sticky; top: 0; z-index: 1;
-  text-align: left; white-space: nowrap;
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
-  color: var(--text-subtle);
-  padding: var(--space-8) var(--space-12); background: var(--bg-subtle);
-  border-bottom: var(--border-width) solid var(--border);
-}
-.dt th a { color: inherit; display: inline-flex; align-items: center; gap: var(--space-4); text-decoration: none; }
-.dt th a:hover { color: var(--text); }
-.dt td {
-  padding: var(--space-6) var(--space-12); height: var(--row-h);
-  border-bottom: var(--border-width) solid var(--border);
-  vertical-align: middle; background: var(--surface);
-}
-.dt tbody tr:hover td { background: var(--fill); }
-.dt tbody tr:last-child td { border-bottom: 0; }
-/* :first-child, not every cell: on every td it drew a bar down the left of each column. */
-.dt tbody tr.is-unread td:first-child { box-shadow: inset 2px 0 0 var(--status-warning-fg); }
-.dt .num { text-align: right; font-variant-numeric: tabular-nums; }
-.dt__link { display: block; color: var(--text); font-weight: var(--weight-medium); text-decoration: none; }
-.dt__link:hover { color: var(--text); text-decoration: underline; }
-/* A plain link in a cell (a vault name, a person) reads as part of the row, not as running text. */
-.dt td a:not([class]) { color: var(--text); text-decoration: none; }
-.dt td a:not([class]):hover { text-decoration: underline; }
-.dt__sub {
-  display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle);
-}
-.dt--fixed { table-layout: fixed; }
-
-/* A table that scrolls sideways rather than forcing the page to.
-   Note the interaction with `.dt th { position: sticky }`: per CSS Overflow 3, setting one axis
-   to a non-visible value makes the other compute to `auto`, so this wrapper becomes the nearest
-   scrollport, and with no height constraint it is zero-height, which pins the header to a box
-   that never scrolls. Sticky headers therefore need `--tall`, which gives it a real height. */
-.scroll-x { overflow-x: auto; }
-.scroll-x--tall { max-height: calc(100vh - 8.5rem); overflow: auto; }
-
-.pager {
-  display: flex; align-items: center; gap: var(--space-8); justify-content: flex-end;
-  padding: var(--space-12) var(--space-24); border-top: var(--border-width) solid var(--border);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle);
-}
-
-/* ============================================================================================
-   EMPTY STATES: an invitation to act, never an explanation of a concept.
-   ============================================================================================ */
-
-.empty { padding: var(--space-48) var(--space-24); text-align: center; }
-.empty__title {
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line);
-  font-weight: var(--text-title-sm-weight); color: var(--text); margin-bottom: var(--space-4);
-}
-.empty__sub { color: var(--text-muted); margin: 0 auto var(--space-16); max-width: 44ch; }
 
 /* ============================================================================================
    PANELS AND LAYOUT: flat, a hairline border, 8px corners, no shadow.
@@ -246,14 +66,8 @@
 .split { display: grid; gap: var(--space-16); grid-template-columns: minmax(0, 1fr); align-items: start; }
 @media (min-width: 68rem) {
   .split { grid-template-columns: minmax(0, 1fr) 20rem; gap: var(--space-24); }
-  .split--wide { grid-template-columns: minmax(0, 1fr) 25rem; }
-  .split--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 .stack { display: flex; flex-direction: column; gap: var(--space-16); }
-.grid { display: grid; gap: var(--space-16); grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
-.hstack { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }
-.hstack--tight { gap: var(--space-4); }
-.fill { flex: 1 1 12rem; min-width: 0; }
 .divider { height: var(--border-width); background: var(--border); margin: var(--space-12) 0; border: 0; }
 
 /* Key and value: the standard way a cryptographic fact appears on a detail screen. */
@@ -262,7 +76,7 @@
 .meta dd { margin: 0; align-self: center; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
 
 /* ============================================================================================
-   STATUS: badges, dots, the quorum marks. These carry colour because they ARE status.
+   STATUS: badges carry colour because they ARE status. A tag is a fact, not a status.
    ============================================================================================ */
 
 .chip {
@@ -275,14 +89,7 @@
 }
 .chip--sealed  { color: var(--status-success-fg);  background: var(--status-success-bg);  border-color: var(--status-success-border); }
 .chip--waiting { color: var(--status-warning-fg);  background: var(--status-warning-bg);  border-color: var(--status-warning-border); }
-.chip--broken  { color: var(--status-critical-fg); background: var(--status-critical-bg); border-color: var(--status-critical-border); }
 
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--border-strong); flex: 0 0 auto; }
-.dot--sealed { background: var(--status-success-fg); }
-.dot--waiting { background: var(--status-warning-fg); }
-.dot--broken { background: var(--status-critical-fg); }
-
-/* Machine identifiers: algorithm names, backends, key ids. A fact, not a status. */
 .tag {
   display: inline-flex; align-items: center;
   min-height: 20px; padding: var(--space-2) var(--space-6);
@@ -292,81 +99,8 @@
   white-space: nowrap;
 }
 
-/* A hash you can copy: click to copy the full value. */
-.hash {
-  font-family: var(--font-mono); font-size: var(--text-code-size); font-variant-ligatures: none;
-  color: var(--text-muted); background: var(--fill);
-  border: 0; border-radius: var(--radius-badge); padding: 0 var(--space-4);
-  cursor: pointer; transition: background-color var(--duration-press) var(--ease-standard);
-}
-.hash:hover { background: var(--fill-hover); color: var(--text); }
-.hash.copied { color: var(--status-success-fg); background: var(--status-success-bg); }
-
-/* The quorum seal: one round mark per approver, filled as signatures arrive. A filled mark is a
-   signature, a ring is one still needed, a faint ring is a seat beyond the threshold. Never a bar:
-   a quorum is a count of people, not a percentage. */
-.tally { display: inline-flex; align-items: center; gap: var(--space-4); vertical-align: middle; }
-.tally__slot {
-  width: 10px; height: 10px; border-radius: var(--radius-full); flex: none;
-  box-shadow: inset 0 0 0 1px var(--border-hover);
-}
-.tally__slot--approve { background: var(--mark-filled); box-shadow: none; }
-.tally__slot--reject  { background: var(--status-critical-fg); box-shadow: none; }
-.tally__slot--needed  { box-shadow: inset 0 0 0 1.5px var(--mark-empty); }
-
 /* ============================================================================================
-   BANNER: an integrity result or a state the reader must act on.
-   ============================================================================================ */
-
-.banner {
-  display: flex; align-items: flex-start; gap: var(--space-12);
-  padding: var(--space-12) var(--space-16); margin-bottom: var(--space-16);
-  border: var(--border-width) solid var(--status-neutral-border); border-radius: var(--radius-card);
-  background: var(--status-neutral-bg); color: var(--text);
-}
-.banner__title { font-weight: var(--weight-strong); color: var(--text); }
-.banner__body { margin-top: var(--space-2); color: var(--text); }
-.banner__body > :last-child { margin-bottom: 0; }
-.banner--sealed  { border-color: var(--status-success-border);  background: var(--status-success-bg); }
-.banner--waiting { border-color: var(--status-warning-border);  background: var(--status-warning-bg); }
-.banner--broken  { border-color: var(--status-critical-border); background: var(--status-critical-bg); }
-.banner--sealed .banner__title  { color: var(--status-success-fg); }
-.banner--waiting .banner__title { color: var(--status-warning-fg); }
-.banner--broken .banner__title  { color: var(--status-critical-fg); }
-.banner__actions { margin-left: auto; display: flex; gap: var(--space-8); align-items: center; flex: 0 0 auto; }
-
-/* ============================================================================================
-   FIGURES: where a number is the content.
-   ============================================================================================ */
-
-/* The separators are the GRID GAP, not per-cell borders: a gap only exists between two cells
-   that are actually adjacent, so a wrapped or incomplete last row never keeps a stray rule. */
-.figures {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--border-width); background: var(--border);
-  border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden;
-}
-.figure { padding: var(--space-12) var(--space-16); background: var(--surface); min-width: 0; }
-.figure__num {
-  font-size: var(--text-title-size); line-height: var(--text-title-line);
-  font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking);
-  font-variant-numeric: tabular-nums; color: var(--text);
-}
-/* A hash IS the figure here, so it takes the figure's scale rather than the small chip. */
-.figure__num .hash {
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-line); font-weight: var(--weight-medium);
-  background: none; padding: 0; color: inherit; letter-spacing: 0;
-}
-.figure__num .hash:hover { color: var(--text-muted); background: none; }
-.figure__label { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); color: var(--text-subtle); }
-.figure__sub { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-
-.bar { background: var(--fill-hover); border-radius: var(--radius-full); height: 6px; overflow: hidden; min-width: 50px; }
-.bar__fill { height: 100%; background: var(--text-muted); }
-.bar__fill--alt { background: var(--border-strong); }
-
-/* ============================================================================================
-   BUTTONS: primary is the accent; the old ghost is the bordered secondary; quiet is borderless.
+   BUTTONS: primary is the accent; ghost is the bordered secondary.
    ============================================================================================ */
 
 .btn {
@@ -388,14 +122,7 @@
 .btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
 .btn--ghost { background: var(--surface); border-color: var(--border-hover); color: var(--text); }
 .btn--ghost:hover { background: var(--fill); color: var(--text); }
-.btn--quiet { background: transparent; color: var(--text-muted); padding-left: var(--space-8); padding-right: var(--space-8); }
-.btn--quiet:hover { background: var(--fill); color: var(--text); }
-.btn--danger { background: var(--danger); border-color: var(--danger); color: var(--danger-text); }
-.btn--danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); color: var(--danger-text); }
-.btn--sealed { background: var(--surface); border-color: var(--status-success-border); color: var(--status-success-fg); }
-.btn--sealed:hover { background: var(--status-success-bg); color: var(--status-success-fg); }
 .btn--sm { min-height: var(--control-h-sm); padding: var(--space-2) var(--space-8); }
-.btn--block { width: 100%; }
 .btn:disabled:hover, .btn[disabled]:hover { background: var(--fill-disabled); color: var(--text-disabled); }
 
 /* ============================================================================================
@@ -409,13 +136,8 @@
   font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
   color: var(--text-subtle);
 }
-.field__error {
-  margin: var(--space-6) 0 0;
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
-  color: var(--status-critical-fg);
-}
 
-.input, .form-control, .form-select, select, textarea {
+.input {
   display: block; width: 100%;
   min-height: var(--control-h); padding: var(--space-4) var(--space-12);
   font-family: var(--font-sans); font-size: var(--text-body-size); line-height: var(--text-body-line);
@@ -423,378 +145,24 @@
   border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-control);
   transition: border-color var(--duration-press) var(--ease-standard);
 }
-.input:hover, select:hover, textarea:hover { border-color: var(--text-subtle); }
-textarea, textarea.input { min-height: 76px; padding-top: var(--space-6); padding-bottom: var(--space-6); resize: vertical; }
-.input::placeholder, textarea::placeholder { color: var(--text-subtle); opacity: 1; }
-.input:disabled, select:disabled, textarea:disabled {
+.input:hover { border-color: var(--text-subtle); }
+.input::placeholder { color: var(--text-subtle); opacity: 1; }
+.input:disabled {
   background: var(--fill-disabled); border-color: var(--border-disabled); color: var(--text-disabled); cursor: not-allowed;
 }
-.input--auto { width: auto; min-width: 8rem; }
-input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; }
-/* Below 768px a smaller input makes iOS zoom the page on focus. */
-@media (max-width: 47.99rem) {
-  .input, .form-control, .form-select, select, textarea { font-size: var(--text-input-size-touch); }
-}
-
-.downgrade {
-  border: var(--border-width) solid var(--status-critical-border); background: var(--status-critical-bg);
-  border-radius: var(--radius-card); padding: var(--space-12) var(--space-16); margin: var(--space-8) 0;
-}
+/* The treasury change's confirmation is still a native checkbox (R5 moves it to the macro).
+   :not([class]) keeps this off the styled controls: the attribute selector outranks .q-sw, and
+   would otherwise squeeze the 32px switch to 16. */
+input[type="checkbox"]:not([class]), input[type="radio"]:not([class]) { accent-color: var(--accent); width: 16px; height: 16px; }
 
 /* ============================================================================================
-   FLASH MESSAGES: one per category, each a status tone.
-   ============================================================================================ */
-
-.alert {
-  display: flex; align-items: flex-start; gap: var(--space-12);
-  padding: var(--space-12) var(--space-16); margin-bottom: var(--space-16);
-  border: var(--border-width) solid var(--status-neutral-border); border-radius: var(--radius-card);
-  background: var(--status-neutral-bg); color: var(--text);
-}
-.alert-success { border-color: var(--status-success-border);  background: var(--status-success-bg);  color: var(--status-success-fg); }
-.alert-warning { border-color: var(--status-warning-border);  background: var(--status-warning-bg);  color: var(--status-warning-fg); }
-.alert-danger  { border-color: var(--status-critical-border); background: var(--status-critical-bg); color: var(--status-critical-fg); }
-.alert-info    { border-color: var(--status-info-border);     background: var(--status-info-bg);     color: var(--status-info-fg); }
-.alert .btn-close {
-  margin-left: auto; flex: none; display: grid; place-items: center;
-  width: var(--target-min); height: var(--target-min); margin-top: -2px; margin-right: calc(-1 * var(--space-4));
-  background: none; border: 0; border-radius: var(--radius-badge); cursor: pointer; padding: 0;
-  font-size: var(--text-title-sm-size); line-height: 1; color: inherit;
-}
-.alert .btn-close:hover { background: var(--fill); }
-
-/* ============================================================================================
-   DOCS: the one place with prose, so the one place with a reading measure.
-   ============================================================================================ */
-
-.doc { max-width: 68ch; line-height: var(--text-title-sm-line); }
-.doc h2 {
-  font-size: var(--text-title-size); line-height: var(--text-title-line);
-  letter-spacing: var(--text-title-tracking); margin: 0 0 var(--space-12);
-}
-.doc h3 { font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); margin: var(--space-32) 0 var(--space-8); }
-.doc p, .doc ul, .doc ol { margin: 0 0 var(--space-16); }
-.doc ul, .doc ol { padding-left: var(--space-20); }
-.doc li { margin-bottom: var(--space-4); }
-.doc code { background: var(--fill); border-radius: var(--radius-badge); padding: 0 var(--space-4); }
-.doc .pre {
-  background: var(--fill); border-radius: var(--radius-control);
-  padding: var(--space-12) var(--space-16); overflow-x: auto; margin: 0 0 var(--space-16);
-  font-family: var(--font-mono); font-size: var(--text-code-size); line-height: var(--text-code-line);
-}
-.doc .pre code { background: none; padding: 0; }
-.doc table { margin-bottom: var(--space-16); }
-.doc__nav { display: flex; flex-direction: column; gap: var(--space-2); }
-.doc__nav a {
-  padding: var(--space-6) var(--space-8); border-radius: var(--radius-control);
-  color: var(--text-muted); text-decoration: none;
-}
-.doc__nav a:hover { background: var(--fill); color: var(--text); }
-.doc__nav a[aria-current="page"] { background: var(--accent-subtle); color: var(--accent-fg); font-weight: var(--weight-medium); }
-
-/* Developer tools sit behind a dashed edge so nobody mistakes a demonstration switch for a
-   feature of the product. */
-.dev { border-style: dashed; }
-
-/* ============================================================================================
-   SIGNED OUT: no sidebar, so these pages stand on their own.
-   ============================================================================================ */
-
-/* Inside .q-pub (a full-height column) the body fills what the header leaves and centres in it. */
-.body--anon { display: grid; place-items: center; }
-
-.auth { max-width: 22rem; margin: 0 auto; width: 100%; }
-.auth__mark {
-  display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-24);
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong);
-}
-.auth__mark svg { color: var(--accent); }
-.auth__title {
-  font-size: var(--text-title-size); line-height: var(--text-title-line);
-  font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); margin-bottom: var(--space-16);
-}
-.auth__foot { margin-top: var(--space-16); }
-/* Auth screens use the larger 40px controls. */
-.auth .input, .auth .btn { min-height: var(--control-h-lg); }
-
-.landing { max-width: 44rem; margin: 0 auto; text-align: center; }
-.landing__mark {
-  display: inline-flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-32);
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong);
-}
-.landing__mark svg { color: var(--accent); }
-.landing__title {
-  font-size: var(--text-figure-size); line-height: var(--text-figure-line);
-  font-weight: var(--text-figure-weight); letter-spacing: var(--text-figure-tracking);
-  margin-bottom: var(--space-12); text-wrap: balance;
-}
-.landing__lead {
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line);
-  color: var(--text-muted); max-width: 34rem; margin: 0 auto var(--space-32);
-}
-.landing__figures { text-align: left; }
-
-/* ============================================================================================
-   VERIFY: reachable without an account, so it works with or without the sidebar.
-   ============================================================================================ */
-
-.verify { max-width: 44rem; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-16); }
-.verify__head { margin-bottom: var(--space-4); }
-.verify__title {
-  font-size: var(--text-title-size); line-height: var(--text-title-line);
-  font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); margin: 0 0 var(--space-4);
-}
-.verify__lead { color: var(--text-muted); margin: 0; }
-.verify__more { margin: var(--space-4) 0 var(--space-16); }
-.verify__more > summary { color: var(--text-muted); cursor: pointer; padding: var(--space-4) 0; user-select: none; }
-.verify__more > summary:hover { color: var(--text); }
-.verify__foot { text-align: center; margin: 0; }
-
-/* The checks ARE the explanation: each row states one step of the argument. */
-.checks { list-style: none; margin: 0; padding: 0; counter-reset: check; }
-.checks__row {
-  display: flex; gap: var(--space-12); align-items: baseline;
-  padding: var(--space-12) var(--space-16); border-top: var(--border-width) solid var(--border);
-}
-.checks__row:first-child { border-top: 0; }
-.checks__mark { flex: 0 0 var(--space-16); text-align: center; font-weight: var(--weight-strong); }
-.checks__row.is-ok      .checks__mark { color: var(--status-success-fg); }
-.checks__row.is-bad     .checks__mark { color: var(--status-critical-fg); }
-.checks__row.is-skipped .checks__mark { color: var(--text-subtle); }
-.checks__text { min-width: 0; }
-.checks__title { display: block; }
-.checks__row.is-bad .checks__title { color: var(--status-critical-fg); font-weight: var(--weight-strong); }
-.checks__detail {
-  display: block; margin-top: var(--space-2); word-break: break-word;
-  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-  color: var(--text-subtle);
-}
-
-/* ============================================================================================
-   RESPONSIVE: below 60rem the page regions take the mobile gutter. (The sidebar's own drawer is
-   in components.css.)
+   RESPONSIVE: below 60rem the page region takes the mobile gutter, and below 768px an input
+   is 16px so iOS does not zoom the page on focus.
    ============================================================================================ */
 
 @media (max-width: 60rem) {
-  .head, .toolbar, .body, .pager { padding-left: var(--gutter-mobile); padding-right: var(--gutter-mobile); }
-  .tabs { padding-left: var(--space-8); padding-right: var(--space-8); }
-  .head__figure { align-items: flex-start; }
+  .body { padding-left: var(--gutter-mobile); padding-right: var(--gutter-mobile); }
 }
-
-/* ==============================================================================================
-   RECEIPT: what the machine did, in the moment after a signature.
-
-   The one screen element allowed to show raw cryptographic material at size. It carries no status
-   colour of its own (the verified chip in its header does that), so an approval and a rejection
-   get an identical frame: a rejection deserves exactly the same evidentiary weight.
-   ============================================================================================ */
-
-.receipt {
-  border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
-  background: var(--surface); margin-bottom: var(--space-16); overflow: hidden;
-}
-.receipt__head {
-  display: flex; align-items: center; gap: var(--space-8);
-  padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border);
-}
-
-/* The dark band is the whole device: a window onto the machine rather than another card. */
-.receipt__bytes {
-  background: var(--chrome-bg); color: var(--chrome-text);
-  padding: var(--space-12) var(--space-16); display: flex; align-items: baseline; gap: var(--space-12); flex-wrap: wrap;
-}
-.receipt__hex {
-  font-family: var(--font-mono); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line);
-  letter-spacing: 0.04em; word-break: break-all; min-width: 0; color: var(--chrome-text);
-}
-.receipt__of {
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-  color: var(--chrome-text-muted); white-space: nowrap; margin-left: auto;
-}
-
-.receipt__meta { padding: var(--space-12) var(--space-16); }
-
-/* Two columns where there is room: one narrow column left a tall thin panel. */
-@media (min-width: 60rem) {
-  .receipt__meta { grid-template-columns: minmax(6rem, auto) minmax(0, 1fr) minmax(6rem, auto) minmax(0, 1fr); }
-}
-
-/* The before/after root pair, on one row, so "was" never follows "now". */
-.receipt__move { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; }
-.receipt__arrow { color: var(--text-subtle); }
-
-/* This row carries two hashes plus an arrow, so it takes a full row of the widened grid; the label
-   is placed too, so it stays beside the value it labels. */
-@media (min-width: 60rem) {
-  .receipt__meta > dt.receipt__move-dt { grid-column: 1 / 2; }
-  .receipt__meta > dd.receipt__move    { grid-column: 2 / -1; }
-}
-
-/* ============================================================================================
-   THE GLASS BOX (/trace), ADR-0020. The one screen where explanation IS the artefact.
-   The dark surface is the machine's side: source code sits on the chrome colour, and the values
-   it operated on sit on the light surface beside it.
-   ============================================================================================ */
-
-.trace { display: flex; flex-direction: column; gap: var(--space-16); }
-
-/* Live indicator: reports an actual live connection, so it is the one pulsing element. */
-.trace__live {
-  display: inline-flex; align-items: center; gap: var(--space-6);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle);
-}
-.trace__dot {
-  width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--status-success-fg);
-  animation: trace-pulse 1.6s ease-in-out infinite;
-}
-.trace__live[data-paused="1"] .trace__dot { background: var(--border-strong); animation: none; }
-@keyframes trace-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-@media (prefers-reduced-motion: reduce) { .trace__dot { animation: none; } }
-
-/* One operation: a request that did cryptographic work. */
-.op { background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
-.op--running { border-color: var(--status-warning-border); }
-.op--failed  { border-color: var(--status-critical-border); }
-.op__head {
-  display: flex; align-items: baseline; gap: var(--space-8); flex-wrap: wrap;
-  padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border); background: var(--bg-subtle);
-}
-.op__seq { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-.op__title { font-weight: var(--weight-strong); }
-.op__sub { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-.op__ms { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
-
-/* A step, numbered down the left so the sequence is countable. */
-.step { border-top: var(--border-width) solid var(--border); }
-.step:first-child { border-top: 0; }
-.step__head { display: flex; align-items: baseline; gap: var(--space-8); padding: var(--space-8) var(--space-16); cursor: pointer; user-select: none; }
-.step__head:hover { background: var(--fill); }
-.step__n { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); min-width: var(--space-20); }
-.step__label { font-weight: var(--weight-medium); }
-.step__ms { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-.step__body { padding: 0 var(--space-16) var(--space-16) var(--space-40); display: grid; gap: var(--space-12); }
-@media (min-width: 68rem) {
-  /* Code and values side by side once there is room for about 80 columns of mono. */
-  .step__body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
-}
-
-/* The note says WHY a step exists rather than what it does. */
-.step__note {
-  grid-column: 1 / -1; margin: 0; padding-left: var(--space-8);
-  border-left: 2px solid var(--border-hover); color: var(--text-muted);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-}
-
-/* --- the machine's side -------------------------------------------------------------------- */
-.code { background: var(--chrome-bg); border-radius: var(--radius-card); overflow: hidden; min-width: 0; }
-.code__head {
-  display: flex; align-items: baseline; gap: var(--space-8); padding: var(--space-6) var(--space-12);
-  border-bottom: var(--border-width) solid var(--chrome-border);
-  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-  color: var(--chrome-text-muted);
-}
-.code__head b { color: var(--chrome-text); font-weight: var(--weight-medium); }
-/* Capped and scrollable inside itself, so one long function does not swallow the sequence. */
-.code pre { margin: 0; padding: var(--space-12); overflow: auto; max-height: 24rem; }
-.code code {
-  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-code-line);
-  color: var(--chrome-text); white-space: pre;
-}
-/* Muted rather than colourful: code is data here, so the highlighting is lightness steps on the
-   chrome text plus one tint for literals, mixed from tokens so it follows the theme. */
-.code .c { color: var(--chrome-text-muted); font-style: italic; }
-.code .s { color: color-mix(in oklab, var(--chrome-text) 72%, var(--status-success-fg)); }
-.code .k { color: var(--chrome-text); font-weight: var(--weight-strong); }
-.code .n { color: color-mix(in oklab, var(--chrome-text) 80%, var(--chrome-text-muted)); }
-.code__more {
-  padding: var(--space-6) var(--space-12); border-top: var(--border-width) solid var(--chrome-border);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--chrome-text-muted);
-}
-
-/* --- the evidence side --------------------------------------------------------------------- */
-.vals { min-width: 0; display: flex; flex-direction: column; gap: var(--space-8); }
-.vals__group { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
-.val { min-width: 0; }
-.val__name {
-  display: flex; gap: var(--space-6); align-items: baseline; flex-wrap: wrap;
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted);
-}
-.val__size { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-.val__body {
-  margin-top: var(--space-4); padding: var(--space-6) var(--space-8);
-  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-  background: var(--fill); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge);
-  word-break: break-all; white-space: pre-wrap;
-}
-.val__body--digest { color: var(--text); background: var(--fill-hover); }
-.val__body--withheld, .val__body--opaque { color: var(--text-subtle); font-style: italic; word-break: normal; }
-.val__note { margin-top: var(--space-2); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-
-/* "Check it yourself": run one command outside the application and get the same digest. */
-.val__check { margin-top: var(--space-4); }
-.val__check summary { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); cursor: pointer; }
-.val__check summary:hover { color: var(--text); }
-.val__check pre {
-  margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-8);
-  background: var(--chrome-bg); color: var(--chrome-text); border-radius: var(--radius-badge); overflow-x: auto;
-  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-}
-
-.trace__empty { text-align: center; padding: var(--space-48) var(--space-16); color: var(--text-subtle); }
-
-/* --- the adversary lab (ADR-0021) ------------------------------------------------------------
-   One card per attack, and inside it two columns: what happened against the real system, and what
-   happened against the control. The side-by-side layout IS the argument, so the two runs are never
-   collapsed while there is room to set them next to each other. Colour tracks the CLAIM: green
-   where it held, red where it did not. */
-.atk {
-  background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
-  overflow: hidden; margin-bottom: var(--space-16);
-}
-.atk--failed { border-color: var(--status-critical-border); }
-.atk__head {
-  display: flex; align-items: baseline; gap: var(--space-8); flex-wrap: wrap;
-  padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border); background: var(--bg-subtle);
-}
-.atk__n { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); min-width: var(--space-24); }
-.atk__title { font-weight: var(--weight-strong); }
-.atk__status { margin-left: auto; display: flex; align-items: baseline; gap: var(--space-8); }
-.atk__ms { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-
-/* The sceptic's question, in their words. */
-.atk__q { padding: var(--space-8) var(--space-16); color: var(--text-muted); font-style: italic; border-bottom: var(--border-width) solid var(--border); }
-
-/* The threat model, as metadata rather than paragraphs. */
-.atk__model { display: grid; gap: var(--space-8) var(--space-16); padding: var(--space-12) var(--space-16); border-bottom: var(--border-width) solid var(--border); }
-@media (min-width: 56rem) { .atk__model { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-.atk__field { min-width: 0; }
-.atk__key { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
-.atk__v { color: var(--text); }
-
-.atk__runs { display: grid; }
-@media (min-width: 62rem) { .atk__runs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-.atk__run { padding: var(--space-12) var(--space-16) var(--space-16); min-width: 0; }
-.atk__run + .atk__run { border-top: var(--border-width) solid var(--border); }
-@media (min-width: 62rem) {
-  .atk__run + .atk__run { border-top: 0; border-left: var(--border-width) solid var(--border); }
-}
-.atk__runhead { display: flex; align-items: baseline; gap: var(--space-8); margin-bottom: var(--space-8); flex-wrap: wrap; }
-.atk__runtitle { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
-
-.atk__steps { list-style: none; margin: 0; padding: 0; counter-reset: atkstep; }
-.atk__step { border-top: var(--border-width) solid var(--border); padding: var(--space-6) 0; }
-.atk__step:first-child { border-top: 0; padding-top: 0; }
-.atk__label { font-weight: var(--weight-medium); color: var(--text); }
-.atk__detail { margin: var(--space-2) 0 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
-/* The value is the evidence: never truncated, because a shortened digest cannot be checked.
-   `anywhere`, not `break-all`, so a line mixing prose and numbers is not split mid-word. */
-.atk__val {
-  margin-top: var(--space-4); padding: var(--space-4) var(--space-6);
-  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
-  background: var(--fill); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge);
-  white-space: pre-wrap; color: var(--text); overflow-wrap: anywhere;
-}
-.atk__note {
-  margin: var(--space-8) 0 0; padding-left: var(--space-8); border-left: 2px solid var(--border-hover);
-  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted);
+@media (max-width: 47.99rem) {
+  .input { font-size: var(--text-input-size-touch); }
 }

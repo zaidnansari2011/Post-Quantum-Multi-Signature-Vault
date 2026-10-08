@@ -1,70 +1,67 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import select %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, tabs %}
+{% from "ui/feedback.html" import empty_state %}
+{% from "ui/status.html" import badge %}
+{% from "ui/avatars.html" import avatar %}
 {% block title %}Members — Q-Vault{% endblock %}
-{% block bodyclass %}body body--flush{% endblock %}
-
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">Members</div>
-    <div class="head__sub">{{ workspace.name }} · you're {{ role_name(me.role) }}</div>
-  </div>
-  <div class="head__actions">
-    <a class="btn btn--ghost btn--sm" href="{{ url_for('workspace.settings') }}">Workspace settings</a>
-    {% if manager %}
-    <a class="btn btn--primary btn--sm" href="{{ url_for('workspace.invite') }}">Invite people</a>
-    {% endif %}
-  </div>
-</div>
-
-<nav class="tabs" aria-label="Members">
-  {% for key, label in [('active', 'Active'), ('invited', 'Invited'), ('suspended', 'Suspended')] %}
-    {% if key != 'invited' or manager %}
-    <a class="tab" href="{{ url_for('workspace.members', tab=key) }}"
-       {% if tab == key %}aria-current="page"{% endif %}>
-      {{ label }}<span class="tab__n">{{ counts[key] }}</span>
-    </a>
-    {% endif %}
-  {% endfor %}
-</nav>
-{% endblock %}
 
 {% block content %}
+<div class="q-members">
+{% set you_are = [('Workspace', workspace.name), ('Your role', role_name(me.role))] %}
+{% call page_header('Members', facts=you_are) %}
+  {{ button('Workspace settings', 'secondary', href=url_for('workspace.settings')) }}
+  {% if manager %}{{ button('Invite people', 'primary', href=url_for('workspace.invite')) }}{% endif %}
+{% endcall %}
+
+{% set tab_items = [] %}
+{% for key, label in [('active', 'Active'), ('invited', 'Invited'), ('suspended', 'Suspended')] %}
+  {% if key != 'invited' or manager %}
+  {% set _ = tab_items.append({'key': key, 'label': label, 'href': url_for('workspace.members', tab=key), 'count': counts[key]}) %}
+  {% endif %}
+{% endfor %}
+{{ tabs(tab_items, tab, 'Members') }}
+
 {% if tab == 'invited' %}
   {% if invitations %}
-  <div class="scroll-x">
-    <table class="dt">
+  <div class="q-table-wrap q-table-wrap--stack">
+    <table class="q-table q-table--stack">
+      <caption class="visually-hidden">Open invitations</caption>
       <thead>
-        <tr><th style="width:30%">Invited</th><th>Role</th><th>Vaults</th><th>Link expires</th>
-          <th class="num">Actions</th></tr>
+        <tr><th scope="col">Invited</th><th scope="col">Role</th><th scope="col">Vaults</th><th scope="col">Link expires</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {% for row in invitations %}
         {% set i = row.invitation %}
         <tr>
-          <td>
-            <span class="dt__link truncate">{{ i.email }}</span>
-            <span class="dt__sub truncate">Sent by {{ i.inviter.display_name }} on {{ i.created_at | ws_when }}</span>
+          <td class="q-c-main">
+            <span class="q-person__t">
+              <span class="q-person__n">{{ i.email }}</span>
+              <span class="q-person__e">Sent by {{ i.inviter.display_name }} on {{ i.created_at | ws_when }}</span>
+            </span>
           </td>
-          <td><span class="chip">{{ role_name(i.role) }}</span></td>
-          <td class="small">
+          <td class="q-c-meta">{{ badge(role_name(i.role)) }}</td>
+          <td class="q-c-aside">
             {% for g in row.grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}
-            {% else %}<span class="muted">None</span>{% endfor %}
+            {% else %}<span class="q-muted">None</span>{% endfor %}
           </td>
-          <td class="small nowrap">
-            {% if row.state == 'expired' %}<span class="chip chip--broken">Expired</span>{% endif %}
-            {% if row.state == 'void' %}<span class="chip chip--broken">Needs a new link</span>
-            <span class="dt__sub">{{ i.inviter.display_name }} can no longer send this invitation, so its link won't work</span>
-            {% else %}{{ i.expires_at | ws_when }}{% endif %}
+          <td class="q-c-end">
+            {% if row.state == 'expired' %}{{ badge('Expired', 'critical') }}{% endif %}
+            {% if row.state == 'void' %}{{ badge('Needs a new link', 'critical') }}
+            <span class="q-cap">{{ i.inviter.display_name }} can no longer send this invitation, so its link won't work</span>
+            {% else %}<span class="q-nowrap">{{ i.expires_at | ws_when }}</span>{% endif %}
           </td>
-          <td class="num">
-            <div class="hstack hstack--tight" style="justify-content:flex-end">
-              <form method="post" action="{{ url_for('workspace.resend', iid=i.id) }}">
+          <td class="q-c-status q-c-actions">
+            <div class="q-actions">
+              <form method="post" action="{{ url_for('workspace.resend', iid=i.id) }}" class="q-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn--ghost btn--sm" type="submit">New link</button>
+                {{ button('New link', 'secondary', type='submit', size='sm') }}
               </form>
-              <form method="post" action="{{ url_for('workspace.revoke', iid=i.id) }}">
+              <form method="post" action="{{ url_for('workspace.revoke', iid=i.id) }}" class="q-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn--quiet btn--sm" type="submit">Withdraw</button>
+                {{ button('Withdraw', 'ghost', type='submit', size='sm', attrs={'aria-label': 'Withdraw the invitation to ' ~ i.email}) }}
               </form>
             </div>
           </td>
@@ -73,71 +70,73 @@
       </tbody>
     </table>
   </div>
-  <p class="small muted" style="padding:.75rem 1.25rem">
+  <p class="q-note q-members__note">
     A new link replaces the old one, which stops working, and lasts another 7 days.
     Links aren't stored, so a lost link can only be replaced.
   </p>
   {% else %}
-  <div class="empty">
-    <div class="empty__title">No open invitations</div>
-    <p class="empty__sub">Invitations waiting to be accepted, and those that expired, are listed here.</p>
-    <a class="btn btn--primary btn--sm" href="{{ url_for('workspace.invite') }}">Invite people</a>
+  <div class="q-panel">
+    {{ empty_state('No open invitations', 'Invitations waiting to be accepted, and those that expired, are listed here.',
+                   {'label': 'Invite people', 'href': url_for('workspace.invite')}) }}
   </div>
   {% endif %}
 
 {% else %}
   {% if rows %}
-  <div class="scroll-x">
-    <table class="dt">
+  <div class="q-table-wrap q-table-wrap--stack">
+    <table class="q-table q-table--stack">
+      <caption class="visually-hidden">{{ 'Suspended members' if tab == 'suspended' else 'Members of ' ~ workspace.name }}</caption>
       <thead>
-        <tr><th style="width:32%">Member</th><th>Role</th><th>Signing key</th><th>Joined</th>
-          {% if manager %}<th class="num">Actions</th>{% endif %}</tr>
+        <tr><th scope="col">Member</th><th scope="col">Role</th><th scope="col">Signing key</th><th scope="col">Joined</th>
+          {% if manager %}<th scope="col"><span class="visually-hidden">Actions</span></th>{% endif %}</tr>
       </thead>
       <tbody>
         {% for row in rows %}
         {% set m = row.member %}
         <tr>
-          <td>
-            <span class="dt__link truncate">{{ m.user.display_name }}{% if m.user_id == me.user_id %} <span class="muted">(you)</span>{% endif %}</span>
-            {% if manager or m.user_id == me.user_id %}<span class="dt__sub truncate">{{ m.user.email }}</span>{% endif %}
+          <td class="q-c-main">
+            <span class="q-person">
+              {{ avatar(m.user.display_name, 32, decorative=True) }}
+              <span class="q-person__t">
+                <span class="q-person__n">{{ m.user.display_name }}{% if m.user_id == me.user_id %} <span class="q-person__you">(you)</span>{% endif %}</span>
+                {% if manager or m.user_id == me.user_id %}<span class="q-person__e">{{ m.user.email }}</span>{% endif %}
+              </span>
+            </span>
           </td>
-          <td>
+          <td class="q-c-meta">
             {% if row.can_act and m.is_active and not row.last_owner %}
-            <form method="post" action="{{ url_for('workspace.change_role', uid=m.user_id) }}" class="hstack hstack--tight">
+            <form method="post" action="{{ url_for('workspace.change_role', uid=m.user_id) }}" class="q-inline-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select class="input input--auto" name="role" aria-label="Role for {{ m.user.display_name }}" style="height:26px;font-size:.74rem">
-                {% for r in roles %}
-                <option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ role_name(r) }}</option>
-                {% endfor %}
-              </select>
-              <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+              {%- set role_opts = [] %}{% for r in roles %}{% set _ = role_opts.append((r, role_name(r))) %}{% endfor %}
+              {{ select('role', 'Role for ' ~ m.user.display_name, role_opts, m.role, id='role-' ~ m.user_id, inline=True) }}
+              {{ button('Save', 'secondary', type='submit', size='sm') }}
             </form>
             {% else %}
-            <span class="chip">{{ role_name(m.role) }}</span>
-            {% if row.last_owner and manager %}<span class="dt__sub">The only owner, so the role can't change</span>{% endif %}
+            {{ badge(role_name(m.role)) }}
+            {% if row.last_owner and manager %}<span class="q-cap">The only owner, so the role can't change</span>{% endif %}
             {% endif %}
           </td>
-          <td>
-            {% if row.enrolled %}<span class="chip chip--sealed">Enrolled</span>
-            {% else %}<span class="chip chip--waiting">No key yet</span>{% endif %}
+          <td class="q-c-aside">
+            {% if row.enrolled %}{{ badge('Enrolled', 'success') }}
+            {% else %}{{ badge('No key yet', 'warning') }}{% endif %}
           </td>
-          <td class="tiny muted nowrap">{{ m.joined_at.strftime('%d %b %Y') }}</td>
+          <td class="q-c-end q-nowrap">{{ ui_day(m.joined_at) }}</td>
           {% if manager %}
-          <td class="num">
+          <td class="q-c-status q-c-actions">
             {% if row.can_act and m.user_id != me.user_id %}
-            <div class="hstack hstack--tight" style="justify-content:flex-end">
+            <div class="q-actions">
               {% if m.is_active %}
-              <form method="post" action="{{ url_for('workspace.suspend', uid=m.user_id) }}">
+              <form method="post" action="{{ url_for('workspace.suspend', uid=m.user_id) }}" class="q-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn--quiet btn--sm" type="submit">Suspend</button>
+                {{ button('Suspend', 'ghost', type='submit', size='sm', attrs={'aria-label': 'Suspend ' ~ m.user.display_name}) }}
               </form>
               {% else %}
-              <form method="post" action="{{ url_for('workspace.reinstate', uid=m.user_id) }}">
+              <form method="post" action="{{ url_for('workspace.reinstate', uid=m.user_id) }}" class="q-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn--ghost btn--sm" type="submit">Reinstate</button>
+                {{ button('Reinstate', 'secondary', type='submit', size='sm', attrs={'aria-label': 'Reinstate ' ~ m.user.display_name}) }}
               </form>
               {% endif %}
-              <a class="btn btn--quiet btn--sm" href="{{ url_for('workspace.remove', uid=m.user_id) }}">Remove</a>
+              {{ button('Remove', 'ghost', href=url_for('workspace.remove', uid=m.user_id), size='sm', attrs={'aria-label': 'Remove ' ~ m.user.display_name}) }}
             </div>
             {% endif %}
           </td>
@@ -148,7 +147,7 @@
     </table>
   </div>
   {% if tab == 'active' %}
-  <p class="small muted" style="padding:.75rem 1.25rem">
+  <p class="q-note q-members__note">
     Workspace roles decide who can invite and manage people. They don't change who can approve
     in a vault: each vault's owner decides that on the vault's Members tab.
     {% if manager %}Suspending someone stops them being added to vaults or managing the
@@ -156,12 +155,11 @@
   </p>
   {% endif %}
   {% else %}
-  <div class="empty">
-    <div class="empty__title">{{ 'No suspended members' if tab == 'suspended' else 'No members' }}</div>
-    <p class="empty__sub">
-      {% if tab == 'suspended' %}Suspended members are listed here until they're reinstated or removed.{% endif %}
-    </p>
+  <div class="q-panel">
+    {{ empty_state('No suspended members' if tab == 'suspended' else 'No members',
+                   'Suspended members are listed here until they’re reinstated or removed.' if tab == 'suspended' else None) }}
   </div>
   {% endif %}
 {% endif %}
+</div>
 {% endblock %}

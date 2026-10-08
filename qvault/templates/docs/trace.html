@@ -8,7 +8,7 @@
   first.
 </p>
 
-<h3>What it proves, and what it does not</h3>
+<h2>What it proves, and what it does not</h2>
 <p>
   Showing source code proves nothing by itself. A page can print whatever code it likes, so a code
   panel is a claim, not evidence. Two things make this page more than that.
@@ -19,28 +19,29 @@
   have drifted. And every derived value is shown with the input that produced it, so you can leave
   this application entirely and get the same answer:
 </p>
-<pre class="pre">echo -n &lt;hex&gt; | xxd -r -p | sha256sum</pre>
+<pre>echo -n &lt;hex&gt; | xxd -r -p | sha256sum</pre>
 <p>
   That command appears under every value small enough to carry it. If a digest on this page were
   invented, one paste into your own terminal would expose it. That, rather than the code, is why
   the page is worth anything.
 </p>
 
-<h3>What cannot be shown</h3>
+<h2>What cannot be shown</h2>
 <p>
   The trace shows the Python in this repository. It cannot show the interior of ML-DSA or SLH-DSA:
   those are compiled implementations the application calls, so for a signing step you see the
-  complete call — the message, the key, the signature, the verdict and the time it took — and not
+  complete call (the message, the key, the signature, the verdict and the time it took) and not
   the lattice arithmetic in between. The page says so on the step itself rather than implying a
   visibility it does not have.
 </p>
 
-<h3>A vote, step by step</h3>
+<h2>A vote, step by step</h2>
 <p>
   Casting one vote records nine steps. Read in order they are the whole argument of this system:
 </p>
-<table class="dt">
-  <thead><tr><th style="width:22rem">Step</th><th>What to look at</th></tr></thead>
+<div class="q-table-wrap"><table class="q-table">
+  <caption class="visually-hidden">A vote, step by step</caption>
+  <thead><tr><th scope="col" style="width:22rem">Step</th><th scope="col">What to look at</th></tr></thead>
   <tbody>
     <tr><td>Build the bytes to be signed</td>
         <td>The message in full. It names the proposal, the decision and the signer, so an
@@ -50,7 +51,7 @@
     <tr><td>Unwrap the private key</td>
         <td>The key is withheld; its size is not. It exists in memory for two steps.</td></tr>
     <tr><td>Sign</td>
-        <td>The signature's size is a research result in itself — compare ML-DSA against
+        <td>The signature's size is a research result in itself: compare ML-DSA against
             SLH-DSA on the <a href="{{ url_for('docs.page', slug='algorithms') }}">algorithms</a>
             page.</td></tr>
     <tr><td>Verify before releasing</td>
@@ -68,9 +69,9 @@
     <tr><td>Sign the checkpoint</td>
         <td>What an independent witness is offered, and what an exported decision carries.</td></tr>
   </tbody>
-</table>
+</table></div>
 
-<h3>Why it is switched off by default</h3>
+<h2>Why it is switched off by default</h2>
 <p>
   It is an instrument, not a feature. It prints real values from real operations into one
   process-wide buffer, so it is restricted to administrators and disabled unless a deployment
@@ -79,8 +80,8 @@
   <a href="{{ url_for('docs.page', slug='verifying') }}">exported decision</a>.
 </p>
 <p>
-  No secret is shown. Passwords and derived keys are withheld entirely — not their length, not a
-  hash of them — and everything the page does display is either public by construction or
+  No secret is shown. Passwords and derived keys are withheld entirely, not their length, not a
+  hash of them, and everything the page does display is either public by construction or
   something you can recompute yourself.
 </p>
 

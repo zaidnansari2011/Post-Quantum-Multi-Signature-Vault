@@ -7,7 +7,7 @@
 {% from "ui/data.html" import hash %}
 {% from "ui/feedback.html" import banner %}
 {% from "ui/icons.html" import icon %}
-{% block title %}Transparency — Q-Vault{% endblock %}
+{% block title %}Transparency — Audit — Q-Vault{% endblock %}
 
 {% macro res(ok, yes='Valid', no='Didn’t verify') -%}
 <span class="q-res{% if not ok %} q-res--bad{% endif %}">{{ icon('check' if ok else 'critical') }}{{ yes if ok else no }}</span>

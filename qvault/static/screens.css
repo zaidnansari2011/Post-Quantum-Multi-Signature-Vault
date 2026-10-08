@@ -1,0 +1,354 @@
+/* Q-Vault screens (rework R1, the conversion): the pages that wore the compatibility layer until
+ * now. Sign-in and the public pages, workspace and members, notifications, Security (algorithms,
+ * keys, performance, chain, the adversary lab), the documentation, the trace and the public record.
+ *
+ * Built only from tokens.css and the components in components.css and evidence.css, under the same
+ * rules: colour from tokens, font sizes from the type scale, radius by role, shadows on overlays
+ * only, and the q- prefix, so the compatibility layer (qvault.css) and these never restyle each
+ * other. Loaded after evidence.css.
+ */
+
+/* ================================================================ the page region (base.html) */
+
+.q-body { flex: 1; padding: var(--space-24) var(--gutter) var(--space-48); min-width: 0; }
+/* Signed out: no sidebar, so a sign-in form stands in the middle of what the header leaves. */
+.q-body--anon { display: grid; place-items: center; }
+.q-body--anon > div { min-width: 0; }
+
+/* A flashed message that stays until it is dismissed (_flash.html): a banner with a close button. */
+.q-flash { align-items: flex-start; padding: var(--space-6) var(--space-6) var(--space-6) var(--space-16); }
+.q-flash > .q-icon { margin-top: 8px; }
+.q-flash__m { flex: 1; min-width: 0; padding-block: var(--space-6); overflow-wrap: anywhere; }
+.q-flash__x { color: var(--text-muted); }
+.q-flash__x:hover { background: var(--fill-hover); }
+
+/* ================================================================ shared pieces */
+
+.q-stack { display: grid; gap: var(--space-16); min-width: 0; align-content: start; }
+.q-stack--lg { gap: var(--space-24); }
+.q-measure { max-width: 720px; }
+/* Secondary text set inline in a sentence or a cell ("classical", "12 ms"). */
+.q-small { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-strong { font-weight: var(--text-body-strong-weight); color: var(--text); }
+.q-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.q-panel__bd > :first-child { margin-top: 0; }
+.q-panel__bd > :last-child { margin-bottom: 0; }
+.q-panel__hd > .q-small { margin-left: auto; text-align: right; }
+p.q-panel__bd { margin: 0; }
+.q-kv + .q-panel__ft { padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
+.q-panel__hd > .q-badge, .q-panel__hd > .q-tag { flex: none; }
+/* A panel whose body is a table: the table takes the panel's edge instead of drawing its own. */
+.q-panel--table { overflow: hidden; }
+.q-panel--table > .q-table-wrap { border: 0; border-radius: 0; }
+.q-panel > .q-panel__bd + .q-table-wrap { border-top: var(--border-width) solid var(--border); }
+.q-table td .q-tag + .q-badge, .q-table td .q-badge + .q-tag { margin-left: var(--space-4); }
+.q-table td.is-num { font-variant-numeric: tabular-nums; }
+.q-table .q-hash { vertical-align: middle; }
+
+/* A danger section: the destructive actions, kept apart from the settings above them. */
+.q-danger { display: grid; gap: var(--space-4); }
+.q-danger + .q-danger { margin-top: var(--space-16); padding-top: var(--space-16); border-top: var(--border-width) solid var(--border); }
+.q-danger__t { margin: 0; font-weight: var(--text-body-strong-weight); }
+.q-danger p { margin: 0; color: var(--text-muted); }
+.q-danger form { margin: var(--space-8) 0 0; }
+
+/* A row of buttons under a form or a panel. */
+.q-btnrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin: 0; }
+.q-btnrow form { margin: 0; }
+
+/* Figures: where a number is the content (keys due, payouts in progress). The separators are the
+ * grid gap, so a wrapped last row never keeps a stray rule. */
+.q-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--border-width); margin: 0 0 var(--space-24); padding: 0;
+  background: var(--border); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden;
+}
+.q-stat { display: grid; gap: var(--space-2); align-content: start; padding: var(--space-12) var(--space-16); background: var(--surface); min-width: 0; margin: 0; }
+.q-stat > p { margin: 0; }
+.q-stat__v {
+  margin: 0; font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight);
+  letter-spacing: var(--text-title-tracking); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere;
+}
+.q-stat__v.is-warning { color: var(--status-warning-fg); }
+.q-stat__v code { font-family: var(--font-mono); font-size: var(--text-title-sm-size); font-weight: var(--weight-medium); letter-spacing: 0; }
+.q-stat__l { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-stat__s { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* A size or a time beside its value, relative to the largest in the table. A neutral bar: it
+ * compares, it does not judge. */
+.q-bar { display: block; height: 4px; margin-top: var(--space-4); min-width: 48px; border-radius: var(--radius-full); background: var(--fill-hover); overflow: hidden; }
+.q-bar__fill { display: block; height: 100%; border-radius: var(--radius-full); background: var(--text-muted); }
+.q-bar__fill--alt { background: var(--border-strong); }
+
+/* ================================================================ sign-in and the public pages */
+
+.q-auth { width: 100%; max-width: 360px; margin: 0 auto; padding: var(--space-32) 0; }
+.q-auth--wide { max-width: 480px; }
+.q-auth__t { margin: 0 0 var(--space-16); font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); }
+.q-auth__p { margin: 0 0 var(--space-16); color: var(--text-muted); }
+.q-auth form { margin: 0; }
+.q-auth .q-input { height: var(--control-h-lg); }
+.q-auth .q-btn { --btn-h: var(--control-h-lg); }
+.q-auth .q-dev .q-btn { --btn-h: var(--control-h); }
+.q-auth__foot { margin: var(--space-16) 0 0; color: var(--text-muted); }
+.q-auth .q-dev { margin-top: var(--space-16); }
+.q-auth .q-dev p { margin: 0; }
+.q-auth .q-panel { margin-bottom: var(--space-16); }
+.q-auth .q-kv { --kv-label: 112px; }
+.q-auth .q-banner { margin: var(--space-16) 0; }
+
+.q-landing { width: 100%; max-width: 720px; margin: 0 auto; padding: var(--space-32) 0; text-align: center; }
+.q-landing__brand {
+  display: inline-flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-32);
+  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong);
+}
+.q-landing__brand .q-mark { width: 26px; height: 26px; }
+.q-landing__t {
+  margin: 0 0 var(--space-12); font-size: var(--text-figure-size); line-height: var(--text-figure-line);
+  font-weight: var(--text-figure-weight); letter-spacing: var(--text-figure-tracking); text-wrap: balance;
+}
+.q-landing__lead { max-width: 34rem; margin: 0 auto var(--space-32); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); color: var(--text-muted); }
+.q-landing__act { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin-bottom: var(--space-40); }
+.q-landing .q-stats { text-align: left; margin-bottom: var(--space-24); }
+.q-landing__foot { margin: var(--space-24) 0 0; }
+
+/* ================================================================ workspace and members */
+
+.q-members .q-tabs { margin-bottom: var(--space-24); }
+.q-members__note { margin: var(--space-12) 0 0; max-width: 76ch; }
+/* A member's role is a select with Save beside it, on one row in the table; on a phone the select
+ * keeps its own width rather than stretching away from its chevron. */
+.q-members .q-inline-form .q-field--inline { flex: 0 0 auto; }
+.q-members .q-inline-form .q-field--inline .q-select { width: auto; max-width: 160px; }
+.q-invite { display: grid; gap: var(--space-24); align-items: start; }
+@media (min-width: 1100px) { .q-invite { grid-template-columns: minmax(0, 640px) 320px; } }
+.q-invite form { display: grid; gap: var(--space-16); margin: 0; }
+.q-invite .q-choices { margin-bottom: 0; }
+.q-link { display: flex; align-items: center; gap: var(--space-8); }
+.q-link .q-input { flex: 1; min-width: 0; }
+.q-link + p { margin: var(--space-12) 0 0; }
+
+/* ================================================================ notifications (inbox) */
+
+.q-inbox .q-tabs { margin-bottom: var(--space-16); }
+.q-inbox .nlist { border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.q-inbox .q-empty { border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+
+/* ================================================================ Security (admin) */
+
+.q-admin .q-ph { margin-bottom: var(--space-16); }
+.q-admin .q-tabs { margin-bottom: var(--space-24); }
+.q-admin__run { display: flex; align-items: center; gap: var(--space-8); margin: 0; }
+.q-admin__run .q-field { margin: 0; }
+.q-admin .q-split { gap: var(--space-24); }
+.q-downgrade {
+  margin: 0 0 var(--space-16); padding: var(--space-12) var(--space-16);
+  border: var(--border-width) solid var(--status-critical-border); border-radius: var(--radius-card); background: var(--status-critical-bg);
+}
+.q-downgrade .q-input { margin-top: var(--space-8); }
+.q-cmdline { display: inline-block; margin-top: var(--space-12); padding: var(--space-4) var(--space-8); border-radius: var(--radius-badge); background: var(--fill); color: var(--text-muted); }
+
+/* --- the adversary lab (ADR-0021) --------------------------------------------------------------
+ * One card per attack, and inside it two columns: what happened against the real system, and what
+ * happened against the control. The side-by-side layout IS the argument, so the two runs are never
+ * collapsed while there is room to set them next to each other. Colour tracks the CLAIM: green
+ * where it held, red where it did not. */
+
+.q-atk { margin-bottom: var(--space-16); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.q-atk--failed { border-color: var(--status-critical-border); }
+.q-atk__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border); background: var(--bg-subtle); }
+.q-atk__n { min-width: var(--space-24); font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-atk__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-atk__status { margin-left: auto; display: flex; align-items: center; gap: var(--space-8); }
+.q-atk__q { margin: 0; padding: var(--space-8) var(--space-16); color: var(--text-muted); font-style: italic; border-bottom: var(--border-width) solid var(--border); }
+.q-atk__model { display: grid; gap: var(--space-8) var(--space-16); margin: 0; padding: var(--space-12) var(--space-16); border-bottom: var(--border-width) solid var(--border); }
+@media (min-width: 56rem) { .q-atk__model { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.q-atk__model > div { min-width: 0; }
+.q-atk__model dt { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
+.q-atk__model dd { margin: 0; color: var(--text); }
+.q-atk__runs { display: grid; }
+@media (min-width: 62rem) { .q-atk__runs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.q-atk__run { min-width: 0; padding: var(--space-12) var(--space-16) var(--space-16); }
+.q-atk__run + .q-atk__run { border-top: var(--border-width) solid var(--border); }
+@media (min-width: 62rem) { .q-atk__run + .q-atk__run { border-top: 0; border-left: var(--border-width) solid var(--border); } }
+.q-atk__runhd { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin-bottom: var(--space-8); }
+.q-atk__runt { margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
+.q-atk__steps { margin: 0; padding: 0; list-style: none; }
+.q-atk__step { padding: var(--space-6) 0; border-top: var(--border-width) solid var(--border); }
+.q-atk__step:first-child { padding-top: 0; border-top: 0; }
+.q-atk__label { font-weight: var(--weight-medium); color: var(--text); }
+.q-atk__detail { margin: var(--space-2) 0 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+/* The value is the evidence: never truncated, because a shortened digest cannot be checked.
+ * `anywhere`, not `break-all`, so a line mixing prose and numbers is not split mid-word. */
+.q-atk__val {
+  margin-top: var(--space-4); padding: var(--space-4) var(--space-6);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+  background: var(--fill); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge);
+  white-space: pre-wrap; color: var(--text); overflow-wrap: anywhere;
+}
+.q-atk__note { margin: var(--space-8) 0 0; padding-left: var(--space-8); border-left: 2px solid var(--border-hover); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-atk-run { margin-bottom: var(--space-16); }
+.q-atk-run .q-stats { margin-bottom: 0; }
+.q-atk-run .q-stats + .q-note { margin-top: var(--space-16); }
+.q-admin > .q-tech__t { margin-top: var(--space-24); }
+
+/* ================================================================ the audit log's developer row
+ * The tamper demonstration: an entry number and two buttons, on one baseline. The field has a label
+ * above it and the buttons do not, so the row aligns their bottom edges and gives the buttons the
+ * input's height (a touch target on a phone, where the stepper grows to one). */
+
+.q-tamper { align-items: flex-end; }
+.q-tamper .q-field { margin: 0; }
+.q-tamper .q-btn { --btn-h: var(--control-h); }
+@media (max-width: 767px) { .q-tamper .q-btn { --btn-h: var(--target-touch); } }
+
+/* ================================================================ the documentation */
+
+.q-docs { display: grid; gap: var(--space-24); align-items: start; }
+@media (min-width: 1100px) { .q-docs { grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-40); } }
+.q-docs .q-ph { margin-bottom: var(--space-24); }
+.q-docnav { display: grid; gap: var(--space-2); padding: var(--space-8); }
+.q-docnav a { padding: var(--space-6) var(--space-8); border-radius: var(--radius-control); color: var(--text-muted); text-decoration: none; }
+.q-docnav a:hover { background: var(--fill); color: var(--text); }
+.q-docnav a[aria-current="page"] { background: var(--accent-subtle); color: var(--accent-fg); font-weight: var(--weight-medium); }
+@media (min-width: 1100px) { .q-docs > nav { position: sticky; top: calc(var(--topbar-h) + var(--space-24)); } }
+
+/* Prose: the one place with a reading measure. */
+.q-prose { max-width: 68ch; min-width: 0; line-height: var(--text-title-sm-line); }
+/* A page's sections are h2 under its h1 (no level skipped, S24), drawn at the small title size. */
+.q-prose h2 { margin: var(--space-32) 0 var(--space-8); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); }
+.q-prose p, .q-prose ul, .q-prose ol { margin: 0 0 var(--space-16); }
+.q-prose ul, .q-prose ol { padding-left: var(--space-20); }
+.q-prose li { margin-bottom: var(--space-4); }
+.q-prose code { padding: 0 var(--space-4); border-radius: var(--radius-badge); background: var(--fill); }
+.q-prose pre {
+  margin: 0 0 var(--space-16); padding: var(--space-12) var(--space-16); overflow-x: auto;
+  border-radius: var(--radius-control); background: var(--fill); line-height: var(--text-code-line);
+}
+.q-prose pre code { padding: 0; background: none; }
+.q-prose .q-table-wrap { margin: 0 0 var(--space-16); }
+.q-prose .q-table { line-height: var(--text-body-line); }
+.q-prose .q-table td { vertical-align: top; }
+.q-doclist { max-width: 720px; }
+.q-doclist__l {
+  margin: 0; padding: 0; list-style: none; overflow: hidden;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface);
+}
+.q-doclist__l > li { padding: var(--space-8) var(--space-16); }
+.q-doclist__l > li + li { border-top: var(--border-width) solid var(--border); }
+.q-doclist__l > li:hover { background: var(--fill); }
+.q-doclist a { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; }
+.q-doclist a:hover { text-decoration: underline; }
+
+/* ================================================================ the glass box (/trace), ADR-0020
+ * The one screen where explanation IS the artefact. The dark surface is the machine's side: source
+ * code sits on the chrome colour, and the values it operated on sit on the light surface beside it. */
+
+.q-trace { display: flex; flex-direction: column; gap: var(--space-16); }
+/* The live indicator reports an actual live connection, so it is the one pulsing element. */
+.q-live { display: inline-flex; align-items: center; gap: var(--space-6); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-live__dot { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--status-success-fg); animation: q-live-pulse 1.6s ease-in-out infinite; }
+.q-live[data-paused="1"] .q-live__dot { background: var(--border-strong); animation: none; }
+@keyframes q-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .q-live__dot { animation: none; } }
+
+/* One operation: a request that did cryptographic work. */
+.q-op { background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.q-op--running { border-color: var(--status-warning-border); }
+.q-op--failed { border-color: var(--status-critical-border); }
+.q-op__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border); background: var(--bg-subtle); }
+.q-op__seq, .q-op__ms, .q-step__n, .q-step__ms { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); white-space: nowrap; }
+.q-op__t { font-weight: var(--text-body-strong-weight); }
+.q-op__sub { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-op__ms { margin-left: auto; color: var(--text-muted); }
+
+/* A step, numbered down the left so the sequence is countable. */
+.q-step { border-top: var(--border-width) solid var(--border); }
+.q-step:first-child { border-top: 0; }
+.q-step__hd { display: flex; align-items: baseline; gap: var(--space-8); padding: var(--space-8) var(--space-16); cursor: pointer; user-select: none; }
+.q-step__hd:hover { background: var(--fill); }
+.q-step__n { min-width: var(--space-20); }
+.q-step__label { font-weight: var(--weight-medium); }
+.q-step__ms { margin-left: auto; }
+.q-step__bd { display: grid; gap: var(--space-12); padding: 0 var(--space-16) var(--space-16) var(--space-40); }
+@media (min-width: 68rem) {
+  /* Code and values side by side once there is room for about 80 columns of mono. */
+  .q-step__bd { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
+}
+@media (max-width: 767px) { .q-step__bd { padding-left: var(--space-16); } }
+/* The note says WHY a step exists rather than what it does. */
+.q-step__note { grid-column: 1 / -1; margin: 0; padding-left: var(--space-8); border-left: 2px solid var(--border-hover); color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* --- the machine's side */
+.q-src { min-width: 0; background: var(--chrome-bg); border: var(--border-width) solid var(--chrome-border); border-radius: var(--radius-card); overflow: hidden; }
+.q-src__hd {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-6) var(--space-12);
+  border-bottom: var(--border-width) solid var(--chrome-border);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--chrome-text-muted);
+}
+.q-src__hd b { color: var(--chrome-text); font-weight: var(--weight-medium); }
+/* Capped and scrollable inside itself, so one long function does not swallow the sequence. */
+.q-src pre { margin: 0; padding: var(--space-12); overflow: auto; max-height: 24rem; }
+.q-src code { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-code-line); color: var(--chrome-text); white-space: pre; }
+/* Muted rather than colourful: code is data here, so the highlighting is lightness steps on the
+ * chrome text plus one tint for literals, mixed from tokens so it follows the theme. */
+.q-src .c { color: var(--chrome-text-muted); font-style: italic; }
+.q-src .s { color: color-mix(in oklab, var(--chrome-text) 72%, var(--status-success-fg)); }
+.q-src .k { color: var(--chrome-text); font-weight: var(--weight-strong); }
+.q-src .n { color: color-mix(in oklab, var(--chrome-text) 80%, var(--chrome-text-muted)); }
+.q-src__more { padding: var(--space-6) var(--space-12); border-top: var(--border-width) solid var(--chrome-border); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--chrome-text-muted); }
+
+/* --- the evidence side */
+.q-vals { display: flex; flex-direction: column; gap: var(--space-8); min-width: 0; }
+.q-vals__group { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
+.q-val { min-width: 0; }
+.q-val__name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-6); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-val__size { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-val__body {
+  margin-top: var(--space-4); padding: var(--space-6) var(--space-8);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+  background: var(--fill); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge);
+  word-break: break-all; white-space: pre-wrap;
+}
+.q-val__body--digest { color: var(--text); background: var(--fill-hover); }
+.q-val__body--withheld, .q-val__body--opaque { color: var(--text-subtle); font-style: italic; word-break: normal; }
+.q-val__note { margin-top: var(--space-2); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+/* "Check it yourself": run one command outside the application and get the same digest. */
+.q-val__check { margin-top: var(--space-4); }
+.q-val__check summary { cursor: pointer; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-val__check summary:hover { color: var(--text); }
+@media (pointer: coarse) { .q-val__check summary { padding-block: 14px; } }
+.q-val__check pre {
+  margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-8); overflow-x: auto;
+  border-radius: var(--radius-badge); background: var(--chrome-bg); color: var(--chrome-text);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+}
+
+/* ================================================================ the public record (/d/<id>) */
+
+.q-record .q-banner { margin-bottom: 0; }
+.q-record .q-dtext { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
+
+/* ================================================================ phone width */
+
+@media (max-width: 767px) {
+  .q-auth { padding-top: var(--space-16); }
+  .q-landing { padding-top: var(--space-16); }
+  .q-admin__run .q-num__in { width: 4.5rem; }
+  .q-admin .q-ph__act { width: 100%; }
+  .q-members .q-ph__act { width: 100%; }
+  .q-link { flex-wrap: wrap; }
+  .q-link .q-btn { --btn-h: var(--target-touch); }
+  .q-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* A panel's meta line goes under its title rather than squeezing it into a column. */
+  .q-panel__hd:has(> .q-small) { flex-wrap: wrap; row-gap: var(--space-2); }
+  .q-panel__hd > .q-small { flex-basis: 100%; margin-left: 0; text-align: left; }
+}
+
+/* Security → Chain: a failure's reason is a sentence, so it keeps a readable measure on a desktop
+ * (at phone width the row is a stacked card, components.css). */
+@media (min-width: 768px) { .q-chain__why { min-width: 22ch; } .q-chain__when { min-width: 12ch; text-align: right; } }
+.q-table td.q-c-main.q-chain__vault { min-width: 0; }
+/* A time in a table's last column, written in full (ui.absolute_time): it may wrap, aligned with
+ * its right-aligned header, rather than push the table into a sideways scroll. */
+.q-table td.q-when { text-align: right; min-width: 13ch; }

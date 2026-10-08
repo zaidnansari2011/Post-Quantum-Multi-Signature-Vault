@@ -1,41 +1,28 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import number, wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header %}
 {% block title %}New vault — Q-Vault{% endblock %}
 
-{% block chrome %}
-<div class="head">
-  <div>
-    <div class="head__title">New vault</div>
-  </div>
-</div>
-{% endblock %}
-
 {% block content %}
-<div style="max-width:34rem">
-  <div class="panel">
-    <div class="panel__body">
+{{ page_header('New vault') }}
+
+<div class="q-acct">
+  <section class="q-panel" aria-label="The new vault">
+    <div class="q-panel__bd">
       <form method="post" novalidate>
         {{ form.hidden_tag() }}
-        <div class="field">
-          {{ form.name.label(class="field__label") }}
-          {{ form.name(class="input") }}
-          {% for e in form.name.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-        </div>
-        <div class="field">
-          {{ form.description.label(class="field__label") }}
-          {{ form.description(class="input", rows="2") }}
-        </div>
-        <div class="field">
-          {{ form.threshold_m.label(class="field__label") }}
-          {{ form.threshold_m(class="input", type="number", min="1", style="max-width:6rem") }}
-          <p class="field__help">You are the first approver. Add more members afterwards.</p>
-          {% for e in form.threshold_m.errors %}<p class="field__error">{{ e }}</p>{% endfor %}
-        </div>
-        <div class="hstack">
-          {{ form.submit(class="btn btn--primary btn--sm") }}
-          <a class="btn btn--ghost btn--sm" href="{{ url_for('vaults.list_vaults') }}">Cancel</a>
+        {{ wtf_field(form.name) }}
+        {{ wtf_field(form.description, attrs={'rows': 2}) }}
+        {{ number('threshold_m', form.threshold_m.label.text, form.threshold_m._value(), min=1, max=50, required=True,
+                  id=form.threshold_m.id, caption='How many approvals a decision in this vault needs. You are the first approver; add more members afterwards.',
+                  error=form.threshold_m.errors) }}
+        <div class="q-btnrow">
+          {{ button(form.submit.label.text, 'primary', type='submit', name='submit', value=form.submit.label.text) }}
+          {{ button('Cancel', 'ghost', href=url_for('vaults.list_vaults')) }}
         </div>
       </form>
     </div>
-  </div>
+  </section>
 </div>
 {% endblock %}

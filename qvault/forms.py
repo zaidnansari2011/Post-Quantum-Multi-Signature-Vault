@@ -15,7 +15,15 @@ from wtforms import (
     SubmitField,
     TextAreaField,
 )
-from wtforms.validators import DataRequired, Email, EqualTo, Length, NumberRange, Optional
+from wtforms.validators import (
+    DataRequired,
+    Email,
+    EqualTo,
+    InputRequired,
+    Length,
+    NumberRange,
+    Optional,
+)
 
 
 class RegisterForm(FlaskForm):
@@ -53,9 +61,13 @@ class LoginForm(FlaskForm):
 class VaultForm(FlaskForm):
     name = StringField("Vault name", validators=[DataRequired(), Length(max=255)])
     description = TextAreaField("Description", validators=[Optional(), Length(max=2000)])
+    # InputRequired, not DataRequired: a 0 is an answer (and out of range), not a missing one.
     threshold_m = IntegerField(
-        "Approval threshold (M signatures required)",
-        validators=[DataRequired(), NumberRange(min=1, max=50)],
+        "Approvals required",
+        validators=[
+            InputRequired(message="Say how many approvals a decision needs."),
+            NumberRange(min=1, max=50, message="Choose a number from 1 to 50."),
+        ],
         default=2,
     )
     submit = SubmitField("Create vault")
