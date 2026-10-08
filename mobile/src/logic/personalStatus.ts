@@ -14,7 +14,8 @@
 // No React Native import: plain .ts with explicit extensions, so Node runs it in the probe.
 
 import { decisionStatus } from '../status.ts';
-import { andList, capitalise, countWord, dayMonth, dayMonthTime, orList, whenYouDid } from './words.ts';
+import { pastPayBy } from './consequence.ts';
+import { andList, capitalise, countWord, dayMonth, dayMonthTime, orList } from './words.ts';
 
 export type Tone = 'success' | 'warning' | 'critical' | 'info' | 'neutral';
 
@@ -27,7 +28,9 @@ export type MismatchReason =
   | 'display_text'
   | 'display_policy'
   | 'type_text'
-  | 'changed';
+  | 'changed'
+  /** The answer for the decision opened was another decision (its uuid is not the route's). */
+  | 'other_decision';
 
 export type Integrity = { ok: true } | { ok: false; reason: MismatchReason };
 
@@ -56,6 +59,8 @@ export type DecisionFacts = {
     signed_at: string | null;
   }>;
   is_payment: boolean;
+  /** Payments: the signed "valid until" (`signing_inputs.action.valid_until`, seconds). */
+  valid_until?: number | null;
   payout?: { state: string; reason: string | null; finished_at: string | null } | null;
   /** A1: who raised it. Unsigned display. */
   raised_by?: { id: number; name: string | null } | null;
@@ -214,7 +219,6 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
   );
   const mine = d.votes.find((v) => v.signer_id === viewerId);
   const myDecision = vote?.decision ?? (mine?.decision as 'approve' | 'reject' | undefined);
-  const myTime = vote?.at ?? mine?.signed_at ?? null;
   const raisedByMe = d.raised_by?.id === viewerId;
   const closedOn = dayMonth(d.decided_at ?? null, now);
 
@@ -238,22 +242,20 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
   const waiting = badgeFor('open', waitingOn);
 
   // Rows 4 and 5: this person has already voted. `signed_by_me` without a vote on the list says
-  // they voted but not which way, so the line claims neither.
+  // they voted but not which way, so the line claims neither. The time is not repeated here: it is
+  // on the person's own line in "Who decided", just below.
   if (d.signed_by_me && myDecision === undefined) {
     return done(4, waiting, "You've already signed this.", NONE);
   }
   if (myDecision === 'approve') {
-    const when = whenYouDid(myTime, now);
     const names = stillToApprove(d, viewerId);
-    const parts = [when ? `You approved ${when}.` : 'You approved this.'];
+    const parts = ['You approved this.'];
     if (names && names.length > 0) parts.push(`Waiting on ${orList(names)}.`);
     return done(4, waiting, parts.join(' '), NONE);
   }
   if (myDecision === 'reject') {
-    const when = whenYouDid(myTime, now);
     const k = N - M + 1 - rejections;
-    const lead = when ? `You rejected this ${when}.` : 'You rejected this.';
-    return done(5, waiting, `${lead} It's rejected only if ${countWord(k)} more ${k === 1 ? 'rejects' : 'reject'}.`, NONE);
+    return done(5, waiting, `You rejected this. It's rejected only if ${countWord(k)} more ${k === 1 ? 'rejects' : 'reject'}.`, NONE);
   }
 
   // Row 3: separation of duties.
@@ -305,6 +307,18 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
       NEEDS_YOU,
       `This vault's treasury holds the key of ${device}. Approve this payment there.`,
       { kind: 'web', line: `Approve this on ${device}, where its key is.`, fix: false },
+    );
+  }
+
+  // Row 2a: a payment whose signed limit has passed. Approving it still counts, but the treasury
+  // will not pay it, and the page must not read as if it would.
+  if (d.is_payment && pastPayBy(d.valid_until, now)) {
+    const day = dayMonth(new Date(d.valid_until! * 1000).toISOString(), now);
+    return done(
+      2,
+      NEEDS_YOU,
+      `The time the treasury allows for this payment ran out${day ? ` on ${day}` : ''}, so approving it won't pay it.`,
+      { kind: 'sign' },
     );
   }
 

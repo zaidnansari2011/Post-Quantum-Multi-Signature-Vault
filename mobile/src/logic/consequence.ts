@@ -12,6 +12,16 @@ import { capitalise, countWord, orList } from './words.ts';
 
 export type RuleOutcome = 'approved' | 'rejected' | 'open';
 
+/**
+ * A payment's signed "valid until" (`signing_inputs.action.valid_until`, seconds) has passed: the
+ * treasury refuses to pay it however many approve. Worked out once per screen and fed to every
+ * sentence that could otherwise promise the payment (the status line, the personal line, the
+ * quorum, both sheets and the acknowledgement).
+ */
+export function pastPayBy(validUntil: number | null | undefined, now: number): boolean {
+  return typeof validUntil === 'number' && validUntil * 1000 <= now;
+}
+
 /** What the signed rule makes of these counts. */
 export function ruleOutcome(M: number, N: number, approvals: number, rejections: number): RuleOutcome {
   if (approvals >= M) return 'approved';
@@ -51,18 +61,26 @@ export function approveConsequence(input: {
   return `Yours will be approval ${yours} of ${M}.`;
 }
 
-/** The reject sheet's consequence (§6.9 item 4). */
-export function rejectConsequence(input: { M: number; N: number; approvals: number; rejections: number }): string {
+/**
+ * The reject sheet's consequence (§6.9 item 4). A payment past its signed limit can no longer be
+ * paid, so the sentence does not say it "passes" if others approve.
+ */
+export function rejectConsequence(input: {
+  M: number;
+  N: number;
+  approvals: number;
+  rejections: number;
+  pastPayBy?: boolean;
+}): string {
   const { M, N, approvals, rejections } = input;
   if (rejections + 1 > N - M) {
     return "Your rejection ends this decision for everyone, and you can't withdraw it.";
   }
   const k = N - M + 1 - (rejections + 1);
   const left = M - approvals;
-  return (
-    `This is rejected only if ${countWord(k)} more ${k === 1 ? 'rejects' : 'reject'} it; ` +
-    `if ${countWord(left)} more ${left === 1 ? 'approves' : 'approve'}, it passes.`
-  );
+  const rejected = `This is rejected only if ${countWord(k)} more ${k === 1 ? 'rejects' : 'reject'} it`;
+  if (input.pastPayBy) return `${rejected}.`;
+  return `${rejected}; if ${countWord(left)} more ${left === 1 ? 'approves' : 'approve'}, it passes.`;
 }
 
 export type Acknowledgement = {

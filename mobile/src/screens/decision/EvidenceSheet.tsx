@@ -6,7 +6,7 @@
 // they are only the values that differ, the one this phone derived first.
 
 import { useState } from 'react';
-import { Share, View } from 'react-native';
+import { Linking, Share, View } from 'react-native';
 
 import {
   Button,
@@ -19,7 +19,9 @@ import {
   Segmented,
   Sheet,
   Text,
+  TextLink,
 } from '../../ui/index.tsx';
+import { getApiBaseUrl } from '../../config.ts';
 import { makeStyles, useTheme } from '../../theme/index.ts';
 import type { ProposalDetail } from '../../api/schemas.ts';
 import type { Checked } from '../../checks.ts';
@@ -132,6 +134,7 @@ export function EvidenceSheet({
 }
 
 function CheckRow({ line }: { line: CheckLine }) {
+  const open = () => void Linking.openURL(`${getApiBaseUrl()}/ledger/transparency`).catch(() => {});
   const t = useTheme();
   const s = useStyles();
   const icon = line.tone === 'success' ? 'check-circle' : line.tone === 'critical' ? 'alert' : 'info';
@@ -143,11 +146,14 @@ function CheckRow({ line }: { line: CheckLine }) {
         : t.color.textMuted;
   const spoken = line.tone === 'success' ? 'Passed' : line.tone === 'critical' ? 'Failed' : 'Not checked here';
   return (
-    <View style={s.check} accessible accessibilityLabel={`${spoken}. ${line.text}`}>
+    <View style={s.check}>
       <Icon name={icon} size={20} color={color} style={s.checkIcon} />
-      <Text role="body" style={s.flex}>
-        {line.text}
-      </Text>
+      <View style={[s.flex, s.checkBody]}>
+        <Text role="body" accessibilityLabel={`${spoken}. ${line.text}`}>
+          {line.text}
+        </Text>
+        {line.link ? <TextLink label={line.link.label} onPress={open} accessibilityLabel="Open the transparency log on the web" /> : null}
+      </View>
     </View>
   );
 }
@@ -235,6 +241,7 @@ const useStyles = makeStyles((t) => ({
   checks: { gap: t.space[12] },
   check: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
   checkIcon: { marginTop: 2 },
+  checkBody: { gap: t.space[4], alignItems: 'flex-start' },
   footer: {
     gap: t.space[4],
     marginTop: t.space[8],

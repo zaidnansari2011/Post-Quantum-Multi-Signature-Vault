@@ -116,23 +116,24 @@ export function Field({
         {trailing}
       </View>
       {error || caption || validates || count ? (
-      <View style={[s.under, count ? s.underRow : null]}>
+      // The count beside the caption; at large text (1.6x) under it, so the caption keeps the width.
+      <View style={[s.under, count && !t.stacked ? s.underRow : null, count && t.stacked ? s.underStacked : null]}>
         {error ? (
-          <View style={[s.errorRow, count ? s.flex : null]} accessibilityLiveRegion="polite">
+          <View style={[s.errorRow, count && !t.stacked ? s.flex : null]} accessibilityLiveRegion="polite">
             <Icon name="alert" size={16} color={t.color.status.critical.fg} style={s.errorIcon} />
             <Text role="caption" tone="critical" style={s.flex}>
               {error}
             </Text>
           </View>
         ) : caption ? (
-          <Text role="caption" tone="subtle" style={count ? s.flex : null}>
+          <Text role="caption" tone="subtle" style={count && !t.stacked ? s.flex : null}>
             {caption}
           </Text>
-        ) : count ? (
+        ) : count && !t.stacked ? (
           <View style={s.flex} />
         ) : null}
         {count ? (
-          <Text role="caption" tone="muted" tabular>
+          <Text role="caption" tone="muted" tabular style={t.stacked ? s.countStacked : null}>
             {count}
           </Text>
         ) : null}
@@ -336,6 +337,9 @@ export function Segmented<T extends string>({
 }) {
   const t = useTheme();
   const s = useStyles();
+  // In dark a sheet's surface IS `fill`, so the track would vanish there: it sinks to the page
+  // colour instead (§4.5), and the selected segment still steps up to `fillActive`.
+  const raised = useRaised();
   if (t.stacked) {
     return (
       <ScrollView
@@ -350,7 +354,11 @@ export function Segmented<T extends string>({
     );
   }
   return (
-    <View style={s.segmented} accessibilityRole="tablist" accessibilityLabel={label}>
+    <View
+      style={[s.segmented, raised && t.scheme === 'dark' ? { backgroundColor: t.color.bg } : null]}
+      accessibilityRole="tablist"
+      accessibilityLabel={label}
+    >
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -403,11 +411,14 @@ export function CheckboxRow({
   caption,
   checked,
   onToggle,
+  flush = false,
 }: {
   label: string;
   caption?: string | null;
   checked: boolean;
   onToggle: () => void;
+  /** Outside a grouped list (in a sheet's body): on the content's own edge, not inset 16 again. */
+  flush?: boolean;
 }) {
   const s = useStyles();
   const t = useTheme();
@@ -419,7 +430,11 @@ export function CheckboxRow({
       accessibilityState={{ checked }}
       accessibilityLabel={caption ? `${label}, ${caption}` : label}
       ringRadius={0}
-      style={({ pressed }) => [s.checkRow, pressed && { backgroundColor: pressedFill(t, raised) }]}
+      style={({ pressed }) => [
+        s.checkRow,
+        flush && s.checkRowFlush,
+        pressed && { backgroundColor: pressedFill(t, raised) },
+      ]}
     >
       <View style={s.flex}>
         <Text role="body">{label}</Text>
@@ -478,6 +493,8 @@ const useStyles = makeStyles((t) => ({
   input: { flex: 1, paddingVertical: t.space[12], minHeight: 46 },
   under: { minHeight: 18 },
   underRow: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
+  underStacked: { gap: t.space[4] },
+  countStacked: { alignSelf: 'flex-end' },
   errorRow: { flexDirection: 'row', gap: t.space[4], alignItems: 'flex-start' },
   errorIcon: { marginTop: 1 },
   textarea: {
@@ -537,4 +554,5 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: t.layout.gutter,
     paddingVertical: t.space[8],
   },
+  checkRowFlush: { paddingHorizontal: 0 },
 }));

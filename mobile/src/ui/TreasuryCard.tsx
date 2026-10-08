@@ -84,7 +84,17 @@ export function TreasuryCard({ vaultId }: { vaultId: number }) {
       refresh();
     },
     onError: (err) => {
-      setError(describe(err));
+      if (err instanceof TransportError) {
+        // The approval was signed and sent. No answer the phone could read says nothing about
+        // whether Q-Vault recorded it (phone-ux §6.6), so it says so and asks again.
+        setError({
+          title: 'Q-Vault may have received your approval.',
+          detail: 'Checking the change again now. If it shows your approval, it counted.',
+        });
+        refresh();
+      } else {
+        setError(describe(err));
+      }
       feedback.refused();
     },
   });

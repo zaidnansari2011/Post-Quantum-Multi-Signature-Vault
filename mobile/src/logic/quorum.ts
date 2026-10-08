@@ -24,6 +24,13 @@ export type QuorumInput = {
    * rejected, §6.6 row 5), so the page does not say it twice.
    */
   mentionRejections?: boolean;
+  /**
+   * False when the personal line above already names who is left ("Waiting on Brij or Chen", the
+   * viewer approved, §6.6 row 4), so the names are not said twice.
+   */
+  mentionNames?: boolean;
+  /** A payment past its signed limit: approvals approve it, but nothing will pay it (§6.6 row 2a). */
+  pastPayBy?: boolean;
 };
 
 /**
@@ -40,10 +47,10 @@ export function quorumSentence(q: QuorumInput): string | null {
 
   const parts: string[] = [];
   const more = left === 1 ? 'One more approval' : `${capitalise(countWord(left))} more approvals`;
-  if (q.isPayment) parts.push(left === 1 ? `${more} pays this.` : `${more} pay this.`);
+  if (q.isPayment && !q.pastPayBy) parts.push(left === 1 ? `${more} pays this.` : `${more} pay this.`);
   else parts.push(left === 1 ? `${more} approves this.` : `${more} approve this.`);
 
-  if (q.stillToApprove && q.stillToApprove.length > 0) {
+  if (q.stillToApprove && q.stillToApprove.length > 0 && q.mentionNames !== false) {
     const names = orList(q.stillToApprove);
     parts.push(q.viewerCanApprove ? `${names} can also approve.` : `${names} can approve.`);
   }
@@ -67,9 +74,11 @@ export type DecidedLine = {
   key: string;
   /** "Hassan approved", "You rejected, on the web". */
   text: string;
-  /** Initials come from this; "You" for the viewer. */
+  /** "You" for the viewer. */
   name: string;
-  /** "10:24", "yesterday", "4 Oct". */
+  /** The viewer's own line: its avatar shows the viewer's initials, not "Y". */
+  you: boolean;
+  /** "10:24", "Yesterday", "4 Oct": on its own at the line's end, so capitalised like Today. */
   when: string | null;
   tone: 'success' | 'critical' | 'neutral';
   /** The rejection reason, unsigned and shown as the person wrote it. */
@@ -93,7 +102,8 @@ export function decidedLines(votes: VoteFacts[], viewerId: number, now: number):
       key: `${v.signer_id}-${i}`,
       text: `${who} ${verb}${where}`,
       name: who,
-      when: whenYouDid(v.signed_at, now),
+      you,
+      when: ((w) => (w ? capitalise(w) : null))(whenYouDid(v.signed_at, now)),
       tone: v.decision === 'approve' ? 'success' : v.decision === 'reject' ? 'critical' : 'neutral',
       reason: v.decision === 'reject' && v.reason ? v.reason : null,
     };

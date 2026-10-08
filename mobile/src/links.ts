@@ -26,8 +26,11 @@ export const navigationRef = createNavigationContainerRef<any>();
 type SigningState = {
   sheet: Situation['sheet'];
   acknowledging: boolean;
-  /** Closes an idle sheet as Cancel would (rule 3). */
-  closeSheet: (() => void) | null;
+  /**
+   * Closes an idle sheet as Cancel would (rule 3). False when it did not close, because a signature
+   * started in the same frame: the link is then held like rule 2.
+   */
+  closeSheet: (() => boolean) | null;
 };
 
 let signing: SigningState = { sheet: 'none', acknowledging: false, closeSheet: null };
@@ -107,6 +110,25 @@ function open(target: LinkTarget): void {
   navigationRef.dispatch(CommonActions.reset({ index: routes.length - 1, routes: routes as never }));
 }
 
+/** Rule 3's close. True once the sheet is closed; false if a signature started meanwhile. */
+function closeIdleSheet(): boolean {
+  const closed = signing.closeSheet ? signing.closeSheet() : false;
+  if (closed) signing = { ...signing, sheet: 'none', closeSheet: null };
+  return closed;
+}
+
+/**
+ * Rule 1: the target is already on top. Refetch it there; a handoff link (`via=web`) also switches
+ * the decision's approve sheet to the full comparison block (§5.11).
+ */
+function refetchInPlace(target: LinkTarget): void {
+  if (target.kind === 'decision') {
+    if (target.via) navigationRef.dispatch(CommonActions.setParams({ via: target.via }));
+    void queries?.invalidateQueries({ queryKey: ['proposal', target.uuid] });
+  }
+  if (target.kind === 'vault') void queries?.invalidateQueries({ queryKey: ['vault', target.vaultId] });
+}
+
 export function openLink(target: LinkTarget): void {
   const step = routeLink(target, situation());
   switch (step.step) {
@@ -115,20 +137,24 @@ export function openLink(target: LinkTarget): void {
       pending = target;
       return;
     case 'refetch':
-      if (target.kind === 'decision') void queries?.invalidateQueries({ queryKey: ['proposal', target.uuid] });
-      if (target.kind === 'vault') void queries?.invalidateQueries({ queryKey: ['vault', target.vaultId] });
+      refetchInPlace(target);
       return;
     case 'closeSheetThenOpen':
-      signing.closeSheet?.();
-      signing = { ...signing, sheet: 'none', closeSheet: null };
-      open(target);
+    case 'closeSheetThenRefetch':
+      if (!closeIdleSheet()) {
+        pending = target;
+        return;
+      }
+      if (step.step === 'closeSheetThenOpen') open(target);
+      else refetchInPlace(target);
       return;
     case 'pushOver':
-      // Rule 4: over the form, which stays intact underneath. Only a screen can be pushed; a tab
-      // target waits until the form is left.
+      // Rule 4: over the form, which stays intact underneath. A screen target is pushed (a treasury
+      // change as its vault, the screen it opens on until P3); a tab target (Activity, Account) is
+      // kept and applied once the form is left.
       if (target.kind === 'decision') {
         navigationRef.dispatch(StackActions.push('Decision', { uuid: target.uuid, via: target.via }));
-      } else if (target.kind === 'vault') {
+      } else if (target.kind === 'vault' || target.kind === 'treasuryChange') {
         navigationRef.dispatch(StackActions.push('Vault', { vaultId: target.vaultId }));
       } else {
         pending = target;

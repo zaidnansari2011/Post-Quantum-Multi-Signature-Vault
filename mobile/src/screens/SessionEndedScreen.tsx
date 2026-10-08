@@ -3,8 +3,8 @@
 // A 401 never deletes the key (I-3): this screen is shown with the key still on the phone, and
 // nothing is deleted until the person chooses "Set up this phone again", after being told what that
 // does. Until the server can re-authenticate an existing device (A9), setting up again is the only
-// way back, and it makes a new key: the copy says so rather than offering a "Sign in" that would
-// quietly do the same.
+// way back, and it makes a new key (the old seed is deleted with the identity): the copy says so
+// rather than promising the key "stays", or offering a "Sign in" that would quietly do the same.
 //
 // Every 401 today is the server's plain `token_invalid` (expired, revoked and unknown alike), so the
 // session-ended copy is the one shown; `device_revoked` gets its own once A9 sends it. A link that
@@ -20,9 +20,8 @@ import { useSession, type Ended } from '../session.tsx';
 const COPY: Record<Ended, { title: string; body: string; caption: string | null }> = {
   session: {
     title: 'Your session on this phone ended',
-    body: 'Your key stays on this phone. To keep approving here, set the phone up again with your email and password.',
-    caption:
-      "Setting up again makes a new key on this phone. The old one can't sign without a session, and stays listed on the web until you remove it there.",
+    body: 'To keep approving here, set this phone up again with your email and password. That makes a new key for this phone.',
+    caption: "The old key can't sign without a session and stays listed on the web until you remove it there.",
   },
   revoked: {
     title: 'This phone was removed from your account',

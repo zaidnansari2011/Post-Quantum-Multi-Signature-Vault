@@ -31,6 +31,7 @@ export function StatusLine({
   badge,
   when,
   soon = false,
+  passed = false,
   line,
 }: {
   badge: { word: string; tone: Tone } | null;
@@ -38,11 +39,17 @@ export function StatusLine({
   when?: string | null;
   /** Due within 24 hours: the warning tone and a clock, so it is never colour alone (§8.5). */
   soon?: boolean;
+  /**
+   * `when` is a limit that has already passed ("Treasury limit passed 7 Oct"): the warning tone with
+   * the alert mark instead of the clock, and read without "Due".
+   */
+  passed?: boolean;
   line?: string | null;
 }) {
   const t = useTheme();
   const s = useStyles();
-  const label = [badge?.word, when ? `${soon ? 'Due ' : ''}${when}` : null, line]
+  const warn = soon || passed;
+  const label = [badge?.word, when ? `${soon && !passed ? 'Due ' : ''}${when}` : null, line]
     .filter(Boolean)
     .join('. ');
   return (
@@ -51,8 +58,8 @@ export function StatusLine({
         {badge ? <StatusBadge word={badge.word} tone={badge.tone} /> : null}
         {when ? (
           <View style={s.when}>
-            {soon ? <Icon name="clock" size={16} color={t.color.status.warning.fg} /> : null}
-            <Text role="caption" tone={soon ? 'warning' : 'muted'} tabular>
+            {warn ? <Icon name={passed ? 'alert' : 'clock'} size={16} color={t.color.status.warning.fg} /> : null}
+            <Text role="caption" tone={warn ? 'warning' : 'muted'} tabular>
               {when}
             </Text>
           </View>

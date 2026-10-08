@@ -112,6 +112,13 @@ def test_a_cancelled_or_failed_fetch_records_nothing(r):
 
 
 @needs_node
+def test_a_cancelled_fetch_whose_answer_still_arrives_records_nothing(r):
+    # The answer parsed, but the query was cancelled first: React Query never shows it, so the
+    # signing gate must never take it for the copy on the page.
+    assert r["cancelled_late_answer"] == {"recorded": False, "in_cache": False}
+
+
+@needs_node
 def test_a_new_process_has_no_record_whatever_the_cache_holds(r):
     assert r["new_process"]["signable"] is False
 
@@ -276,12 +283,54 @@ def _sources() -> dict[str, str]:
 IMPORT = re.compile(r"import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['\"]([^'\"]+)['\"]", re.S)
 
 
+# Every way a module can be named by another: a static import or re-export (`from '...'`), a
+# side-effect import, a dynamic `import(...)`, a `require(...)`.
+SPECIFIER = re.compile(
+    r"(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)['\"`]([^'\"`]+)['\"`]"
+)
+# The flows module, with or without its extension, from any directory.
+FLOWS = re.compile(r"(?:^|/)flows(?:\.ts)?$")
+# The only modules that may name src/flows.ts at all, and what each takes from it.
+FLOWS_USERS = {
+    "src/checks.ts",  # the integrity guard and its error
+    "src/screens/DecisionScreen.tsx",  # voteOnProposal: the one place a vote is signed
+    "src/screens/EnrolScreen.tsx",  # NoScreenLockError, to explain a refused enrolment
+    "src/session.tsx",  # enrolThisDevice
+    "src/signingSheet.ts",  # the guards and errors the sheet checks before any prompt
+    "src/ui/TreasuryCard.tsx",  # approveTreasuryChange (P3 moves it to §6.15's route)
+}
+
+
 def _importers(name: str, module: str) -> set[str]:
+    # `module` with or without its extension: '../flows' names the same file as '../flows.ts'.
+    stem = re.compile(rf"(?:^|/){re.escape(module.removesuffix('.ts'))}(?:\.ts)?$")
     found = set()
     for path, text in _sources().items():
         for names, source in IMPORT.findall(text):
-            if source.endswith(module) and re.search(rf"\b{name}\b", names):
+            if stem.search(source) and re.search(rf"\b{name}\b", names):
                 found.add(path)
+    return found
+
+
+def _names_flows(text: str) -> bool:
+    return any(FLOWS.search(spec) for spec in SPECIFIER.findall(text))
+
+
+def _sneaks_into_flows(text: str) -> list[str]:
+    """Every way `text` takes flows other than a plain named import: whole, lazily, re-exported."""
+    found = []
+    for statement in re.findall(r"(?:import|export)\b[^;]*?\bfrom\s*['\"][^'\"]+['\"]", text, re.S):
+        spec = re.search(r"\bfrom\s*['\"]([^'\"]+)['\"]", statement).group(1)
+        if not FLOWS.search(spec):
+            continue
+        head = statement.lstrip()
+        if head.startswith("export") or re.match(r"import\s+(?:type\s+)?(?:\*|\w)", head):
+            found.append(statement)
+    for spec in re.findall(r"\bimport\s*\(\s*['\"`]([^'\"`]+)", text) + re.findall(
+        r"\brequire\s*\(\s*['\"`]([^'\"`]+)", text
+    ):
+        if FLOWS.search(spec):
+            found.append(spec)
     return found
 
 
@@ -300,11 +349,40 @@ def test_i12_only_the_signing_screens_import_a_signing_flow(name, allowed):
     assert _importers(name, "flows.ts") == allowed
 
 
-def test_i12_flows_are_never_imported_whole_or_re_exported():
+def test_i12_only_the_listed_modules_name_the_flows_module_at_all():
+    assert {path for path, text in _sources().items() if _names_flows(text)} == FLOWS_USERS
+
+
+@pytest.mark.parametrize(
+    "sneaky",
+    [
+        "import { voteOnProposal } from '../flows';",
+        "import {\n  voteOnProposal,\n} from '../../src/flows.ts';",
+        "export * from '../flows.ts';",
+        "export { voteOnProposal as v } from './flows';",
+        "const f = await import('../flows.ts');",
+        "const f = require('../flows');",
+        "import * as f from '../flows';",
+        "import flows from '../flows.ts';",
+        "import '../flows.ts';",
+    ],
+)
+def test_i12_the_checks_see_every_way_of_naming_the_flows(sneaky):
+    text = f"// a list screen\n{sneaky}\n"
+    # Named at all: outside the allow-list, the test above fails on it.
+    assert _names_flows(text), sneaky
+    # And a plain named import of a signing flow is attributed to its importer, extension or not.
+    if sneaky.startswith("import {"):
+        assert re.search(r"voteOnProposal", text) and any(
+            FLOWS.search(source) for _names, source in IMPORT.findall(text)
+        )
+    else:
+        assert _sneaks_into_flows(text) or sneaky == "import '../flows.ts';", sneaky
+
+
+def test_i12_flows_are_never_imported_whole_lazily_or_re_exported():
     for path, text in _sources().items():
-        assert not re.search(
-            r"import\s+\*\s+as\s+\w+\s+from\s+['\"][./]*[\w/]*flows\.ts['\"]", text
-        ), path
+        assert _sneaks_into_flows(text) == [], path
         if path != "src/flows.ts":
             assert not re.search(
                 r"export\s*\{[^}]*\b(voteOnProposal|approveTreasuryChange)\b", text
@@ -365,6 +443,16 @@ def test_restored_summaries_refetch_on_sight_and_never_land_late():
     # Never over a query that already exists, and never after start-up stopped waiting.
     assert "client.getQueryState(entry.key) !== undefined" in restore
     assert "Date.now() > until" in restore
+
+
+def test_every_wipe_deletes_the_cache_key_as_well_as_the_file():
+    # I-14: without its key the file is unreadable, so a wipe takes both, and stops saves in flight.
+    persist = (SRC / "persist.ts").read_text(encoding="utf-8")
+    wipe = persist[persist.index("export async function wipeSummaries") :]
+    wipe = wipe[: wipe.index("\n}\n")]
+    assert "generation += 1;" in wipe and "keyPromise = null;" in wipe
+    assert "(await store())?.remove();" in wipe
+    assert "await SecureStore.deleteItemAsync(KEY_NAME, OPTIONS);" in wipe
 
 
 def test_i14_the_cache_key_is_this_device_only():

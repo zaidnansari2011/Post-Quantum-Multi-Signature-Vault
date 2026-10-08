@@ -128,6 +128,25 @@ CASES = {
         None,
         "sign",
     ),
+    # Row 2a: the payment's signed "valid until" has passed. Approving still counts, but the
+    # treasury won't pay it, and the page says so rather than reading as if it would.
+    "2a_payment_past_its_limit": (
+        _case({**PAYMENT, "valid_until": int((NOW - timedelta(days=1)).timestamp())}),
+        2,
+        "Needs your signature",
+        "warning",
+        "The time the treasury allows for this payment ran out on 5 Oct, so approving it won't"
+        " pay it.",
+        "sign",
+    ),
+    "2a_payment_within_its_limit": (
+        _case({**PAYMENT, "valid_until": int((NOW + timedelta(hours=1)).timestamp())}),
+        2,
+        "Needs your signature",
+        "warning",
+        None,
+        "sign",
+    ),
     # Row 3: separation of duties.
     "3_raised_it": (
         _case({"raised_by": {"id": ME, "name": "Zaid"}, "separation_of_duties": True}),
@@ -137,7 +156,8 @@ CASES = {
         "You raised this, so you can't approve it.",
         "remind",
     ),
-    # Row 4: approved, still open.
+    # Row 4: approved, still open. The time is on the person's own line in "Who decided", just
+    # below, so the personal line does not repeat it.
     "4_approved_names_known": (
         _case(
             {
@@ -150,7 +170,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved 10:24. Waiting on Brij or Chen.",
+        "You approved this. Waiting on Brij or Chen.",
         "none",
     ),
     "4_approved_names_unknown": (
@@ -158,7 +178,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved 10:24.",
+        "You approved this.",
         "none",
     ),
     "4_approved_in_this_session": (
@@ -174,7 +194,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved 10:24.",
+        "You approved this.",
         "none",
     ),
     "4_approved_yesterday": (
@@ -188,7 +208,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved yesterday.",
+        "You approved this.",
         "none",
     ),
     "4_signed_but_vote_not_listed": (
@@ -205,7 +225,7 @@ CASES = {
         5,
         "Waiting on 2",
         "neutral",
-        "You rejected this 10:24. It's rejected only if one more rejects.",
+        "You rejected this. It's rejected only if one more rejects.",
         "none",
     ),
     "5_rejected_wide_policy": (
@@ -220,7 +240,7 @@ CASES = {
         5,
         "Waiting on 2",
         "neutral",
-        "You rejected this 10:24. It's rejected only if three more reject.",
+        "You rejected this. It's rejected only if three more reject.",
         "none",
     ),
     # Row 6: not an approver.

@@ -70,6 +70,11 @@ export function SigningSheet({
   const [reason, setReason] = useState('');
   const [about, setAbout] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  // The reject sheet's text, collapsed to three lines: "Show all" only when it is longer than that.
+  // Measured from a hidden full-length copy (onLayout works everywhere; onTextLayout does not on the
+  // web harness), so a short decision shows no control that does nothing.
+  const [fullHeight, setFullHeight] = useState(0);
+  const [clampedHeight, setClampedHeight] = useState(0);
   const opened = useRef<string | null>(null);
 
   // A new sheet starts empty: no reason, the text collapsed, the code page closed.
@@ -80,6 +85,8 @@ export function SigningSheet({
       setReason('');
       setAbout(false);
       setShowAll(false);
+      setFullHeight(0);
+      setClampedHeight(0);
     }
     if (!visible) opened.current = null;
   }, [visible, key]);
@@ -110,8 +117,24 @@ export function SigningSheet({
     <SignedText text={m.signedText} size="decision" />
   ) : (
     <View style={s.collapsible}>
-      <SignedText text={m.signedText} size="decision" numberOfLines={showAll ? undefined : 3} />
-      <TextLink label={showAll ? 'Show less' : 'Show all'} onPress={() => setShowAll((v) => !v)} />
+      <View style={s.measured}>
+        <View onLayout={(e) => setClampedHeight(e.nativeEvent.layout.height)}>
+          <SignedText text={m.signedText} size="decision" numberOfLines={showAll ? undefined : 3} />
+        </View>
+        <View
+          style={s.ghost}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          aria-hidden
+          onLayout={(e) => setFullHeight(e.nativeEvent.layout.height)}
+        >
+          <SignedText text={m.signedText} size="decision" />
+        </View>
+      </View>
+      {showAll || fullHeight > clampedHeight + 1 ? (
+        <TextLink label={showAll ? 'Show less' : 'Show all'} onPress={() => setShowAll((v) => !v)} />
+      ) : null}
     </View>
   );
 
@@ -204,6 +227,9 @@ export function SigningSheet({
 const useStyles = makeStyles((t) => ({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: t.space[8], marginBottom: t.space[16] },
   collapsible: { gap: t.space[4], alignItems: 'flex-start' },
+  measured: { alignSelf: 'stretch' },
+  // Same width as the shown copy, out of the flow and invisible: only its height is read.
+  ghost: { position: 'absolute', left: 0, right: 0, top: 0, opacity: 0 },
   attachment: { gap: t.space[4], alignItems: 'flex-start' },
   problem: { gap: t.space[4], alignItems: 'flex-start' },
 }));
