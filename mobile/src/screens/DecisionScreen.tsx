@@ -453,7 +453,8 @@ export default function DecisionScreen({
   const whenText = !open
     ? null
     : passed
-      ? `Treasury limit passed ${dayMonth(new Date(payBy).toISOString(), now) ?? ''}`.trim()
+      ? // The date kept on one line ("7 Oct"), however the line wraps at large text.
+        `Treasury limit passed ${(dayMonth(new Date(payBy).toISOString(), now) ?? '').replace(' ', ' ')}`.trim()
       : payByFirst
         ? `Pay by ${dueWhen(new Date(payBy).toISOString(), now)}`
         : dueWhen(detail.expires_at, now);
