@@ -337,7 +337,7 @@ def world(app):
     rejected = proposal_service.create_proposal(vault, cleo, "Buy a boat", "One boat.")
     for signer in (ada, cleo):
         approval_service.cast_vote(approved, signer, PW, "approve")
-    approval_service.cast_vote(rejected, ada, PW, "reject")
+    approval_service.cast_vote(rejected, ada, PW, "reject", reason="Not needed.")
     publication_service.publish(approved, ada)
     checkpoint_service.maybe_checkpoint()
     workspace = workspace_service.current_workspace(ada)
