@@ -37,6 +37,8 @@ import { exactly, whenAfter } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import type { ProtectionLevel } from '../custody.ts';
+import { OfflineNotice, useRefreshOnFocus } from '../freshness.tsx';
+import { devicesQuery, keys, meQuery, vaultsQuery } from '../queries.ts';
 import type { Device } from '../api/schemas.ts';
 
 const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
@@ -50,15 +52,14 @@ export default function AccountScreen() {
   const { token, identity } = useEnrolledSession();
   const [removing, setRemoving] = useState(false);
 
-  const query = useQuery({
-    queryKey: ['devices'],
-    queryFn: ({ signal }) => api.fetchDevices(token, signal),
-  });
+  const query = useQuery(devicesQuery(token));
+  useRefreshOnFocus([keys.devices, keys.me]);
 
   const others = (query.data?.devices ?? []).filter((d) => !d.is_current);
 
   return (
     <Screen>
+      <OfflineNotice at={query.dataUpdatedAt} />
       <Scroll refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
         <RootHeader lead={identity.email} title={identity.displayName} />
 
@@ -129,13 +130,9 @@ function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
 
   // Which treasuries hold this phone's key for this person (§6.19): from /me's key choice and each
   // vault's treasury, read only while the sheet is open.
-  const me = useQuery({ queryKey: ['me'], queryFn: ({ signal }) => api.fetchMe(token, signal), enabled: visible });
+  const me = useQuery({ ...meQuery(token), enabled: visible });
   const onPhone = me.data?.my_key?.custody === 'device';
-  const vaults = useQuery({
-    queryKey: ['vaults'],
-    queryFn: ({ signal }) => api.fetchVaults(token, signal),
-    enabled: visible && onPhone,
-  });
+  const vaults = useQuery({ ...vaultsQuery(token), enabled: visible && onPhone });
   const treasuries = useQueries({
     queries: (vaults.data?.vaults ?? []).map((v) => ({
       queryKey: ['treasury', v.vault_id],
@@ -268,7 +265,7 @@ function TreasuryKey() {
   const s = useStyles();
   const { token } = useEnrolledSession();
   const queryClient = useQueryClient();
-  const me = useQuery({ queryKey: ['me'], queryFn: ({ signal }) => api.fetchMe(token, signal) });
+  const me = useQuery(meQuery(token));
   const choose = useMutation({
     mutationFn: (custody: 'device' | 'password') => api.setSigningChoice({ token, custody }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['me'] }),

@@ -12,8 +12,6 @@
 
 import { useQueries, useQuery } from '@tanstack/react-query';
 
-import * as api from './api/endpoints.ts';
-import { ApiError } from './api/client.ts';
 import type { ProposalSummary } from './api/schemas.ts';
 import { checkInRun } from './checks.ts';
 import { formatEth } from './crypto/signing.ts';
@@ -21,38 +19,29 @@ import type { Seat } from './logic/personalStatus.ts';
 import { classifySeat, dueToday, groupApprovals, waitingOnOthers } from './logic/queue.ts';
 import { stillOpen } from './status.ts';
 import { useEnrolledSession } from './session.tsx';
+import { POLL_MS, STALE_MS } from './logic/freshness.ts';
+import { allQuery, awaitingQuery, devicesQuery, fetchedThisRun, keys, proposalQuery } from './queries.ts';
 
-/** Transport failures retry; an answer from the server (a 401, a 404) does not. */
-export const retryTransport = (count: number, err: unknown) => !(err instanceof ApiError) && count < 2;
-
-export function useApprovals() {
+/**
+ * The queue's data. `poll`: refetch the awaiting list every 60 s, which only Approvals asks for, and
+ * only while it is focused (§2.6); React Query stops it while the app is in the background. A
+ * decision whose sheet is open is held by its screen (`holdDecision`), and the lookups here leave it
+ * alone (§2.6, I-6).
+ */
+export function useApprovals({ poll = false }: { poll?: boolean } = {}) {
   const { token, identity } = useEnrolledSession();
 
-  const awaiting = useQuery({
-    queryKey: ['proposals', 'awaiting'],
-    queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
-    retry: retryTransport,
-  });
-  const all = useQuery({
-    queryKey: ['proposals', 'all'],
-    queryFn: ({ signal }) => api.fetchProposals(token, 'all', signal),
-    retry: retryTransport,
-  });
-  const devices = useQuery({
-    queryKey: ['devices'],
-    queryFn: ({ signal }) => api.fetchDevices(token, signal),
-    retry: retryTransport,
-  });
+  const awaiting = useQuery({ ...awaitingQuery(token), refetchInterval: poll ? POLL_MS.awaiting : false });
+  const all = useQuery(allQuery(token));
+  const devices = useQuery(devicesQuery(token));
 
   const now = Date.now();
   const list = awaiting.data?.proposals ?? [];
   const payments = stillOpen(list, now).filter((p) => p.is_payment === true);
   const details = useQueries({
-    queries: payments.map((p) => ({
-      queryKey: ['proposal', p.proposal_uuid],
-      queryFn: ({ signal }: { signal: AbortSignal }) => api.fetchProposal(token, p.proposal_uuid, signal),
-      retry: retryTransport,
-    })),
+    // The decision screen's own query (it records each fetch for the signing gate), fresh here for
+    // as long as the list it was looked up for.
+    queries: payments.map((p) => ({ ...proposalQuery(token, p.proposal_uuid), staleTime: STALE_MS.awaiting })),
   });
 
   // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
@@ -81,6 +70,10 @@ export function useApprovals() {
   return {
     awaiting,
     all,
+    /** The lists were answered in this run, not only restored from disk (§2.6). Reading
+     * `dataUpdatedAt` subscribes to it, so an answer equal to the restored copy still re-renders. */
+    awaitingConfirmed: awaiting.dataUpdatedAt > 0 && fetchedThisRun(keys.awaiting),
+    allConfirmed: all.dataUpdatedAt > 0 && fetchedThisRun(keys.all),
     groups,
     waiting,
     seats,

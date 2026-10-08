@@ -20,6 +20,7 @@ import { getAlgorithm, setRandomSource } from './crypto/algorithms.ts';
 import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import { fromBase64, toBase64 } from './crypto/bytes.ts';
 import type { NewKeyPair, PromptStrings, ProtectionLevel, StoredIdentity } from './custody.ts';
+import { beginAuthPrompt, endAuthPrompt } from './authPrompt.ts';
 
 // Installed on import, before anything can sign. This module is the only Custody implementation
 // the app has, so no signing path can reach noble without passing through here first -- which is
@@ -107,20 +108,28 @@ export async function confirmPresence(prompt: PromptStrings): Promise<Protection
   const protection = await detectProtection();
   if (protection === 'none') return 'none';
 
-  const result = await LocalAuthentication.authenticateAsync({
-    promptMessage: prompt.message,
-    promptSubtitle: prompt.subtitle,
-    promptDescription: prompt.description,
-    cancelLabel: 'Cancel',
-    disableDeviceFallback: false,
-    // The handset-proven options, kept on purpose. `biometricsSecurityLevel: 'strong'` with the PIN
-    // fallback makes expo-local-authentication 57.0.2 ask androidx.biometric for
-    // BIOMETRIC_STRONG | DEVICE_CREDENTIAL, a combination androidx documents as unsupported on
-    // Android 9 and 10 (API 28-29): `PromptInfo.Builder.build()` throws there, outside the module's
-    // try, so those phones could not sign at all. Class 3 only, and the confirm after a face match,
-    // wait for a handset check (docs/OWNER-ACTIONS.md, "Rework: phone handset checks").
-    requireConfirmation: false,
-  });
+  // Marked for as long as the OS prompt is up, so the app going to the background behind it (the
+  // PIN screen on Android) refetches nothing mid-signature (src/authPrompt.ts, phone-ux §2.6).
+  beginAuthPrompt();
+  let result: LocalAuthentication.LocalAuthenticationResult;
+  try {
+    result = await LocalAuthentication.authenticateAsync({
+      promptMessage: prompt.message,
+      promptSubtitle: prompt.subtitle,
+      promptDescription: prompt.description,
+      cancelLabel: 'Cancel',
+      disableDeviceFallback: false,
+      // The handset-proven options, kept on purpose. `biometricsSecurityLevel: 'strong'` with the PIN
+      // fallback makes expo-local-authentication 57.0.2 ask androidx.biometric for
+      // BIOMETRIC_STRONG | DEVICE_CREDENTIAL, a combination androidx documents as unsupported on
+      // Android 9 and 10 (API 28-29): `PromptInfo.Builder.build()` throws there, outside the module's
+      // try, so those phones could not sign at all. Class 3 only, and the confirm after a face match,
+      // wait for a handset check (docs/OWNER-ACTIONS.md, "Rework: phone handset checks").
+      requireConfirmation: false,
+    });
+  } finally {
+    endAuthPrompt();
+  }
   if (!result.success) {
     if (DECLINED.has(result.error)) throw new AuthenticationCancelled();
     throw new AuthenticationUnavailable(result.error, result.warning);

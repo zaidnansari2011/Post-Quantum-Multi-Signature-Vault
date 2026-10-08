@@ -8,12 +8,15 @@
 // in one place, and this provider does exactly that:
 //
 //   - a 401, from any request anywhere (the API client reports it here): Session ended. The cached
-//     data goes at once; the key, the token and the identity stay.
+//     data goes at once, in memory and on disk; the key, the token and the identity stay.
 //   - "Set up this phone again": after a session that merely ended, the token and identity go and
 //     the seed stays until a new enrolment replaces it; after a removal, everything goes.
 //   - "Remove this phone": the server is asked first, and the key is deleted only once it no
 //     longer counts this device as active (or already did not). On a failure nothing is deleted,
 //     unless the person then chooses "Remove from this phone only".
+//
+// The persisted summaries (src/persist.ts, I-14) are restored at start-up before any screen shows,
+// saved while enrolled, and wiped with the in-memory cache, and before every enrolment.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -25,6 +28,8 @@ import { enrolThisDevice } from './flows.ts';
 import * as api from './api/endpoints.ts';
 import { ApiError, setUnauthorizedHandler } from './api/client.ts';
 import { signedContent } from './checks.ts';
+import { networkFetches } from './queries.ts';
+import { restoreSummaries, startSavingSummaries, stopSavingSummaries, wipeSummaries } from './persist.ts';
 import {
   onRemoveLocalOnly,
   onRemoveResult,
@@ -69,6 +74,9 @@ interface SessionValue {
 
 const SessionContext = createContext<SessionValue | null>(null);
 
+/** Start-up waits this long at most for the summaries on disk. */
+const RESTORE_LIMIT_MS = 1_500;
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<Status>('loading');
@@ -85,8 +93,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const apply = useCallback(
     async (deletes: Deletes) => {
       if (deletes.cache) {
+        // Saving stops before the cache empties, so the emptying is not itself written.
+        stopSavingSummaries();
         void queryClient.cancelQueries();
         queryClient.clear();
+        networkFetches.clear();
+        await wipeSummaries();
       }
       if (deletes.seed) {
         await keystore.forgetEverything();
@@ -110,6 +122,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       // Nothing is deleted at start-up: a half-stored state is shown for what it is.
       const start = onStart({ identity: !!storedIdentity, token: !!storedToken, seed });
+      if (start.status === 'enrolled' && storedIdentity) {
+        // The queue paints at once from the summaries on disk (§2.6); a slow disk never holds the app.
+        await Promise.race([
+          restoreSummaries(queryClient, storedIdentity.userId),
+          new Promise((resolve) => setTimeout(resolve, RESTORE_LIMIT_MS)),
+        ]);
+        if (cancelled) return;
+      }
       setIdentity(storedIdentity);
       setToken(storedToken);
       setLastEmail(storedIdentity?.email ?? null);
@@ -119,7 +139,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [queryClient]);
+
+  // Summaries are written to disk only while this person is signed in on this phone.
+  useEffect(() => {
+    if (status !== 'enrolled' || !identity) return;
+    startSavingSummaries(queryClient, identity.userId);
+    return () => stopSavingSummaries();
+  }, [status, identity, queryClient]);
 
   const markUnauthorized = useCallback(
     (code: string | null) => {
@@ -157,9 +184,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const enrol = useCallback(
     async (args: { email: string; password: string; deviceName: string }) => {
       const result = await enrolThisDevice({ custody, ...args });
-      // Nothing seen before this enrolment belongs to it (I-14).
+      // Nothing seen before this enrolment belongs to it (I-14), on disk or in memory.
+      stopSavingSummaries();
       queryClient.clear();
+      networkFetches.clear();
       signedContent.clear();
+      await wipeSummaries();
       setIdentity(result.identity);
       setToken(result.token);
       setLastEmail(result.identity.email);

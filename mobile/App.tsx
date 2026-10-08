@@ -42,6 +42,9 @@ import NewVaultScreen from './src/screens/NewVaultScreen.tsx';
 import WaitingScreen from './src/screens/WaitingScreen.tsx';
 import SessionEndedScreen from './src/screens/SessionEndedScreen.tsx';
 import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnrolled } from './src/links.ts';
+import { wireFocusManager } from './src/freshness.tsx';
+import { RETRY } from './src/queries.ts';
+import { STALE_MS } from './src/logic/freshness.ts';
 
 // Set before any request can be made. `extra.apiBaseUrl` lets a teammate point a build at a
 // different server without touching source.
@@ -67,13 +70,20 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const ApprovalsStack = createNativeStackNavigator<ApprovalsStackParamList>();
 const Tabs = createBottomTabNavigator();
 
+// Returning to the app refetches what is stale, except while the OS's own authentication prompt
+// has it in the background (phone-ux §2.6, src/authPrompt.ts).
+wireFocusManager();
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // The server scales to zero, so a cold start is expensive. Serving cached data for a minute
-      // keeps navigation instant instead of paying that repeatedly.
-      staleTime: 60_000,
-      refetchOnWindowFocus: false,
+      // Each query in src/queries.ts sets its own time from §2.6's table; a minute for the rest. The
+      // server scales to zero, so serving a fresh answer keeps navigation instant.
+      staleTime: STALE_MS.vaults,
+      // Refetch what is stale when the app comes back to the front (focusManager, above).
+      refetchOnWindowFocus: true,
+      // One retry after 2 s, transport failures only; never a 401 or a refusal.
+      ...RETRY,
     },
   },
 });

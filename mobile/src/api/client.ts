@@ -1,6 +1,7 @@
 // The HTTP layer. Everything above it deals in parsed objects and typed errors, never Response.
 
 import { getApiBaseUrl, REQUEST_TIMEOUT_MS } from '../config.ts';
+import { reportReached, reportUnreachable } from '../connectivity.ts';
 import type { z } from 'zod';
 import { errorBody } from './schemas.ts';
 
@@ -64,7 +65,7 @@ async function rawRequest({ method = 'GET', path, body, token, signal }: Request
   signal?.addEventListener('abort', onAbort);
 
   try {
-    return await fetch(`${getApiBaseUrl()}${path}`, {
+    const response = await fetch(`${getApiBaseUrl()}${path}`, {
       method,
       headers: {
         Accept: 'application/json',
@@ -77,8 +78,13 @@ async function rawRequest({ method = 'GET', path, body, token, signal }: Request
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
     });
+    // Any answer, even an error page, means Q-Vault is reachable (the offline bar goes, §2.6).
+    reportReached();
+    return response;
   } catch (err) {
     if (signal?.aborted) throw err;
+    // No answer at all, or none before the timeout: offline, until the next answer.
+    reportUnreachable();
     throw new TransportError(
       'Could not reach Q-Vault. Check your connection and try again.',
       err,
