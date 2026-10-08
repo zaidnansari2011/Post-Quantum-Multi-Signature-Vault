@@ -260,19 +260,45 @@ def _base(user: User, filters: Filters, now: datetime):
         stmt = stmt.where(Proposal.vault_id == filters.vault_id)
     if filters.kind:
         payment = select(ProposalAction.id).where(ProposalAction.proposal_id == Proposal.id)
-        typed = select(DecisionFields.proposal_id).where(DecisionFields.proposal_id == Proposal.id)
         if filters.kind == "payment":
             stmt = stmt.where(payment.exists())
-        elif filters.kind == "general":
-            stmt = stmt.where(~payment.exists(), ~typed.exists())
         else:
-            # By the stored type: a filter narrows a list, it does not vouch for the type. Each
-            # row still shows its type only when its fields write its signed text.
-            stmt = stmt.where(
-                ~payment.exists(),
-                typed.where(DecisionFields.decision_type == filters.kind).exists(),
-            )
+            # By the type every row shows (``decision_types.typed_view``), never the stored one:
+            # a row whose stored fields no longer write its signed text is General here too.
+            typed = _verified_types(user)
+            if filters.kind == "general":
+                stmt = stmt.where(~payment.exists(), Proposal.id.not_in(list(typed)))
+            else:
+                ids = [pid for pid, kind in typed.items() if kind == filters.kind]
+                stmt = stmt.where(~payment.exists(), Proposal.id.in_(ids))
     return stmt
+
+
+def _verified_types(user: User) -> dict[int, str]:
+    """The decisions in ``user``'s vaults whose stored fields write their signed text, by id, with
+    that type. Read in one query; the text is written again in Python, as every screen does."""
+    rows = db.session.execute(
+        select(Proposal.id, Proposal.action_text, DecisionFields)
+        .join(DecisionFields, DecisionFields.proposal_id == Proposal.id)
+        .where(
+            Proposal.vault_id.in_(_member_vault_ids(user)),
+            ~select(ProposalAction.id).where(ProposalAction.proposal_id == Proposal.id).exists(),
+        )
+    ).all()
+    verified = {}
+    for pid, action_text, stored in rows:
+        view = decision_types.typed_view(_Unpaid(action_text), stored)
+        if view.type in decision_types.STORED_TYPES:
+            verified[pid] = view.type
+    return verified
+
+
+@dataclass(frozen=True)
+class _Unpaid:
+    """As much of a decision without a payment as ``typed_view`` reads."""
+
+    action_text: str
+    action: None = None
 
 
 _ORDER = {

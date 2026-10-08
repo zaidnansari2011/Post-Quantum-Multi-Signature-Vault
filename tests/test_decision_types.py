@@ -620,6 +620,36 @@ def test_the_approvals_list_narrows_to_a_type(client):
     assert "Renew" in general and 'class="q-tag">' not in general
 
 
+def test_the_type_filter_goes_by_the_type_the_signed_text_bears_out(client):
+    """A row whose stored fields were edited behind its back lists as General, and the filter
+    agrees with the row: it is found under General, and not under the type it was stored as."""
+    ada, _brij, _chen, vault, _p = _team("typedfiltertamper")
+    tampered = _raise(vault, ada, "access", fields=_access(reason="Tampered later."))
+    _raise(vault, ada, "access")
+    _tamper(tampered, person="Mallory")
+    client.post("/login", data={"email": ada.email, "password": PASSWORD})
+
+    access = client.get("/approvals/?tab=all&type=access").get_data(as_text=True)
+    assert access.count('class="q-tag">Production access') == 1
+    assert tampered.proposal_uuid not in access
+    general = client.get("/approvals/?tab=all&type=general").get_data(as_text=True)
+    assert tampered.proposal_uuid in general and "Renew" in general
+    assert 'class="q-tag">' not in general
+
+
+def test_an_api_summary_gives_the_type_the_signed_text_bears_out(app, client):
+    ada, _brij, _chen, vault, _p = _team("typedsummarytamper")
+    _b, _s, auth = _enrol_over_http(client, ada)
+    tampered = _raise(vault, ada, "access")
+    _tamper(tampered, person="Mallory")
+    rows = client.get("/api/v1/proposals?state=all", headers=auth).get_json()["proposals"]
+    row = next(r for r in rows if r["proposal_uuid"] == tampered.proposal_uuid)
+    assert row["decision_type"] == "general"
+    # The detail still passes what is stored through, for the phone to refuse.
+    detail = client.get(f"/api/v1/proposals/{tampered.proposal_uuid}", headers=auth).get_json()
+    assert detail["proposal"]["decision_type"] == "access"
+
+
 # --- the device API -----------------------------------------------------------------------------
 
 
