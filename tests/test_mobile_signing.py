@@ -104,6 +104,21 @@ def test_the_approve_consequence_follows_the_rule(r):
             ), c
 
 
+def test_a_payment_past_its_limit_is_never_promised_to_be_paid(r):
+    for c in r["grid"]:
+        text = c["approve_payment_past_limit"]
+        assert text.endswith("the time the treasury allows for this payment has passed, so it won't be paid.")
+        assert "pays" not in text
+    assert r["ack_past_limit"]["line"] == (
+        "The time the treasury allows for this payment has passed, so it won't be paid."
+    )
+    model = r["sheets"]["payment_past_limit"]
+    assert model["consequence"] == (
+        "Yours is the last approval, but the time the treasury allows for this payment has passed, "
+        "so it won't be paid."
+    )
+
+
 def test_you_cant_withdraw_appears_only_where_it_matters(r):
     # §6.8: only when this signature completes the rule, and on payments.
     for c in r["grid"]:
@@ -512,6 +527,9 @@ def test_each_failure_says_what_happened_where(r):
     assert p["proposal_closed"]["closedBeforeSigned"] is True
     assert p["already_voted"]["place"] == "none" and p["already_voted"]["refetch"] is True
     assert p["key_missing"]["action"] == "setup" and p["device_key_not_active"]["action"] == "setup"
+    # The ended screen says which: the seed has gone, or the server refused the key.
+    assert p["key_missing"]["setupCause"] == "key_missing"
+    assert p["device_key_not_active"]["setupCause"] == "key_unusable"
     assert p["transport"]["text"] == (
         "Not signed. Q-Vault didn't receive your signature, so nothing changed."
     )

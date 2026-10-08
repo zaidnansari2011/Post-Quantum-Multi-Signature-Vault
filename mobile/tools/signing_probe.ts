@@ -192,6 +192,7 @@ for (let N = 1; N <= 5; N++) {
           r,
           approve_general: approveConsequence({ M, approvals: a, isPayment: false, amount: null }),
           approve_payment: approveConsequence({ M, approvals: a, isPayment: true, amount: '0.25 ETH' }),
+          approve_payment_past_limit: approveConsequence({ M, approvals: a, isPayment: true, amount: '0.25 ETH', pastPayBy: true }),
           reject: rejectConsequence({ M, N, approvals: a, rejections: r }),
           ack_approve_general: acknowledgement({ decision: 'approve', M, N, approvals: a + 1, rejections: r, isPayment: false, stillToApprove: null }),
           ack_approve_payment: acknowledgement({ decision: 'approve', M, N, approvals: a + 1, rejections: r, isPayment: true, stillToApprove: null }),
@@ -204,6 +205,7 @@ for (let N = 1; N <= 5; N++) {
 out.grid = grid;
 out.ack_named = acknowledgement({ decision: 'approve', M: 3, N: 4, approvals: 1, rejections: 0, isPayment: false, stillToApprove: ['Gracian', 'Atharv'] });
 out.ack_named_one = acknowledgement({ decision: 'approve', M: 2, N: 3, approvals: 1, rejections: 0, isPayment: false, stillToApprove: ['Gracian', 'Atharv'] });
+out.ack_past_limit = acknowledgement({ decision: 'approve', M: 1, N: 1, approvals: 1, rejections: 0, isPayment: true, stillToApprove: null, pastPayBy: true });
 out.next = [nextCaption(1), nextCaption(5)];
 
 // -- I-1 and I-2: the vote flow and the sheet over honest and tampered decisions ----------------
@@ -253,7 +255,12 @@ out.sheets = {
   with_file: sheetModel(detail({}, inputs({ file_sha256: 'cd'.repeat(32) })), 'approve'),
   seat_elsewhere: sheetModel(detail({ execution: { digest: payment.execution!.digest, seat_fingerprint: 'fedcba9876543210' } }, inputs({}, true)), 'approve'),
   seat_elsewhere_reject: sheetModel(detail({ execution: { digest: payment.execution!.digest, seat_fingerprint: 'fedcba9876543210' } }, inputs({}, true)), 'reject'),
-  digest_wrong: sheetModel(detail({ execution: { digest: 'ee'.repeat(32), seat_fingerprint: FP } }, inputs({}, true)), 'approve'),
+  // The signed "valid until" has passed: the treasury won't pay, and the sheet must not say it will.
+  payment_past_limit: (() => {
+    const late = { ...ACTION, valid_until: 1_000_000_000 };
+    return sheetModel(detail({ approvals: 1 }, inputs({ action: late, action_text: paymentText(late)! }, true)), 'approve');
+  })(),
+    digest_wrong: sheetModel(detail({ execution: { digest: 'ee'.repeat(32), seat_fingerprint: FP } }, inputs({}, true)), 'approve'),
 };
 out.recipient = RECIPIENT;
 out.treasury_prompt = treasuryChangePrompt({ add: 1, remove: 0, threshold: 2 });

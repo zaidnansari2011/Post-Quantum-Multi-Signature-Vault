@@ -151,7 +151,9 @@ export default function DecisionScreen({
   const [problem, setProblem] = useState<SigningProblem | null>(null);
   const [reasonMissing, setReasonMissing] = useState(false);
   const [barMessage, setBarMessage] = useState<Message | null>(null);
-  const [keyBanner, setKeyBanner] = useState<string | null>(null);
+  const [keyBanner, setKeyBanner] = useState<{ text: string; cause: 'key_missing' | 'key_unusable' } | null>(
+    null,
+  );
   const [closedBeforeSigned, setClosedBeforeSigned] = useState(false);
 
   const [outcome, setOutcome] = useState<(VoteOutcome & { decision: Decision; at: string }) | null>(null);
@@ -414,6 +416,15 @@ export default function DecisionScreen({
     // The frozen snapshot, checked again and compared with the page's latest fetch, before any
     // prompt (I-1, I-6, I-16). The live copy is read from the cache, not from this render.
     const live = queryClient.getQueryData<{ proposal: ProposalDetail }>(['proposal', uuid])?.proposal;
+    // The page as it stands now must still offer this signature: a decision that closed, or that
+    // this person can no longer sign, while the sheet was open is not signed (no prompt).
+    const offered =
+      snapshot.kind === 'approve' ? actions.kind === 'sign' : actions.kind === 'sign' || actions.kind === 'web';
+    if (!offered) {
+      closeSigning();
+      setBarMessage({ tone: 'neutral', text: 'This changed while you were reading it, so nothing was signed.' });
+      return;
+    }
     const ready = confirmSigning(snapshot, live, reason);
     if (!ready.ok) {
       if (ready.refusal === 'reason_missing' || ready.refusal === 'reason_too_long') {
@@ -453,7 +464,7 @@ export default function DecisionScreen({
       }
       if (p.place === 'sheet') setProblem(p);
       if (p.place === 'bar' && p.text) setBarMessage({ tone: p.tone, text: p.text });
-      if (p.place === 'banner' && p.text) setKeyBanner(p.text);
+      if (p.place === 'banner' && p.text) setKeyBanner({ text: p.text, cause: p.setupCause ?? 'key_unusable' });
       if (p.closedBeforeSigned) setClosedBeforeSigned(true);
       if (p.refetch) void query.refetch();
       // A cancelled prompt gets nothing: the person chose it (§7.2).
@@ -474,6 +485,7 @@ export default function DecisionScreen({
         rejections: outcome.rejections,
         isPayment,
         stillToApprove,
+        pastPayBy: !Number.isNaN(payBy) && payBy <= now,
       })
     : null;
   // Next decision: the queue's own "Needs your signature" group, less this one, soonest first; the
@@ -545,8 +557,8 @@ export default function DecisionScreen({
           {keyBanner ? (
             <Banner
               tone="critical"
-              title={keyBanner}
-              actions={[{ label: 'Set up this phone again', onPress: markKeyUnusable }]}
+              title={keyBanner.text}
+              actions={[{ label: 'Set up this phone again', onPress: () => markKeyUnusable(keyBanner.cause) }]}
             />
           ) : null}
 
@@ -668,6 +680,8 @@ export default function DecisionScreen({
         onCancel={closeSigning}
         onReasonChange={() => setReasonMissing(false)}
         onOpenWeb={openWeb}
+        balanceWei={treasury.data?.status?.balance_wei ?? null}
+        balanceText={treasury.data?.status?.balance ?? null}
       />
 
       <EvidenceSheet

@@ -47,7 +47,9 @@ export default function SessionEndedScreen() {
   const { ended, setUpAgain, retrySession, identity, token } = useSession();
   const [busy, setBusy] = useState(false);
   const copy = COPY[ended ?? 'session'];
-  const canRetry = ended === 'session' && !!identity && !!token;
+  // Back to the app to ask the server again: after a session that may only have blipped, or a
+  // refused signature. Never when the seed itself has gone: there is nothing to retry with.
+  const canRetry = (ended === 'session' || ended === 'key_unusable') && !!identity && !!token;
 
   return (
     <Screen edges={['top', 'bottom']}>
