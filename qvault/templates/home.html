@@ -29,6 +29,8 @@
   {% set summary = 'The next is due ' ~ next_due ~ ' UTC.' %}
 {% elif n %}
   {% set summary = None %}
+{% elif not work.in_a_vault %}
+  {% set summary = 'You’re not in a vault yet.' %}
 {% elif not work.approves_anywhere %}
   {% set summary = 'You can see your vaults’ decisions but approve in none of them.' %}
 {% elif work.open_total %}

@@ -38,9 +38,11 @@ def register_user(
     On registration the user's identity becomes a post-quantum keypair, not merely a password:
     the private key is wrapped at rest under a KEK derived from ``password``.
 
-    With ``place`` (the default) the new account joins a workspace as
-    ``workspace_service.place_registrant`` decides. Accepting an invitation passes ``place=False``
-    and ``commit=False`` and joins the invitation's workspace in the same transaction.
+    With ``place`` (the default) the new account joins the deployment's shared workspace
+    (``workspace_service.join_shared_workspace``). That is the operator's path, for the seed
+    scripts, the team reset and tests; no route takes it. Signing up (``sign_up``) and accepting an
+    invitation pass ``place=False`` and ``commit=False``, and make or join the right workspace in
+    the same transaction.
     """
     email = _normalise_email(email)
     if User.query.filter_by(email=email).first() is not None:
@@ -76,7 +78,7 @@ def register_user(
         commit=False,
     )
     if place:
-        workspace_service.place_registrant(user)
+        workspace_service.join_shared_workspace(user)
     if not commit:
         return user
 
@@ -88,6 +90,30 @@ def register_user(
     except IntegrityError as exc:
         db.session.rollback()
         raise EmailTakenError(email) from exc
+    return user
+
+
+def sign_up(email: str, display_name: str, password: str, workspace_name: str) -> User:
+    """Self-service sign-up (plan S21): a new account, its signing key, and a new workspace it owns.
+
+    The only thing the person chooses about the workspace is its name. It never joins an existing
+    one: the way into someone else's workspace is their invitation link
+    (``workspace_service.register_through_invitation``). Everything is written in one transaction,
+    so a taken address or a refused name leaves no account and no workspace behind.
+    """
+    # Refused before anything is written, so a bad name costs no Argon2id work and no rollback.
+    workspace_name = workspace_service.clean_workspace_name(workspace_name)
+    try:
+        user = register_user(email, display_name, password, place=False, commit=False)
+        workspace_service.create_workspace(workspace_name, user, commit=False)
+        db.session.commit()
+    except IntegrityError as exc:
+        # A concurrent registration of the same address won the UNIQUE(email) race.
+        db.session.rollback()
+        raise EmailTakenError(_normalise_email(email)) from exc
+    except Exception:
+        db.session.rollback()
+        raise
     return user
 
 

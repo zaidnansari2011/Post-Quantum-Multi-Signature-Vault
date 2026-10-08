@@ -96,6 +96,21 @@ p.q-panel__bd { margin: 0; }
 .q-auth .q-panel { margin-bottom: var(--space-16); }
 .q-auth .q-kv { --kv-label: 112px; }
 .q-auth .q-banner { margin: var(--space-16) 0; }
+.q-auth__foot + .q-auth__foot { margin-top: var(--space-8); }
+
+/* The honest password step (_password_step.html): the truth about the password, the password,
+   and the box that says it was read. */
+.q-pwstep { border: 0; margin: var(--space-8) 0 var(--space-16); padding: 0; min-width: 0; }
+.q-pwstep__t { padding: 0; margin-bottom: var(--space-8); font-weight: var(--weight-strong); }
+.q-auth .q-pwstep .q-banner { margin: 0 0 var(--space-16); }
+.q-pwstep__ack { margin-bottom: var(--space-6); }
+.q-pwstep__err { margin-bottom: var(--space-8); }
+
+/* Forgot password: what cannot be done, what can, and what is coming. */
+.q-recover { margin: 0 0 var(--space-24); padding: 0; list-style: none; display: grid; gap: var(--space-16); }
+.q-recover__t { margin: 0 0 var(--space-8); font-size: var(--text-body-size); font-weight: var(--weight-strong); }
+.q-recover h3 { margin: 0 0 var(--space-4); font-size: var(--text-body-size); font-weight: var(--weight-medium); }
+.q-recover p { margin: 0; color: var(--text-muted); }
 
 .q-landing { width: 100%; max-width: 720px; margin: 0 auto; padding: var(--space-32) 0; text-align: center; }
 .q-landing__brand {

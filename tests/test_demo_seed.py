@@ -208,6 +208,8 @@ def test_the_demo_control_is_absent_in_a_production_like_config(app, client):
             "email": "admin@e.com",
             "password": "password-123",
             "confirm": "password-123",
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )
@@ -231,6 +233,8 @@ def test_the_demo_control_requires_an_admin(app, client):
                 "email": email,
                 "password": "password-123",
                 "confirm": "password-123",
+                "workspace_name": "Test workspace",
+                "understood": "y",
             },
             follow_redirects=True,
         )

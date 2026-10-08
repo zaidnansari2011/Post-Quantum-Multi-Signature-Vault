@@ -287,6 +287,8 @@ def _login_admin(client):
             "email": "admin@ex.com",
             "password": "Sup3rSecret!pw",
             "confirm": "Sup3rSecret!pw",
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )
@@ -303,6 +305,8 @@ def test_benchmark_page_requires_admin(client):
             "email": "bob@ex.com",
             "password": "Sup3rSecret!pw",
             "confirm": "Sup3rSecret!pw",
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )
