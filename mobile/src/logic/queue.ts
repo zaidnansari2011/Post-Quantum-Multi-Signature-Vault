@@ -104,6 +104,45 @@ export function groupApprovals<T extends QueueFacts>(
   return { needsYou: byDeadline(needsYou), web: byDeadline(web), offerFix };
 }
 
+/** Where a payment this phone cannot sign can be approved, if anywhere. */
+export type ElsewhereKind = 'web' | 'device' | 'nowhere';
+
+export type ElsewhereSection<T> = {
+  kind: ElsewhereKind;
+  /** The group's title: it claims only what is true of every row under it. */
+  title: string;
+  /** Each row's note on line 3, in place of "Approve on the web". */
+  rows: Array<{ item: T; note: string }>;
+};
+
+/**
+ * The payments this phone cannot sign, split by where they can be approved (§6.3 item 3), so no
+ * title over-claims: "Approve on the web" holds only payments whose seat is the password key; a seat
+ * on another of this person's phones says which; and a treasury that holds no usable key of theirs
+ * (none at all, or a phone that was removed) says that nothing of theirs can approve it.
+ */
+export function elsewhereSections<T extends QueueFacts>(
+  web: T[],
+  seats: Record<string, Seat | undefined>,
+): ElsewhereSection<T>[] {
+  const sections: Record<ElsewhereKind, ElsewhereSection<T>> = {
+    web: { kind: 'web', title: 'Approve on the web', rows: [] },
+    device: { kind: 'device', title: 'Approve on your other device', rows: [] },
+    nowhere: { kind: 'nowhere', title: "Your key isn't on these treasuries", rows: [] },
+  };
+  for (const item of web) {
+    const seat = seats[item.proposal_uuid];
+    if (seat?.kind === 'password') sections.web.rows.push({ item, note: 'Approve on the web' });
+    else if (seat?.kind === 'other_device' && seat.deviceName) {
+      sections.device.rows.push({ item, note: `Approve on ${seat.deviceName}` });
+    } else sections.nowhere.rows.push({ item, note: "Can't be approved here" });
+  }
+  const devices = new Set(sections.device.rows.map((r) => r.note));
+  if (devices.size > 1) sections.device.title = 'Approve on your other devices';
+  if (sections.nowhere.rows.length === 1) sections.nowhere.title = "Your key isn't on this treasury";
+  return [sections.web, sections.device, sections.nowhere].filter((x) => x.rows.length > 0);
+}
+
 /** Open, not waiting on this person, and this person has signed it (§6.4). Soonest first. */
 export function waitingOnOthers<T extends QueueFacts>(all: T[], now: number): T[] {
   return byDeadline(stillOpen(all, now).filter((p) => p.signed_by_me));
@@ -132,7 +171,10 @@ export type HeadlineInput = {
   /** The person belongs to no workspace any more (R3). */
   removed?: boolean;
   needsYou: number;
+  /** Payments to approve on the web (the password key's seat). */
   web: number;
+  /** Payments this phone cannot sign for any other reason (another phone's seat, or no key). */
+  elsewhere?: number;
   waiting: number;
   dueToday: number;
 };
@@ -165,13 +207,19 @@ export function approvalsHeadline(h: HeadlineInput): Headline {
       short: 'Approvals',
     };
   }
-  if (h.needsYou === 0 && h.web > 0) {
-    return {
-      title: 'Nothing needs your signature here.',
-      supporting:
-        h.web === 1 ? 'One payment needs you on the web.' : `${capitalise(countWord(h.web))} payments need you on the web.`,
-      short: 'Approvals',
-    };
+  const elsewhere = h.elsewhere ?? 0;
+  if (h.needsYou === 0 && h.web + elsewhere > 0) {
+    // "On the web" only when every one of them is; otherwise only what is true of all of them.
+    const n = h.web + elsewhere;
+    const supporting =
+      elsewhere === 0
+        ? n === 1
+          ? 'One payment needs you on the web.'
+          : `${capitalise(countWord(n))} payments need you on the web.`
+        : n === 1
+          ? "One payment needs you, but this phone can't sign it."
+          : `${capitalise(countWord(n))} payments need you, but this phone can't sign them.`;
+    return { title: 'Nothing needs your signature here.', supporting, short: 'Approvals' };
   }
   if (h.needsYou === 0) {
     return {

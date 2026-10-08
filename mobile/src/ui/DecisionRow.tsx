@@ -35,6 +35,8 @@ export type DecisionRowProps = {
   expiresAt: string | null;
   /** `waiting`: "Waiting on 1" leads line 3. `web`: line 3's right says so. `outcome`: history. */
   variant?: 'queue' | 'waiting' | 'web' | 'outcome';
+  /** The web variant's note on line 3 (default "Approve on the web"): where it can be approved. */
+  note?: string;
   /** The outcome variant's line 3: "Approved", with its date. */
   outcome?: { word: string; tone: TextTone; when?: string | null };
   onPress: () => void;
@@ -50,6 +52,7 @@ export function DecisionRow({
   required,
   expiresAt,
   variant = 'queue',
+  note = 'Approve on the web',
   outcome,
   onPress,
   now = Date.now(),
@@ -68,8 +71,8 @@ export function DecisionRow({
         {outcome.when ? `${outcome.word} ${outcome.when}` : outcome.word}
       </Text>
     ) : variant === 'web' ? (
-      <Text role="caption" tone="muted">
-        Approve on the web
+      <Text role="caption" tone="muted" numberOfLines={1} style={s.note}>
+        {note}
       </Text>
     ) : due ? (
       <View style={s.due}>
@@ -100,7 +103,7 @@ export function DecisionRow({
     variant === 'outcome' && outcome
       ? `${outcome.word}${outcome.when ? ` ${outcome.when}` : ''}`
       : variant === 'web'
-        ? `Approve on the web${due ? `. Due ${due}` : ''}`
+        ? `${note}${due ? `. Due ${due}` : ''}`
         : due
           ? `Due ${due}`
           : null,
@@ -178,6 +181,7 @@ const useStyles = makeStyles((t) => ({
   line3: { alignItems: 'center', marginTop: t.space[2] },
   title: { flex: 1 },
   amount: { flexShrink: 0 },
+  note: { flexShrink: 1, textAlign: 'right' },
   marks: { flexDirection: 'row', alignItems: 'center', gap: t.space[8] },
   due: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
 }));
