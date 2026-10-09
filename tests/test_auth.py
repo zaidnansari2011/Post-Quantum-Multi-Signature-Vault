@@ -116,9 +116,11 @@ def test_register_endpoint_logs_user_in(client):
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    # Sign-up lands on Home (plan S21), where the new workspace's checklist is, and its flash
-    # says the signing key was made; the key itself is the PQC identity.
+    # Sign-up shows the Recovery Kit once (plan R9), with the flash saying the signing key was
+    # made; then Home (plan S21), where the new workspace's checklist is. The key itself is the
+    # PQC identity.
     page = resp.get_data(as_text=True)
-    assert "Get Test workspace started" in page and "signing key were created" in page
+    assert "Save your Recovery Kit" in page and "signing key were created" in page
+    assert "Get Test workspace started" in client.get("/").get_data(as_text=True)
     user = User.query.filter_by(email="dana@e.com").one()
     assert active_signing_key(user).alg_id.startswith("ML-DSA")

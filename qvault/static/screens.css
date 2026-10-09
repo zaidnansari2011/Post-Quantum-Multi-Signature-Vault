@@ -112,6 +112,35 @@ p.q-panel__bd { margin: 0; }
 .q-recover__t { margin: 0 0 var(--space-8); font-size: var(--text-body-size); font-weight: var(--weight-strong); }
 .q-recover h3 { margin: 0 0 var(--space-4); font-size: var(--text-body-size); font-weight: var(--weight-medium); }
 .q-recover p { margin: 0; color: var(--text-muted); }
+.q-recover .q-btn { margin-top: var(--space-12); }
+
+/* The Recovery Kit (plan R9): the kit shown once, as a card that prints and reads like a document;
+   its code in large mono groups that wrap two to a line on a phone. */
+.q-kitpage { width: 100%; max-width: 560px; margin: 0 auto; padding: var(--space-32) 0; }
+.q-kitpage .q-banner { margin: 0 0 var(--space-16); }
+.q-kit { margin: 0 0 var(--space-16); padding: var(--space-20); border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card); background: var(--surface-raised); box-shadow: var(--shadow-e1); }
+.q-kit__hd { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-8); margin: 0 0 var(--space-12); }
+.q-kit__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-kit__id { font-family: var(--font-mono); color: var(--text-muted); }
+.q-kit .q-kv { --kv-label: 136px; margin: 0 0 var(--space-16); }
+.q-kit__code { display: grid; grid-template-columns: repeat(4, max-content); justify-content: space-between; gap: var(--space-8) var(--space-16); margin: 0 0 var(--space-16); padding: var(--space-16) var(--space-20); border-radius: var(--radius-control); background: var(--bg-subtle); font-family: var(--font-mono); font-size: var(--text-title-size); line-height: var(--text-title-line); letter-spacing: 0.08em; }
+@media (max-width: 560px) { .q-kit__code { grid-template-columns: repeat(2, max-content); justify-content: space-around; } }
+.q-kit__g { white-space: nowrap; }
+.q-kit__sep { display: none; }
+.q-kit__note { margin: 0; color: var(--text-muted); }
+.q-kit__acts { margin: 0 0 var(--space-24); }
+.q-kit__confirm { margin: 0 0 var(--space-12); }
+.q-kit__later .q-cap { margin: var(--space-8) 0 0; }
+.q-recovery-banner .q-banner { margin: 0 0 var(--space-16); }
+/* On a phone the banner's action goes under its words, which then keep the whole width. */
+@media (max-width: 560px) {
+  .q-recovery-banner .q-banner { flex-wrap: wrap; }
+  .q-recovery-banner .q-banner__act { flex-basis: 100%; padding-left: var(--space-24); }
+}
+@media print {
+  .q-kitpage > :not(.q-kit) { display: none; }
+  .q-kit { box-shadow: none; }
+}
 
 /* ================================================================ the public pages (rework R6)
  * The landing, Security, Pricing, Changelog and Status, and the footer under every signed-out page
