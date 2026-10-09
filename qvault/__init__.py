@@ -97,6 +97,11 @@ def create_app(config_name: str | None = None) -> Flask:
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Password-guessing doors (sign-in, sign-up, phone pairing): per address, in this process.
+    from .security import rate_limit
+
+    rate_limit.init_app(app)
+
     @login_manager.user_loader
     def load_user(user_id: str):
         from .models.user import User

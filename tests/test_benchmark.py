@@ -12,6 +12,7 @@ import gc
 
 import pytest
 
+from qvault.services import auth_service
 from qvault.services import benchmark_service as bench
 
 SIG_ALG = "ML-DSA-65"
@@ -280,16 +281,11 @@ def test_to_markdown_discloses_truncated_runs(registry):
 
 
 def _login_admin(client):
+    # Administration is an operator's grant, never a sign-up's (R6): the operator's first account.
+    auth_service.register_user("admin@ex.com", "Admin", "Sup3rSecret!pw")
     client.post(
-        "/register",
-        data={
-            "display_name": "Admin",
-            "email": "admin@ex.com",
-            "password": "Sup3rSecret!pw",
-            "confirm": "Sup3rSecret!pw",
-            "workspace_name": "Test workspace",
-            "understood": "y",
-        },
+        "/login",
+        data={"email": "admin@ex.com", "password": "Sup3rSecret!pw"},
         follow_redirects=True,
     )
 

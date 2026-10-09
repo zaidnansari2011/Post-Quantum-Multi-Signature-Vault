@@ -57,6 +57,12 @@ class BaseConfig:
     # token instead of the key: re-enrol to continue. See ADR-0016.
     DEVICE_TOKEN_MAX_AGE_DAYS = int(os.environ.get("DEVICE_TOKEN_MAX_AGE_DAYS", "90"))
 
+    # Sign-in, sign-up and phone pairing are rate limited per client address, in this process
+    # (qvault/security/rate_limit.py). Behind a reverse proxy set RATE_LIMIT_PROXY_HOPS to the
+    # number of proxies in front (Azure Container Apps: 1), or every visitor shares one bucket.
+    RATE_LIMIT_ENABLED = os.environ.get("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    RATE_LIMIT_PROXY_HOPS = int(os.environ.get("RATE_LIMIT_PROXY_HOPS", "0"))
+
     # The deliberate tamper demonstration is dev/demo only and OFF by default.
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "false").lower() == "true"
 
@@ -150,6 +156,9 @@ class TestConfig(BaseConfig):
     ENABLE_TAMPER_DEMO = True
     WTF_CSRF_ENABLED = False
     SCHEDULER_ENABLED = False  # tests drive the rotation/expiry jobs directly, no background thread
+    # Many tests sign in and up far more often than a person would; tests/test_rate_limit.py
+    # turns the limiter on where it is the subject.
+    RATE_LIMIT_ENABLED = False
     LOG_ORIGIN = "qvault.test/ledger"
     WITNESS_URL = None  # tests drive the witness in-process; no sockets in the suite
     # On in the suite so the instrumentation is exercised by every existing test that signs

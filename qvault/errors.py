@@ -78,6 +78,9 @@ def page_for(exc) -> tuple[str, str]:
 
     if isinstance(exc, CSRFError):
         return CSRF_PAGE
+    if exc.code == 429:
+        # The limiter's own sentence says how long to wait (qvault/security/rate_limit.py).
+        return "Too many attempts", f"{exc.description} Nothing was changed."
     title, text = PAGES.get(exc.code, GENERIC)
     return title, text.format(limit=_limit(current_app))
 
