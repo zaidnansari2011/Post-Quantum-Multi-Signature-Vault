@@ -122,9 +122,12 @@ def test_no_bootstrap_class_survives_in_a_template():
         r"|card(?:-body|-header)?|d-flex|text-muted|form-control-sm|input-group"
         r")(?![-\w])"
     )
+    # Emails (R8) are styled inline for mail clients, never by our stylesheet, so their own class
+    # names (``qv-card``) are not leftovers.
     offenders = [
         f"{t.relative_to(PROJECT_ROOT)}:{i}: {line.strip()[:90]}"
         for t in _templates()
+        if t.parent.name != "email"
         for i, line in enumerate(t.read_text(encoding="utf-8").splitlines(), 1)
         if dead.search(line)
     ]

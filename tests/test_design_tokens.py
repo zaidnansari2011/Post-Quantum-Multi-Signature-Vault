@@ -465,11 +465,15 @@ def test_templates_do_not_paint_colours_of_their_own():
     """Inline styles must use tokens too, or that element stays light in dark mode.
 
     The exported certificate is exempt: it is a self-contained file opened outside the app, with
-    its own palette, and the export format does not change in this rework (S9).
+    its own palette, and the export format does not change in this rework (S9). So are emails
+    (``email/``, R8): a mail client loads no stylesheet and ignores most <style>, so an email's
+    colours can only be inline, and its dark mode is its own media query.
     """
     offenders = []
     for template in sorted(TEMPLATES.rglob("*.html")):
         if template.parts[-2:] == ("export", "certificate.html"):
+            continue
+        if template.parent.name == "email":
             continue
         text = template.read_text(encoding="utf-8")
         inline = re.findall(r'style="([^"]*)"', text) + re.findall(
