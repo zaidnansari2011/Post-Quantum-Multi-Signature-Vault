@@ -77,13 +77,20 @@
   with its signatures and key fingerprints, and nothing about any person, vault or decision. The
   two differ while the witness hasn't yet seen the newest entries.
 </p>
-<pre><code>python -m qvault.verify checkpoint.json --expect-log 4f2a9c1e77b30d85</code></pre>
+<pre><code>python -m qvault.verify --checkpoint checkpoint.json --expect-log 4f2a9c1e77b30d85</code></pre>
 <p>
-  This checks the log's signature on each head and every witness co-signature in the file. It
-  can't prove the newer head extends the witnessed one; the witness checks that before it
-  co-signs. Its main use is the fingerprints: read from this server's public address, they are
-  the values to pass as <code>--expect-log</code> and <code>--expect-witness</code> when you check
-  a decision.
+  This checks the log's signature on each head, every witness co-signature in the file, that both
+  heads name the same log, and that the keys are post-quantum (an RSA or ECDSA key fails unless
+  you add <code>--allow-classical</code>). It can't prove the newer head extends the witnessed
+  one; the witness checks that before it co-signs. Without <code>--checkpoint</code> the command
+  refuses this file, so exit code 0 always means a decision verified.
+</p>
+<p>
+  Its main use is the fingerprints, the values to pass as <code>--expect-log</code> and
+  <code>--expect-witness</code> when you check a decision. Be clear about what they prove: they
+  come from this server, so they protect you against a file someone hands you, not against us.
+  The witness prints its own fingerprint when it starts; that one comes from the witness. A pin is
+  the 16 hex characters shown, or more of the key's SHA-256; a shorter one is refused.
 </p>
 
 <h2>Algorithms the browser cannot check</h2>

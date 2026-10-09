@@ -404,6 +404,23 @@ def test_a_checkpoint_re_signed_with_a_fresh_key_fails_the_pin(app, bundle):
     assert "pinned_log" in failing(pinned)
 
 
+def test_a_pin_shorter_than_the_printed_fingerprint_fails_instead_of_matching(app, bundle):
+    """R6 review: pins were prefixes, so an empty pin matched every key and 8 hex characters
+    (32 bits) could be ground with fresh keys. A pin is now 16 to 64 hex characters of the key's
+    SHA-256, compared on every digit given."""
+    log_fp = check(app, bundle).fingerprints["log"]
+    full = sha256_hex(b64decode(bundle["log"]["checkpoint_signature"]["public_key_b64"]))
+    witness_fp = check(app, bundle).fingerprints["witnesses"][0]["fingerprint"]
+    for pin in ("", log_fp[:8], log_fp[:15], "zz" * 8):
+        assert "pinned_log" in failing(check(app, bundle, expect_log=pin)), pin
+    assert "pinned_witness" in failing(check(app, bundle, expect_witness=witness_fp[:8]))
+    assert check(app, bundle, expect_log=full).ok
+    assert check(app, bundle, expect_log=log_fp.upper(), expect_witness=witness_fp).ok
+    assert "pinned_log" in failing(
+        check(app, bundle, expect_log=full[:63] + ("0" if full[63] != "0" else "1"))
+    )
+
+
 def test_stripping_the_witness_is_visible_rather_than_silent(app, bundle):
     forged = copy.deepcopy(bundle)
     forged["log"]["witnesses"] = []

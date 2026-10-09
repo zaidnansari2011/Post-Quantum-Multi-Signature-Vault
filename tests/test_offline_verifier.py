@@ -346,6 +346,24 @@ def test_pinning_keys_agrees_with_python(app, page, bundle, witnessed):
     assert agree(app, page, bundle, {"witness": "0123456789abcdef"})["ok"] is False
 
 
+def test_a_short_pin_fails_and_a_full_hash_pin_matches_in_both(app, page, bundle, witnessed):
+    """R6 review: a pin used to match as a prefix, so "" or 8 hex characters passed. Both
+    verifiers now refuse a pin under 16 hex characters and compare every digit of a longer one."""
+    from base64 import b64decode
+
+    from qvault.crypto import sha256_hex
+
+    log_fp = in_python(app, bundle).fingerprints["log"]
+    full = sha256_hex(b64decode(bundle["log"]["checkpoint_signature"]["public_key_b64"]))
+    assert agree(app, page, bundle, {"log": log_fp[:8]})["ok"] is False
+    assert agree(app, page, bundle, {"witness": "abc"})["ok"] is False
+    assert agree(app, page, bundle, {"log": full})["ok"] is True
+    assert (
+        agree(app, page, bundle, {"log": full[:63] + ("0" if full[63] != "0" else "1")})["ok"]
+        is False
+    )
+
+
 @pytest.mark.parametrize(
     "bad", [None, [], {}, {"format": "qvault.decision/2"}, {"format": "qvault.decision/1"}]
 )
