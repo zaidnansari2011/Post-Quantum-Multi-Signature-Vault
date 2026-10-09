@@ -80,7 +80,8 @@ def checkpoint():
     """The log's newest signed head, and the newest a witness co-signed (owner decision
     2026-10-09). No sign-in: it holds what every exported decision already publishes, and no
     person, vault or decision. Read from stored rows, never recomputed, so it is cheap to serve and
-    cheap to cache for a few seconds. python -m qvault.verify --checkpoint checkpoint.json checks it.
+    cheap to cache for a few seconds. ``python -m qvault.verify --checkpoint checkpoint.json``
+    checks it.
     """
     response = jsonify(public_status.checkpoint_document())
     response.headers["Cache-Control"] = "public, max-age=10"
