@@ -370,6 +370,27 @@ def is_current_approver(vault_id: int, user_id: int) -> bool:
     return role in SIGNER_ROLES
 
 
+def _still_an_approver(proposal, signer) -> None:
+    """Gate step 5 again, read fresh just before the vote is written; refuse with nothing written.
+
+    The gate ran before the password was checked or the chain asked for a nonce. The role is
+    selected as a column, so nothing loaded earlier in the request answers for it; on PostgreSQL
+    the row is read FOR SHARE, so a demotion that starts after this waits until the vote is
+    written. SQLite serialises writers already.
+    """
+    stmt = select(VaultMember.member_role).where(
+        VaultMember.vault_id == proposal.vault_id, VaultMember.user_id == signer.id
+    )
+    if db.engine.dialect.name == "postgresql":
+        stmt = stmt.with_for_update(read=True)
+    if db.session.scalar(stmt) not in SIGNER_ROLES:
+        db.session.rollback()
+        raise ApprovalError(
+            "You are not an authorised signer for this proposal any more: you are no longer an "
+            "approver of this vault."
+        )
+
+
 def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
     """The governance gate every vote passes, whoever held the key.
 
@@ -531,6 +552,10 @@ def _record_vote(
         # Additive, like "custody" below: the ledger says this approval also authorised a payment,
         # and names the exact bytes, so an auditor can match the entry to what the chain executed.
         entry["execution_signature_sha256"] = sha256_hex(execution[1])
+
+    # Still theirs to sign: a demotion or removal can commit while a password is checked or a
+    # treasury's nonce is read (seconds), after the gate looked.
+    _still_an_approver(proposal, signer)
 
     try:
         # Everything from the first row added to the session up to flush() is inside this mapped

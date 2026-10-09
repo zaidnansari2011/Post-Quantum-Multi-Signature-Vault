@@ -214,3 +214,43 @@ def test_a_demoted_approver_cannot_approve_a_payment_on_the_phone(payments_on, c
         _device_vote(payments_on, proposal, other, key, secret, "approve", execution=b"\0" * 3309)
     assert _votes(proposal) == 0
     assert ExecutionSignature.query.filter_by(proposal_id=proposal.id).count() == 0
+
+
+def _during_the_password_check(monkeypatch, change):
+    """Commit ``change`` after the gate has passed and before the vote is written: what another
+    request can do while Argon2 unwraps a key or the chain is asked for a nonce."""
+    recheck = approval_service._still_an_approver
+
+    def changed_then_checked(proposal, signer):
+        change()
+        approval_service.db.session.commit()
+        recheck(proposal, signer)
+
+    monkeypatch.setattr(approval_service, "_still_an_approver", changed_then_checked)
+
+
+@pytest.mark.parametrize("what", ["demoted", "removed"])
+def test_a_change_committed_while_the_password_is_checked_still_stops_the_vote(
+    app, monkeypatch, what
+):
+    ada, brij, _chen, vault, proposal = _three(f"race{what}")
+    change = {
+        "demoted": lambda: vault_service.change_member_role(
+            vault, brij.id, "viewer", actor_id=ada.id
+        ),
+        "removed": lambda: vault_service.remove_member(vault, brij.id, actor_id=ada.id),
+    }[what]
+    _during_the_password_check(monkeypatch, change)
+
+    with pytest.raises(ApprovalError, match="not an authorised signer for this proposal any more"):
+        approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert _votes(proposal) == 0
+    assert _signed_entries(proposal) == 0
+    assert proposal.status == "open"
+
+
+def test_a_vote_with_nothing_changed_meanwhile_is_written(app, monkeypatch):
+    _ada, brij, _chen, _vault, proposal = _three("racenothing")
+    _during_the_password_check(monkeypatch, lambda: None)
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert _votes(proposal) == 1
