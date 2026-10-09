@@ -803,6 +803,24 @@ For the rework image (R10 staging and the switch), settings the deployment needs
    live demo on one network** (for example `RATE_LIMIT_SIGNUP_PER_HOUR=200` for the day), and put
    it back afterwards. Don't turn the limiter off.
 
+### 2.14 Rework staging: sign up and invite the team — `TODO` (added 2026-10-09)
+
+Staging is up beside the live app ([runbook](runbooks/staging.md)), with its own empty database:
+`https://qvault-staging.livelybeach-69506dc5.centralindia.azurecontainerapps.io`
+
+1. Open it, **Create your workspace** (your name, an email you read, a workspace name, a new
+   password; staging is separate, so this is a new account). Note the password: it also unlocks
+   your signing key and nobody can reset it.
+2. **Members → Invite** each teammate by email. The invitation email comes from
+   `notifications@mail.zaidansari.tech`; ask them to check spam the first time.
+3. Make a vault, raise a decision, approve it with two people, and try the new pages. Tell me
+   anything that looks wrong or confusing, with the page and what you did.
+
+The first visit after a quiet spell takes a few seconds (it scales to zero). Attachments there
+are lost when it restarts; that is staging only.
+
+*Your effort:* ten minutes to set up; the team's testing time after that.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`

@@ -479,7 +479,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R10: Staging and the switch · ⚑ owner decides
 
-- [ ] Staging: a second container app off the rework image, with its **own** database (a new database on the existing Postgres server), seeded with the team's accounts; witness and relayer off unless the owner wants them
+- [x] Staging: a second container app off the rework image, with its **own** database (a new database on the existing Postgres server), seeded with the team's accounts; witness and relayer off unless the owner wants them (2026-10-09: `qvault-staging` at Azure's default address, database `qvault_staging` built by `alembic upgrade head` on PostgreSQL, its own keys, witness and treasury off; no seeding: the team joins through sign-up and emailed invitations, which tests R6, R3 and R8 for real; [runbook](../runbooks/staging.md))
 - [ ] The team tests on staging; issues fixed
 - [ ] ⚑ The owner decides: switch, or stay on the tag
 - [ ] Switch procedure: back up the live database; then, all before the new image first starts, `scripts/check_baseline.py` (exactly the baseline's tables), stamp it `0001_baseline`, `alembic upgrade head`, and `alembic check` (no new upgrade operations; it cannot run between the stamp and the upgrade once later revisions exist) ([runbook](../runbooks/database-migrations.md)); deploy; smoke test; keep the tagged image ready. Rollback: redeploy `ee70586` (or the tag's image) against the backup, never against the upgraded database (users it registers would join no workspace)
