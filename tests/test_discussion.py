@@ -308,8 +308,44 @@ def test_a_name_with_an_accent_gives_its_plain_handle_and_never_a_mangled_one(ap
         vault_service.add_member(vault, user.email, "viewer", actor_id=ada.id)
     people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
     assert people[elif_.id] == ["elif", "accent-e1"]
-    # L with a stroke has no plain form: no first-name handle rather than "@ukasz".
-    assert people[lukasz.id] == ["accent-l1"]
+    # L with a stroke has no accent to drop: written as the plain letter, never dropped ("@ukasz").
+    assert people[lukasz.id] == ["lukasz", "accent-l1"]
+
+
+def test_a_mention_typed_as_the_name_is_spelled_reaches_its_plain_handle(app):
+    ada, _brij, _chen, _dev, vault, proposal = _team("spelled")
+    elif_ = auth_service.register_user("spelled-e1@e.com", "Élif Kaya", PASSWORD)
+    lukasz = auth_service.register_user("spelled-l1@e.com", "Łukasz Nowak", PASSWORD)
+    for user in (elif_, lukasz):
+        vault_service.add_member(vault, user.email, "viewer", actor_id=ada.id)
+
+    comment = discussion_service.post(proposal, ada, "@Élif and @Łukasz, please look.")
+    assert json.loads(comment.mentions) == {"elif": elif_.id, "lukasz": lukasz.id}
+    assert len(_mentions(elif_)) == 1 and len(_mentions(lukasz)) == 1
+    names = {elif_.id: "Élif Kaya", lukasz.id: "Łukasz Nowak"}
+    drawn = [p for p in discussion_service.segments(comment, names) if p.get("mention")]
+    assert [(p["text"], p["mention"]) for p in drawn] == [
+        ("@Élif", elif_.id),
+        ("@Łukasz", lukasz.id),
+    ]
+
+
+def test_a_handle_two_spellings_share_names_neither_and_another_script_gets_none(app):
+    """Folding to plain letters must not let one handle name two people: Elif and Élif both fold
+    to elif, so neither has it. A name with no plain form gets no name handle: a look-alike letter
+    (a Cyrillic letter drawn like a Latin one) could otherwise pass for someone else's handle."""
+    ada, _brij, _chen, _dev, vault, proposal = _team("fold")
+    plain = auth_service.register_user("fold-e1@e.com", "Elif Demir", PASSWORD)
+    accented = auth_service.register_user("fold-e2@e.com", "Élif Kaya", PASSWORD)
+    cyrillic = auth_service.register_user("fold-c1@e.com", "\u0410da Petrova", PASSWORD)
+    for user in (plain, accented, cyrillic):
+        vault_service.add_member(vault, user.email, "viewer", actor_id=ada.id)
+    people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
+    assert people[plain.id] == ["fold-e1"] and people[accented.id] == ["fold-e2"]
+    assert people[cyrillic.id] == ["fold-c1"]
+
+    comment = discussion_service.post(proposal, ada, "@Elif, @Élif and @\u0410da?")
+    assert comment.mentions is None
 
 
 def test_an_email_address_in_the_text_is_not_a_mention(app):
