@@ -665,7 +665,7 @@ the same time; nothing re-pins it automatically, by design.
 
 *Your effort:* two or three commands and one look at a page.
 
-### 2.11 Rework R8: an email account with Resend — `TODO` (added 2026-10-09)
+### 2.11 Rework R8: an email account with Resend — `PARTLY DONE` (added 2026-10-09; key saved in `.env.rework`; domain verification to confirm)
 
 *Why it's yours:* a third-party account in your name, and DNS records on your domain.
 
@@ -689,7 +689,7 @@ waits on this except the first real email.
 
 *Your effort:* ~10 minutes, mostly waiting for DNS.
 
-### 2.12 Rework R8: push notifications with Firebase (Android) — `TODO` (added 2026-10-09)
+### 2.12 Rework R8: push notifications with Firebase (Android) — `DONE` 2026-10-09 (project `qvault-90763`; FCM V1 key assigned to `com.qvault.approvals` in Expo)
 
 *Why it's yours:* a Google account's Firebase project and the Expo account's credentials.
 
