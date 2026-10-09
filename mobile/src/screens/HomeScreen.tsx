@@ -44,6 +44,7 @@ import { useEnrolledSession } from '../session.tsx';
 import type { ProposalSummary } from '../api/schemas.ts';
 import { useApprovals, useTreasuryChanges } from '../approvals.ts';
 import { parseInstant } from '../time.ts';
+import { andList } from '../logic/words.ts';
 import { changeSummary, type ChangeEntry } from '../logic/treasuryChange.ts';
 import { permissions } from '../logic/workspace.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
@@ -121,7 +122,8 @@ export default function HomeScreen({
     loading,
     failed,
     removed,
-    needsYou: needsYou.length + changes.here.length,
+    needsYou: needsYou.length,
+    changes: changes.here.length,
     web: onWeb + changes.web.length,
     elsewhere: web.length - onWeb,
     waiting: q.waiting.length,
@@ -135,8 +137,17 @@ export default function HomeScreen({
   };
 
   // One line on the first visit after setting up: which workspace this is (§6.2, §6.22).
+  const approveIn = (vaults.data?.vaults ?? []).filter((v) => v.role === 'owner' || v.role === 'signer').map((v) => v.name);
   const welcome =
-    justEnrolled && me.data?.workspace && showList && !removed ? `You're in ${me.data.workspace.name}.` : null;
+    justEnrolled && me.data?.workspace && showList && !removed
+      ? `You're in ${me.data.workspace.name}.${
+          approveIn.length === 0
+            ? ''
+            : ` You approve in ${
+                approveIn.length <= 3 ? andList(approveIn) : `${approveIn.slice(0, 2).join(', ')} and ${approveIn.length - 2} more`
+              }.`
+        }`
+      : null;
   useEffect(() => () => clearJustEnrolled(), [clearJustEnrolled]);
 
   const from = (p: ProposalSummary) =>

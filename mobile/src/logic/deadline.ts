@@ -41,10 +41,14 @@ export function defaultDeadline(kind: 'general' | 'payment' | 'access'): Deadlin
   return kind === 'payment' ? 'week' : 'three';
 }
 
-/** Hours from now to `at`, as `expires_in_hours` takes it; null for no deadline. */
+/**
+ * Hours from now to `at`, as `expires_in_hours` takes it; null for no deadline. Rounded up to the
+ * next thousandth of an hour (3.6 s), so the deadline the server sets is never a minute before the
+ * one the chip showed ("17:00", not "16:59").
+ */
 export function hoursUntil(when: number | null, now: number): number | null {
   if (when === null) return null;
-  return Math.max(0.1, Math.round(((when - now) / 3_600_000) * 100) / 100);
+  return Math.max(0.1, Math.ceil(((when - now) / 3_600_000) * 1000) / 1000);
 }
 
 /** "Due Tue 6 Oct, 17:00" / "Due today, 18:00" / "No deadline". */

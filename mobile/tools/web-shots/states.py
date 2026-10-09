@@ -190,7 +190,9 @@ def enrol(browser, email, state_file):
     page.goto(BASE + "/" + QUERY)
     page.get_by_placeholder("you@example.com").fill(email)
     page.get_by_placeholder("Your Q-Vault password").fill(PASSWORD)
-    button(page, "Enrol this device").click()
+    # Two steps since P3 (phone-ux §6.2): Continue checks the password, then the key is made.
+    button(page, "Continue").click()
+    button(page, "Create key on this phone").click()
     page.get_by_role("tab", name=re.compile("^Account")).wait_for(timeout=90000)
     quiet(page)
     ctx.storage_state(path=str(state_file))

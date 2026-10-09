@@ -73,7 +73,10 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
           <List>
             <ListRow title="Name" value={current?.name ?? identity.deviceName} />
             <ListRow title="Set up" value={dayMonth(identity.enrolledAt, now) ?? 'Unknown'} />
-            <ListRow title="Signing confirmed by" value={method ? method.name : 'Checking…'} />
+            <ListRow
+              title="Signing confirmed by"
+              value={method ? method.name.charAt(0).toUpperCase() + method.name.slice(1) : 'Checking…'}
+            />
             {ends ? <ListRow title="Signing ends" value={ends} /> : null}
           </List>
 

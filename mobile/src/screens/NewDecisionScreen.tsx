@@ -405,7 +405,7 @@ export default function NewDecisionScreen({
                   error={errors.to || null}
                 />
                 {toChecked && to.trim() && !addressProblem(to) ? (
-                  <View style={s.grouped} accessible accessibilityLabel={`Address as entered: ${to.trim()}`}>
+                  <View style={[s.grouped, s.checkIt]} accessible accessibilityLabel={`Address as entered: ${to.trim()}`}>
                     <Text role="caption" tone="muted">
                       Check it, in fours:
                     </Text>
@@ -441,7 +441,7 @@ export default function NewDecisionScreen({
                   maxLength={80}
                   error={errors.system}
                 />
-                <View style={s.group}>
+                <View style={[s.group, s.fieldGap]}>
                   <Text role="caption" tone="muted">
                     Access
                   </Text>
@@ -452,7 +452,7 @@ export default function NewDecisionScreen({
                     options={Object.entries(ACCESS_LEVELS).map(([value, [label]]) => ({ value, label }))}
                   />
                 </View>
-                <View style={s.group}>
+                <View style={[s.group, s.fieldGap]}>
                   <Text role="caption" tone="muted">
                     Until
                   </Text>
@@ -597,8 +597,8 @@ export default function NewDecisionScreen({
               </Text>
             </View>
             <KeyValue
-              label="From"
-              value={`${vault?.name ?? ''} treasury. ${vaultSummary ? ruleSentence(vaultSummary.threshold_m, vaultSummary.signer_count) : ''}`.trim()}
+              label="From the treasury of"
+              value={`${vault?.name ?? ''}. ${vaultSummary ? ruleSentence(vaultSummary.threshold_m, vaultSummary.signer_count) : ''}`.trim()}
             />
             <KeyValue label="Due" value={dueCaption(chosenDeadline.at, now).replace(/^Due /, '')} />
             <Text role="body" tone="muted">
@@ -643,5 +643,7 @@ const useStyles = makeStyles((t) => ({
   who: { flexDirection: 'row', gap: t.space[8], alignItems: 'flex-start' },
   suffix: { paddingHorizontal: t.space[12], justifyContent: 'center' },
   grouped: { gap: t.space[4] },
+  checkIt: { marginTop: -t.space[4], marginBottom: t.space[16] },
+  fieldGap: { marginBottom: t.space[16] },
   checkSpace: { width: 20 },
 }));

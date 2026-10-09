@@ -126,6 +126,7 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
                 <ListRow
                   title={`Removed (${removed.length})`}
                   value={showRemoved ? 'Hide' : 'Show'}
+                  chevron={false}
                   onPress={() => setShowRemoved((v) => !v)}
                 />
                 {showRemoved

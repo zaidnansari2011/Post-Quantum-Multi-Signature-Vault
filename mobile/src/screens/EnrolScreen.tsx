@@ -146,7 +146,9 @@ export default function EnrolScreen() {
           <Text role="caption" tone="muted" align="center">
             Your phone signs as this.
           </Text>
-          <TextLink label="Continue" onPress={() => finish?.()} />
+          <View style={s.centred}>
+            <TextLink label="Continue" onPress={() => finish?.()} />
+          </View>
         </View>
       </Screen>
     );
@@ -156,7 +158,7 @@ export default function EnrolScreen() {
     return (
       <Screen edges={['top', 'bottom']}>
         <NavBar onBack={() => setStep('signin')} />
-        <ScrollView contentContainerStyle={s.content}>
+        <ScrollView contentContainerStyle={[s.content, s.afterNav]}>
           <ContentWidth style={s.stack}>
             <Text role="title" accessibilityRole="header">
               Set a screen lock to use Q-Vault
@@ -183,7 +185,7 @@ export default function EnrolScreen() {
       <Screen edges={['top', 'bottom']}>
         <NavBar onBack={busy ? undefined : () => setStep('signin')} />
         <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={[s.content, s.afterNav]} keyboardShouldPersistTaps="handled">
             <ContentWidth style={s.stack}>
               <Text role="title" accessibilityRole="header">
                 This phone gets its own key
@@ -353,4 +355,6 @@ const useStyles = makeStyles((t) => ({
   bottom: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[24], paddingTop: t.space[12] },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: t.space[12], paddingHorizontal: t.layout.gutter },
   footer: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.space[4] },
+  centred: { alignSelf: 'center' },
+  afterNav: { paddingTop: t.space[8] },
 }));

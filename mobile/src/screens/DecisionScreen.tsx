@@ -493,13 +493,17 @@ export default function DecisionScreen({
 
   // Who can still approve, by A3's names, for the quorum sentence and the acknowledgement.
   const voted = new Set(detail.votes.map((v) => v.signer_id));
+  // Only those who can still approve now (R5), when the server says who they are.
+  const able = detail.can_still_approve ? new Set(detail.can_still_approve) : null;
   const remaining = detail.signers
     ? policy.signers
-        .filter((id) => !voted.has(id) && id !== identity.userId)
+        .filter((id) => !voted.has(id) && id !== identity.userId && (able === null || able.has(id)))
         .map((id) => detail.signers!.find((p) => p.user_id === id)?.name ?? null)
     : null;
   const stillToApprove = remaining && remaining.every((n): n is string => n !== null) ? remaining : null;
-  const quorum = open
+  // A decision that can't pass gets the server's reasons instead (under the status line): a
+  // sentence about how many more approvals would approve it would say what can't happen.
+  const quorum = open && detail.can_still_pass !== false
     ? quorumSentence({
         M: policy.M,
         N: policy.N,
@@ -947,7 +951,10 @@ export default function DecisionScreen({
             <DisclosureRow title="Details" onPress={() => setSheet('details')} />
             {tampered ? null : (
               <ListRow
-                title={`Discussion${comments.data ? `, ${comments.data.comments.filter((c) => !c.deleted).length}` : ''}`}
+                title={(() => {
+                  const n = comments.data?.comments.filter((c) => !c.deleted).length ?? 0;
+                  return n > 0 ? `Discussion, ${n}` : 'Discussion';
+                })()}
                 caption={latest ? `${latest.author.name ?? 'Someone'}: ${latest.body}` : "No comments yet. Not part of what's signed."}
                 captionLines={1}
                 onPress={() => onOpenDiscussion(detail.title)}
