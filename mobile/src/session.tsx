@@ -57,7 +57,14 @@ interface SessionValue {
   ended: Ended | null;
   /** The address this phone was set up with, to fill in when setting it up again. */
   lastEmail: string | null;
-  enrol(args: { email: string; password: string; deviceName: string }): Promise<void>;
+  /**
+   * Set this phone up. Resolves once the key is made and the server has it, with the key's
+   * fingerprint and `finish`, which opens the app: setting up can show "Key created" first (§6.2).
+   */
+  enrol(args: { email: string; password: string; deviceName: string }): Promise<{ fingerprint: string; finish: () => void }>;
+  /** Set up in this run: Approvals says which workspace once, then this clears (§6.2). */
+  justEnrolled: boolean;
+  clearJustEnrolled(): void;
   /** A request came back 401. Never deletes the key. */
   markUnauthorized(code: string | null): void;
   /** The key cannot sign (missing, or refused by the server): show the ended screen for it. */
@@ -85,6 +92,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [ended, setEnded] = useState<Ended | null>(null);
   const [lastEmail, setLastEmail] = useState<string | null>(null);
+  const [justEnrolled, setJustEnrolled] = useState(false);
+  const clearJustEnrolled = useCallback(() => setJustEnrolled(false), []);
   const statusRef = useRef<Status>('loading');
   statusRef.current = status;
 
@@ -192,11 +201,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       networkFetches.clear();
       signedContent.clear();
       await wipeSummaries();
-      setIdentity(result.identity);
-      setToken(result.token);
-      setLastEmail(result.identity.email);
-      setEnded(null);
-      setStatus('enrolled');
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        setIdentity(result.identity);
+        setToken(result.token);
+        setLastEmail(result.identity.email);
+        setEnded(null);
+        setJustEnrolled(true);
+        setStatus('enrolled');
+      };
+      return { fingerprint: result.identity.fingerprint, finish };
     },
     [custody, queryClient],
   );
@@ -247,6 +263,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ended,
       lastEmail,
       enrol,
+      justEnrolled,
+      clearJustEnrolled,
       markUnauthorized,
       markKeyUnusable,
       retrySession,
@@ -262,6 +280,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ended,
       lastEmail,
       enrol,
+      justEnrolled,
+      clearJustEnrolled,
       markUnauthorized,
       markKeyUnusable,
       retrySession,

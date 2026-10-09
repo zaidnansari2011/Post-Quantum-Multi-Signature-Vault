@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import {
   Avatar,
   Identifier,
+  SignedText,
   Icon,
   KeyValue,
   List,
@@ -21,6 +22,7 @@ import type { ProposalDetail } from '../../api/schemas.ts';
 import { decidedLines, ruleWhenRaised, type VoteFacts } from '../../logic/quorum.ts';
 import { tamperReason } from '../../logic/evidence.ts';
 import { exactly } from '../../time.ts';
+import { TYPE_LABELS, type DecisionType, type FieldRow } from '../../logic/decisionTypes.ts';
 
 /** Who decided (§6.5 item 8): a compact list, no card. More than four collapse to three. */
 export function WhoDecided({
@@ -121,15 +123,66 @@ export function TamperPanel({ reason }: { reason: string }) {
   );
 }
 
+/**
+ * A typed decision's card (S13, §6.21): its fields as rows, in sans, then the signed text one tap
+ * away. Drawn only from `rows`, which the phone's own check returned because those fields write the
+ * signed text byte for byte: each row IS a line of what everyone signs, so nothing signed is hidden
+ * and nothing unsigned is shown (the payment card's rule, D8).
+ */
+export function TypedCard({ type, rows, text }: { type: DecisionType; rows: FieldRow[]; text: string }) {
+  const t = useTheme();
+  const s = useStyles();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={s.card}>
+      <Text role="caption" tone="muted">
+        {TYPE_LABELS[type]}
+      </Text>
+      {rows.map((row) => (
+        <View
+          key={row.label}
+          style={[s.field, t.stacked && s.fieldStacked]}
+          accessible
+          accessibilityLabel={`${row.label}, ${row.value}`}
+        >
+          <Text role="body" tone="muted" style={t.stacked ? null : s.fieldLabel}>
+            {row.label}
+          </Text>
+          <Text role="body" style={s.fieldValue}>
+            {row.value}
+          </Text>
+        </View>
+      ))}
+      <Touchable
+        onPress={() => setOpen((v) => !v)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={open ? 'Hide the signed text' : 'Show the signed text'}
+        ringRadius={8}
+        style={({ pressed }) => [s.disclosure, pressed && s.pressed]}
+      >
+        <Text role="body" tone="link" style={s.flex}>
+          {open ? 'Hide the signed text' : 'Show the signed text'}
+        </Text>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={16} color={t.color.link} />
+      </Touchable>
+      {open ? <SignedText text={text} size="decision" /> : null}
+    </View>
+  );
+}
+
 /** "Details" (§6.5 item 10): what the decision is, outside the text that is signed. */
 export function DetailsSheet({
   visible,
   onClose,
   detail,
+  type,
 }: {
   visible: boolean;
   onClose: () => void;
   detail: ProposalDetail;
+  /** The type the signed text bears out (the phone's own check); null when it is not one it knows. */
+  type?: DecisionType | null;
 }) {
   const s = useStyles();
   const inputs = detail.signing_inputs;
@@ -142,7 +195,8 @@ export function DetailsSheet({
     <Sheet visible={visible} onClose={onClose} title="Details">
       <View style={s.details}>
         <KeyValue label="Vault" value={detail.vault_name ?? `Vault ${detail.vault_id}`} />
-        <KeyValue label="Type" value={action ? 'Payment' : 'Decision'} />
+        <KeyValue label="Type" value={action ? 'Payment' : type ? TYPE_LABELS[type] : 'General'} />
+        {detail.raised_again_from ? <KeyValue label="Raised again from" value={detail.raised_again_from.title} /> : null}
         <KeyValue
           label="Rule when raised"
           value={ruleWhenRaised(inputs.policy.M, inputs.policy.N, known)}
@@ -172,9 +226,19 @@ export function DetailsSheet({
 export type MoreItem = { key: string; title: string; icon: Parameters<typeof Icon>[0]['name']; onPress: () => void };
 
 /** The overflow menu, as a sheet (§6.5 item 1). */
-export function MoreSheet({ visible, onClose, items }: { visible: boolean; onClose: () => void; items: MoreItem[] }) {
+export function MoreSheet({
+  visible,
+  onClose,
+  items,
+  title = 'This decision',
+}: {
+  visible: boolean;
+  onClose: () => void;
+  items: MoreItem[];
+  title?: string;
+}) {
   return (
-    <Sheet visible={visible} onClose={onClose} title="This decision">
+    <Sheet visible={visible} onClose={onClose} title={title}>
       <List>
         {items.map((item) => (
           <ListRow
@@ -202,4 +266,25 @@ const useStyles = makeStyles((t) => ({
   panelHead: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
   panelIcon: { marginTop: 2 },
   details: { gap: t.space[12] },
+  card: {
+    backgroundColor: t.color.surface,
+    borderWidth: 1,
+    borderColor: t.color.border,
+    borderRadius: t.radius.card,
+    padding: t.space[16],
+    gap: t.space[8],
+  },
+  field: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
+  fieldLabel: { width: 96 },
+  fieldStacked: { flexDirection: 'column', gap: t.space[2] },
+  fieldValue: { flex: 1 },
+  disclosure: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: t.space[8],
+    borderRadius: 8,
+    marginTop: t.space[4],
+  },
+  pressed: { backgroundColor: t.color.fill },
 }));

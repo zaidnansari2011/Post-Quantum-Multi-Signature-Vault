@@ -30,6 +30,9 @@ setRandomSource((byteLength) => Crypto.getRandomBytes(byteLength));
 const SEED_KEY = 'qvault.device.seed.v1';
 const TOKEN_KEY = 'qvault.device.token.v1';
 const IDENTITY_KEY = 'qvault.device.identity.v1';
+// App lock (phone-ux §6.1): optional and off by default (owner, §12 Q7). A preference, not a secret;
+// kept beside the identity so it goes when the phone is removed or set up again.
+const APP_LOCK_KEY = 'qvault.device.applock.v1';
 
 // THIS_DEVICE_ONLY so the item is excluded from iCloud Keychain and from encrypted backups. A
 // device-held signing key that could restore onto a second handset would defeat the point.
@@ -224,5 +227,20 @@ export async function forgetEverything(): Promise<void> {
     SecureStore.deleteItemAsync(SEED_KEY, OPTIONS),
     SecureStore.deleteItemAsync(TOKEN_KEY, OPTIONS),
     SecureStore.deleteItemAsync(IDENTITY_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(APP_LOCK_KEY, OPTIONS),
   ]);
+}
+
+/** Whether app lock is on (§6.1). Off unless this phone turned it on. */
+export async function loadAppLock(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(APP_LOCK_KEY, OPTIONS)) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+export async function saveAppLock(on: boolean): Promise<void> {
+  if (on) await SecureStore.setItemAsync(APP_LOCK_KEY, 'on', OPTIONS);
+  else await SecureStore.deleteItemAsync(APP_LOCK_KEY, OPTIONS);
 }

@@ -1,62 +1,63 @@
-// Everything that has been decided, not just what is waiting.
+// Activity (phone-ux §6.12): "is it done?" for your own decisions.
 //
-// The question arrives from an auditor, a colleague or the person's own memory in a meeting ("what
-// did I approve last quarter"), and an approval client that cannot answer it is a notification
-// tray rather than a record. The filter is a segmented control rather than a search field, because
-// people arrive with a category ("what got rejected?") far more often than a keyword.
-//
-// (Phone-ux §6.12 reshapes this in P3: your own decisions over 90 days, three chips, date sections.)
+// Until R4's inbox reaches the phone (P4b), this tab is one list, "Your decisions": the decisions
+// you raised, are an approver on, or voted on, from the last 90 days (src/logic/activity.ts).
+// Workspace-wide history is audit browsing, which stays on the web (D16), and the list's last row
+// says so. Three chips, All, Open and Decided ("Decided" covers approved, paid, failed, rejected,
+// expired and withdrawn); sections by when it happened; each row says what happened and when, and
+// your part. Search is a header button, never a pull-down that would fight pull to refresh.
 
 import { useState } from 'react';
-import { FlatList, View } from 'react-native';
+import { Linking, SectionList, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import {
   Banner,
+  ChipGroup,
   ColdStartHint,
   CollapsedBar,
   DecisionRow,
   DecisionRowSkeleton,
   EmptyState,
+  Field,
   GroupedItem,
   GroupedSeparator,
   List,
+  ListRow,
   RootHeader,
   Screen,
-  Segmented,
+  SectionTitle,
+  TextLink,
   ThemedRefresh,
   useCollapsingHeader,
-  type TextTone,
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
-import { ApiError } from '../api/client.ts';
+import { getApiBaseUrl } from '../config.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { allQuery, fetchedThisRun, keys } from '../queries.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
-import { decisionStatus, statusWord } from '../status.ts';
-import { deadlineWhen, parseInstant } from '../time.ts';
+import {
+  ACTIVITY_CHIPS,
+  outcomeOf,
+  sections,
+  yourDecisions,
+  yourPart,
+  type ActivityChip,
+} from '../logic/activity.ts';
 
-type Filter = 'all' | 'open' | 'approved' | 'rejected';
-
-const FILTERS: Array<{ value: Filter; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'open', label: 'Open' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Declined' },
-];
-
-const OUTCOME_TONE: Record<string, TextTone> = {
-  approved: 'success',
-  rejected: 'critical',
-  expired: 'muted',
-  open: 'muted',
+const EMPTY: Record<ActivityChip, string> = {
+  all: 'Nothing of yours in the last 90 days.',
+  open: 'Nothing of yours is open.',
+  decided: 'Nothing of yours was decided in the last 90 days.',
 };
 
 export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
   const s = useStyles();
-  const { token } = useEnrolledSession();
-  const [filter, setFilter] = useState<Filter>('all');
+  const { token, identity } = useEnrolledSession();
+  const [chip, setChip] = useState<ActivityChip>('all');
+  const [searching, setSearching] = useState(false);
+  const [search, setSearch] = useState('');
   const header = useCollapsingHeader();
 
   const query = useQuery(allQuery(token));
@@ -65,66 +66,89 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
   const confirmed = query.dataUpdatedAt > 0 && fetchedThisRun(keys.all);
   const coldStart = useColdStart(!confirmed && query.isFetching);
 
-  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
+  // A 401 is handled once, by the API client and the session, never here during render (§6.20).
 
-  // Not memoised on the data: a decision that passes its deadline while the list is cached moves
-  // from Open to Declined the next time the screen draws.
-  const all = query.data?.proposals ?? [];
-  const rows = (filter === 'all' ? [...all] : all.filter((p) => matches(p, filter))).sort(newestFirst);
-
-  const transportFailure =
-    query.error && !(query.error instanceof ApiError && query.error.status === 401)
-      ? query.error
-      : null;
+  // Worked out on each render, not memoised on the data: a decision that passes its deadline while
+  // the list is cached moves from Open to Decided the next time the screen draws.
+  const now = Date.now();
+  const rows = yourDecisions<ProposalSummary>(query.data?.proposals ?? [], identity.userId, chip, searching ? search : '', now);
+  const grouped = sections(rows, now).map((sec) => ({ title: sec.title, data: sec.rows }));
+  const failed = query.isError && query.data === undefined;
+  const webUrl = `${getApiBaseUrl()}/approvals`;
+  const searchButton = {
+    icon: (searching ? 'x' : 'search') as 'x' | 'search',
+    label: searching ? 'Close search' : 'Search your decisions',
+    onPress: () => {
+      setSearching((v) => !v);
+      setSearch('');
+    },
+  };
 
   return (
     <Screen>
       <OfflineNotice at={query.dataUpdatedAt} />
       <View style={s.flex}>
-        <CollapsedBar title="Activity" visible={header.collapsed} />
-        <FlatList
+        <CollapsedBar title="Your decisions" visible={header.collapsed} action={searchButton} />
+        <SectionList
           style={s.list}
           contentContainerStyle={s.listContent}
-          data={rows}
-          keyExtractor={(p) => p.proposal_uuid}
+          sections={grouped}
+          keyExtractor={(r) => r.item.proposal_uuid}
+          stickySectionHeadersEnabled={false}
+          keyboardShouldPersistTaps="handled"
           onScroll={header.onScroll}
           scrollEventThrottle={header.scrollEventThrottle}
-          refreshControl={
-            <ThemedRefresh refreshing={query.isRefetching} onRefresh={() => void query.refetch()} />
-          }
+          refreshControl={<ThemedRefresh refreshing={query.isRefetching && confirmed} onRefresh={() => void query.refetch()} />}
+          renderSectionHeader={({ section }) => (
+            <View style={s.section}>
+              <SectionTitle title={section.title} />
+            </View>
+          )}
           ItemSeparatorComponent={GroupedSeparator}
-          renderItem={({ item, index }) => {
-            const status = decisionStatus(item);
+          renderItem={({ item: row, index, section }) => {
+            const p = row.item;
+            const outcome = outcomeOf(p, row.status, now);
             return (
-              <GroupedItem index={index} total={rows.length}>
+              <GroupedItem index={index} total={section.data.length}>
                 <DecisionRow
-                  title={item.title}
-                  vault={item.vault_name ?? `Vault ${item.vault_id}`}
-                  approvals={item.approvals}
-                  required={item.required_m}
-                  expiresAt={item.expires_at}
+                  title={p.title}
+                  vault={p.vault_name ?? `Vault ${p.vault_id}`}
+                  amount={p.amount ?? null}
+                  approvals={p.approvals}
+                  required={p.required_m}
+                  expiresAt={p.expires_at}
                   variant="outcome"
-                  outcome={{
-                    word: statusWord(status),
-                    tone: OUTCOME_TONE[status] ?? 'muted',
-                    when: deadlineWhen(item.expires_at),
-                  }}
-                  onPress={() => onOpen(item.proposal_uuid)}
+                  outcome={{ word: outcome.text, tone: outcome.tone }}
+                  part={yourPart(p, row.status, identity.userId)}
+                  now={now}
+                  onPress={() => onOpen(p.proposal_uuid)}
                 />
               </GroupedItem>
             );
           }}
           ListHeaderComponent={
             <View style={s.head}>
-              <RootHeader
-                onLayout={header.onHeaderLayout} title="Activity" />
+              <RootHeader onLayout={header.onHeaderLayout} title="Your decisions" action={searchButton} />
               <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
-              <Segmented label="Show" options={FILTERS} value={filter} onChange={setFilter} />
-              {transportFailure ? (
+              {searching ? (
+                <Field
+                  label="Search by title or vault"
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="deployer"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  returnKeyType="search"
+                />
+              ) : null}
+              <ChipGroup label="Show" options={ACTIVITY_CHIPS} value={chip} onChange={setChip} />
+              {failed ? (
                 <Banner
                   tone="warning"
-                  title="Could not load the record."
-                  detail={transportFailure instanceof Error ? transportFailure.message : undefined}
+                  title="Can't load your decisions"
+                  detail="Check your connection. Nothing has changed on your decisions."
+                  actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
                 />
               ) : null}
             </View>
@@ -135,11 +159,29 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
                 <DecisionRowSkeleton />
                 <DecisionRowSkeleton />
                 <DecisionRowSkeleton />
-                <DecisionRowSkeleton />
               </List>
-            ) : transportFailure ? null : (
-              <EmptyState title={emptyFor(filter)} />
+            ) : failed ? null : searching && search.trim() ? (
+              <EmptyState
+                title={`No decisions match "${search.trim()}"`}
+                action={<TextLink label="Clear search" onPress={() => setSearch('')} />}
+              />
+            ) : (
+              <EmptyState title={EMPTY[chip]} />
             )
+          }
+          ListFooterComponent={
+            query.data ? (
+              <View style={s.footer}>
+                <List>
+                  <ListRow
+                    icon="external"
+                    title="Older and workspace-wide decisions are on the web"
+                    onPress={() => void Linking.openURL(webUrl).catch(() => {})}
+                    accessibilityHint="Opens Approvals on the web"
+                  />
+                </List>
+              </View>
+            ) : null
           }
         />
       </View>
@@ -147,38 +189,11 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
   );
 }
 
-/**
- * "Declined" covers rejected and expired: a decision that ran out of time did not get the consent
- * it needed, which is the same outcome from the reader's point of view.
- */
-function matches(p: ProposalSummary, filter: Filter): boolean {
-  const status = decisionStatus(p);
-  if (filter === 'rejected') return status === 'rejected' || status === 'expired';
-  return status === filter;
-}
-
-function newestFirst(a: ProposalSummary, b: ProposalSummary): number {
-  const ax = a.expires_at ? parseInstant(a.expires_at) : 0;
-  const bx = b.expires_at ? parseInstant(b.expires_at) : 0;
-  return bx - ax;
-}
-
-function emptyFor(filter: Filter): string {
-  switch (filter) {
-    case 'open':
-      return 'Nothing is open.';
-    case 'approved':
-      return 'Nothing has been approved yet.';
-    case 'rejected':
-      return 'Nothing has been declined.';
-    default:
-      return 'No decisions yet.';
-  }
-}
-
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   list: { flex: 1, backgroundColor: t.color.bg },
   listContent: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32] },
-  head: { gap: t.space[16], marginBottom: t.space[16] },
+  head: { gap: t.space[12], marginBottom: t.space[8] },
+  section: { paddingTop: t.space[16], backgroundColor: t.color.bg },
+  footer: { marginTop: t.space[24] },
 }));

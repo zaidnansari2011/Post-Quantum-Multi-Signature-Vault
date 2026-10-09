@@ -126,6 +126,8 @@ function sameTarget(target: LinkTarget, top: Situation['top']): boolean {
       return top.name === 'Decision' && top.id === target.uuid;
     case 'vault':
       return top.name === 'Vault' && top.id === target.vaultId;
+    case 'treasuryChange':
+      return top.name === 'TreasuryChange' && top.id === target.changeId;
     default:
       return false;
   }

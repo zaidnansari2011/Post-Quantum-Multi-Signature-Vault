@@ -84,6 +84,8 @@ export type ListRowProps = {
   disabled?: boolean;
   /** A key, fingerprint or hash under the title, in mono: 0/O and 1/l must never be ambiguous. */
   code?: string | null;
+  /** Decoration inside the row, before its value: Members' avatar stack (§6.14). Not tappable. */
+  accessory?: ReactNode;
 };
 
 export function ListRow({
@@ -101,6 +103,7 @@ export function ListRow({
   trailing,
   disabled,
   code,
+  accessory,
 }: ListRowProps) {
   const t = useTheme();
   const s = useStyles();
@@ -127,6 +130,7 @@ export function ListRow({
           </Text>
         ) : null}
       </View>
+      {accessory ?? null}
       {value && !stacked ? (
         <Text role="body" tone={valueTone} tabular style={s.value}>
           {value}
