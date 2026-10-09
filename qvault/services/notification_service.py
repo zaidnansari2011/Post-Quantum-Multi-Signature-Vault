@@ -42,7 +42,7 @@ from datetime import UTC, datetime, timedelta
 from flask import current_app, g, has_request_context, request
 from sqlalchemy import and_, case, func, not_, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from qvault.extensions import db
 from qvault.models.notification import CHANNELS, Notification, NotificationPreference
@@ -525,7 +525,9 @@ def send_reminders(*, now: datetime | None = None, commit: bool = True) -> int:
 
 def _remind_one(proposal, now: datetime) -> int:
     waiting = _waiting_approvers(proposal)
-    if not waiting:
+    if not waiting or eligibility.cannot_pass(proposal):
+        # Nobody left to ask, or too few to pass it: approvers are not asked to approve a decision
+        # that can no longer pass (owner decision 2026-10-09).
         return 0
     common = {"now": now, "vault_id": proposal.vault_id, "proposal_id": proposal.id}
     raised = _raised_at(proposal)
@@ -601,6 +603,8 @@ def remind_state(proposal, requester, *, now: datetime | None = None) -> RemindS
         refusal = f"This decision is {status}, so there is no one to remind."
     elif not waiting:
         refusal = "Everyone who can approve this decision has voted."
+    elif eligibility.cannot_pass(proposal):
+        refusal = "This decision can no longer pass, so nobody is asked to approve it."
     elif next_at is not None:
         offered = True
         refusal = (
@@ -728,9 +732,39 @@ def _can_approve(user_id: int):
     return Notification.vault_id.in_(sorted(eligibility.signing_vault_ids(user_id)))
 
 
+def _stalled(now: datetime, user_id: int) -> list[int]:
+    """The open decisions in the vaults where ``user_id`` may sign that can no longer pass
+    (``eligibility.cannot_pass``): they ask nobody to approve them (owner decision 2026-10-09)."""
+    vaults = sorted(eligibility.signing_vault_ids(user_id))
+    if not vaults:
+        return []
+    open_here = db.session.scalars(
+        select(Proposal)
+        .where(
+            Proposal.vault_id.in_(vaults),
+            Proposal.status == "open",
+            or_(Proposal.expires_at.is_(None), Proposal.expires_at > now),
+        )
+        # What ``cannot_pass`` reads, loaded for all of them at once: the cost of a page must
+        # not grow with the number of open decisions.
+        .options(
+            selectinload(Proposal.signatures),
+            selectinload(Proposal.lifecycle),
+            joinedload(Proposal.vault),
+        )
+    ).all()
+    return sorted(eligibility.stalled_ids(open_here))
+
+
 def _waits(now: datetime, user_id: int):
-    """The decision still waits on the recipient: what the approvals inbox calls "needs you"."""
-    return and_(_live_open(now), not_(_voted()), _can_approve(user_id))
+    """The decision still waits on the recipient: what the approvals inbox calls "needs you".
+    Not one that can no longer pass, which waits on nobody."""
+    return and_(
+        _live_open(now),
+        not_(_voted()),
+        _can_approve(user_id),
+        Notification.proposal_id.not_in(_stalled(now, user_id)),
+    )
 
 
 def _still_member():

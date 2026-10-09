@@ -297,13 +297,15 @@ CASES = {
         "You're not an approver on this decision.",
         "none",
     ),
-    "2_needs_you_even_when_it_cannot_pass": (
+    # Owner decision 2026-10-09 (it was "Needs your signature" with Approve): a decision that
+    # can't pass asks nobody to approve it; Reject stays, alone in the bar.
+    "2_cannot_pass_offers_reject_only": (
         _case({"can_still_pass": False}),
         2,
-        "Needs your signature",
+        "Can't pass",
         "warning",
-        None,
-        "sign",
+        "It can't pass any more, so it doesn't need your approval. You can still reject it.",
+        "web",
     ),
     "6_still_passable_says_waiting": (
         _case(

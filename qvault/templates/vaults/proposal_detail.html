@@ -112,14 +112,14 @@
 {% if cannot_pass %}
 {#- Too few people who can still approve it are left: it is not rejected early, since its signed
     rule says when it is, so it says why it can't pass, from the people and what stops each now
-    (eligibility.shortfall, never a list of what might have happened), and how it ends. -#}
+    (eligibility.shortfall, never a list of what might have happened), that nobody is asked to
+    approve it (owner decision 2026-10-09), and how it still ends, from the facts (ending). -#}
 {% set k = still_ids | length %}
 <div class="q-dbanner">
-{% set who_ends = 'you withdraw it' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') ~ ' withdraws it' %}
 {{ banner('warning', 'This ' ~ noun ~ ' can no longer pass',
-  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can still approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left. '
-  ~ (shortfall | join(' ')) ~ (' ' if shortfall else '') ~ 'Votes already cast still count. '
-  ~ ('It stays open until it expires ' ~ ui_absolute(proposal.expires_at) ~ ', or until ' ~ who_ends ~ '.' if proposal.expires_at else 'It stays open until ' ~ who_ends ~ '.')) }}
+  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ people(still_ids, 'and')) ~ ' could still give one. '
+  ~ (shortfall | join(' ')) ~ (' ' if shortfall else '') ~ 'So nobody is asked to approve it' ~ (', and you can still reject it' if can_vote else '') ~ '. Votes already cast still count. '
+  ~ ending) }}
 </div>
 {% endif %}
 
@@ -187,10 +187,12 @@
           approver, or under S15 whoever raised it, is not offered as one. -#}
       {%- if cannot_pass %}It needs {{ left }} more approval{{ '' if left == 1 else 's' }}.
       {%- else %}{{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(can_approve_ids) }} can approve.{% endif %}
+    {#- Counts of approvers are of the people who could vote: under S15 not whoever raised it. -#}
     {%- elif proposal.status == 'approved' %}
-      Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.
+      {%- if raiser_excluded %} Approved with {{ approvals }} of the {{ voter_ids|length }} approvers who could vote on it.
+      {%- else %} Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.{% endif %}
     {%- elif proposal.status == 'rejected' %}
-      Rejected by {{ rejections }} of the {{ proposal.required_n }} approvers, so it could no longer reach {{ proposal.required_m }} approvals.
+      Rejected by {{ rejections }} of the {{ voter_ids|length if raiser_excluded else proposal.required_n }} approvers{{ ' who could vote on it' if raiser_excluded }}, so it could no longer reach {{ proposal.required_m }} approvals.
     {%- elif proposal.status == 'withdrawn' %}
       Withdrawn by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }} with {{ approvals }} of the {{ proposal.required_m }} approvals it needed. Approvals already given no longer count.
     {%- else %}
@@ -231,13 +233,13 @@
       <li class="q-tl__i q-tl__i--you">
         <span class="q-tl__who">{{ avatar(current_user.display_name or current_user.email, 24, decorative=True) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
         <div class="q-tl__b"><p><b>You</b></p>
-          <p class="q-tl__sub">{% if approvals + 1 >= proposal.required_m %}Your approval completes this {{ noun }}.{% else %}Your approval is one of the {{ left }} still needed.{% endif %}</p></div>
+          <p class="q-tl__sub">{% if cannot_pass %}It can’t pass, so your approval isn’t asked for. You can still reject it.{% elif approvals + 1 >= proposal.required_m %}Your approval completes this {{ noun }}.{% else %}Your approval is one of the {{ left }} still needed.{% endif %}</p></div>
       </li>
       {% endif %}
       {% if others %}
       <li class="q-tl__i">
         <span class="q-tl__who">{% set other_names = [] %}{% for uid in others %}{% set _ = other_names.append(names.get(uid, 'Someone')) %}{% endfor %}{{ avatar_stack(other_names, max=(2 if other_names|length == 2 else 1), size=24) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
-        <div class="q-tl__b"><p>{% for uid in others %}<b>{{ names.get(uid, 'Someone') }}</b>{% if not loop.last %}{{ ' or ' if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %} can {{ 'also ' if can_vote or approvals else '' }}approve</p></div>
+        <div class="q-tl__b"><p>{% for uid in others %}<b>{{ names.get(uid, 'Someone') }}</b>{% if not loop.last %}{{ (' and ' if cannot_pass else ' or ') if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %} {% if cannot_pass %}{{ 'hasn’t' if others|length == 1 else 'haven’t' }} voted{% else %}can {{ 'also ' if can_vote or approvals else '' }}approve{% endif %}</p></div>
       </li>
       {% endif %}
       {% if is_payment %}
@@ -408,7 +410,7 @@
         <div><dt>Decision ID</dt><dd>{{ hash(proposal.proposal_uuid, 'decision ID') }}</dd></div>
         <div><dt>Nonce</dt><dd>{{ hash(ev.payload.nonce, 'nonce') }}</dd></div>
         <div><dt>Raised at</dt><dd>{{ ev_precise(proposal.created_at_iso) }}</dd></div>
-        <div><dt>Approval rule</dt><dd>{{ proposal.required_m }} of {{ proposal.required_n }}: {{ people(approver_ids) }}</dd></div>
+        <div><dt>Approval rule</dt><dd>{{ proposal.required_m }} of {{ proposal.required_n }}: {{ people(approver_ids) }}{% if raiser_excluded %}<span class="q-cap">The signer set it was signed with. {{ 'You' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'Whoever raised it') }} raised it and can’t approve it, so {{ voter_ids|length }} could vote.</span>{% endif %}</dd></div>
         <div><dt>Attachment</dt><dd>{% if proposal.file %}{{ proposal.file.filename }}<span class="q-cap">Encrypted with AES-256-GCM, its key wrapped by {{ proposal.file.kem_alg_id }}.</span>{% else %}None{% endif %}</dd></div>
         <div><dt>Decision payload</dt><dd>{{ '{:,}'.format(ev.payload.bytes) }} bytes, domain tag “{{ ev.payload.domain }}”<span class="q-cap">Its SHA-256 is the payload hash. Each signature covers the payload hash, not these bytes directly.</span></dd></div>
         {% if is_payment %}
@@ -507,7 +509,9 @@
   <dl class="q-plain">
     <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
     <div><dt>Type</dt><dd>{{ typed.label }}{% if typed.version %}<span class="q-cap">Its text is written from its fields.</span>{% endif %}</dd></div>
-    <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
+    {#- Under S15 the rule counts who could vote: whoever raised it is in the signed set but can't. -#}
+    {% set vn = voter_ids|length if raiser_excluded else proposal.required_n %}
+    <div><dt>Rule when raised</dt><dd>{{ 'Any ' if proposal.required_m < vn }}{{ proposal.required_m }} of {{ vn }}<span class="q-cap">{{ people(voter_ids if raiser_excluded else approver_ids)[:1]|upper }}{{ people(voter_ids if raiser_excluded else approver_ids)[1:] }}.{% if raiser_excluded %} {{ 'You' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'Whoever raised it') }} raised it, so can’t approve it.{% endif %} Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
     {% if changes_since %}
     {#- R5: the vault's rule changes since this was raised, and which of them reach it: its
         threshold and signer set are frozen, but who may sign is checked again at signing. -#}

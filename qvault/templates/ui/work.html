@@ -92,9 +92,11 @@
   <span class="q-wl__note q-wl__note--keep">{{ ui_status(row.status_key, row.status_n)[0] }}</span>
   {%- if row.my_vote == 'reject' -%}
   {%- set needed = p.required_n - p.required_m + 1 -%}
-  <span class="q-wl__note">You rejected. It’s rejected only if {{ needed }} of {{ p.required_n }} reject.</span>
+  {#- Of the people who can vote on it: under S15 whoever raised it is in its signed N but can't. -#}
+  {%- set voters = row.voters if row.voters is defined else p.required_n -%}
+  <span class="q-wl__note">You rejected. It’s rejected only if {{ needed }} of {{ voters }}{{ ' who can vote' if voters != p.required_n }} reject.</span>
   {%- elif row.can_still_pass is false -%}
-  {#- The status word already says Can’t pass (or Needs your signature, for someone who can still sign it). -#}
+  {#- The status word already says Can’t pass: since 2026-10-09 it asks nobody to sign it. -#}
   <span class="q-wl__note">Too few approvers left</span>
   {%- else -%}
   {%- set others = row.can_still_approve | reject('equalto', 'You') | list -%}

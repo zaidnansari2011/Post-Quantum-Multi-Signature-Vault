@@ -292,6 +292,18 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
     return done(8, waiting, "You can't sign this from here.", NONE);
   }
 
+  // Row 2, can't pass (owner decision 2026-10-09): too few people can still approve it, so it asks
+  // nobody to approve it and the server takes no approval of it. Reject stays, as on the web; the
+  // 'web' bar is Reject with no Approve beside it.
+  if (d.can_still_pass === false) {
+    return done(
+      2,
+      CANNOT_PASS,
+      "It can't pass any more, so it doesn't need your approval. You can still reject it.",
+      { kind: 'web', line: "It can't pass, so it takes no more approvals.", fix: false },
+    );
+  }
+
   // Row 7: a payment whose treasury holds a different key for this person.
   if (d.is_payment && seat && seat.kind !== 'this_device') {
     if (seat.kind === 'password') {

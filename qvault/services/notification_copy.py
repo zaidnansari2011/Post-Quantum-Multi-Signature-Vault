@@ -255,6 +255,11 @@ def _outcome(notification, proposal, now: datetime) -> str:
     status = effective_status(proposal, now=now)
     if status in ("approved", "rejected", "expired", "withdrawn"):
         return f"{status.capitalize()} without your vote."
+    from qvault.services import eligibility
+
+    if notification.recipient_id in eligibility.eligible_ids(proposal):
+        # Still theirs to vote on, but it can no longer pass (owner decision 2026-10-09).
+        return "It can no longer pass, so it doesn’t need your approval. You can still reject it."
     return "You can no longer approve it."
 
 
