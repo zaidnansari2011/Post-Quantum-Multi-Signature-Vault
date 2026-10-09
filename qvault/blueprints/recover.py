@@ -167,7 +167,7 @@ def cancel(request_uuid: str):
             flash(
                 "Recovery cancelled. Your Recovery Kit no longer works, because someone else had "
                 "it: make a new one on the Security page.",
-                "persist",
+                "warning",
             )
         else:
             flash(
@@ -294,6 +294,6 @@ def later():
     flash(
         "No Recovery Kit for now. Make one on the Security page: without it, a forgotten "
         "password can't give you back this signing key.",
-        "persist",
+        "warning",
     )
     return redirect(url_for("core.index"))
