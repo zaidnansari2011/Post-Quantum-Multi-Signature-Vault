@@ -8,7 +8,7 @@
 
 {# One page for every state of an invitation link, signed in or out. ``state`` is one of:
    unknown, accepted, revoked, expired, void (the inviter can no longer invite), wrong_account,
-   already_member, ready, sign_in, sign_up. #}
+   already_member, has_workspace (one workspace per person, for now), ready, sign_in, sign_up. #}
 {% macro details() %}
 <section class="q-panel" aria-label="The invitation">
   <dl class="q-kv">
@@ -62,10 +62,18 @@
     {{ details() }}
 
     {% if state == 'ready' %}
+      {% if leaving %}
+      <p class="q-auth__p">Joining takes you out of {{ leaving.name }}, which has nothing in it yet. Q-Vault shows one workspace per person for now.</p>
+      {% endif %}
       <form method="post" action="{{ url_for('workspace.accept', token=token) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {{ button('Accept and join', 'primary', type='submit', block=True) }}
       </form>
+
+    {% elif state == 'has_workspace' %}
+      {% set has_title %}You already belong to {{ leaving.name }}, which has vaults or other members.{% endset %}
+      {% set has_body %}Q-Vault doesn't support belonging to two workspaces yet, so this account can't join {{ invitation.workspace.name }}. Ask {{ invitation.inviter.display_name }} to invite another address of yours for now. This invitation stays open.{% endset %}
+      {{ banner('warning', has_title, has_body) }}
 
     {% elif state == 'already_member' %}
       <p class="q-auth__p">You're already a member of {{ invitation.workspace.name }}.</p>

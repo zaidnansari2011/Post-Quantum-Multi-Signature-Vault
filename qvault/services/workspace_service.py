@@ -335,6 +335,44 @@ def join_shared_workspace(user: User) -> WorkspaceMember:
     return member
 
 
+def memberships_of(user: User | int) -> list[WorkspaceMember]:
+    """Every workspace this person belongs to, in the order they joined, whatever the status."""
+    user_id = user if isinstance(user, int) else user.id
+    return (
+        WorkspaceMember.query.filter_by(user_id=user_id)
+        .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
+        .all()
+    )
+
+
+def join_shared_workspace_from(user: User, *, commit: bool = True) -> Workspace | None:
+    """The operator path for an account that already exists (``scripts/seed_team.py`` with
+    ``--adopt-existing``): put it in the shared workspace, one workspace per person.
+
+    Someone who signed up has a workspace of their own. If it is vacant they leave it, logged
+    (``make_room_to_join``); if not, this refuses with ``WorkspaceError`` and changes nothing.
+    Returns the workspace they left, or None. Joining is not logged, as in
+    ``join_shared_workspace``.
+    """
+    shared = shared_workspace()
+    if shared is not None and membership(shared, user) is not None:
+        return None
+    if shared is None:
+        shared = _create_workspace(DEFAULT_WORKSPACE_NAME, DEFAULT_WORKSPACE_SLUG)
+    left = make_room_to_join(
+        user, shared, ask="Leave it, or adopt this account into the team some other way."
+    )
+    owners = WorkspaceMember.query.filter_by(workspace_id=shared.id, role="owner").count()
+    db.session.add(
+        WorkspaceMember(
+            workspace_id=shared.id, user_id=user.id, role="member" if owners else "owner"
+        )
+    )
+    if commit:
+        db.session.commit()
+    return left
+
+
 def _slug_for(name: str) -> str:
     """A slug no workspace has, and never the shared workspace's, even before it exists."""
     base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:56] or "workspace"
@@ -581,6 +619,92 @@ def inviter_still_entitled(invitation: Invitation, inviter_member: WorkspaceMemb
     return can_manage(inviter_member) and _RANK[inviter_member.role] >= _RANK[invitation.role]
 
 
+def is_vacant_for(workspace: Workspace, user: User | int) -> bool:
+    """Whether ``user`` could leave ``workspace`` with nothing lost: they are its only member,
+    they belong to no vault anywhere (so they own none), and it has no open invitation."""
+    user_id = user if isinstance(user, int) else user.id
+    others = db.session.scalar(
+        select(func.count(WorkspaceMember.id)).where(
+            WorkspaceMember.workspace_id == workspace.id, WorkspaceMember.user_id != user_id
+        )
+    )
+    if others:
+        return False
+    in_a_vault = (
+        db.session.scalar(select(VaultMember.id).where(VaultMember.user_id == user_id).limit(1))
+        is not None
+        or db.session.scalar(select(Vault.id).where(Vault.owner_id == user_id).limit(1)) is not None
+    )
+    if in_a_vault:
+        return False
+    open_invitation = db.session.scalar(
+        select(Invitation.id)
+        .where(
+            Invitation.workspace_id == workspace.id,
+            Invitation.accepted_at.is_(None),
+            Invitation.revoked_at.is_(None),
+        )
+        .limit(1)
+    )
+    return open_invitation is None
+
+
+def workspace_to_leave(user: User, joining: Workspace) -> tuple[WorkspaceMember, bool] | None:
+    """The membership joining ``joining`` would end, and whether it can end with nothing lost;
+    None when the person belongs to no other workspace (see ``make_room_to_join``)."""
+    others = (
+        WorkspaceMember.query.filter(
+            WorkspaceMember.user_id == user.id, WorkspaceMember.workspace_id != joining.id
+        )
+        .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
+        .all()
+    )
+    if not others:
+        return None
+    return others[0], len(others) == 1 and is_vacant_for(others[0].workspace, user)
+
+
+def make_room_to_join(user: User, joining: Workspace, *, ask: str) -> Workspace | None:
+    """One workspace per person, for now (R6 review, item 4). Before ``user`` joins ``joining``,
+    take them out of the workspace they already have, if leaving it loses nothing.
+
+    Until vaults store their workspace (R10) the product shows each person one workspace, their
+    earliest, so someone who signed up (and so owns a workspace) and then accepted an invitation
+    used to land back in their own empty workspace and never see the one they joined. Now:
+
+    - no other membership: nothing to do;
+    - one other workspace that is vacant (``is_vacant_for``): the membership is removed and that
+      is logged (``workspace_member_left`` with ``moved_to``). The workspace row is kept, empty:
+      its own ledger events name its id, and a deleted row's id could be handed to a new
+      workspace, which would then be shown the old one's history;
+    - anything else is refused, naming the workspace, and nothing is changed. ``ask`` finishes
+      the sentence: who to ask, and for what.
+
+    Returns the workspace left, or None. The caller commits (or rolls back on a refusal).
+    """
+    found = workspace_to_leave(user, joining)
+    if found is None:
+        return None
+    member, vacant = found
+    current = member.workspace
+    if not vacant:
+        raise WorkspaceError(
+            "has_workspace",
+            f"You already belong to {current.name}, which has vaults or other members. Q-Vault "
+            f"doesn't support belonging to two workspaces yet, so you can't join "
+            f"{joining.name} from this account. {ask}",
+        )
+    role = member.role
+    db.session.delete(member)
+    _log(
+        "workspace_member_left",
+        current,
+        user.id,
+        {"user_id": user.id, "role": role, "moved_to": joining.id},
+    )
+    return current
+
+
 def _accept(invitation: Invitation, user: User) -> WorkspaceMember:
     from qvault.services import vault_service  # vault_service imports this module
 
@@ -593,6 +717,18 @@ def _accept(invitation: Invitation, user: User) -> WorkspaceMember:
         )
     if membership(workspace, user) is not None:
         raise InvitationError("already_member", f"You're already a member of {workspace.name}.")
+    inviter = (
+        invitation.inviter.display_name if invitation.inviter else "the person who invited you"
+    )
+    try:
+        make_room_to_join(
+            user,
+            workspace,
+            ask=f"Ask {inviter} to invite another address of yours for now. This invitation "
+            "stays open.",
+        )
+    except WorkspaceError as exc:
+        raise InvitationError(exc.code, exc.message) from exc
 
     now = _now()
     member = WorkspaceMember(
