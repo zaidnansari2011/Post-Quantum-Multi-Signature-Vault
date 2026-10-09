@@ -2,9 +2,11 @@
 
 Four doors take a password from anyone: sign-in (``POST /login``), the two sign-ups
 (``POST /register`` and ``POST /invite/<token>/register``), and the phone's pairing endpoints
-(``POST /api/v1/devices/challenge`` and ``POST /api/v1/devices``). Each POST counts against a
-bucket for the client's address over a sliding window; past the limit the request is refused with
-429 and ``Retry-After`` before the view runs, so a refused guess costs no Argon2id work either.
+(``POST /api/v1/devices/challenge`` and ``POST /api/v1/devices``). A fifth takes a Recovery Kit
+code (``POST /recover``, and Cancel on its status page: plan R9, 10 an hour). Each POST counts
+against a bucket for the client's address over a sliding window; past the limit the request is
+refused with 429 and ``Retry-After`` before the view runs, so a refused guess costs no Argon2id
+work either.
 
 **Per process.** The counts live in this process's memory (``app.extensions``), which is right for
 the deployment as it is: one container, one gunicorn worker (the Dockerfile explains why). With
@@ -53,6 +55,9 @@ ENDPOINT_BUCKETS = {
     "workspace.register": "sign_up",
     "api.request_challenge": "pair",
     "api.enrol_device": "pair",
+    # Account recovery (plan R9, design §4.6): the kit's entry form and the status page's Cancel.
+    "recover.kit": "recover",
+    "recover.status_cancel": "recover",
 }
 
 #: (attempts, window in seconds) per bucket, per client address. RATE_LIMIT_SIGNUP_PER_HOUR sets
@@ -61,6 +66,7 @@ DEFAULT_LIMITS = {
     "sign_in": (20, 10 * 60),
     "sign_up": (10, 60 * 60),
     "pair": (20, 10 * 60),
+    "recover": (10, 60 * 60),
 }
 
 #: Addresses remembered per bucket before the least recently counted is dropped.

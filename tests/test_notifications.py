@@ -819,6 +819,8 @@ def test_every_notification_links_to_a_page_on_this_site_and_carries_nothing_tha
             "path",
             "actionable",
             "security",
+            # Whether it speaks of a recovery still open, so it cannot be archived (plan R9).
+            "locked",
             "unread",
             "created_at",
             "read_at",

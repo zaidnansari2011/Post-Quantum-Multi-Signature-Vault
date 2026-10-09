@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from qvault.security.text import visible
 from qvault.services.notification_copy import _path, when
@@ -52,6 +52,17 @@ PUSH_KINDS = (
     "payout_failed",
     "device_enrolled",
     "password_changed",
+    "recovery_waiting",
+    "recovery_cancelled",
+    "recovery_completed",
+    "recovery_kit_changed",
+)
+#: Account recovery (plan R9): security events, pushed and emailed whatever the switches say.
+RECOVERY_KINDS = (
+    "recovery_waiting",
+    "recovery_cancelled",
+    "recovery_completed",
+    "recovery_kit_changed",
 )
 #: Outcomes are pushed only to the person who raised the decision ("unless they complete something
 #: you raised"); everyone else hears of them in the inbox and by email.
@@ -65,7 +76,7 @@ PUSH_GROUPS = (
         "Updates",
         ("decision_approved", "decision_rejected", "payout_paid", "payout_failed"),
     ),
-    ("security", "Security", ("device_enrolled", "password_changed")),
+    ("security", "Security", ("device_enrolled", "password_changed", *RECOVERY_KINDS)),
 )
 _CHANNEL = {kind: group for group, _label, kinds in PUSH_GROUPS for kind in kinds}
 
@@ -186,7 +197,42 @@ def push_for(
             "Your Q-Vault password was changed. If this wasn't you, tell your workspace owner now.",
             {"type": "activity", **extra},
         )
+    if kind in RECOVERY_KINDS:
+        title, body = _recovery_push(kind, stored)
+        return copy(title, body, {"type": "activity", **extra})
     return None
+
+
+def _subject_name(stored: dict, limit: int) -> str:
+    """The account a recovery notice is about, quoted as a label (F1)."""
+    from qvault.extensions import db
+    from qvault.models.user import User
+
+    subject_id = stored.get("subject_id")
+    subject = db.session.get(User, subject_id) if isinstance(subject_id, int) else None
+    return _who(subject, limit) or "a person you work with"
+
+
+def _recovery_push(kind: str, stored: dict) -> tuple[str, str]:
+    """A recovery push: what happened, to whose account, and that Cancel is in Q-Vault. Never the
+    code, never a password, and no button that acts."""
+    me = stored.get("as") == "self"
+    whose = "your account" if me else f"the account of {_subject_name(stored, _PUSH_NAME)}"
+    if kind == "recovery_waiting":
+        return (
+            "Account recovery under way",
+            f"Someone is recovering {whose}. If it isn't them, open Q-Vault and cancel it.",
+        )
+    if kind == "recovery_cancelled":
+        return "Account recovery stopped", f"The recovery of {whose} was stopped. Nothing changed."
+    if kind == "recovery_completed":
+        return "Account recovered", f"The recovery of {whose} took effect."
+    if stored.get("change") == "paused":
+        return (
+            "Recovery Kit paused",
+            f"Too many wrong Recovery Kit codes were typed for {whose}. It is paused for 24 hours.",
+        )
+    return "Recovery Kit changed", "Your Recovery Kit changed. Open Q-Vault to see what happened."
 
 
 # -- email -------------------------------------------------------------------------------------
@@ -406,6 +452,8 @@ def email_for(
             "This is a security alert, which can't be switched off.",
             preferences=False,
         )
+    if kind in RECOVERY_KINDS:
+        return _recovery_email(kind, stored, now)
     if kind == "password_changed":
         return EmailCopy(
             "Your Q-Vault password was changed",
@@ -421,6 +469,118 @@ def email_for(
             preferences=False,
         )
     return None
+
+
+def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
+    """A recovery email. The subject names nobody; the account is a quoted fact (F1). It never
+    carries the code, a password, or a link that cancels: Cancel is on Home, behind sign-in."""
+    me = stored.get("as") == "self"
+    security = "This is a security alert, which can't be switched off."
+    account = (("Account", _subject_name(stored, _EMAIL_NAME)),) if not me else ()
+    home = _path("core.index")
+    mine = _path("account.security")
+    if kind == "recovery_waiting":
+        due = _moment(stored.get("completes_at"))
+        takes = (("Takes effect", when(due, now=now)),) if due is not None else ()
+        if me:
+            return EmailCopy(
+                "Someone is recovering your Q-Vault account",
+                "Someone is recovering your account",
+                (
+                    "Someone used your Recovery Kit and chose a new password for your Q-Vault "
+                    "account. Unless it is cancelled, it takes effect after a 72-hour wait.",
+                    "If this wasn't you, sign in to Q-Vault: using your password cancels it. "
+                    "You can also cancel it on Home.",
+                ),
+                "Open Q-Vault",
+                home,
+                security,
+                preferences=False,
+                facts=takes,
+            )
+        return EmailCopy(
+            "An account you work with is being recovered on Q-Vault",
+            "An account is being recovered",
+            (
+                "Someone used the Recovery Kit of a person you work with and chose a new "
+                "password. Unless someone cancels it, it takes effect after a 72-hour wait and "
+                "gives them that person's signing key, including any place on a treasury.",
+                "If they didn't start it, sign in to Q-Vault and cancel it on Home.",
+            ),
+            "Open Q-Vault",
+            home,
+            "You are an admin of their workspace or approve in one of their vaults. " + security,
+            preferences=False,
+            facts=account + takes,
+        )
+    whose = "your account" if me else "an account you watch over"
+    if kind == "recovery_cancelled":
+        return EmailCopy(
+            "A Q-Vault account recovery was stopped",
+            "An account recovery was stopped",
+            (
+                f"The recovery of {whose} was stopped before it took effect. Nothing about the "
+                "account changed.",
+                "Sign in to Q-Vault to see who stopped it."
+                + (" If you didn't start it, make a new Recovery Kit." if me else ""),
+            ),
+            "Open Q-Vault",
+            mine if me else home,
+            security,
+            preferences=False,
+            facts=account,
+        )
+    if kind == "recovery_completed":
+        line = (
+            "The recovery of your account took effect: your new password works now, and every "
+            "other sign-in was ended. Make a new Recovery Kit, because this one was used up."
+            if me
+            else "The recovery of an account you watch over took effect: its signing key now "
+            "opens with a new password. If you don't think it was them, call them on a number "
+            "you already have."
+        )
+        return EmailCopy(
+            "A Q-Vault account recovery took effect",
+            "An account was recovered",
+            (line,),
+            "Open Q-Vault",
+            mine if me else home,
+            security,
+            preferences=False,
+            facts=account,
+        )
+    change = stored.get("change")
+    if change == "paused":
+        line = (
+            f"Someone typed too many wrong Recovery Kit codes for {whose}. Nobody can use that "
+            "kit for 24 hours."
+        )
+    elif change == "stale":
+        line = "Your Recovery Kit stopped working. Make a new one on the Security page."
+    elif change == "regenerated":
+        line = "You made a new Recovery Kit. Your earlier kit no longer works."
+    else:
+        line = "You made a Recovery Kit. Keep it where you keep your passport."
+    return EmailCopy(
+        "Your Q-Vault Recovery Kit changed" if me else "A Q-Vault Recovery Kit was paused",
+        "Recovery Kit",
+        (line,),
+        "Open Q-Vault",
+        mine if me else home,
+        security,
+        preferences=False,
+        facts=account,
+    )
+
+
+def _moment(text: object) -> datetime | None:
+    if not isinstance(text, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
 
 
 INVITATION_SUBJECT = "You're invited to a workspace on Q-Vault"

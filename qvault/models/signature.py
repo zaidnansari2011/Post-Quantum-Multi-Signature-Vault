@@ -56,7 +56,9 @@ class Signature(db.Model):
         ADR-0004 documents, and the limitation ADR-0016 exists to close.
 
         Derived rather than stored. ``Key.wrap_domain`` is write-once (set at construction, never
-        mutated) and ``verify_signature`` already treats the Key row as load-bearing — it refuses
+        mutated, with one exception: a recovery turns a ``'password'`` key nobody can open any more
+        into ``'lost'`` (plan R9, design §4.3), which leaves this answer ``'server'`` as it was)
+        and ``verify_signature`` already treats the Key row as load-bearing — it refuses
         any signature whose ``public_key``/``alg_id`` disagree with it — so reading one more
         write-once column from that same row adds no new trust and keeps one source of truth. It
         also needs no schema change, which matters: this project creates tables with

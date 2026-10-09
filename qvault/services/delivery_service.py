@@ -72,10 +72,31 @@ INVITATION_EMAILS_PER_WORKSPACE = 50
 INVITATION_EMAILS_PER_ADDRESS = 3
 
 #: Security events: their pushes still reach a phone removed after they were queued (F5).
-_SECURITY = ("device_enrolled", "password_changed")
+_SECURITY = (
+    "device_enrolled",
+    "password_changed",
+    "recovery_waiting",
+    "recovery_cancelled",
+    "recovery_completed",
+    "recovery_kit_changed",
+)
 #: What a delivery keeps of its notification's facts: only what the email and push copy read,
 #: never a rejection's reason, an amount or an address (F8).
-_COPY_FACTS = ("by_name", "asked", "stage", "role", "change")
+_COPY_FACTS = (
+    "by_name",
+    "asked",
+    "stage",
+    "role",
+    "change",
+    # Account recovery (R9): whose account, for whose eyes, and when; never a code or password.
+    "subject_id",
+    "as",
+    "completes_at",
+    "until",
+    "by_role",
+    "kit_burned",
+    "failed",
+)
 
 #: The AES-GCM associated data for an invitation token held in the outbox: its own domain, so no
 #: other wrapped secret can be passed off as one.

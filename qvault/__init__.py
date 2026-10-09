@@ -105,8 +105,27 @@ def create_app(config_name: str | None = None) -> Flask:
     @login_manager.user_loader
     def load_user(user_id: str):
         from .models.user import User
+        from .services import recovery_service
 
-        return db.session.get(User, int(user_id))
+        user = db.session.get(User, int(user_id))
+        # A session signed in before the person's credential epoch was bumped (a completed
+        # recovery, a password change) is signed out here, on its next request (plan R9).
+        if user is not None and not recovery_service.session_is_current(user.id):
+            return None
+        return user
+
+    from flask_login import user_logged_in
+
+    def _stamp_credential_epoch(sender, user, **extra):
+        from .services import recovery_service
+
+        recovery_service.stamp_session(user.id)
+
+    # Blinker holds receivers weakly: without a strong reference this closure would be collected
+    # and sign-ins would stop being stamped, locking everyone out after their first password
+    # change. The app holds it, so it lives exactly as long as the app.
+    app.extensions["credential_epoch_stamp"] = _stamp_credential_epoch
+    user_logged_in.connect(_stamp_credential_epoch, app)
 
     # The component macros' helpers: the status vocabulary, times, hashes (templates/ui/).
     from . import ui
@@ -237,6 +256,15 @@ def create_app(config_name: str | None = None) -> Flask:
         g.glassbox = glassbox.open_operation(
             request.endpoint or request.path, kind="request", actor=_glassbox_actor()
         )
+
+    # Any proof of the current password cancels an open recovery (plan R9, ⚑5). The cancel is made
+    # in the request's own transaction; this makes it again, in one of its own, after a view that
+    # rolled back or never committed (a sign-in commits nothing).
+    @app.teardown_request
+    def _settle_recovery_password_proofs(exc):
+        from .services import recovery_service
+
+        recovery_service.settle_password_proofs(exc)
 
     @app.teardown_request
     def _close_glassbox_operation(exc):

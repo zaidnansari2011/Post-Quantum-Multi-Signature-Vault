@@ -84,6 +84,10 @@ def generate_signing_key(
 ) -> Key:
     """Generate a signing keypair for ``user`` under the current default algorithm (or
     ``alg_id`` if given) and persist it with the private key wrapped at rest.
+
+    If the person has a Recovery Kit, the new key's kit copy is added in the same transaction
+    (``recovery_kit.on_new_key``), so a reissue, an algorithm switch or a rotation never leaves the
+    kit holding yesterday's key (plan R9, design §5.1).
     """
     registry = _registry()
     if alg_id is None:
@@ -112,6 +116,10 @@ def generate_signing_key(
         rotate_after=rotation_deadline(),
     )
     db.session.add(key)
+    db.session.flush()  # the kit copy's AAD names the key's id
+    from qvault.services import recovery_kit
+
+    recovery_kit.on_new_key(user, key, keypair.secret_key)
     if commit:
         db.session.commit()
     return key
@@ -162,12 +170,17 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
                 glassbox.Opaque(secret_key, why="the secret this whole system exists to protect"),
             )
             password_attempts.record(user.id, ok=True)
-            return secret_key
     except InvalidTag as exc:
         password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: could not unlock the signing key") from exc
     finally:
         del kek
+    # The password was just proven: any open recovery of this account is cancelled, and its kit
+    # burned (plan R9, ⚑5). This covers votes, approvals, a password change and a new kit.
+    from qvault.services import recovery_service
+
+    recovery_service.password_proven(user, via="signing")
+    return secret_key
 
 
 def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
@@ -274,10 +287,17 @@ def retired_signing_keys(user: User) -> list[Key]:
     on record with ``can_verify=True`` and ``can_sign=False``.
 
     Password-custodied only, for the same reason as ``active_signing_key``: this feeds the
-    account page's "previous keys" list, which is about keys the user themselves held.
+    account page's "previous keys" list, which is about keys the user themselves held. That
+    includes ``wrap_domain='lost'``: a password key a recovery could not carry over, which nobody
+    can open any more but whose signatures still verify (plan R9, design §4.3).
     """
     return (
-        Key.query.filter_by(owner_id=user.id, role="sig", status="retired", wrap_domain="password")
+        Key.query.filter(
+            Key.owner_id == user.id,
+            Key.role == "sig",
+            Key.status == "retired",
+            Key.wrap_domain.in_(("password", "lost")),
+        )
         .order_by(Key.retired_at.desc(), Key.id.desc())
         .all()
     )
@@ -323,10 +343,9 @@ def change_password(
 
     The KEK salt is rotated as well, so the new KEK shares no derivation input with the old one.
 
-    Known limitation: this does not invalidate sessions established with the old password. The
-    session cookie carries no key material — signing re-derives the KEK from a freshly typed
-    password every time — so an old session cannot sign with the new password, but it does remain
-    logged in.
+    It signs out every other web session (plan R9): the credential epoch is bumped, and the
+    session that made the change, if there is one, is re-stamped so it stays signed in. Any open
+    recovery of the account is cancelled, because the password was just proven (⚑5).
     """
     _guard_password(user)
     if not verify_password(user.password_hash, current_password):
@@ -358,6 +377,9 @@ def change_password(
 
     user.kek_salt = new_salt_bytes
     user.password_hash = hash_password(new_password)
+    from qvault.services import recovery_service
+
+    recovery_service.stamp_session(user.id, recovery_service.bump_epoch(user.id))
 
     entry = ledger_service.append(
         "password_changed",
@@ -393,6 +415,9 @@ def reissue_signing_key(
         password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: cannot re-issue the signing key")
     password_attempts.record(user.id, ok=True)
+    from qvault.services import recovery_kit, recovery_service
+
+    recovery_service.password_proven(user, via="key_replaced")
 
     old = active_signing_key(user)
     new = generate_signing_key(user, password, alg_id=alg_id, commit=False)
@@ -402,6 +427,8 @@ def reissue_signing_key(
         old.status = "retired"
         old.can_sign = False
         old.retired_at = datetime.now(UTC)  # can_verify stays True: retire-but-retain
+    # The kit keeps the new key (added above) and any key a treasury seat names, not the rest.
+    recovery_kit.forget_unneeded_wraps(user)
 
     ledger_service.append(
         "key_reissued",
@@ -410,6 +437,8 @@ def reissue_signing_key(
             "old_key_id": old.id if old is not None else None,
             "new_key_id": new.id,
             "alg_id": new.alg_id,
+            # Additive (plan R9, design §4.4): a verifier can follow a person's key lineage.
+            "public_key_sha256": sha256_hex(new.public_key),
         },
         actor=f"user:{user.id}",
         actor_id=user.id,
