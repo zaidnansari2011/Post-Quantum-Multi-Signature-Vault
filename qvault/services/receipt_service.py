@@ -30,7 +30,7 @@ import json
 from time import perf_counter
 
 from flask import current_app
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
@@ -95,6 +95,12 @@ def _roots_around(seq: int) -> tuple[str | None, str | None]:
     return before, merkle_root(leaves[: seq + 1]).hex()
 
 
+def _entries_after(seq: int) -> int:
+    """Entries in the log after the one at ``seq``: its size now, less ``seq + 1``."""
+    size = db.session.scalar(select(func.count()).select_from(LedgerEntry)) or 0
+    return max(size - (seq + 1), 0)
+
+
 def for_signature(sig: Signature) -> dict | None:
     """Assemble the receipt for ``sig``, or ``None`` if it cannot be built.
 
@@ -146,7 +152,12 @@ def for_signature(sig: Signature) -> dict | None:
         "ledger_timestamp": entry.timestamp if entry is not None else None,
         "root_before": root_before,
         "root_after": root_after,
+        # The tree as it stood with this entry as its newest: what ``root_after`` is the root of.
         "tree_size": (entry.seq + 1) if entry is not None else None,
+        # How many entries joined the log after this one, by now. Not ``tree_size``, which counts
+        # this entry and those before it (staging smoke test 2026-10-09: "16 entries after yours"
+        # was printed for entry #15 of 16).
+        "entries_after": _entries_after(entry.seq) if entry is not None else None,
         "status": proposal.status,
     }
 
