@@ -138,11 +138,6 @@ p.q-panel__bd { margin: 0; }
   background: var(--surface); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted);
 }
 .q-logstrip__dot { flex: none; width: 8px; height: 8px; margin-top: 4px; border-radius: var(--radius-full); background: var(--status-success-fg); }
-/* On a phone the facts wrap, so the pill becomes a card and the facts start beside the dot. */
-@media (max-width: 560px) {
-  .q-logstrip { border-radius: var(--radius-card); }
-  .q-logstrip__l { justify-content: flex-start; }
-}
 .q-logstrip--warn .q-logstrip__dot { background: var(--status-warning-fg); }
 .q-logstrip--bad .q-logstrip__dot { background: var(--status-critical-fg); }
 .q-logstrip__l { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-2) var(--space-8); margin: 0; padding: 0; list-style: none; text-align: left; }
@@ -150,6 +145,12 @@ p.q-panel__bd { margin: 0; }
 .q-logstrip a strong { color: inherit; }
 .q-logstrip strong { color: var(--text); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .q-logstrip time { font-variant-numeric: tabular-nums; }
+/* On a phone the facts would wrap mid-line, so the pill becomes a card with one fact per line. */
+@media (max-width: 560px) {
+  .q-logstrip { border-radius: var(--radius-card); }
+  .q-logstrip__l { flex-direction: column; align-items: flex-start; }
+  .q-logstrip__l > li + li::before { content: none; }
+}
 
 /* The product, as it is: a real screenshot in the reader's theme. */
 .q-shot { margin: 0 auto; max-width: 768px; display: grid; gap: var(--space-8); justify-items: center; }
