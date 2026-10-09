@@ -31,6 +31,28 @@ def _seqs(page):
     return {e.seq for e in page.items}
 
 
+def test_system_events_recorded_against_a_vault_stay_with_its_members(app, two_tenants):
+    """An expiry is recorded by the system, not a person, against the vault: it belongs to that
+    vault's members, not to everyone who can read the system's own events."""
+    from datetime import UTC, datetime, timedelta
+
+    from qvault.services import approval_service
+
+    ada, stranger, treasury, _theirs = two_tenants
+    due = datetime.now(UTC) + timedelta(days=1)
+    lapsed = proposal_service.create_proposal(treasury, ada, "Lapses", "x", deadline=due)
+    assert approval_service.refresh_expiry(lapsed, now=due + timedelta(minutes=1))
+    entry = LedgerEntry.query.filter_by(event_type="proposal_expired").one()
+    assert entry.actor == "SYSTEM" and entry.vault_id == treasury.id
+
+    assert entry.id not in [e.id for e in audit_service.search(stranger, Filters()).items]
+    assert entry.id in [e.id for e in audit_service.search(ada, Filters()).items]
+    # The system's own events, recorded against no vault, are still everyone's.
+    genesis = LedgerEntry.query.filter_by(actor="SYSTEM", vault_id=None).first()
+    assert genesis is not None
+    assert genesis.id in [e.id for e in audit_service.search(stranger, Filters(per_page=200)).items]
+
+
 def test_the_scope_hides_another_tenants_entries(app, two_tenants):
     ada, _, treasury, theirs = two_tenants
     page = audit_service.search(ada, Filters(per_page=200))
