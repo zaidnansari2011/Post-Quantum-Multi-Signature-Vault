@@ -33,7 +33,6 @@ OUR_CSS = [
         "evidence.css",
         "screens.css",
         "notifications.css",
-        "qvault.css",
         "utilities.css",
     )
 ]
@@ -379,6 +378,16 @@ def _our_css_without_tokens() -> list[pathlib.Path]:
 def test_our_stylesheets_exist():
     missing = [p.name for p in OUR_CSS if not p.is_file()]
     assert not missing, f"missing stylesheets: {missing}"
+
+
+def test_the_compatibility_layer_is_gone_and_the_page_links_only_our_stylesheets():
+    """qvault.css mapped the old unprefixed classes onto the tokens until the last screen moved
+    onto the components (R5). It must not come back, and base.html links nothing else."""
+    assert not (STATIC / "qvault.css").exists()
+    base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    linked = re.findall(r"filename='([^']+\.css)'", base)
+    ours = {p.name for p in OUR_CSS}
+    assert linked and all(name in ours or name.startswith("vendor/") for name in linked), linked
 
 
 NAMED_COLOUR = re.compile(

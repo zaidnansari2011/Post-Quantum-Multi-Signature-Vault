@@ -48,7 +48,7 @@ from qvault.models.notification import CHANNELS, Notification, NotificationPrefe
 from qvault.models.proposal import Proposal
 from qvault.models.signature import Signature
 from qvault.models.vault import SIGNER_ROLES, VaultMember
-from qvault.services import notification_copy
+from qvault.services import eligibility, notification_copy
 
 #: Requests: they ask the recipient to approve, and live in Needs you while that is still possible.
 NEEDS_YOU_KINDS = ("decision_raised", "decision_reminder", "decision_due_soon")
@@ -56,6 +56,8 @@ UPDATE_KINDS = (
     "decision_approved",
     "decision_rejected",
     "decision_expired",
+    "decision_withdrawn",
+    "decision_mentioned",
     "payout_paid",
     "payout_failed",
     "vault_member_added",
@@ -203,9 +205,10 @@ def _current_signers(vault_id: int) -> set[int]:
 
 
 def _eligible_approvers(proposal) -> set[int]:
-    """Who can approve it: in its frozen signer set and still an approver of the vault, not the
-    person who raised it. The same test the approvals inbox uses for "needs you"."""
-    return (_snapshot(proposal) & _current_signers(proposal.vault_id)) - {proposal.creator_id}
+    """Who can approve it: whoever the vote gate would let sign it (``eligibility``: in its frozen
+    signer set, an approver of the vault now, in good standing in its workspace), not the person
+    who raised it. The same test the approvals inbox uses for "needs you"."""
+    return eligibility.eligible_ids(proposal) - {proposal.creator_id}
 
 
 def _voters(proposal) -> set[int]:
@@ -282,6 +285,47 @@ def decision_closed(
         )
 
 
+def decision_withdrawn(proposal, *, actor_id: int, now: datetime | None = None) -> None:
+    """Withdrawn by whoever raised it (plan S16): the approvers it asked, and anyone who voted,
+    hear it has ended, so nobody goes looking for something to sign. Only those who can still
+    open it (in the vault, and not suspended from its workspace); not the person who withdrew it.
+    """
+    from qvault.services.discussion_service import reader_ids  # it imports this module
+
+    with _best_effort("decision withdrawn"):
+        asked = _snapshot(proposal) & _current_signers(proposal.vault_id)
+        _send(
+            "decision_withdrawn",
+            ((asked | _voters(proposal)) - {actor_id}) & reader_ids(proposal),
+            key=f"decision_withdrawn:{proposal.proposal_uuid}",
+            now=now or _utcnow(),
+            vault_id=proposal.vault_id,
+            proposal_id=proposal.id,
+            actor_id=actor_id,
+        )
+
+
+def mentioned(comment, recipients: Iterable[int], *, entry, now: datetime | None = None) -> None:
+    """Someone mentioned in a decision's discussion hears who mentioned them, and where.
+
+    ``recipients`` are the people the comment named who can open the decision now
+    (``discussion_service.reader_ids``), never anyone else. The notification links to the
+    discussion and does not quote the comment, so deleting it later leaves nothing behind here.
+    ``entry`` is the comment's ledger entry, which names this comment apart from any other."""
+    with _best_effort("mentioned"):
+        proposal = comment.proposal
+        _send(
+            "decision_mentioned",
+            set(recipients) - {comment.author_id},
+            key=f"decision_mentioned:{entry.seq}",
+            now=now or _utcnow(),
+            vault_id=proposal.vault_id,
+            proposal_id=proposal.id,
+            actor_id=comment.author_id,
+            data={"comment_id": comment.id},
+        )
+
+
 def payout_finished(execution, *, now: datetime | None = None) -> None:
     """A payment carried out, or ended without being paid: the requester and its approvers hear,
     and when it was not paid, so does the vault's owner, who looks after the treasury. Only those
@@ -352,6 +396,23 @@ def threshold_changed(
                 "to": vault.policy.threshold_m,
                 "n": len(_current_signers(vault.id)),
             },
+        )
+
+
+def requester_rule_changed(
+    vault, *, allowed: bool, actor_id: int, entry, now: datetime | None = None
+) -> None:
+    """Plan S15 changed: everyone in the vault but whoever changed it hears whether the person who
+    raises a decision can now approve it. Turning it off reaches decisions already open."""
+    with _best_effort("requester rule changed"):
+        _send(
+            "vault_rule_changed",
+            _members(vault.id) - {actor_id},
+            key=f"vault_rule_changed:requester:{entry.seq}",
+            now=now or _utcnow(),
+            vault_id=vault.id,
+            actor_id=actor_id,
+            data={"change": "requester", "from": not allowed, "to": allowed},
         )
 
 
@@ -644,21 +705,15 @@ def _voted():
     )
 
 
-def _can_approve():
-    return (
-        select(VaultMember.id)
-        .where(
-            VaultMember.vault_id == Notification.vault_id,
-            VaultMember.user_id == Notification.recipient_id,
-            VaultMember.member_role.in_(SIGNER_ROLES),
-        )
-        .exists()
-    )
+def _can_approve(user_id: int):
+    """The notification's vault is one where the recipient may sign now. Every query here is for
+    one recipient, so the vaults are worked out once, by the rule the vote gate applies."""
+    return Notification.vault_id.in_(sorted(eligibility.signing_vault_ids(user_id)))
 
 
-def _waits(now: datetime):
+def _waits(now: datetime, user_id: int):
     """The decision still waits on the recipient: what the approvals inbox calls "needs you"."""
-    return and_(_live_open(now), not_(_voted()), _can_approve())
+    return and_(_live_open(now), not_(_voted()), _can_approve(user_id))
 
 
 def _still_member():
@@ -679,18 +734,21 @@ def _still_member():
     return or_(Notification.vault_id.is_(None), member)
 
 
-def _in_section(section: str, now: datetime):
-    """Which notifications are in ``section``. Every section, and so every count and page built on
-    one, leaves out those about a vault the recipient has left (``_still_member``)."""
-    return and_(_still_member(), _section_condition(section, now))
+def _in_section(section: str, now: datetime, user_id: int):
+    """Which of ``user_id``'s notifications are in ``section``. Every section, and so every count
+    and page built on one, leaves out those about a vault the recipient has left
+    (``_still_member``)."""
+    return and_(_still_member(), _section_condition(section, now, user_id))
 
 
-def _section_condition(section: str, now: datetime):
+def _section_condition(section: str, now: datetime, user_id: int):
     unarchived = Notification.archived_at.is_(None)
     if section == "needs_you":
-        return and_(unarchived, Notification.kind.in_(NEEDS_YOU_KINDS), _waits(now))
+        return and_(unarchived, Notification.kind.in_(NEEDS_YOU_KINDS), _waits(now, user_id))
     if section == "updates":
-        unanswered = and_(Notification.kind == "decision_raised", not_(_waits(now)), not_(_voted()))
+        unanswered = and_(
+            Notification.kind == "decision_raised", not_(_waits(now, user_id)), not_(_voted())
+        )
         return and_(unarchived, or_(Notification.kind.in_(UPDATE_KINDS), unanswered))
     if section == "archived":
         return Notification.archived_at.is_not(None)
@@ -722,10 +780,10 @@ def inbox(
     now = now or _utcnow()
     page = max(1, min(MAX_PAGE, page))
     per_page = max(1, min(MAX_PER_PAGE, per_page))
-    condition = and_(Notification.recipient_id == user.id, _in_section(section, now))
+    condition = and_(Notification.recipient_id == user.id, _in_section(section, now, user.id))
     total = db.session.scalar(select(func.count()).select_from(Notification).where(condition))
     rows = db.session.execute(
-        select(Notification, _waits(now).label("waits"))
+        select(Notification, _waits(now, user.id).label("waits"))
         .where(condition)
         .options(
             # Everything the copy reads, loaded for the whole page at once rather than one
@@ -764,8 +822,8 @@ def unread_counts(user, *, now: datetime | None = None) -> dict[str, int]:
     now = now or _utcnow()
     needs_you, updates = db.session.execute(
         select(
-            func.coalesce(func.sum(case((_in_section("needs_you", now), 1), else_=0)), 0),
-            func.coalesce(func.sum(case((_in_section("updates", now), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((_in_section("needs_you", now, user.id), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((_in_section("updates", now, user.id), 1), else_=0)), 0),
         )
         .select_from(Notification)
         .where(Notification.recipient_id == user.id, Notification.read_at.is_(None))
@@ -816,7 +874,11 @@ def _own(user, notification_id: int) -> Notification | None:
 
 def view(notification, *, now: datetime | None = None) -> dict:
     now = now or _utcnow()
-    waits = bool(db.session.scalar(select(_waits(now)).where(Notification.id == notification.id)))
+    waits = bool(
+        db.session.scalar(
+            select(_waits(now, notification.recipient_id)).where(Notification.id == notification.id)
+        )
+    )
     return _view(notification, waits=waits, now=now)
 
 
@@ -885,7 +947,7 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
     now = now or _utcnow()
     condition = and_(Notification.recipient_id == user.id, Notification.read_at.is_(None))
     if section is not None:
-        condition = and_(condition, _in_section(section, now))
+        condition = and_(condition, _in_section(section, now, user.id))
     ids = db.session.scalars(select(Notification.id).where(condition)).all()
     if ids:
         db.session.execute(

@@ -16,12 +16,18 @@ from qvault.chain import action as chain_action
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.file import VaultFile
-from qvault.models.proposal import Proposal
+from qvault.models.proposal import DecisionFields, Proposal, ProposalLifecycle
 from qvault.models.treasury import ProposalAction, Treasury
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault
-from qvault.services import file_crypto_service, ledger_service, notification_service
-from qvault.services.signing import proposal_signing_bytes
+from qvault.services import (
+    decision_types,
+    eligibility,
+    file_crypto_service,
+    ledger_service,
+    notification_service,
+)
+from qvault.services.signing import format_wei, proposal_signing_bytes
 from qvault.ui import first_name
 
 
@@ -37,6 +43,15 @@ class NotAllowedToPropose(ProposalError):
     """
 
 
+class FieldsRefused(ProposalError):
+    """A typed decision's fields write no text (plan S13), with the field to mark on the form
+    (None for the fields as a whole)."""
+
+    def __init__(self, field: str | None, text: str):
+        super().__init__(text)
+        self.field = field
+
+
 #: Why a viewer is refused. One sentence for the service and the API, whose ``error`` the phone
 #: shows as it stands.
 NOT_A_PROPOSER = "Only this vault's owner and approvers can raise a decision."
@@ -49,8 +64,76 @@ def may_propose(vault: Vault, user) -> bool:
     nothing either. The same roles as the signer set (``SIGNER_ROLES``), so a role that comes to
     count towards a threshold can raise decisions without a second list to update.
     """
+    return why_cannot_propose(vault, user) is None
+
+
+def why_cannot_propose(vault: Vault, user) -> str | None:
+    """Why ``user`` may not raise a decision in ``vault``, or None when they may.
+
+    Their vault role first (``may_propose``), then their standing in the vault's workspace: a
+    suspended member or an auditor raises nothing, as they sign nothing (``signing_standing``).
+    """
+    from qvault.services.workspace_service import signing_standing
+
     member = vault.member_for(user.id)
-    return member is not None and member.member_role in SIGNER_ROLES
+    if member is None or member.member_role not in SIGNER_ROLES:
+        return NOT_A_PROPOSER
+    standing = signing_standing(vault, user.id)
+    if standing is not None:
+        return f"You can't raise a decision here: {standing}."
+    return None
+
+
+#: Plan S16: the decisions "Raise again" starts from. An approved one is done, an open one can
+#: be withdrawn first; a payment that was approved and then not paid is left to R5's later steps.
+RAISE_AGAIN_FROM = ("withdrawn", "rejected", "expired")
+
+
+def raise_again_source(vault: Vault, proposal_uuid: str | None) -> Proposal:
+    """The closed decision in ``vault`` that a new one replaces, or a refusal a person can act on.
+
+    Signatures bind the content, so a decision is never edited in place: it is withdrawn (or
+    rejected, or it expired) and raised again as a new decision that links back to it. Only the
+    vault's own decisions qualify, so the link never names a decision the reader cannot open.
+    """
+    from qvault.services.inbox_service import effective_status
+
+    source = None
+    if isinstance(proposal_uuid, str) and proposal_uuid:
+        source = Proposal.query.filter_by(vault_id=vault.id, proposal_uuid=proposal_uuid).first()
+    if source is None:
+        raise ProposalError("The decision to raise again isn't in this vault.")
+    if effective_status(source) not in RAISE_AGAIN_FROM:
+        raise ProposalError("Only a withdrawn, rejected or expired decision can be raised again.")
+    return source
+
+
+def raise_again_prefill(source: Proposal) -> dict:
+    """What New decision starts with when raising ``source`` again. Nothing signed is reused: the
+    new decision gets a new id, nonce, signer set, rule and deadline when it is raised."""
+    action = source.action
+    if action is None:
+        # A typed decision starts from its fields, but only fields that write its signed text:
+        # otherwise it is raised again from the signed text, as a General decision.
+        view = decision_types.typed_view(source)
+        if view.type in decision_types.STORED_TYPES:
+            return {"kind": view.type, "title": source.title, "fields": dict(view.fields)}
+        return {"kind": "general", "title": source.title, "action_text": source.action_text}
+    value = action.value_wei
+    amount = None
+    if isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 78:
+        amount = format_wei(int(value)).removesuffix(" ETH")
+    return {"kind": "payment", "title": source.title, "to": action.to_address, "amount": amount}
+
+
+def raised_again_as(source: Proposal) -> list[Proposal]:
+    """The decisions raised again from ``source``, oldest first: its forward links."""
+    return (
+        Proposal.query.join(ProposalLifecycle, ProposalLifecycle.proposal_id == Proposal.id)
+        .filter(ProposalLifecycle.raised_again_from_id == source.id)
+        .order_by(Proposal.id.asc())
+        .all()
+    )
 
 
 @dataclass(frozen=True)
@@ -64,6 +147,16 @@ class PaymentRequest:
 
     to: str
     value_wei: int
+
+
+@dataclass(frozen=True)
+class TypedRequest:
+    """A Production access or Contract decision: its type and the fields a person filled in
+    (plan S13). The decision's text is written from the fields (``decision_types``), and the
+    fields are stored beside it, unsigned."""
+
+    decision_type: str
+    fields: dict
 
 
 # --- Deliberate tamper demonstration (dev/demo only) -------------------------------------------
@@ -118,6 +211,8 @@ def create_proposal(
     file_bytes: bytes | None = None,
     filename: str | None = None,
     payment: PaymentRequest | None = None,
+    typed: TypedRequest | None = None,
+    raised_again_from: str | None = None,
     commit: bool = True,
 ) -> Proposal:
     """Create a proposal in ``vault``. If ``file_bytes`` is given, it is encrypted at rest and
@@ -132,10 +227,21 @@ def create_proposal(
     ``creator`` must be the vault's owner or one of its signers (:func:`may_propose`). Checked
     here because every path to a decision comes through this function: the routes check first
     only so they can refuse before reading a request.
+
+    With ``typed``, the proposal is a Production access or Contract decision (plan S13):
+    ``action_text`` must be empty, because the text is written from the fields
+    (``decision_types.decision_text``), and the canonical fields are stored beside it, unsigned. A
+    refusal of the fields is :class:`FieldsRefused`, naming the field.
+
+    ``raised_again_from`` is the id (uuid) of a closed decision in this vault that this one
+    replaces (plan S16, :func:`raise_again_source`). It is recorded beside the decision, never in
+    what is signed.
     """
-    if not may_propose(vault, creator):
+    refusal = why_cannot_propose(vault, creator)
+    if refusal is not None:
         # First, before anything is encrypted, hashed or written.
-        raise NotAllowedToPropose(NOT_A_PROPOSER)
+        raise NotAllowedToPropose(refusal)
+    source = raise_again_source(vault, raised_again_from) if raised_again_from else None
     # Normalised once, before hashing: the signed text must be exactly the stored text. Hashing
     # the submitted text and storing it stripped made any proposal with surrounding whitespace
     # (a browser textarea's trailing newline) fail its own binding check the moment it existed.
@@ -149,6 +255,13 @@ def create_proposal(
             f"This vault's policy requires {required_m} signatures but only {required_n} "
             "eligible signer(s) exist. Add more signer members first."
         )
+    # Plan S15, frozen with the decision (``eligibility``): whether its requester may approve it.
+    requester_can_approve = eligibility.vault_allows_requester(vault)
+    # Refused when too few people could approve it now (S15, suspended approvers, auditors): it
+    # would be born unable to pass (``eligibility.cannot_raise``).
+    refusal = eligibility.cannot_raise(vault, creator.id)
+    if refusal is not None:
+        raise ProposalError(refusal)
 
     now = datetime.now(UTC)
     action = None
@@ -158,6 +271,12 @@ def create_proposal(
             vault, payment, required_m, required_n, action_text, now, deadline
         )
         action_text = action.describe()
+    typed_fields = None
+    if typed is not None:
+        if payment is not None:
+            raise ProposalError("A payment's fields are its payment; it has no other type.")
+        typed_fields = _typed_fields(typed, action_text, now)
+        action_text = decision_types.decision_text(typed.decision_type, typed_fields)
 
     proposal_uuid = str(uuid.uuid4())
     nonce = os.urandom(16)
@@ -203,6 +322,18 @@ def create_proposal(
     )
     db.session.add(proposal)
     db.session.flush()  # assign proposal.id
+    proposal.lifecycle = ProposalLifecycle(
+        requester_can_approve=requester_can_approve,
+        raised_again_from_id=source.id if source is not None else None,
+    )
+
+    if typed_fields is not None:
+        # In the type's order, as normalised: what the decision page and the phone read back.
+        proposal.typed = DecisionFields(
+            decision_type=typed.decision_type,
+            template_version=decision_types.TEMPLATE_VERSION,
+            fields_json=json.dumps(typed_fields, ensure_ascii=False),
+        )
 
     if action is not None:
         signed = action.canonical()
@@ -278,6 +409,25 @@ def create_proposal(
     return proposal
 
 
+def _typed_fields(typed: TypedRequest, action_text: str, now: datetime) -> dict:
+    """The canonical fields for a typed decision, or a refusal a person can act on."""
+    if typed.decision_type not in decision_types.STORED_TYPES:
+        raise ProposalError("Choose General, Payment, Production access or Contract.")
+    label = decision_types.LABELS[typed.decision_type].lower()
+    if action_text:
+        raise ProposalError(
+            f"A {label} decision's text is written from its fields; leave the text empty."
+        )
+    try:
+        fields = decision_types.normalise(typed.decision_type, typed.fields)
+    except decision_types.FieldsError as exc:
+        raise FieldsRefused(exc.field, str(exc)) from None
+    if typed.decision_type == "access" and not decision_types.until_in_future(fields, now):
+        # Access that has already ended grants nothing; raised again, it needs a new end.
+        raise FieldsRefused("until", "Choose an end time in the future.")
+    return fields
+
+
 def _payment_action(vault, payment, required_m, required_n, action_text, now, deadline):
     """The signed action for a payment decision, or a refusal a person can act on."""
     if not current_app.config.get("ONCHAIN_EXECUTION_ENABLED"):
@@ -340,9 +490,13 @@ def who_approves(vault: Vault, user) -> dict:
 
     The approvers are the vault's signer set as ``create_proposal`` snapshots it, so the preview
     names exactly the people whose approvals will count. ``asked`` is who the R4 notification asks
-    when it is raised (every eligible approver but the requester). Nothing here claims separation
-    of duties: until S15 (R5) the person raising a decision who is an approver can approve it too,
-    and the preview says so.
+    when it is raised (every eligible approver but the requester).
+
+    ``separation`` is plan S15: the person raising it can't approve it, so they leave ``names``
+    and ``people`` (the rule reads "Any 2 of Brij and Chen") and the preview says so. ``names``
+    are the people who could approve it now (``eligibility.able_to_approve``): an approver
+    suspended from the workspace, or an auditor there, is left out. ``impossible`` is a threshold
+    they can't reach, and ``why`` says why after "It can't pass:"; raising is then refused.
     """
     ids = vault.signer_ids()
     people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()} if ids else {}
@@ -351,7 +505,10 @@ def who_approves(vault: Vault, user) -> dict:
         person = people.get(uid)
         return first_name(person.display_name or person.email) if person else "Someone"
 
-    others = [uid for uid in ids if uid != user.id]
+    separation = not eligibility.vault_allows_requester(vault)
+    able = eligibility.able_to_approve(vault, user.id)
+    others = [uid for uid in ids if uid != user.id and uid in able]
+    why = eligibility.why_cannot_pass_if_raised(vault, user.id)
     return {
         "m": vault.policy.threshold_m,
         "n": len(ids),
@@ -361,9 +518,12 @@ def who_approves(vault: Vault, user) -> dict:
                 "full": people[uid].display_name if uid in people else "",
                 "you": uid == user.id,
             }
-            for uid in sorted(ids, key=lambda i: (i == user.id, name(i)))
+            for uid in sorted(able, key=lambda i: (i == user.id, name(i)))
         ],
-        "names": [name(uid) for uid in others] + (["you"] if user.id in ids else []),
+        "names": [name(uid) for uid in others] + (["you"] if user.id in able else []),
         "includes_you": user.id in ids,
+        "separation": separation,
+        "impossible": why is not None,
+        "why": why,
         "asked": [name(uid) for uid in others],
     }

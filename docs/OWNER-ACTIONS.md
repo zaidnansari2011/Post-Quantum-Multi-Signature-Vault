@@ -620,6 +620,98 @@ History of this database, for the record:
 held a lock `drop_all` waited on — SQLite never shows it), and the image workflow did not rebuild
 when only `scripts/` changed, though the image ships `scripts/`. Both fixed (`68a4ab7`, `6923a39`).
 
+### 2.10 Pin the live witness key when the rework goes live — `TODO` (added 2026-10-08)
+
+*Why it's yours:* it is a setting on the live deployment, and the value has to be one you checked
+against the witness yourself, not one I wrote into the repo the log ships from (§2.5).
+
+From the SaaS rework on (owner decision 2026-10-08), Q-Vault can pin the witness key with
+`WITNESS_KEY_FINGERPRINT`. Set, a co-signature from any other key is refused, not stored, and
+**Audit → Transparency** says *Key mismatch*; unset, it accepts any key as today and shows admins
+*Key not pinned*. It is the same 16-character value `python -m qvault.verify --expect-witness`
+takes. Details: `witness/README.md`, "Pin its key".
+
+*What to do at the switch to the rework branch:*
+
+1. Read the live witness's ML-DSA-87 fingerprint off the witness itself. Its startup line in the
+   `qvault-witness` container log reads `witness 'witness-1' — ML-DSA-87, fingerprint …`
+   (Portal → `qvault-witness` → Log stream, or
+   `az containerapp logs show -n qvault-witness -g rg-qvault --subscription 4e995e2f… --tail 200`),
+   and its root page shows `key fingerprint …`. On 2026-10-04 it was `810fb51e5e2f75a8` (§2.5);
+   if it is anything else now, stop and find out why before pinning.
+2. Set it on the app and let it restart:
+
+   ```powershell
+   az containerapp update -n qvault -g rg-qvault --subscription 4e995e2f-... --set-env-vars WITNESS_KEY_FINGERPRINT=810fb51e5e2f75a8
+   ```
+
+3. Open **Audit → Transparency** as an admin: the witness card should say *Key pinned* with that
+   value, and the next checkpoint should still be co-signed within a minute. *Key mismatch* means
+   the value is wrong or something else answers at `WITNESS_URL`: remove the setting
+   (`--remove-env-vars WITNESS_KEY_FINGERPRINT`) to go back to accepting any key while you look.
+
+**Trap: the old revision comes back.** `az containerapp update` creates a new revision, and on
+this app the previous one has re-activated beside it before, so half the requests still run without
+the setting. Right after the update, list the revisions and deactivate every old one that is still
+active:
+
+```powershell
+az containerapp revision list -n qvault -g rg-qvault --subscription 4e995e2f-... -o table
+az containerapp revision deactivate -n qvault -g rg-qvault --subscription 4e995e2f-... --revision <old revision name>
+```
+
+If the witness is ever given a new key on purpose, change this setting to the new fingerprint at
+the same time; nothing re-pins it automatically, by design.
+
+*Your effort:* two or three commands and one look at a page.
+
+### 2.11 Rework R8: an email account with Resend — `DONE` 2026-10-09 (domain `mail.zaidansari.tech` verified; key in `q-vault-rework/.env.rework`)
+
+*Why it's yours:* a third-party account in your name, and DNS records on your domain.
+
+Decided 2026-10-09: invitation and notification emails go through **Resend** (free tier, 3,000
+emails a month). Until the key exists, R8 is built and tested against a local stand-in, so nothing
+waits on this except the first real email.
+
+1. Sign up at <https://resend.com> (GitHub sign-in is fine).
+2. **Domains → Add domain** → `mail.zaidansari.tech` (a subdomain, so the main domain's mail is
+   untouched), region closest to India.
+3. Resend lists 3–4 records (an MX and a TXT for SPF on `send.mail…`, a TXT `resend._domainkey…`
+   for DKIM, optionally DMARC). In **Cloudflare → zaidansari.tech → DNS**, add each exactly as shown
+   (TXT and MX records are never proxied). Back in Resend press **Verify**; it usually turns green
+   within minutes.
+4. **API Keys → Create** → name `qvault-rework`, permission **Sending access**, domain
+   `mail.zaidansari.tech`. Copy it once (it starts `re_`).
+5. Save it in a new file `C:\Users\Zaid\Documents\4th year project\q-vault-rework\.env.rework`
+   (git ignores `.env.*`) as two lines:
+   `RESEND_API_KEY=re_...` and `MAIL_FROM=Q-Vault <notifications@mail.zaidansari.tech>`.
+   Never paste the key into chat or a commit. At the switch it becomes a Container App secret.
+
+*Your effort:* ~10 minutes, mostly waiting for DNS.
+
+### 2.12 Rework R8: push notifications with Firebase (Android) — `DONE` 2026-10-09 (project `qvault-90763`; FCM V1 key assigned to `com.qvault.approvals` in Expo)
+
+*Why it's yours:* a Google account's Firebase project and the Expo account's credentials.
+
+Decided 2026-10-09: Android push through Firebase Cloud Messaging, set up before the rework APK
+(phone-ux §12 Q3). iOS is out of scope.
+
+1. <https://console.firebase.google.com> → **Add project** → `qvault` (Google Analytics off).
+2. **Add app → Android** → package name **`com.qvault.approvals`** (must match `mobile/app.json`)
+   → Register → **download `google-services.json`**. Skip the SDK steps.
+3. **Project settings → Service accounts → Generate new private key**: a JSON file. This one is a
+   secret.
+4. Put both files in `C:\Users\Zaid\Documents\4th year project\secrets\` (outside every
+   repository; create the folder).
+5. Give the service-account key to Expo: <https://expo.dev> → project **qvault** (owner `zaid7864`)
+   → **Credentials → Android → com.qvault.approvals → FCM V1 service account key → Upload** the
+   file from step 3. This is not a build and changes nothing on phones.
+
+I wire `expo-notifications` and `google-services.json` into the rework's config; it reaches phones
+with the rework APK you build at the end (§2.3).
+
+*Your effort:* ~15 minutes.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
@@ -930,4 +1022,6 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-09-17 | Added §2.8: on-chain execution on Sepolia. Keys received, relayer wallet generated, funding outstanding. |
 | 2026-09-17 | §2.8: Phases 1–2 committed; the Phase 3 broadcast was blocked by the session's permission system and needs your approval (command recorded). |
 | 2026-09-27 | Added §2.9: the system rebuilt on a teammate's Azure subscription (`rg-qvault`, Central India), `project4.zaidansari.tech` kept; new fingerprints to republish; master key to back up; old deployment to delete. |
+| 2026-10-08 | Added §2.10: pin the live witness key (`WITNESS_KEY_FINGERPRINT`) at the switch to the rework. |
 | 2026-10-08 | Added §3.4: the rework's accessibility checks only a person can make (NVDA on Windows, TalkBack on the phone). |
+| 2026-10-09 | Added §2.11 (Resend email) and §2.12 (Firebase push) for rework R8, after the owner chose both. |

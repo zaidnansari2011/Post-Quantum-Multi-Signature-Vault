@@ -9,7 +9,7 @@
 
 import { parseInstant } from './time.ts';
 
-export type DecisionStatus = 'open' | 'approved' | 'rejected' | 'expired';
+export type DecisionStatus = 'open' | 'approved' | 'rejected' | 'expired' | 'withdrawn';
 
 /** The fields the state is worked out from; a list row and a decision's detail both carry them. */
 export type StatusFacts = {
@@ -55,6 +55,9 @@ export function statusWord(status: string): string {
       return 'Rejected';
     case 'expired':
       return 'Expired';
+    // R5 (plan S16): withdrawn by the person who raised it.
+    case 'withdrawn':
+      return 'Withdrawn';
     case 'open':
       return 'Open';
     default:

@@ -6,12 +6,15 @@ A proposal moves through a small, auditable state machine:
       │
       ├──(rejections make M unreachable)───────► REJECTED
       │
-      └──(deadline passes while still open)────► EXPIRED
+      ├──(deadline passes while still open)────► EXPIRED
+      │
+      └──(its requester withdraws it)──────────► WITHDRAWN  (plan S16, ``withdraw``)
 
 Every vote is a real post-quantum signature (ML-DSA / SLH-DSA) over ``vote_signing_bytes``,
 verified before it is stored and again for display, and anchored into the hash-chained ledger.
-Authorisation uses the proposal's *frozen* signer snapshot, so changing vault membership after
-creation can neither add nor remove eligible voters for an in-flight proposal.
+Authorisation needs the proposal's *frozen* signer snapshot, so changing vault membership after
+creation can never add a voter to an in-flight proposal, AND a current approver role in the vault,
+so demoting or removing someone stops them signing anything further (``_authorize_vote``).
 """
 
 from __future__ import annotations
@@ -21,19 +24,44 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from flask import current_app
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from qvault import glassbox
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
+from qvault.models.proposal import Proposal, ProposalLifecycle
 from qvault.models.signature import Signature
-from qvault.services import execution_service, key_service, ledger_service, notification_service
+from qvault.models.vault import SIGNER_ROLES, VaultMember, VaultRule
+from qvault.models.workspace import WorkspaceMember
+from qvault.services import (
+    eligibility,
+    execution_service,
+    inbox_service,
+    key_service,
+    ledger_service,
+    notification_service,
+    workspace_service,
+)
 from qvault.services.signing import payment_text, signing_bytes_for, vote_signing_bytes
 
 
 class ApprovalError(ValueError):
     """Raised when a vote cannot be cast (closed proposal, not a signer, already voted, ...)."""
+
+
+#: Plan S16: a rejection says why. The reason is shown beside the vote and is not signed (S9).
+REASON_REQUIRED = "Add a reason for rejecting, so the person who raised it knows what to change."
+REASON_MAX = 255
+#: A reason sent as something other than text (the device API's JSON can carry anything).
+REASON_NOT_TEXT = "Keep the reason to plain text; nothing was recorded."
+
+#: Plan S15's refusal. The API maps "you raised this" to the code ``own_decision``.
+OWN_DECISION = (
+    "You raised this decision, and in this vault the person who raises a decision can't approve "
+    "or reject it."
+)
 
 
 @dataclass(frozen=True)
@@ -360,15 +388,48 @@ def finalize_stalled(*, commit: bool = True) -> int:
     return decided
 
 
-def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
+def is_current_approver(vault_id: int, user_id: int) -> bool:
+    """Whether ``user_id`` is an approver (owner or signer) of the vault right now.
+
+    Read from the database rather than from ``vault.members``, so a relationship loaded earlier in
+    the request cannot answer for a role that has since changed.
+    """
+    role = db.session.scalar(
+        select(VaultMember.member_role).where(
+            VaultMember.vault_id == vault_id, VaultMember.user_id == user_id
+        )
+    )
+    return role in SIGNER_ROLES
+
+
+def _authorize_vote(
+    proposal, signer, decision: str, *, commit: bool, reason: str | None = None
+) -> None:
     """The governance gate every vote passes, whoever held the key.
 
-    The order is observable and must not change: the decision whitelist first (so an invalid
-    decision can never reach the signed bytes), then the durable expiry refresh (so a
-    stale-but-open proposal cannot be voted on), then the status gate, then authorisation against
-    the **frozen** signer snapshot rather than current vault membership, and finally the advisory
-    duplicate check — advisory because ``uq_signature_signer`` is the authority and a concurrent
-    vote may not be visible here yet.
+    The order is observable and must not change:
+
+    1. the decision whitelist (so an invalid decision can never reach the signed bytes);
+    2. the durable expiry refresh (so a stale-but-open proposal cannot be voted on);
+    3. the status gate;
+    4. the **frozen** signer snapshot: someone made an approver after the decision was raised was
+       not one of the people it asked, so they cannot sign it;
+    5. the vault's approvers **now** (owner decision 2026-10-08): the snapshot is necessary but
+       not sufficient, so someone demoted to viewer or removed since it was raised cannot sign
+       it either. Votes they cast while they were an approver keep counting;
+    6. their standing in the vault's workspace: an active member, and not an auditor
+       (``workspace_service.signing_standing``). A suspended member signs nothing;
+    7. separation of duties (plan S15): the person who raised it cannot approve or reject it when
+       the rule it was raised under, or the vault's rule now, says so
+       (``eligibility.requester_may_approve``);
+    8. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
+       and a concurrent vote may not be visible here yet;
+    9. a rejection carries a reason (plan S16), text of at most ``REASON_MAX`` characters. Not
+       signed: ``vote_signing_bytes`` is unchanged (S9).
+
+    Every check here comes before a password is tried or a signature is verified. Steps 5 to 7
+    are read again, fresh, when the vote is written (``_still_entitled``), since a password check
+    or a treasury's nonce takes seconds.
     """
     if decision not in ("approve", "reject"):
         raise ApprovalError("Decision must be 'approve' or 'reject'.")
@@ -380,8 +441,28 @@ def _authorize_vote(proposal, signer, decision: str, *, commit: bool) -> None:
 
     if signer.id not in _authorized_ids(proposal):
         raise ApprovalError("You are not an authorised signer for this proposal.")
+    if not is_current_approver(proposal.vault_id, signer.id):
+        # Worded to keep the API's "not_a_signer" code: it is the same refusal to the client.
+        raise ApprovalError(
+            "You are not an authorised signer for this proposal any more: you are no longer an "
+            "approver of this vault."
+        )
+    standing = workspace_service.signing_standing(proposal.vault, signer.id)
+    if standing is not None:
+        raise ApprovalError(
+            f"You are not an authorised signer for this proposal any more: {standing}."
+        )
+    if signer.id == proposal.creator_id and not eligibility.requester_may_approve(proposal):
+        raise ApprovalError(OWN_DECISION)
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
+    if reason is not None and not isinstance(reason, str):
+        raise ApprovalError(REASON_NOT_TEXT)
+    note = (reason or "").strip()
+    if decision == "reject" and not note:
+        raise ApprovalError(REASON_REQUIRED)
+    if len(note) > REASON_MAX:
+        raise ApprovalError(f"Keep the reason to {REASON_MAX} characters; nothing was recorded.")
 
 
 def _require_device_signing_key(signer, key) -> None:
@@ -509,6 +590,16 @@ def _record_vote(
         entry["execution_signature_sha256"] = sha256_hex(execution[1])
 
     try:
+        # Hold the decision open while this vote is written. The gate read "open" earlier, but a
+        # withdrawal (or another vote deciding it) can commit in between: this conditional write
+        # takes the row's lock on PostgreSQL and re-reads its status, so a vote never lands on a
+        # decision that closed after the gate looked, and a withdrawal waiting on this lock then
+        # finds the decision decided, or open with this vote in it. SQLite serialises writers.
+        _hold_open(proposal)
+        # And still theirs to sign: a demotion, suspension or separation-of-duties switch can
+        # commit while a password is checked or a treasury's nonce is read (seconds).
+        _still_entitled(proposal, signer)
+        #
         # Everything from the first row added to the session up to flush() is inside this mapped
         # block, because that is where a race with a concurrently-committed vote by the same signer
         # (one vote_of() could not see) surfaces — and not only at flush(): any query in between,
@@ -571,6 +662,163 @@ def _record_vote(
     return sig
 
 
+def _hold_open(proposal) -> None:
+    """Refuse, with nothing written, unless the decision is still open in the database."""
+    held = db.session.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id, Proposal.status == "open")
+        .values(status=Proposal.status)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if held != 1:
+        db.session.rollback()
+        db.session.refresh(proposal)
+        raise ApprovalError(f"This proposal is {proposal.status}; no further votes can be cast.")
+
+
+def _still_entitled(proposal, signer) -> None:
+    """Gate steps 5 to 7 again, read fresh, after ``_hold_open``; refuse with nothing written.
+
+    The gate ran before the password was checked or the chain asked for a nonce, which takes
+    seconds; a demotion, a suspension or the vault's S15 rule committed in between would otherwise
+    still let the vote in. Columns are selected rather than rows, so nothing loaded earlier in
+    the request answers for them. On PostgreSQL each row is read FOR SHARE, so a change that
+    starts after this waits until the vote is written; SQLite serialises writers already.
+    """
+    shared = db.engine.dialect.name == "postgresql"
+
+    def fresh(stmt):
+        return db.session.execute(stmt.with_for_update(read=True) if shared else stmt).first()
+
+    refusal = None
+    role = fresh(
+        select(VaultMember.member_role).where(
+            VaultMember.vault_id == proposal.vault_id, VaultMember.user_id == signer.id
+        )
+    )
+    workspace_id = workspace_service.home_workspace_id(proposal.vault)
+    if role is None or role[0] not in SIGNER_ROLES:
+        refusal = (
+            "You are not an authorised signer for this proposal any more: you are no longer an "
+            "approver of this vault."
+        )
+    elif workspace_id is not None:
+        member = fresh(
+            select(WorkspaceMember.status, WorkspaceMember.role).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id == signer.id,
+            )
+        )
+        if member is None:
+            refusal = "you are not a member of this vault's workspace"
+        elif member.status != "active":
+            refusal = "you are suspended from this vault's workspace"
+        elif member.role == "auditor":
+            refusal = "auditors are read-only"
+        if refusal is not None:
+            refusal = f"You are not an authorised signer for this proposal any more: {refusal}."
+    if refusal is None and signer.id == proposal.creator_id:
+        rule = fresh(
+            select(VaultRule.requester_can_approve).where(VaultRule.vault_id == proposal.vault_id)
+        )
+        lifecycle = proposal.lifecycle
+        frozen = lifecycle is None or lifecycle.requester_can_approve is not False
+        if not (frozen and (rule is None or bool(rule[0]))):
+            refusal = OWN_DECISION
+    if refusal is not None:
+        db.session.rollback()
+        raise ApprovalError(refusal)
+
+
+#: Plan S16's refusal, one sentence for the web and the API.
+NOT_YOURS_TO_WITHDRAW = "Only the person who raised this decision can withdraw it."
+
+
+def _not_theirs_to_withdraw(proposal, actor) -> str | None:
+    if actor.id != proposal.creator_id:
+        return NOT_YOURS_TO_WITHDRAW
+    vault = proposal.vault
+    if not vault.is_member(actor.id):
+        return "You are no longer a member of this vault, so you can't withdraw this decision."
+    standing = workspace_service.signing_standing(vault, actor.id)
+    if standing is not None and standing != "auditors are read-only":
+        # An auditor raised it as an approver before their role changed: ending their own
+        # request takes nothing from anyone, so it is allowed. Suspended or gone is not.
+        return f"You can't withdraw this decision: {standing}."
+    return None
+
+
+def why_cannot_withdraw(proposal, actor, *, now: datetime | None = None) -> str | None:
+    """Why ``actor`` can't withdraw ``proposal`` now, or None when they can: exactly the rules
+    :func:`withdraw` applies, so no screen offers Withdraw where it would be refused. Reads only;
+    a deadline that passed is read as the sweep will write it (``inbox_service.effective_status``).
+    """
+    refusal = _not_theirs_to_withdraw(proposal, actor)
+    if refusal is not None:
+        return refusal
+    status = inbox_service.effective_status(proposal, now=now)
+    if status != "open":
+        return f"This decision is {status}, so it can't be withdrawn."
+    return None
+
+
+def withdraw(proposal, actor, *, now: datetime | None = None, commit: bool = True) -> None:
+    """The person who raised an open decision ends it (plan S16): it becomes WITHDRAWN.
+
+    It takes no further votes (the gate's status check, and ``_hold_open`` for a vote racing
+    this). Votes already cast stay as they were and keep verifying; they decide nothing now. The
+    ledger records it and everyone it asked, or who voted, is told. Nothing signed changes: a
+    decision is never edited in place, it is withdrawn and raised again (``raised_again_from``).
+
+    Refused for anyone but its requester, for a requester who has left the vault or is suspended
+    from its workspace (a suspended member acts on nothing), and for a decision that is no longer
+    open, including one whose deadline passed before the sweep ran.
+    """
+    refusal = _not_theirs_to_withdraw(proposal, actor)
+    if refusal is not None:
+        raise ApprovalError(refusal)
+
+    refresh_expiry(proposal, commit=commit)
+    if proposal.status != "open":
+        raise ApprovalError(f"This decision is {proposal.status}, so it can't be withdrawn.")
+
+    now = now or datetime.now(UTC)
+    # Conditional, so a vote that decided it a moment ago wins and this refuses (see _hold_open).
+    changed = db.session.execute(
+        update(Proposal)
+        .where(Proposal.id == proposal.id, Proposal.status == "open")
+        .values(status="withdrawn")
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if changed != 1:
+        db.session.rollback()
+        db.session.refresh(proposal)
+        raise ApprovalError(f"This decision is {proposal.status}, so it can't be withdrawn.")
+    proposal.status = "withdrawn"
+    lifecycle = proposal.lifecycle
+    if lifecycle is None:  # raised before R5
+        lifecycle = proposal.lifecycle = ProposalLifecycle()
+    lifecycle.withdrawn_at = now
+    lifecycle.withdrawn_by_id = actor.id
+    ledger_service.append(
+        "proposal_withdrawn",
+        {
+            "proposal_uuid": proposal.proposal_uuid,
+            "vault_id": proposal.vault_id,
+            "withdrawn_at": now.isoformat(),
+        },
+        actor=f"user:{actor.id}",
+        actor_id=actor.id,
+        vault_id=proposal.vault_id,
+        ref_type="proposal",
+        ref_id=proposal.proposal_uuid,
+        commit=False,
+    )
+    notification_service.decision_withdrawn(proposal, actor_id=actor.id, now=now)
+    if commit:
+        db.session.commit()
+
+
 def _payment_digest(proposal, signer, key) -> bytes:
     """The execution digest ``signer`` may sign with ``key`` for this payment, or a refusal.
 
@@ -624,7 +872,7 @@ def cast_vote(
         subject=proposal.proposal_uuid,
     )
 
-    _authorize_vote(proposal, signer, decision, commit=commit)
+    _authorize_vote(proposal, signer, decision, commit=commit, reason=reason)
 
     key = key_service.active_signing_key(signer)
     if key is None:
@@ -703,7 +951,7 @@ def record_device_vote(
     The phone computes its own digest, but the one checked here is the server's, built only after
     the decision's binding holds: a phone that signed a tampered payment is refused like any other.
     """
-    _authorize_vote(proposal, signer, decision, commit=commit)
+    _authorize_vote(proposal, signer, decision, commit=commit, reason=reason)
     _require_device_signing_key(signer, key)
     pair = None
     if decision == "approve" and execution_service.is_payment(proposal):

@@ -40,6 +40,7 @@ AUTHED = [
     ("11_approvals", "/approvals/"),
     ("12_vaults", "/vaults/"),
     ("23_new_decision", "/vaults/{vault}/proposals/new"),
+    ("23_new_access", "/vaults/{vault}/proposals/new?kind=access"),
     ("24_new_payment", "/vaults/{vault}/proposals/new?kind=payment"),
     ("25_new_vault", "/vaults/new"),
     ("26_audit", "/ledger/"),

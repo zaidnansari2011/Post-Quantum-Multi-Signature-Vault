@@ -182,8 +182,14 @@ def test_a_rejection_tells_them_the_deciding_reason(team):
     assert _rows(team.chen, "decision_rejected") == []
 
 
-def test_a_rejection_without_a_reason_gives_none(team):
+def test_a_rejection_without_a_reason_gives_none(team, monkeypatch):
     proposal = _raise(team)
+    # S16 requires a reason now; rejections cast before R5 may have none. The gate is told one
+    # was given, and the votes are stored without, as they were then.
+    gate = approval_service._authorize_vote
+    monkeypatch.setattr(
+        approval_service, "_authorize_vote", lambda *a, **k: gate(*a, **{**k, "reason": "-"})
+    )
     _vote(proposal, team.brij, "reject")
     _vote(proposal, team.chen, "reject")
 
@@ -789,7 +795,7 @@ def test_every_notification_links_to_a_page_on_this_site_and_carries_nothing_tha
         reason="No",
         at=MONDAY + timedelta(days=2, hours=2, minutes=10),
     )
-    _vote(proposal, team.chen, "reject", at=MONDAY + timedelta(days=2, hours=2, minutes=20))
+    _vote(proposal, team.chen, "reject", "No", at=MONDAY + timedelta(days=2, hours=2, minutes=20))
     vault_service.set_threshold(team.vault, 3, actor_id=team.ada.id)
     key_service.change_password(team.dara, PW, "a-new-password-456")
 

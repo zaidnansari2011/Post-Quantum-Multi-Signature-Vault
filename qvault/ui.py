@@ -17,6 +17,9 @@ STATUS: dict[str, tuple[str, str]] = {
     # Neutral, not info (S6 tone map, after the R1.1 critique): pending, but nothing for the viewer
     # to do, so it must not draw the eye the way "Needs your signature" does.
     "waiting": ("Waiting on {n}", "neutral"),
+    # Derived, never stored (R5): an open decision too few people can still approve to pass. Shown
+    # in place of "Waiting on N"; its lifecycle status stays open and nothing signed changes.
+    "cannot_pass": ("Can’t pass", "warning"),
     "approved": ("Approved", "success"),
     "rejected": ("Rejected", "critical"),
     "expired": ("Expired", "neutral"),

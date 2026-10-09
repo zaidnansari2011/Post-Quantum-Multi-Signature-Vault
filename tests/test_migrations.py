@@ -224,6 +224,19 @@ def test_upgrade_renders_as_postgresql_sql():
         )
         if name != "alembic_version"
     }
+    # A later revision may change a column's default (0008 did); the table is what both leave.
+    for statement in rendered:
+        altered = re.fullmatch(r"ALTER TABLE (\w+) ALTER COLUMN (\w+) SET DEFAULT (\S+)", statement)
+        if altered:
+            table, column, default = altered.groups()
+            tables[table] = frozenset(
+                (
+                    re.sub(r" DEFAULT \S+", f" DEFAULT {default}", line)
+                    if line.split()[0] == column
+                    else line
+                )
+                for line in tables[table]
+            )
     indexes = {s for s in rendered if re.match(r"CREATE (UNIQUE )?INDEX ", s)}
 
     assert tables == expected_tables
@@ -288,10 +301,15 @@ def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
         connection.exec_driver_sql("ALTER TABLE users ADD COLUMN nickname VARCHAR(40)")
 
     assert check_baseline.differences(newer) == [
+        "table decision_comments is not in the baseline",
+        "table decision_fields is not in the baseline",
         "table invitations is not in the baseline",
         "table notification_preferences is not in the baseline",
         "table notifications is not in the baseline",
+        "table proposal_lifecycle is not in the baseline",
         "table user_settings is not in the baseline",
+        "table vault_rules is not in the baseline",
+        "table witness_key_refusals is not in the baseline",
         "table workspace_members is not in the baseline",
         "table workspaces is not in the baseline",
     ]

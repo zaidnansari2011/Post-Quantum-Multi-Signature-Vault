@@ -132,6 +132,89 @@ def workspace_of_vault(vault: Vault) -> Workspace | None:
     return current_workspace(vault.owner_id)
 
 
+def home_workspace_id(vault: Vault) -> int | None:
+    """The id of the workspace ``vault`` belongs to, even while its owner is suspended.
+
+    ``workspace_of_vault`` reads the owner's *active* membership, so a suspended owner leaves it
+    with no answer. Who may sign in the vault must not depend on that, so this falls back to the
+    owner's earliest membership of any status.
+    """
+    return owners_workspace_id(vault.owner_id)
+
+
+def owners_workspace_id(owner_id: int) -> int | None:
+    """``home_workspace_id`` for every vault ``owner_id`` owns."""
+    home = current_workspace(owner_id)
+    if home is not None:
+        return home.id
+    return db.session.scalar(
+        select(WorkspaceMember.workspace_id)
+        .where(WorkspaceMember.user_id == owner_id)
+        .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
+        .limit(1)
+    )
+
+
+def standing_workspace_ids(user_id: int) -> set[int]:
+    """The workspaces where ``user_id`` is in good standing to sign (``signing_standing``)."""
+    return set(
+        db.session.scalars(
+            select(WorkspaceMember.workspace_id).where(
+                WorkspaceMember.user_id == user_id,
+                WorkspaceMember.status == "active",
+                WorkspaceMember.role != "auditor",
+            )
+        )
+    )
+
+
+def signing_standing(vault: Vault, user_id: int) -> str | None:
+    """Why ``user_id`` cannot sign in ``vault`` because of the workspace, or None when they can.
+
+    The vault decides who approves (its roles, its frozen signer sets); the workspace decides
+    whether that person is still working here. A suspended member signs nothing, and an auditor
+    is read-only (plan S10), even if a vault made them an approver before their role changed.
+    The same people ``vault_service`` refuses to make an approver. A database with no workspace
+    at all predates them and has no one to suspend.
+    """
+    workspace_id = home_workspace_id(vault)
+    if workspace_id is None:
+        if Workspace.query.first() is None:
+            return None
+        return "your place in this vault's workspace could not be confirmed"
+    member = membership(workspace_id, user_id)
+    if member is None:
+        return "you are not a member of this vault's workspace"
+    if not member.is_active:
+        return "you are suspended from this vault's workspace"
+    if member.role == "auditor":
+        return "auditors are read-only"
+    return None
+
+
+def in_good_standing(vault: Vault, user_ids: Iterable[int]) -> set[int]:
+    """Which of ``user_ids`` ``signing_standing`` lets sign in ``vault``, in one query.
+
+    For the screens that count approvers; the vote gate asks ``signing_standing`` for its reason.
+    """
+    ids = set(user_ids)
+    if not ids:
+        return set()
+    workspace_id = home_workspace_id(vault)
+    if workspace_id is None:
+        return ids if Workspace.query.first() is None else set()
+    return set(
+        db.session.scalars(
+            select(WorkspaceMember.user_id).where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.user_id.in_(ids),
+                WorkspaceMember.status == "active",
+                WorkspaceMember.role != "auditor",
+            )
+        )
+    )
+
+
 def members(workspace: Workspace, *, status: str | None = None) -> list[WorkspaceMember]:
     """Members in the order they joined, optionally only those with ``status``. Each one's user is
     loaded with them, since every page that lists members names them."""
@@ -943,8 +1026,8 @@ def rename_workspace(
 def set_vault_defaults(
     workspace: Workspace, *, sod_default: bool, actor: User, commit: bool = True
 ) -> Workspace:
-    """Store the separation-of-duties default for new vaults (plan S15). Nothing enforces it until
-    vaults gain the setting (phase R5), and it never changes a vault that already exists."""
+    """Store the separation-of-duties default for new vaults (plan S15). ``create_vault`` reads it
+    into the new vault's own rule; it never changes a vault that already exists."""
     _require_manager(workspace, actor)
     sod_default = bool(sod_default)
     if workspace.sod_default == sod_default:

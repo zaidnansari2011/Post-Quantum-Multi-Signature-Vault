@@ -11,8 +11,7 @@
   <title>{% block title %}Q-Vault{% endblock %}</title>
   {# Every asset is served locally. A demonstration must not depend on the venue's network, and
      a CDN failure would strip the entire interface mid-presentation. See docs/adr/0011.
-     Order matters: faces, tokens, base, components and the screens built from them, the
-     compatibility layer that maps the remaining old classes onto the tokens (qvault.css), then
+     Order matters: faces, tokens, base, components and the screens built from them, then
      utilities, which win ties. #}
   <link rel="preload" href="{{ url_for('static', filename='vendor/fonts/PublicSans-var.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link href="{{ url_for('static', filename='vendor/fonts.css') }}" rel="stylesheet">
@@ -21,7 +20,6 @@
   <link href="{{ url_for('static', filename='components.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='evidence.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='screens.css') }}" rel="stylesheet">
-  <link href="{{ url_for('static', filename='qvault.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='utilities.css') }}" rel="stylesheet">
   <script src="{{ url_for('static', filename='qvault.js') }}" defer></script>
 </head>

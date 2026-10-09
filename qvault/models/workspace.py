@@ -45,9 +45,9 @@ class Workspace(db.Model):
     slug = db.Column(db.String(64), unique=True, nullable=False, index=True)
     created_at = db.Column(AwareDateTime, nullable=False, default=_utcnow)
     # Vault defaults (plan S15): whether a new vault stops the person who raised a decision from
-    # approving it. Stored here; vaults start honouring it in phase R5. Off unless an owner or
-    # admin turns it on.
-    sod_default = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    # approving it. On unless an owner or admin turns it off (owner decision 2026-10-08; revision
+    # 0008 flipped the stored default). It never changes a vault that already exists.
+    sod_default = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
     # When an owner or admin hid the getting-started checklist on Home. Null while it shows.
     checklist_dismissed_at = db.Column(AwareDateTime, nullable=True)
 

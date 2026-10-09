@@ -66,6 +66,7 @@ def personal_status(
     approvals: int,
     required_m: int,
     payout_state: str | None = None,
+    can_still_pass: bool = True,
 ) -> tuple[str, int | None]:
     """The status key (and count) a decision shows its viewer.
 
@@ -87,7 +88,46 @@ def personal_status(
         required_m=required_m,
         payment=known is not None,
         payout_state=known,
+        can_still_pass=can_still_pass,
     )
+
+
+def _names(ids, names: dict[int, str], viewer_id: int) -> tuple[str, int, bool]:
+    """``ids`` as words ("Brij and you"), how many, and whether "you" is the only one."""
+    words = [names.get(uid, "Someone") for uid in ids if uid != viewer_id]
+    if viewer_id in ids:
+        words.append("you")
+    text = words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+    return text[:1].upper() + text[1:], len(words), words == ["you"]
+
+
+def shortfall_lines(short, names: dict[int, str], viewer_id: int) -> list[str]:
+    """Why an open decision can’t pass, one sentence per cause that actually holds
+    (``eligibility.shortfall``), naming the people. Never a list of what might have happened."""
+    lines = []
+    for ids, one, many in (
+        (short.demoted, "no longer an approver of this vault", "no longer approvers of this vault"),
+        (short.removed, "no longer in this vault", "no longer in this vault"),
+        (short.suspended, "suspended from the workspace", "suspended from the workspace"),
+        (
+            short.auditors,
+            "an auditor in the workspace, so read-only",
+            "auditors in the workspace, so read-only",
+        ),
+    ):
+        if ids:
+            who, count, only_you = _names(ids, names, viewer_id)
+            verb = "are" if count > 1 or only_you else "is"
+            lines.append(f"{who} {verb} {many if count > 1 else one}.")
+    if short.requester is not None:
+        who = "You" if short.requester == viewer_id else names.get(short.requester, "Someone")
+        lines.append(
+            f"{who} raised it, and here the person who raises a decision can’t approve it."
+        )
+    if short.rejected:
+        who, _count, _only = _names(short.rejected, names, viewer_id)
+        lines.append(f"{who} rejected it.")
+    return lines
 
 
 # ------------------------------------------------------------------------------ consequences (S4)
@@ -324,6 +364,7 @@ EVENT_WORDS = {
     "proposal_approved": "Approved",
     "proposal_rejected": "Rejected",
     "proposal_expired": "Expired",
+    "proposal_withdrawn": "Withdrawn",
     "file_encrypted": "File attached",
     "decision_published": "Published",
     "decision_unpublished": "Public link revoked",

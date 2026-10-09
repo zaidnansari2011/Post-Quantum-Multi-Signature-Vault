@@ -2,8 +2,7 @@
  *
  * Built only from tokens.css and the components in components.css, under the same rules: colour
  * from tokens, font sizes from the type scale, radius by role, shadows on overlays only. Loaded
- * after components.css. Every class carries the q- prefix so the compatibility layer (qvault.css)
- * and these never restyle each other.
+ * after components.css. Every class carries the q- prefix.
  */
 
 /* ================================================================ shared pieces */
@@ -29,6 +28,7 @@
 .q-res { display: inline-flex; align-items: center; gap: var(--space-4); color: var(--status-success-fg); font-weight: var(--weight-medium); white-space: nowrap; }
 .q-res .q-icon { width: 14px; height: 14px; vertical-align: 0; }
 .q-res--bad { color: var(--status-critical-fg); }
+.q-res--warn { color: var(--status-warning-fg); }
 
 /* The decision code: mono, a little spaced so it reads aloud in two halves. */
 .q-code { font-family: var(--font-mono); font-size: var(--text-code-size); line-height: var(--text-code-line); font-weight: var(--weight-medium); letter-spacing: 0.02em; color: var(--text); font-variant-ligatures: none; }
@@ -101,6 +101,9 @@
   font-weight: var(--text-decision-weight); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty;
 }
 .q-dtext--dlg { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
+/* A typed decision's field lines (R5, plan S13), under its sentence: still the signed text, a size down. */
+.q-dtext--lines { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
+.q-dtext--lines > span { display: block; }
 .q-dcap { margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 .q-dcap__ok, .q-dcap__bad { font-weight: var(--weight-medium); }
 .q-dcap__ok .q-icon, .q-dcap__bad .q-icon { margin-right: var(--space-4); vertical-align: -2px; }
@@ -273,7 +276,7 @@
 .q-audit-sum {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-16); margin-bottom: var(--space-24);
 }
-.q-figure { display: grid; gap: var(--space-4); padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); min-width: 0; }
+.q-figure { display: grid; align-content: start; gap: var(--space-4); padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); min-width: 0; }
 .q-figure__l { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
 .q-figure__v { display: flex; align-items: center; gap: var(--space-8); min-width: 0; }
 .q-figure__v code { font-family: var(--font-mono); font-size: var(--text-figure-size); line-height: var(--text-figure-line); font-weight: var(--weight-medium); letter-spacing: 0.02em; color: var(--text); font-variant-ligatures: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -394,6 +397,12 @@
   .q-copy::before { content: ""; position: absolute; inset: -10px; }
   .q-dpage .q-ph__act .q-menu > summary.q-ib { width: var(--target-touch); height: var(--target-touch); }
   .q-reveal > summary, .q-acc > summary { min-height: var(--target-touch); }
+  /* A link that stands on its own (See the evidence, an explorer link, See the technical
+   * details, Verify an export, the live trace, a decision named in the vault's Files table):
+   * a taller box, with the margin taken back so nothing moves. */
+  .q-brief__a, .q-ext, .q-more a, .q-tech .q-line > a:not(.q-btn), .q-vault .q-table td.q-c-meta > a {
+    display: inline-block; padding-block: 12px; margin-block: -12px;
+  }
 }
 
 /* ================================================================ phone refinements */
@@ -421,3 +430,30 @@
 .q-acct .q-sigrec__note { padding: var(--space-8) 0 0; border-top: 0; }
 .q-acct form .q-btn { margin-top: var(--space-4); }
 .q-acct .q-acct__inline > .q-btn { margin-top: calc(var(--text-body-line) + var(--space-6)); }
+
+/* A decision's discussion (R5): unsigned, so never the serif, never a quote, always labelled. */
+.q-disc { padding-top: var(--space-24); border-top: var(--border-width) solid var(--border); }
+.q-disc__note { display: flex; gap: var(--space-6); align-items: flex-start; margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-disc__note .q-icon { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--text-subtle); }
+.q-disc__l { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.q-cmt { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: var(--space-12); padding: var(--space-8) 0; }
+.q-cmt:target { background: var(--fill); border-radius: var(--radius-card); box-shadow: 0 0 0 var(--space-8) var(--fill); }
+.q-cmt__who { display: inline-flex; height: 24px; }
+.q-cmt__b { display: grid; gap: var(--space-2); min-width: 0; }
+.q-cmt__hd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-8); margin: 0; }
+.q-cmt__hd b { font-weight: var(--text-body-strong-weight); }
+.q-cmt__tag { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-cmt__time { margin-left: auto; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); white-space: nowrap; }
+.q-cmt__t { margin: 0; font-family: var(--font-sans); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.q-cmt__gone { margin: 0; color: var(--text-subtle); font-style: italic; }
+.q-mention { color: var(--link); font-weight: var(--weight-medium); }
+.q-cmt__del > summary { display: inline-flex; min-height: 24px; align-items: center; cursor: pointer; list-style: none; font-size: var(--text-caption-size); color: var(--text-subtle); }
+.q-cmt__del > summary::-webkit-details-marker { display: none; }
+.q-cmt__del > summary:hover { color: var(--text); text-decoration: underline; }
+.q-cmt__del form { display: grid; justify-items: start; gap: var(--space-6); margin-top: var(--space-4); }
+.q-disc__form { display: grid; justify-items: start; gap: var(--space-8); }
+.q-disc__form .q-field { width: 100%; }
+@media (pointer: coarse) { .q-cmt__del > summary { min-height: var(--target-touch); } }
+@media (max-width: 767px) { .q-cmt__time { margin-left: 0; width: 100%; } }
+.q-since { display: grid; gap: var(--space-8); margin: 0; padding: 0; list-style: none; }
+.q-since .q-diff { margin-top: 0; }

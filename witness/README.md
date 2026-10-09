@@ -41,6 +41,38 @@ Checkpoints are then offered on a timer (`WITNESS_SYNC_SECONDS`, default 60) rat
 requests, so a witness that is down costs a growing lag on **Audit → Transparency**, never latency
 on a user's write. Visit the witness's own root page to see what it has co-signed and refused.
 
+### Pin its key
+
+Then pin the same fingerprint on Q-Vault's side, so the log trusts this witness and no other:
+
+```
+WITNESS_KEY_FINGERPRINT=<fingerprint>
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `WITNESS_URL` | unset | Where the witness listens. Unset means no witness. |
+| `WITNESS_TIMEOUT_S` | `3.0` | How long one offer may take. |
+| `WITNESS_SYNC_SECONDS` | `60` | How often the newest checkpoint is offered. |
+| `WITNESS_KEY_FINGERPRINT` | unset | The witness key the log trusts: the 16 hex characters the witness prints when it starts (case and spaces don't matter). |
+
+With the pin set, a co-signature from any other key is **refused**: it is not stored, the refusal
+is logged (`witness co-signature refused: key … is not the pinned witness key …`), and
+**Audit → Transparency** shows *Key mismatch* with the key presented and the key expected. A row
+already stored under another key, from before the pin, is never shown, counted or exported as the
+witness's. A value that is not 16 hex characters refuses every key, so a typo can't switch pinning
+off. The pin is only ever this setting: a witness whose key changes is refused until you change
+it, never re-pinned automatically.
+
+Unset, any key is accepted as before, and admins see *Key not pinned* on the Transparency page.
+
+It is the value `python -m qvault.verify --expect-witness` takes, so one fingerprint pins the server
+and every reader's verifier. To read it off a running witness without restarting it: its root
+page shows `key fingerprint …`, its startup log has `witness 'witness-1' — ML-DSA-87, fingerprint
+…`, or compute it from the key file (`python -c "import json,hashlib,base64;
+k=json.load(open('instance/witness_key.json'));print(hashlib.sha256(base64.b64decode(k['public_key_b64'])).hexdigest()[:16])"`).
+Compare it with the value published out of band (`docs/OWNER-ACTIONS.md` §2.5) before you set it.
+
 For the property to mean anything in a real deployment, run it **on different hardware, under a
 different operator**. On one laptop it demonstrates the mechanism; it does not deliver the
 security, because whoever can rewrite the database can also stop the process and delete its file.

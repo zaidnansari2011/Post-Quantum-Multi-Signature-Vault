@@ -152,6 +152,19 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
                 f"{subject} It was not decided{deadline}, so it can no longer be approved.",
                 path,
             )
+        if kind == "decision_withdrawn":
+            return Copy(
+                f"{_name(actor)} withdrew a decision",
+                f"{subject} It has ended, so there is nothing to sign. Approvals already given "
+                "no longer count.",
+                path,
+            )
+        if kind == "decision_mentioned":
+            return Copy(
+                f"{_name(actor)} mentioned you",
+                f"{subject} In its discussion, which isn’t part of what is signed.",
+                path + "#discussion",
+            )
         if kind == "payout_paid":
             amount = _amount(stored)
             to = _short_address(str(stored.get("to", "")))
@@ -178,6 +191,19 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
                 f"{_approvers(int(stored.get('n', 0)))}",
                 f"{_name(actor)} changed it from {stored.get('from')}. Decisions already raised "
                 "keep the rule they started with.",
+                vault_path,
+            )
+        if kind == "vault_rule_changed" and stored.get("change") == "requester":
+            if stored.get("to"):
+                return Copy(
+                    f"In {_clip(vault.name)}, whoever raises a decision can now approve it",
+                    f"{_name(actor)} changed it. Decisions raised before keep the rule they "
+                    "started with.",
+                    vault_path,
+                )
+            return Copy(
+                f"In {_clip(vault.name)}, whoever raises a decision can no longer approve it",
+                f"{_name(actor)} changed it. This applies to decisions already open too.",
                 vault_path,
             )
         if kind == "vault_rule_changed":
@@ -227,7 +253,7 @@ def _outcome(notification, proposal, now: datetime) -> str:
     if vote is not None:
         return "You approved it." if vote.decision == "approve" else "You rejected it."
     status = effective_status(proposal, now=now)
-    if status in ("approved", "rejected", "expired"):
+    if status in ("approved", "rejected", "expired", "withdrawn"):
         return f"{status.capitalize()} without your vote."
     return "You can no longer approve it."
 
@@ -249,9 +275,14 @@ PREFERENCE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("decision_approved", "A decision you raised or voted on is approved"),
             ("decision_rejected", "A decision you raised or voted on is rejected"),
             ("decision_expired", "A decision you raised or voted on expires"),
+            ("decision_withdrawn", "A decision you could approve or voted on is withdrawn"),
             ("payout_paid", "A payment you are part of is made"),
             ("payout_failed", "A payment you are part of is not made"),
         ),
+    ),
+    (
+        "Discussion",
+        (("decision_mentioned", "Someone mentions you in a decision’s discussion"),),
     ),
     (
         "Vaults",
