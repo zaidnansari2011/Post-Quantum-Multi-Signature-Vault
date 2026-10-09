@@ -95,3 +95,41 @@ def verify_challenge_mac(data: bytes, tag: bytes | None) -> bool:
     if not tag:
         return False
     return hmac.compare_digest(challenge_mac(data), tag)
+
+
+# -- Recovery Kit (R9, design section 5.1) ---------------------------------------------------------
+# Three more tags, each with one meaning. None of them is _MAC_DS: a kit's MAC must never be
+# accepted as the SYSTEM key's, nor the other way round.
+_KIT_PEPPER_DS = b"qvault:kit-pepper:v1|"
+_KIT_PK_DS = b"qvault:recovery-kit-pk:v1|"
+_KIT_CONFIRM_DS = b"qvault:kit-confirm:v1|"
+
+
+def kit_pepper(kit_uuid: str) -> bytes:
+    """The secret only the live server can add to a kit's key: HMAC-SHA256(master key,
+    ``qvault:kit-pepper:v1|`` + kit uuid). Mixed into the kit KEK, so a stolen database and a
+    stolen kit, without ``SERVER_MASTER_KEY``, open nothing (review M2). Never stored."""
+    return hmac.new(
+        get_master_key(), _KIT_PEPPER_DS + kit_uuid.encode("ascii"), hashlib.sha256
+    ).digest()
+
+
+def kit_pk_mac(data: bytes) -> bytes:
+    """HMAC-SHA256 over a kit's public-key record (``recovery_kit.pk_mac_input``): its owner, its
+    uuid, its KEM algorithm, when it was made and the public key. A database writer cannot swap
+    in a key of their own, or relabel the algorithm, without the master key (review L5)."""
+    return hmac.new(get_master_key(), _KIT_PK_DS + data, hashlib.sha256).digest()
+
+
+def verify_kit_pk_mac(data: bytes, tag: bytes | None) -> bool:
+    if not tag:
+        return False
+    return hmac.compare_digest(kit_pk_mac(data), tag)
+
+
+def kit_confirm_tag(kit_uuid: str, last_group: str) -> bytes:
+    """A tag the kit page carries so the server can check the last group typed back without
+    seeing the code again or storing anything from it. It is sent only to the browser that is
+    showing the whole code, and is never stored."""
+    data = kit_uuid.encode("ascii") + b"|" + last_group.encode("ascii")
+    return hmac.new(get_master_key(), _KIT_CONFIRM_DS + data, hashlib.sha256).digest()
