@@ -9,7 +9,7 @@
 // under a minute ago (I-7); and `approveTreasuryChange` checks everything again before the prompt.
 // No decision code: the web's treasury-change view does not show one yet (§5.11, A17).
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Linking, Platform, Share, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Constants from 'expo-constants';
@@ -119,11 +119,6 @@ export default function TreasuryChangeScreen({
   const firstState = useRef<string | null>(null);
   if (change && firstState.current === null) firstState.current = change.state;
 
-  useEffect(() => {
-    if (!checking || !query.isSuccess || query.isFetching) return;
-    setChecking(false);
-    open();
-  }, [checking, query.isSuccess, query.isFetching]);
 
   if (!data || (!change && !query.isFetching && data)) {
     const gone = query.error instanceof ApiError && (query.error.status === 404 || query.error.status === 403);
@@ -199,7 +194,10 @@ export default function TreasuryChangeScreen({
       setProblem({ tone: 'warning', text: "Couldn't check this change with Q-Vault, so it can't be approved yet. Try again." });
       return;
     }
+    // Moved on, already approved, or not this phone's seat since the page was drawn: the page now
+    // says so, and no sheet opens over it.
     if (!checkTreasuryChange(c, addr).ok) return;
+    if (c.state !== 'collecting_approvals' || c.approved_by_me || c.seat_fingerprint !== identity.fingerprint) return;
     setSnapshot({ change: c, address: addr });
     setProblem(null);
     setSheetOpen(true);
@@ -211,9 +209,14 @@ export default function TreasuryChangeScreen({
       open();
       return;
     }
-    // Fresh data before signing (I-7): fetch it again, then open over that answer.
+    // Fresh data before signing (I-7): fetch it again, then open over that answer, read from the
+    // cache by `open`, which checks it came from this very fetch.
     setChecking(true);
-    void query.refetch({ cancelRefetch: true });
+    void query.refetch({ cancelRefetch: true }).then((result) => {
+      setChecking(false);
+      if (result.isSuccess) open();
+      else setProblem({ tone: 'warning', text: "Couldn't check this change with Q-Vault, so it can't be approved yet. Try again." });
+    });
   };
 
   const close = () => {
