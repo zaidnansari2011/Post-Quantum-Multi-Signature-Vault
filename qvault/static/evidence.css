@@ -397,6 +397,12 @@
   .q-copy::before { content: ""; position: absolute; inset: -10px; }
   .q-dpage .q-ph__act .q-menu > summary.q-ib { width: var(--target-touch); height: var(--target-touch); }
   .q-reveal > summary, .q-acc > summary { min-height: var(--target-touch); }
+  /* A link that stands on its own (See the evidence, an explorer link, See the technical
+   * details, Verify an export, the live trace, a decision named in the vault's Files table):
+   * a taller box, with the margin taken back so nothing moves. */
+  .q-brief__a, .q-ext, .q-more a, .q-tech .q-line > a:not(.q-btn), .q-vault .q-table td.q-c-meta > a {
+    display: inline-block; padding-block: 12px; margin-block: -12px;
+  }
 }
 
 /* ================================================================ phone refinements */
