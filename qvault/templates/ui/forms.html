@@ -67,11 +67,12 @@
    radio_group(name, legend, options, selected=None, error=None)
      options  a list of (value, text) or (value, text, caption) tuples.
 
-   wtf_field(f, caption=None, attrs={}, mono=False)
+   wtf_field(f, caption=None, attrs={}, mono=False, aside=None)
      A WTForms field drawn as a field: the same label, caption and error as field(), but the
      input is the form's own rendering, so its id, name, value and the validators' attributes
      (required, maxlength) are exactly what the form declares. For a StringField, PasswordField,
      EmailField, IntegerField or TextAreaField; attrs adds attributes (autocomplete, rows).
+     aside   markup drawn at the right end of the label's line ("Forgot password?" on sign-in).
 #}
 {% from "ui/icons.html" import icon %}
 
@@ -248,7 +249,7 @@
 {{ _check('q-sw', 'switch', name, label, checked, value, caption, id, attrs, disabled) }}
 {%- endmacro %}
 
-{% macro wtf_field(f, caption=None, attrs={}, mono=False) -%}
+{% macro wtf_field(f, caption=None, attrs={}, mono=False, aside=None) -%}
 {%- set fid = f.id -%}
 {%- set kw = {'class': 'q-input' ~ (' q-input--mono' if mono else '')} -%}
 {%- set _ = kw.update(attrs) -%}
@@ -257,7 +258,11 @@
 {%- if f.errors %}{% set _ = ids.append(fid ~ '-err') %}{% set _ = kw.update({'aria-invalid': 'true'}) %}{% endif -%}
 {%- if ids %}{% set _ = kw.update({'aria-describedby': ids|join(' ')}) %}{% endif -%}
 <div class="q-field">
+  {%- if aside %}
+  <div class="q-field__head">{{ f.label(class='q-field__label') }}{{ aside }}</div>
+  {%- else %}
   {{ f.label(class='q-field__label') }}
+  {%- endif %}
   {{ f(**kw) }}
   {%- if caption %}
   <p class="q-field__cap" id="{{ fid }}-cap">{{ caption }}</p>

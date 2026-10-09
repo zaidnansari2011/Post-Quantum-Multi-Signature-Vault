@@ -1,20 +1,25 @@
 {% extends "base.html" %}
 {% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
-{% block title %}Create account — Q-Vault{% endblock %}
+{% from "_password_step.html" import password_step %}
+{% block title %}Create your workspace — Q-Vault{% endblock %}
 {% block anon_content %}
 <div class="q-auth">
-  <h1 class="q-auth__t">Create account</h1>
+  <h1 class="q-auth__t">Create your workspace</h1>
+  <p class="q-auth__p">A new, empty workspace for your team's vaults and decisions. You'll be its owner and can invite people from it.</p>
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
     {{ wtf_field(form.display_name, attrs={'autocomplete': 'name'}) }}
     {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
-    {{ wtf_field(form.password, caption='Unlocks your signing key. It cannot be reset for you.', attrs={'autocomplete': 'new-password'}) }}
-    {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}
+    {{ wtf_field(form.workspace_name, caption='Usually your team or company. You can rename it later.', attrs={'autocomplete': 'organization'}) }}
+    {{ password_step(form) }}
     {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
   </form>
   <p class="q-auth__foot">
-    Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a>
+    Joining a team? Open the invitation link they sent you instead. This page doesn't join an existing workspace.
+  </p>
+  <p class="q-auth__foot">
+    Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
   </p>
 </div>
 {% endblock %}

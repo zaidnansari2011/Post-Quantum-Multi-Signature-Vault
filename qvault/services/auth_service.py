@@ -17,6 +17,10 @@ from qvault.services import key_service, ledger_service, workspace_service
 _DUMMY_PASSWORD_HASH = hash_password("timing-equaliser-not-a-real-account")
 
 
+#: How many times sign-up is tried when its workspace's slug loses a race (``sign_up``).
+SIGN_UP_ATTEMPTS = 3
+
+
 class EmailTakenError(Exception):
     """Raised when registering an email that already exists."""
 
@@ -32,25 +36,34 @@ def register_user(
     *,
     place: bool = True,
     commit: bool = True,
+    bootstrap_admin: bool = True,
 ) -> User:
     """Create a user, generate their PQC signing keypair, and log a ledger event — atomically.
 
     On registration the user's identity becomes a post-quantum keypair, not merely a password:
     the private key is wrapped at rest under a KEK derived from ``password``.
 
-    With ``place`` (the default) the new account joins a workspace as
-    ``workspace_service.place_registrant`` decides. Accepting an invitation passes ``place=False``
-    and ``commit=False`` and joins the invitation's workspace in the same transaction.
+    With ``place`` (the default) the new account joins the deployment's shared workspace
+    (``workspace_service.join_shared_workspace``). That is the operator's path, for the seed
+    scripts, the team reset and tests; no route takes it. Signing up (``sign_up``) and accepting an
+    invitation pass ``place=False`` and ``commit=False``, and make or join the right workspace in
+    the same transaction.
+
+    **System administration is an operator's grant, never a sign-up's.** On the operator's path
+    the first account on an empty system becomes the administrator (``bootstrap_admin``), so a
+    freshly seeded database has one. The self-service paths pass ``bootstrap_admin=False``: before
+    R6 the first stranger to open ``/register`` on a new deployment became its administrator. An
+    operator grants the role afterwards with ``scripts/grant_admin.py``.
     """
     email = _normalise_email(email)
     if User.query.filter_by(email=email).first() is not None:
         raise EmailTakenError(email)
 
-    # First registrant bootstraps the admin (who can operate the crypto-agility switch); there is
-    # no other way to obtain the role, so an empty system is not left without an administrator.
-    # (Single-process demo: this check-then-set is unguarded; a concurrent first-registration race
-    # is out of scope. A hardened deploy would provision the admin out-of-band.)
-    role = "admin" if User.query.count() == 0 else "user"
+    # The operator's first registrant bootstraps the admin (who can operate the crypto-agility
+    # switch), so a seeded system is not left without one. Never on a self-service path (above).
+    # (Single-process: this check-then-set is unguarded; a concurrent first-registration race on
+    # the operator's own scripts is out of scope.)
+    role = "admin" if bootstrap_admin and User.query.count() == 0 else "user"
 
     user = User(
         email=email,
@@ -76,7 +89,7 @@ def register_user(
         commit=False,
     )
     if place:
-        workspace_service.place_registrant(user)
+        workspace_service.join_shared_workspace(user)
     if not commit:
         return user
 
@@ -89,6 +102,42 @@ def register_user(
         db.session.rollback()
         raise EmailTakenError(email) from exc
     return user
+
+
+def sign_up(email: str, display_name: str, password: str, workspace_name: str) -> User:
+    """Self-service sign-up (plan S21): a new account, its signing key, and a new workspace it owns.
+
+    The only thing the person chooses about the workspace is its name. It never joins an existing
+    one: the way into someone else's workspace is their invitation link
+    (``workspace_service.register_through_invitation``). Everything is written in one transaction,
+    so a taken address or a refused name leaves no account and no workspace behind.
+    """
+    # Refused before anything is written, so a bad name costs no Argon2id work and no rollback.
+    workspace_name = workspace_service.clean_workspace_name(workspace_name)
+    for attempt in range(SIGN_UP_ATTEMPTS):
+        try:
+            user = register_user(
+                email, display_name, password, place=False, commit=False, bootstrap_admin=False
+            )
+            workspace_service.create_workspace(workspace_name, user, commit=False)
+            db.session.commit()
+            return user
+        except IntegrityError as exc:
+            db.session.rollback()
+            # Two UNIQUE columns can lose a race here: the email (a concurrent registration of
+            # the same address) and the workspace's slug (a concurrent sign-up with the same
+            # workspace name). Only the first is "already registered"; the second is retried,
+            # and _slug_for then sees the slug the other sign-up took.
+            if User.query.filter_by(email=_normalise_email(email)).first() is not None:
+                raise EmailTakenError(_normalise_email(email)) from exc
+            if attempt + 1 == SIGN_UP_ATTEMPTS:
+                raise workspace_service.WorkspaceError(
+                    "busy", "We couldn't create your workspace just now. Please try again."
+                ) from exc
+        except Exception:
+            db.session.rollback()
+            raise
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def update_display_name(user: User, display_name: str, *, commit: bool = True) -> User:
@@ -124,3 +173,30 @@ def authenticate(email: str, password: str) -> User | None:
     if verify_password(user.password_hash, password):
         return user
     return None
+
+
+def set_system_admin(email: str, admin: bool = True) -> User:
+    """Grant or remove system administration: the operator's path, never a route.
+
+    Used by ``scripts/grant_admin.py``. The change is recorded in the ledger against the person
+    themselves (so it shows in their own audit, not to every workspace), naming the operator as
+    its source. Raises ``LookupError`` for an unknown address.
+    """
+    user = User.query.filter_by(email=_normalise_email(email)).first()
+    if user is None:
+        raise LookupError(email)
+    role = "admin" if admin else "user"
+    if user.role == role:
+        return user
+    user.role = role
+    ledger_service.append(
+        "system_admin_granted" if admin else "system_admin_removed",
+        {"user_id": user.id, "by": "operator"},
+        actor=f"user:{user.id}",
+        actor_id=user.id,
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
+    db.session.commit()
+    return user

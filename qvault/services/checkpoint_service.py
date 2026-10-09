@@ -108,6 +108,12 @@ def leaf_hashes() -> list[bytes]:
     return cache
 
 
+def reset_leaf_cache() -> None:
+    """Forget the cached leaves, so the next read rebuilds them from the rows (and raises
+    ``LogError`` on a gap). For a check that found the rows no longer match the cache."""
+    _cache().clear()
+
+
 def tree_size() -> int:
     return len(leaf_hashes())
 
