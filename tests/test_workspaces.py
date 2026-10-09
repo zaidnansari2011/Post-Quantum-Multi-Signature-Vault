@@ -604,11 +604,16 @@ def test_a_suspended_owner_can_be_demoted_or_removed_while_an_active_owner_remai
 
 @pytest.fixture()
 def in_two_workspaces(app, team):
-    """Chen belongs to this workspace and to Other Co, and is in a vault in each."""
+    """Chen belongs to this workspace and to Other Co, and is in a vault in each.
+
+    Built directly: since R6 an invitation no longer puts someone with a workspace in use into a
+    second one (one workspace per person for now), but memberships made before that rule, or by
+    an operator, can still look like this, and removal and leaving must stay scoped for them.
+    """
     workspace, ada, _, chen, _ = team
     zed, other = _other_workspace()
-    _, token = workspace_service.create_invitation(other, zed, chen.email)
-    workspace_service.accept_invitation(token, chen)
+    db.session.add(WorkspaceMember(workspace_id=other.id, user_id=chen.id, role="member"))
+    db.session.commit()
     theirs = vault_service.create_vault(zed, "Zed's vault", "", 1)
     vault_service.add_member(theirs, chen.email, "viewer", actor_id=zed.id)
     ours = vault_service.create_vault(ada, "Treasury", "", 1)
