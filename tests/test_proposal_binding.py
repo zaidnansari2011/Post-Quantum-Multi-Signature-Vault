@@ -201,7 +201,14 @@ def test_binding_failure_cannot_manufacture_an_approval(app):
 def _register(client, email, name="U"):
     return client.post(
         "/register",
-        data={"display_name": name, "email": email, "password": PASSWORD, "confirm": PASSWORD},
+        data={
+            "display_name": name,
+            "email": email,
+            "workspace_name": "Test workspace",
+            "password": PASSWORD,
+            "confirm": PASSWORD,
+            "understood": "y",
+        },
         follow_redirects=True,
     )
 

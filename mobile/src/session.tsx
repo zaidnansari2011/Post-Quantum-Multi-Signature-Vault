@@ -30,6 +30,8 @@ import { setUnauthorizedHandler } from './api/client.ts';
 import { signedContent } from './checks.ts';
 import { networkFetches } from './queries.ts';
 import { restoreSummaries, startSavingSummaries, stopSavingSummaries, wipeSummaries } from './persist.ts';
+import { forgetPushHere } from './push.ts';
+import { forgetsPush } from './logic/push.ts';
 import {
   onRemoveLocalOnly,
   onRemoveResult,
@@ -96,12 +98,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const clearJustEnrolled = useCallback(() => setJustEnrolled(false), []);
   const statusRef = useRef<Status>('loading');
   statusRef.current = status;
+  const tokenRef = useRef<string | null>(null);
+  tokenRef.current = token;
 
   const custody = useMemo<Custody>(() => keystore, []);
 
   /** Delete exactly what a plan says, and nothing else. */
   const apply = useCallback(
     async (deletes: Deletes) => {
+      // Pushes stop before the token or the key go (F4): the phone may be someone else's next.
+      if (forgetsPush(deletes)) await forgetPushHere(tokenRef.current);
       if (deletes.cache) {
         // Saving stops before the cache empties, so the emptying is not itself written.
         stopSavingSummaries();

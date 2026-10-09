@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from qvault.extensions import db
 from qvault.models._types import AwareDateTime
 
-#: The channels a preference can switch. Only in-app delivers in R4; email and push arrive in R8.
+#: The channels a preference can switch: in-app (R4), email and phone push (R8).
 CHANNELS = ("in_app", "email", "push")
 
 

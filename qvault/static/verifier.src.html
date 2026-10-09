@@ -621,6 +621,7 @@
                                 + cp.root_hash.slice(0, 16) + '…');
 
       // 8. checkpoint
+      let logSha = null;
       if (cp.tree_size !== cp.head_seq + 1) {
         add('checkpoint', 'The log signed that tree', false,
             'tree_size ' + cp.tree_size + ' does not match head_seq ' + cp.head_seq
@@ -628,7 +629,8 @@
       } else {
         const cs = log.checkpoint_signature;
         const alg = ALGS[cs.alg_id];
-        fingerprints.log = hex(sha256(b64(cs.public_key_b64))).slice(0, 16);
+        logSha = hex(sha256(b64(cs.public_key_b64)));
+        fingerprints.log = logSha.slice(0, 16);
         if (!alg) {
           add('checkpoint', 'The log signed that tree', false,
               'cannot check ' + cs.alg_id + ' in a browser', true);
@@ -644,12 +646,15 @@
       const witnesses = log.witnesses || [];
       const wProblems = [];
       const wUnsupported = [];
+      const wSha = [];
       for (const w of witnesses) {
         const alg = ALGS[w.alg_id];
-        const fp = hex(sha256(b64(w.public_key_b64))).slice(0, 16);
+        const full = hex(sha256(b64(w.public_key_b64)));
+        const fp = full.slice(0, 16);
         if (!alg) { wUnsupported.push(w.witness + ': ' + w.alg_id); continue; }
         if (alg.verify(b64(w.signature_b64), witnessBytes(w.witness, cp), b64(w.public_key_b64))) {
           fingerprints.witnesses.push({ name: w.witness, fingerprint: fp });
+          wSha.push(full);
         } else {
           wProblems.push(w.witness + ': co-signature did not verify');
         }
@@ -669,17 +674,24 @@
             || fingerprints.witnesses.map(w => w.name + ' (' + w.fingerprint + ')').join(', '));
       }
 
-      // 10. pins
+      // 10. pins: 16 to 64 hex characters of the key's SHA-256, compared exactly. A shorter pin
+      // fails rather than matching as a prefix (qvault/verify/core.py, pin_check).
+      const pinCheck = (key, title, pin, hashes) => {
+        const clean = String(pin).trim().toLowerCase();
+        if (!/^[0-9a-f]{16,64}$/.test(clean)) {
+          add(key, title, false, 'a key pin is 16 to 64 hex characters (the 16 printed, or the '
+              + 'whole SHA-256); got ' + JSON.stringify(pin));
+          return;
+        }
+        add(key, title, hashes.some(h => h.slice(0, clean.length) === clean),
+            'expected ' + clean + ', found ' + (hashes.map(h => h.slice(0, 16)).join(', ') || 'none'));
+      };
       if (pins.log) {
-        add('pinned_log', 'The log key is the one you expected',
-            !!fingerprints.log && fingerprints.log.startsWith(pins.log.toLowerCase()),
-            'expected ' + pins.log + ', found ' + fingerprints.log);
+        pinCheck('pinned_log', 'The log key is the one you expected', pins.log,
+                 logSha ? [logSha] : []);
       }
       if (pins.witness) {
-        const found = fingerprints.witnesses.map(w => w.fingerprint);
-        add('pinned_witness', 'The witness key is the one you expected',
-            found.some(f => f.startsWith(pins.witness.toLowerCase())),
-            'expected ' + pins.witness + ', found ' + (found.join(', ') || 'none'));
+        pinCheck('pinned_witness', 'The witness key is the one you expected', pins.witness, wSha);
       }
     } catch (err) {
       add('format', 'The file is a Q-Vault decision bundle', false, String(err && err.message || err));

@@ -45,6 +45,8 @@ from qvault.services import (
     audit_service,
     auth_service,
     decision_types,
+    delivery_copy,
+    delivery_service,
     device_service,
     discussion_service,
     eligibility,
@@ -253,6 +255,8 @@ def whoami():
             if current_app.config.get("ONCHAIN_EXECUTION_ENABLED")
             else None
         ),
+        # Whether this server sends pushes, and whether this phone has a token here (plan R8).
+        push=_push_state(),
     )
 
 
@@ -1535,3 +1539,81 @@ def remind_approvers(uuid: str):
     except notification_service.RemindRefused as exc:
         return _error("remind_refused", str(exc), 409)
     return jsonify(ok=True, reminded=reminded)
+
+
+# -- phone push (plan R8, A15) -------------------------------------------------------------------
+# The token and the switches are always the calling phone's and its owner's: the device comes from
+# the bearer token, never from the request, so no request can register, read or clear another
+# phone's token. Tokens are never sent back, not even to the phone that registered them.
+
+
+def _push_state() -> dict:
+    return {
+        "available": delivery_service.channel_ready("push"),
+        "registered": delivery_service.push_registered(g.api_device),
+    }
+
+
+@bp.put("/me/push-token")
+@device_token_required
+def register_push_token():
+    """This phone's Expo push token, sent after the person turns notifications on."""
+    try:
+        delivery_service.register_push_token(g.api_device, _body().get("token"))
+    except delivery_service.PushTokenError as exc:
+        return _error(exc.code, exc.message, exc.status)
+    return jsonify(ok=True, push=_push_state())
+
+
+@bp.delete("/me/push-token")
+@device_token_required
+def clear_push_token():
+    """Stop pushing to this phone (notifications turned off, or signing out of it)."""
+    delivery_service.revoke_push_token(g.api_device, "signed_out")
+    return jsonify(ok=True, push=_push_state())
+
+
+def _push_groups(user) -> list[dict]:
+    return [
+        {
+            "id": group,
+            "label": label,
+            "locked": group == "security",
+            "enabled": all(notification_service.wants(user.id, kind, "push") for kind in kinds),
+        }
+        for group, label, kinds in delivery_copy.PUSH_GROUPS
+    ]
+
+
+@bp.get("/me/notification-settings")
+@device_token_required
+def notification_settings():
+    """The phone's Notifications page (phone-ux §6.18): its three push groups. The full grid, with
+    email, is on the web."""
+    return jsonify(
+        ok=True,
+        push={**_push_state(), "groups": _push_groups(g.api_user)},
+        email={"available": delivery_service.channel_ready("email")},
+    )
+
+
+@bp.put("/me/notification-settings")
+@device_token_required
+def set_notification_settings():
+    """Switch one push group on or off: ``{"group": "needs_you" | "updates", "enabled": bool}``.
+    Security alerts can't be switched off."""
+    body = _body()
+    groups = {group: kinds for group, _label, kinds in delivery_copy.PUSH_GROUPS}
+    group, enabled = body.get("group"), body.get("enabled")
+    if group not in groups or not isinstance(enabled, bool):
+        return _error("bad_request", "Send a group (needs_you or updates) and enabled.", 400)
+    if group == "security":
+        return _error("locked", "Security alerts can't be turned off.", 409)
+    for kind in groups[group]:
+        notification_service.set_preference(g.api_user, kind, "push", enabled, commit=False)
+    db.session.commit()
+    return jsonify(
+        ok=True,
+        push={**_push_state(), "groups": _push_groups(g.api_user)},
+        email={"available": delivery_service.channel_ready("email")},
+    )

@@ -24,7 +24,8 @@ answered moves to Updates and says how it ended; one they answered, and every re
 inbox, because the outcome notification says the rest.
 
 **Preferences** are an events × channels grid with every switch on by default. Security events
-(a new device, a changed password) cannot be switched off. Only in-app delivers until R8.
+(a new device, a changed password) cannot be switched off. Email and phone push (R8) are queued
+with the notification and sent by the scheduler (``delivery_service``).
 
 **Nothing in a notification acts** (S12): it carries a link to a page, built from the app's routes,
 and approving happens there.
@@ -48,7 +49,7 @@ from qvault.models.notification import CHANNELS, Notification, NotificationPrefe
 from qvault.models.proposal import Proposal
 from qvault.models.signature import Signature
 from qvault.models.vault import SIGNER_ROLES, VaultMember
-from qvault.services import eligibility, notification_copy
+from qvault.services import delivery_service, eligibility, notification_copy
 
 #: Requests: they ask the recipient to approve, and live in Needs you while that is still possible.
 NEEDS_YOU_KINDS = ("decision_raised", "decision_reminder", "decision_due_soon")
@@ -157,7 +158,10 @@ def _send(
     actor_id: int | None = None,
     data: dict | None = None,
 ) -> list[Notification]:
-    """One notification of ``kind`` to each recipient who wants it and has not had this one."""
+    """One notification of ``kind`` to each recipient who wants it and has not had this one, and
+    the email and pushes for it to whoever wants those (R8; queued here, sent by the scheduler)."""
+    recipients = set(recipients)
+    stored = json.dumps(data, sort_keys=True) if data else None
     wanting = _wanting(recipients, kind)
     told = _already_told(wanting, key)
     created = []
@@ -170,7 +174,7 @@ def _send(
             vault_id=vault_id,
             proposal_id=proposal_id,
             actor_id=actor_id,
-            data=json.dumps(data, sort_keys=True) if data else None,
+            data=stored,
             dedupe_key=key,
             created_at=now,
         )
@@ -183,6 +187,19 @@ def _send(
             continue
         created.append(row)
         _forget_unread(recipient_id)
+    # Email and push have switches of their own, so they are offered to every recipient, not only
+    # those who keep in-app on. Queued in its own savepoint: it never stops the notification.
+    delivery_service.enqueue_notification(
+        kind,
+        recipients,
+        key=key,
+        now=now,
+        vault_id=vault_id,
+        proposal_id=proposal_id,
+        actor_id=actor_id,
+        data=stored,
+        notifications={row.recipient_id: row.id for row in created},
+    )
     return created
 
 

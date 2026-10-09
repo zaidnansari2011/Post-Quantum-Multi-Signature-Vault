@@ -40,6 +40,12 @@
             <span class="q-person__t">
               <span class="q-person__n">{{ i.email }}</span>
               <span class="q-person__e">Sent by {{ i.inviter.display_name }} on {{ i.created_at | ws_when }}</span>
+              {% if row.email == 'queued' %}<span class="q-cap">Email queued</span>
+              {% elif row.email == 'retrying' %}<span class="q-cap">Email not sent yet: Q-Vault is trying again</span>
+              {% elif row.email == 'sent' %}<span class="q-cap">Email sent</span>
+              {% elif row.email == 'failed' %}<span>{{ badge('Email not sent', 'critical') }}</span>
+              <span class="q-cap">Get a new link to try again, or send the link yourself.</span>
+              {% endif %}
             </span>
           </td>
           <td class="q-c-meta">{{ badge(role_name(i.role)) }}</td>

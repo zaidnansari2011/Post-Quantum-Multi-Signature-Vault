@@ -44,6 +44,7 @@ transparency system, and is why real deployments gossip checkpoints between clie
 from __future__ import annotations
 
 import binascii
+import hmac
 import json
 import re
 from base64 import b64decode
@@ -74,6 +75,40 @@ TREASURY_ALG = "ML-DSA-65"
 _BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}")
 #: A signer as the contract names it: 0x + 124 bytes (plan D17).
 _IDENTITY = re.compile(r"0x[0-9a-fA-F]{248}")
+#: A key pin: at least the 16 hex characters every Q-Vault screen prints as a key's fingerprint,
+#: and at most the whole SHA-256. Anything shorter is refused rather than matched as a prefix: an
+#: empty pin used to match every key, and 8 hex characters (32 bits) can be ground with fresh keys.
+_PIN = re.compile(r"[0-9a-f]{16,64}")
+PIN_RULE = "a key pin is 16 to 64 hex characters (the 16 printed, or the whole SHA-256)"
+
+
+def normalise_pin(pin: Any) -> str | None:
+    """The pin as compared (lower case, no surrounding space), or None when it is not a pin."""
+    if not isinstance(pin, str):
+        return None
+    pin = pin.strip().lower()
+    return pin if _PIN.fullmatch(pin) else None
+
+
+def pin_matches(pin: str | None, key_sha256_hex: str | None) -> bool:
+    """Whether a pin from ``normalise_pin`` names this key: each of its hex digits equals the same
+    position of the key's SHA-256. The printed 16-character fingerprint is 64 bits; a longer pin
+    compares more of the hash."""
+    if not pin or not key_sha256_hex:
+        return False
+    return hmac.compare_digest(key_sha256_hex[: len(pin)], pin)
+
+
+def pin_check(key: str, title: str, pin: Any, hashes: list[str]) -> Check:
+    """The pinned-key step: failed outright for a pin that is not one (``PIN_RULE``), otherwise
+    whether any of ``hashes`` (each key's full SHA-256, hex) is the key the reader named."""
+    clean = normalise_pin(pin)
+    if clean is None:
+        return Check(key, title, False, f"{PIN_RULE}; got {pin!r}")
+    found = ", ".join(h[:16] for h in hashes) or "none"
+    return Check(
+        key, title, any(pin_matches(clean, h) for h in hashes), f"expected {clean}, found {found}"
+    )
 
 
 @dataclass
@@ -171,9 +206,10 @@ def verify_bundle(
 ) -> Report:
     """Check an exported decision. Never raises; a malformed bundle is a failing report.
 
-    ``expect_log`` / ``expect_witness`` are SHA-256 fingerprint prefixes the caller obtained out of
-    band. Supplying them is what converts "signed by *a* log" into "signed by *the* log", and the
-    report says plainly which of the two it is checking.
+    ``expect_log`` / ``expect_witness`` are key fingerprints the caller obtained out of band: 16 to
+    64 hex characters of the key's SHA-256, compared exactly (``PIN_RULE``; a shorter one fails).
+    Supplying them is what converts "signed by *a* log" into "signed by *the* log", and the report
+    says plainly which of the two it is checking.
     """
     report = Report(ok=False)
     add = report.checks.append
@@ -565,6 +601,7 @@ def _verify_into(
     # ---------------------------------------------------------------------------------------
     # 8. The checkpoint is the log's own statement
     # ---------------------------------------------------------------------------------------
+    log_sha: str | None = None
     if checkpoint.get("tree_size") != (checkpoint.get("head_seq") or 0) + 1:
         add(
             Check(
@@ -580,7 +617,8 @@ def _verify_into(
         cp_alg = _need(cp_sig, "alg_id", "checkpoint_signature")
         cp_key = _b64(_need(cp_sig, "public_key_b64", "checkpoint_signature"), "log public key")
         cp_bytes = _b64(_need(cp_sig, "signature_b64", "checkpoint_signature"), "log signature")
-        log_fp = sha256_hex(cp_key)[:16]
+        log_sha = sha256_hex(cp_key)
+        log_fp = log_sha[:16]
         report.fingerprints["log"] = log_fp
 
         if not registry.has_signature(cp_alg):
@@ -614,6 +652,7 @@ def _verify_into(
         raise _Malformed("log.witnesses must be a list")
 
     good_witnesses: list[tuple[str, str]] = []
+    good_witness_sha: list[str] = []
     witness_problems: list[str] = []
     for i, w in enumerate(witnesses):
         where = f"witnesses[{i}]"
@@ -627,7 +666,8 @@ def _verify_into(
         if registry.signature(alg).verify(
             key, witness_bytes(witness=name, statement=checkpoint), sig
         ):
-            good_witnesses.append((name, sha256_hex(key)[:16]))
+            good_witness_sha.append(sha256_hex(key))
+            good_witnesses.append((name, good_witness_sha[-1][:16]))
         else:
             witness_problems.append(f"{name}: co-signature did not verify")
 
@@ -657,23 +697,21 @@ def _verify_into(
     # 10. Pinned keys — the step that turns "a log" into "the log"
     # ---------------------------------------------------------------------------------------
     if expect_log is not None:
-        actual = report.fingerprints.get("log")
         add(
-            Check(
+            pin_check(
                 "pinned_log",
                 "The log key is the one you expected",
-                actual is not None and actual.startswith(expect_log.lower()),
-                f"expected {expect_log}, found {actual}",
+                expect_log,
+                [log_sha] if log_sha else [],
             )
         )
     if expect_witness is not None:
-        found = [f for _, f in good_witnesses]
         add(
-            Check(
+            pin_check(
                 "pinned_witness",
                 "The witness key is the one you expected",
-                any(f.startswith(expect_witness.lower()) for f in found),
-                f"expected {expect_witness}, found {', '.join(found) or 'none'}",
+                expect_witness,
+                good_witness_sha,
             )
         )
 

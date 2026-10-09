@@ -16,7 +16,7 @@ from qvault.forms import ChangePasswordForm, ProfileForm
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.device import Device
 from qvault.services import auth_service, key_service, treasury_service
-from qvault.services.key_service import KeyUnlockError
+from qvault.services.key_service import KeyUnlockError, PasswordLockedError
 from qvault.services.treasury_service import LinkRefused
 
 
@@ -120,6 +120,9 @@ def change_password():
         count = key_service.change_password(
             current_user, form.current_password.data, form.new_password.data
         )
+    except PasswordLockedError as exc:
+        form.current_password.errors.append(str(exc))
+        return _render(password_form=form, tab="security")
     except KeyUnlockError:
         # Deliberately attached to the field rather than flashed: this is a form error about one
         # input, and the page should come back with the rest of what they typed intact.

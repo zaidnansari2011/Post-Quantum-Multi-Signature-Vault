@@ -110,8 +110,15 @@ def test_register_endpoint_logs_user_in(client):
             "email": "dana@e.com",
             "password": "a-strong-password",
             "confirm": "a-strong-password",
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    assert b"post-quantum" in resp.data.lower()  # dashboard mentions the PQC identity
+    # Sign-up lands on Home (plan S21), where the new workspace's checklist is, and its flash
+    # says the signing key was made; the key itself is the PQC identity.
+    page = resp.get_data(as_text=True)
+    assert "Get Test workspace started" in page and "signing key were created" in page
+    user = User.query.filter_by(email="dana@e.com").one()
+    assert active_signing_key(user).alg_id.startswith("ML-DSA")

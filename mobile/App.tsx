@@ -53,6 +53,8 @@ import WaitingScreen from './src/screens/WaitingScreen.tsx';
 import SessionEndedScreen from './src/screens/SessionEndedScreen.tsx';
 import LockScreen from './src/screens/LockScreen.tsx';
 import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnrolled } from './src/links.ts';
+import { usePushWiring } from './src/push.ts';
+import { NotificationsPrimer } from './src/screens/NotificationsPrimer.tsx';
 import { wireFocusManager } from './src/freshness.tsx';
 import { RETRY } from './src/queries.ts';
 import { STALE_MS } from './src/logic/freshness.ts';
@@ -284,9 +286,11 @@ function Launch({ bare = false }: { bare?: boolean }) {
 }
 
 function Routes() {
-  const { status } = useSession();
+  const { status, token } = useSession();
   const lock = useAppLock();
   const t = useTheme();
+  // Push for the life of an enrolled session: foreground behaviour, the token, taps (R8, §2.4).
+  usePushWiring(status === 'enrolled' ? token : null, queryClient);
 
   // A link kept while not enrolled (or while the session had ended) opens once the screens are up.
   useEffect(() => setLinksEnrolled(status === 'enrolled'), [status]);
@@ -379,6 +383,8 @@ function Routes() {
           </Stack.Screen>
         </Stack.Group>
       </Stack.Navigator>
+      {/* Once, after enrolment, where this server sends pushes (§6.2 step 3). */}
+      <NotificationsPrimer />
       {lock.locked ? <LockScreen /> : lock.covered ? <PrivacyCover /> : null}
     </>
   );
