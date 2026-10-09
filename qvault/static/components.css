@@ -88,6 +88,9 @@
 
 .q-field { display: grid; gap: var(--space-6); min-width: 0; align-content: start; margin-bottom: var(--space-16); }
 .q-field__label { font-weight: var(--weight-medium); color: var(--text); }
+/* A label with something at the end of its line ("Forgot password?" on sign-in). */
+.q-field__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-8); }
+.q-field__aside { display: inline-block; padding: var(--space-4) 0; font-size: var(--text-caption-size); }
 .q-field__cap { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); color: var(--text-subtle); margin: 0; }
 .q-field__err {
   display: flex; gap: var(--space-6); align-items: flex-start; margin: 0;
@@ -175,6 +178,10 @@ textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6)
   }
   .q-choice, .q-swrow { min-height: var(--target-touch); }
   .q-choices { gap: var(--space-12); }
+  /* A link on a label's line keeps its small type but gets a 44px tap area. It grows upwards, into
+     the margin above the field, so it never covers the input under it. */
+  .q-field__aside { position: relative; }
+  .q-field__aside::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--target-touch); }
 }
 
 /* ---------------------------------------------------------------- segmented control

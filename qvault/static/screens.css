@@ -97,21 +97,124 @@ p.q-panel__bd { margin: 0; }
 .q-auth .q-panel { margin-bottom: var(--space-16); }
 .q-auth .q-kv { --kv-label: 112px; }
 .q-auth .q-banner { margin: var(--space-16) 0; }
+.q-auth__foot + .q-auth__foot { margin-top: var(--space-8); }
 
-.q-landing { width: 100%; max-width: 720px; margin: 0 auto; padding: var(--space-32) 0; text-align: center; }
-.q-landing__brand {
-  display: inline-flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-32);
-  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong);
-}
-.q-landing__brand .q-mark { width: 26px; height: 26px; }
-.q-landing__t {
-  margin: 0 0 var(--space-12); font-size: var(--text-figure-size); line-height: var(--text-figure-line);
+/* The honest password step (_password_step.html): the truth about the password, the password,
+   and the box that says it was read. */
+.q-pwstep { border: 0; margin: var(--space-8) 0 var(--space-16); padding: 0; min-width: 0; }
+.q-pwstep__t { padding: 0; margin-bottom: var(--space-8); font-weight: var(--weight-strong); }
+.q-auth .q-pwstep .q-banner { margin: 0 0 var(--space-16); }
+.q-pwstep__ack { margin-bottom: var(--space-6); }
+.q-pwstep__err { margin-bottom: var(--space-8); }
+
+/* Forgot password: what cannot be done, what can, and what is coming. */
+.q-recover { margin: 0 0 var(--space-24); padding: 0; list-style: none; display: grid; gap: var(--space-16); }
+.q-recover__t { margin: 0 0 var(--space-8); font-size: var(--text-body-size); font-weight: var(--weight-strong); }
+.q-recover h3 { margin: 0 0 var(--space-4); font-size: var(--text-body-size); font-weight: var(--weight-medium); }
+.q-recover p { margin: 0; color: var(--text-muted); }
+
+/* ================================================================ the public pages (rework R6)
+ * The landing, Security, Pricing, Changelog and Status, and the footer under every signed-out page
+ * (base.html). Signed out they sit in one centred column, wider than the sign-in forms. */
+
+.q-body--public { display: block; }
+.q-body--public > div { max-width: 1080px; margin-inline: auto; }
+.q-section__t { margin: 0 0 var(--space-12); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-muted { color: var(--text-muted); }
+
+/* The landing: the job, the actions, the live log strip, then the product. */
+.q-landing { display: grid; gap: var(--space-48); padding-block: var(--space-24) var(--space-16); }
+.q-hero { display: grid; justify-items: center; text-align: center; gap: var(--space-16); }
+.q-hero__t {
+  margin: 0; font-size: var(--text-figure-size); line-height: var(--text-figure-line);
   font-weight: var(--text-figure-weight); letter-spacing: var(--text-figure-tracking); text-wrap: balance;
 }
-.q-landing__lead { max-width: 34rem; margin: 0 auto var(--space-32); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); color: var(--text-muted); }
-.q-landing__act { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin-bottom: var(--space-40); }
-.q-landing .q-stats { text-align: left; margin-bottom: var(--space-24); }
-.q-landing__foot { margin: var(--space-24) 0 0; }
+.q-hero__lead { margin: 0; max-width: 40rem; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); color: var(--text-muted); text-wrap: pretty; }
+.q-hero__act { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); }
+
+/* The live log strip: one line of facts from the log, a dot for the witness's state. */
+.q-logstrip {
+  display: inline-flex; align-items: flex-start; gap: var(--space-8); max-width: 100%; margin-top: var(--space-8);
+  padding: var(--space-6) var(--space-12); border: var(--border-width) solid var(--border); border-radius: var(--radius-full);
+  background: var(--surface); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted);
+}
+.q-logstrip__dot { flex: none; width: 8px; height: 8px; margin-top: 4px; border-radius: var(--radius-full); background: var(--status-success-fg); }
+.q-logstrip--warn .q-logstrip__dot { background: var(--status-warning-fg); }
+.q-logstrip--bad .q-logstrip__dot { background: var(--status-critical-fg); }
+.q-logstrip__l { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-2) var(--space-8); margin: 0; padding: 0; list-style: none; text-align: left; }
+.q-logstrip__l > li + li::before { content: ""; display: inline-block; width: 3px; height: 3px; margin-right: var(--space-8); vertical-align: middle; border-radius: var(--radius-full); background: var(--text-subtle); }
+.q-logstrip a strong { color: inherit; }
+.q-logstrip strong { color: var(--text); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.q-logstrip time { font-variant-numeric: tabular-nums; }
+.q-logstrip__fp { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+/* On a phone the facts would wrap mid-line, so the pill becomes a card with one fact per line. */
+@media (max-width: 560px) {
+  .q-logstrip { border-radius: var(--radius-card); }
+  .q-logstrip__l { flex-direction: column; align-items: flex-start; }
+  .q-logstrip__l > li + li::before { content: none; }
+}
+
+/* The product, as it is: a real screenshot in the reader's theme. */
+.q-shot { margin: 0 auto; max-width: 768px; display: grid; gap: var(--space-8); justify-items: center; }
+.q-shot img { display: block; width: 100%; height: auto; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.q-shot figcaption { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+.q-steps__l { display: grid; gap: var(--space-24); margin: 0; padding: 0; list-style: none; counter-reset: step; }
+@media (min-width: 768px) { .q-steps__l { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.q-steps__l > li { counter-increment: step; }
+.q-steps__l > li::before {
+  content: counter(step); display: inline-grid; place-items: center; width: 24px; height: 24px; margin-bottom: var(--space-8);
+  border-radius: var(--radius-full); background: var(--accent-subtle); color: var(--accent-fg); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums;
+}
+.q-steps h3 { margin: 0 0 var(--space-4); font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-strong); }
+.q-steps p { margin: 0; color: var(--text-muted); }
+
+.q-split { display: grid; gap: var(--space-24); padding-top: var(--space-24); border-top: var(--border-width) solid var(--border); }
+@media (min-width: 768px) { .q-split { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-48); } }
+.q-split p { margin: 0 0 var(--space-12); }
+
+/* Security: the levels ladder, Q-Vault's rung marked. */
+.q-public { min-width: 0; }
+.q-sec .q-table-wrap { margin-bottom: var(--space-16); }
+.q-prose .q-ladder { display: grid; gap: var(--space-8); margin: 0 0 var(--space-16); padding: 0; list-style: none; }
+.q-prose .q-ladder > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-12); margin: 0; padding: var(--space-12) var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.q-ladder > li.is-here { border-color: var(--accent-border); background: var(--accent-subtle); }
+.q-ladder__n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-full); background: var(--fill); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.q-ladder > li.is-here .q-ladder__n { background: var(--accent); color: var(--accent-text); }
+.q-prose .q-ladder h3 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin: 0 0 var(--space-4); font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-strong); }
+.q-prose .q-ladder p { margin: 0; color: var(--text-muted); }
+
+/* Status: the overall line, one row per check, and what the colours mean. */
+.q-status { max-width: 720px; display: grid; gap: var(--space-16); }
+.q-status__all { display: flex; align-items: center; gap: var(--space-8); margin: 0; padding: var(--space-12) var(--space-16); border-radius: var(--radius-card); border: var(--border-width) solid var(--status-success-border); background: var(--status-success-bg); color: var(--status-success-fg); font-weight: var(--weight-strong); }
+.q-status__all--degraded { border-color: var(--status-warning-border); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.q-status__all--down { border-color: var(--status-critical-border); background: var(--status-critical-bg); color: var(--status-critical-fg); }
+.q-status__dot { width: 10px; height: 10px; flex: none; border-radius: var(--radius-full); background: currentColor; }
+.q-status__rows { display: grid; margin: 0 0 var(--space-16); padding: 0; list-style: none; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.q-status__row { padding: var(--space-12) var(--space-16); }
+.q-status__row + .q-status__row { border-top: var(--border-width) solid var(--border); }
+.q-status__h { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.q-status__n { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-strong); }
+.q-status__s { margin: var(--space-4) 0 0; }
+.q-status__d { margin: var(--space-2) 0 0; color: var(--text-muted); }
+.q-status__key { display: grid; gap: var(--space-8); margin: 0; }
+.q-status__key > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--space-12); align-items: baseline; }
+.q-status__key dt, .q-status__key dd { margin: 0; }
+.q-status__key dd { color: var(--text-muted); }
+
+/* Changelog: one section per release. */
+.q-changes section + section { margin-top: var(--space-32); }
+.q-changes h2 { margin-top: 0; }
+
+/* The footer under every signed-out page. */
+.q-foot { border-top: var(--border-width) solid var(--border); background: var(--bg-subtle); padding: var(--space-32) var(--gutter) var(--space-40); }
+.q-foot__in { max-width: 1080px; margin-inline: auto; display: grid; gap: var(--space-24); }
+.q-foot__cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-24); }
+.q-foot__h { margin: 0 0 var(--space-8); font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-strong); color: var(--text); }
+.q-foot ul { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.q-foot a { color: var(--text-muted); text-decoration: none; }
+.q-foot a:hover { color: var(--text); text-decoration: underline; }
+.q-foot__note { margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 
 /* ================================================================ workspace and members */
 

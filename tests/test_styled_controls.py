@@ -340,7 +340,14 @@ def test_a_refused_workspace_name_comes_back_on_its_field(app, client, team):
 def test_an_email_already_registered_is_said_on_the_email_field(app, client, team):
     r = client.post(
         "/register",
-        data={"display_name": "A", "email": "ada@e.com", "password": PW, "confirm": PW},
+        data={
+            "display_name": "A",
+            "email": "ada@e.com",
+            "workspace_name": "A Co",
+            "password": PW,
+            "confirm": PW,
+            "understood": "y",
+        },
     )
     html = r.get_data(as_text=True)
     tag = re.search(r'<input[^>]*id="email"[^>]*>', html).group(0)

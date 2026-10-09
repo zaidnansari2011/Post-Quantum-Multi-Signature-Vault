@@ -3,13 +3,14 @@
 Three concerns live here together because separating them is how disclosure bugs happen.
 
 **Scoping is not a filter.** A reader may see entries for vaults they belong to, their own actions,
-global SYSTEM events, and the events of a workspace they own, administer or audit (invitations,
-role changes, removals: plan S10). That restriction is applied first and unconditionally, and
-every user filter is ANDed onto it. A query builder that let a filter *replace* the scope — or
-that applied filters to the whole table and scoped afterwards with a limit already applied —
-would leak another tenant's activity. ``export`` therefore goes through exactly the same builder
-as the on-screen list rather than its own query; an export path with its own scoping logic is a
-second chance to get it wrong.
+global SYSTEM events (those not recorded against a vault), and the events of a workspace they own,
+administer or audit (invitations, role changes, removals: plan S10, and the system's events on that
+workspace's vaults: expiries, payouts, treasury changes). That restriction is applied
+first and unconditionally, and every user filter is ANDed onto it. A query builder that let a filter
+*replace* the scope — or that applied filters to the whole table and scoped afterwards with a limit
+already applied — would leak another tenant's activity. ``export`` therefore goes through exactly
+the same builder as the on-screen list rather than its own query; an export path with its own
+scoping logic is a second chance to get it wrong.
 
 **Narration is shared.** The chain stores machine event names because they go into the hash
 preimage and must never change. Both the screen and the CSV render them as sentences naming the
@@ -35,6 +36,7 @@ from qvault.models.signature import Signature
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.models.workspace import Workspace, WorkspaceMember
+from qvault.services import workspace_service
 from qvault.services.signing import format_wei
 from qvault.ui import first_name
 
@@ -194,9 +196,29 @@ def _scope(user: User):
     return or_(
         LedgerEntry.vault_id.in_(member_vaults),
         LedgerEntry.actor == f"user:{user.id}",
-        LedgerEntry.actor == "SYSTEM",
+        # The system's own events (genesis, key rotations), but not those it records against a
+        # vault (an expiry, a scheduler's approval, a payout, a treasury change): those belong to
+        # the vault's members, matched above, and naming them to everyone would show any signed-up
+        # stranger another workspace's vaults.
+        and_(LedgerEntry.actor == "SYSTEM", LedgerEntry.vault_id.is_(None)),
+        # ...and to whoever audits the vault's workspace (its owners, admins and auditors), who
+        # may be in none of its vaults: an auditor is shown the system's work on every vault of
+        # their own workspace, never another's (R6 review).
+        and_(LedgerEntry.actor == "SYSTEM", LedgerEntry.vault_id.in_(_audited_vault_ids(user))),
         and_(LedgerEntry.ref_type == "workspace", LedgerEntry.ref_id.in_(audited_workspaces)),
     )
+
+
+def _audited_vault_ids(user: User) -> list[int]:
+    """The vaults of every workspace this person audits (an active owner, admin or auditor)."""
+    ids: list[int] = []
+    for member in WorkspaceMember.query.filter(
+        WorkspaceMember.user_id == user.id,
+        WorkspaceMember.status == "active",
+        WorkspaceMember.role.in_(WORKSPACE_AUDIT_ROLES),
+    ):
+        ids += workspace_service.vault_ids_of(member.workspace)
+    return ids
 
 
 def _stmt(user: User, filters: Filters):

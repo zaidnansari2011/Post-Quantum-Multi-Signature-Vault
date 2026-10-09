@@ -8,7 +8,8 @@
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
     {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
-    {{ wtf_field(form.password, attrs={'autocomplete': 'current-password'}) }}
+    {% set forgot %}<a class="q-field__aside" href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>{% endset %}
+    {{ wtf_field(form.password, attrs={'autocomplete': 'current-password'}, aside=forgot) }}
     {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
   </form>
 
@@ -25,7 +26,7 @@
   {% endif %}
 
   <p class="q-auth__foot">
-    No account? <a href="{{ url_for('auth.register') }}">Create one</a>
+    New to Q-Vault? <a href="{{ url_for('auth.register') }}">Create your workspace</a>
   </p>
 </div>
 {% endblock %}
