@@ -911,6 +911,30 @@ already-proven setting rather than guessed.
    not the instant the radio drops.) If the queue does not paint offline after a restart, the APK
    is missing expo-file-system's native module (it should come with `expo`); the app then simply
    keeps no cache, and nothing else breaks.
+4. **Leaving a half-filled form (P3).** Start a New decision and a New vault, type something, then
+   leave each three ways: the iOS swipe down, Android's back button, and Android's predictive back
+   gesture. Each should open "Discard this decision?" (or "Discard this vault?") with Discard and
+   Keep editing, and Keep editing should leave the text as it was.
+5. **App lock (P3, off by default).** Turn on Account, This phone, "Require ... to open Q-Vault".
+   Leave the app for over a minute and come back: it asks. Then approve a decision using the PIN
+   fallback and take over a minute in the PIN screen: the app must NOT lock in the middle of the
+   signature. On an iPhone, the app switcher should show the Q-Vault mark, not a decision. On
+   Android it will still show the app until the rework APK adds expo-screen-capture (phone-ux
+   §10.2 N10); note it rather than treat it as a failure.
+6. **The keyboard over sheets (P3).** Open Reject on a decision and tap the reason field: the
+   "Sign rejection" button must ride above the keyboard. Do the same in New decision's payment
+   review and the access fields: the bar's button must stay reachable.
+7. **Set up a phone (P3).** Sign in with a wrong password (the error sits under the password
+   field), then the right one; "This phone gets its own key"; "Create key on this phone" asks for
+   the phone's lock once and shows "Key created" with the fingerprint, which should match the web's
+   device list. "Forgot password?" opens the explanation and "Continue on the web" opens
+   /forgot-password (once R6 is merged).
+8. **Remove another of your devices (P3).** With two phones set up, open Account, Other devices on
+   one, choose the other, "Remove this device": the phone's lock is asked first, then the device
+   shows under "Removed", and the removed phone shows Session ended the next time it asks.
+9. **Approve a treasury change (P3).** When a vault owner asks for a treasury update on the web,
+   the change appears in Approvals on a phone whose key the treasury holds; open it, "Approve
+   change", read the sheet, approve with the phone's lock, and see "Approval signed".
 
 ## 4. Submission and delivery
 
