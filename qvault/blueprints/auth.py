@@ -28,7 +28,8 @@ bp = Blueprint("auth", __name__)
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     if current_user.is_authenticated:
-        return redirect(url_for("auth.dashboard"))
+        # Signed in already: Home, the work queue, is where a signed-in person lands everywhere.
+        return redirect(url_for("core.index"))
     form = RegisterForm()
     if form.validate_on_submit():
         try:
@@ -60,7 +61,7 @@ def register():
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("auth.dashboard"))
+        return redirect(safe_next(request.args.get("next")) or url_for("core.index"))
     form = LoginForm()
     if form.validate_on_submit():
         user = auth_service.authenticate(form.email.data, form.password.data)
@@ -68,7 +69,8 @@ def login():
             flash("Invalid email or password.", "danger")
             return render_template("login.html", form=form)
         login_user(user)
-        return redirect(safe_next(request.args.get("next")) or url_for("auth.dashboard"))
+        # Home (the work queue), unless a page sent them here and asked to go back to it.
+        return redirect(safe_next(request.args.get("next")) or url_for("core.index"))
     return render_template("login.html", form=form)
 
 
@@ -95,9 +97,9 @@ def logout():
 @login_required
 def dashboard():
     """Kept as a redirect. "Dashboard" was a page about the reader's own signing key, which is an
-    account setting; the name now belongs to Home, which is a work queue. Old links and bookmarks
-    still land somewhere sensible."""
-    return redirect(url_for("account.index"))
+    account setting; the name now belongs to Home, which is a work queue, so old links and
+    bookmarks land there, where every sign-in lands (staging smoke test 2026-10-09)."""
+    return redirect(url_for("core.index"))
 
 
 @bp.post("/keys/reissue")
