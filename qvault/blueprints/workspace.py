@@ -24,7 +24,9 @@ from qvault.forms import InviteRegisterForm
 from qvault.models.user import User
 from qvault.models.vault import Vault
 from qvault.models.workspace import INVITABLE_VAULT_ROLES, WORKSPACE_ROLES, Invitation
+from qvault.services import delivery_service
 from qvault.services import workspace_service as ws
+from qvault.services.notification_copy import _path
 from qvault.services.workspace_service import InvitationError, WorkspaceError
 
 bp = Blueprint("workspace", __name__)
@@ -282,10 +284,16 @@ def _render_invite(workspace, me, *, email="", role="member", chosen=None, statu
 
 
 def _render_link(invitation: Invitation, token: str, *, resent: bool):
+    # From PUBLIC_BASE_URL when it is set, like the email's (R8), rather than the request's Host.
+    base = delivery_service.public_base_url()
     response = render_template(
         "workspace/link.html",
         invitation=invitation,
-        link=url_for("workspace.accept_page", token=token, _external=True),
+        link=(
+            base + _path("workspace.accept_page", token=token)
+            if base
+            else url_for("workspace.accept_page", token=token, _external=True)
+        ),
         grants=_grant_rows(invitation),
         role_name=ws.role_name,
         resent=resent,

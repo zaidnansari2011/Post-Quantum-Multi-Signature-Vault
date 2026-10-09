@@ -280,6 +280,10 @@ def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) 
     key = device.key
     if key is not None:
         key_service.revoke_device_key(key, commit=False)
+    # A removed phone's lock screen hears nothing more (plan R8).
+    from qvault.services import delivery_service
+
+    delivery_service.revoke_push_token(device, "device_removed", commit=False)
 
     ledger_service.append(
         "device_revoked",

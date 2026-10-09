@@ -25,8 +25,8 @@
               <tr>
                 <th scope="col">Event</th>
                 <th scope="col" class="npref__col">In-app</th>
-                <th scope="col" class="npref__col npref__later">Email <span class="npref__off">Not set up</span></th>
-                <th scope="col" class="npref__col npref__later">Phone push <span class="npref__off">Not set up</span></th>
+                <th scope="col" class="npref__col{% if not email_ready %} npref__later{% endif %}">Email{% if not email_ready %} <span class="npref__off">Not set up</span>{% endif %}</th>
+                <th scope="col" class="npref__col{% if not push_ready %} npref__later{% endif %}">Phone push{% if not push_ready %} <span class="npref__off">Not set up</span>{% endif %}</th>
               </tr>
             </thead>
             {#- One tbody per group, headed by a rowgroup header, and each event a row header: a
@@ -48,17 +48,44 @@
                          {% if row.channels.in_app %}checked{% endif %}
                          {% if row.locked %}disabled aria-describedby="locked-{{ kind }}"{% endif %}>
                 </td>
+                {% if email_ready %}
+                <td class="npref__col">
+                  <input class="q-cb" type="checkbox" id="email-{{ kind }}" name="email" value="{{ kind }}"
+                         aria-label="{{ label }}: email"
+                         {% if row.channels.email %}checked{% endif %}
+                         {% if row.locked %}disabled aria-describedby="locked-{{ kind }}"{% endif %}>
+                </td>
+                {% else %}
                 <td class="npref__col npref__later"><span class="npref__none" title="Email is not set up">–</span></td>
+                {% endif %}
+                {% if push_ready and kind in push_kinds %}
+                <td class="npref__col">
+                  <input class="q-cb" type="checkbox" id="push-{{ kind }}" name="push" value="{{ kind }}"
+                         aria-label="{{ label }}: phone push"
+                         {% if row.channels.push %}checked{% endif %}
+                         {% if row.locked %}disabled aria-describedby="locked-{{ kind }}"{% endif %}>
+                </td>
+                {% elif push_ready %}
+                <td class="npref__col"><span class="npref__none" title="Not sent to phones: it shows in the inbox">–</span><span class="visually-hidden">Not sent to phones</span></td>
+                {% else %}
                 <td class="npref__col npref__later"><span class="npref__none" title="Phone push is not set up">–</span></td>
+                {% endif %}
               </tr>
               {% endfor %}
             </tbody>
             {% endfor %}
           </table>
         </div>
-        <p class="q-note q-gap">Switching an event off removes it from the bell and the
-          inbox from now on. Decisions waiting on you still appear on Approvals. Email and phone push
-          arrive in a later release; until then nothing is sent by either.</p>
+        <p class="q-note q-gap">Switching an event off stops it on that channel from now on.
+          Decisions waiting on you still appear on Approvals.
+          {%- if email_ready %} Emails go to {{ current_user.email }} and never contain an amount, a
+          recipient or a button that approves: they link to the page where you decide.{% else %} Email
+          isn't set up on this Q-Vault, so none is sent.{% endif %}
+          {%- if push_ready %}
+            {%- if has_phone %} Phones get at most two pushes per decision: when it needs you, and once
+            before it closes.{% else %} No phone has notifications on yet: turn them on in the Q-Vault
+            app, under Account.{% endif %}
+          {%- else %} Phone push isn't set up on this Q-Vault.{% endif %}</p>
         {{ button('Save preferences', 'primary', type='submit') }}
       </form>
     </div>

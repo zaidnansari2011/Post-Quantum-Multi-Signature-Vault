@@ -21,7 +21,7 @@
         <strong>This is the only time the link is shown.</strong>
         Q-Vault keeps only a fingerprint of it, so it can't show it again.
         {% if resent %}The previous link no longer works.{% endif %}
-        Email isn't sent for you yet: send it yourself.
+        {% if delivery_ready('email') %}Q-Vault is emailing it to {{ invitation.email }}; you can also send it yourself.{% else %}Email isn't sent for you here: send it yourself.{% endif %}
       </p>
     </div>
   </section>
