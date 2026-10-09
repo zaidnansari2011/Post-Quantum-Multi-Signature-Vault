@@ -280,7 +280,7 @@ CASES = {
         4,
         "Can't pass",
         "warning",
-        "You approved 10:24.",
+        "You approved this.",
         "none",
     ),
     "6_not_an_approver_cannot_pass": (
