@@ -80,7 +80,7 @@ def test_the_operators_first_account_is_still_the_administrator(app):
 def test_the_operator_script_grants_and_removes_the_role_and_records_it(app, capsys):
     auth_service.sign_up("first@kestrel.com", "First", PW, "Kestrel")
     script = _script()
-    assert script.main(["--email", "FIRST@kestrel.com"], app=app) == 0
+    assert script.main(["--email", "FIRST@kestrel.com", "--yes"], app=app) == 0
     assert User.query.filter_by(email="first@kestrel.com").one().role == "admin"
     assert "is now an administrator" in capsys.readouterr().out
     assert script.main(["--email", "first@kestrel.com", "--remove"], app=app) == 0
@@ -114,3 +114,127 @@ def test_the_grant_shows_only_in_that_persons_own_audit(app):
 
     assert "system_admin_granted" in types(target)
     assert "system_admin_granted" not in types(other)
+
+
+# ------------------------------------------------------------------------------ the R6 review
+
+
+def test_the_grant_shows_who_the_account_is_and_needs_yes(app, capsys):
+    """The team's addresses are public and sign-up does not verify an address, so the account
+    under an expected address may be a stranger's: the script shows it and asks first."""
+    auth_service.sign_up("zaid@kestrel.com", "Not Zaid", PW, "Squat")
+    before = LedgerEntry.query.count()
+    assert _script().main(["--email", "zaid@kestrel.com"], app=app) == 1
+    captured = capsys.readouterr()
+    assert "Not Zaid" in captured.out and "Squat (owner)" in captured.out
+    assert "SIGNED ITSELF UP" in captured.out and "Created:" in captured.out
+    assert "--yes" in captured.err
+    assert User.query.filter_by(email="zaid@kestrel.com").one().role == "user"
+    assert LedgerEntry.query.count() == before
+
+
+def test_an_account_made_by_the_operator_is_described_as_such(app, capsys):
+    auth_service.register_user("ops@e.com", "Ops", PW)
+    auth_service.register_user("two@e.com", "Two", PW)
+    assert _script().main(["--email", "two@e.com"], app=app) == 1
+    assert "made by the operator's scripts" in capsys.readouterr().out
+
+
+def _seed_team(app, monkeypatch, tmp_path, *argv):
+    import sys
+
+    import qvault
+
+    spec = importlib.util.spec_from_file_location("seed_team", ROOT / "scripts/seed_team.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(qvault, "create_app", lambda *a, **k: app)
+    monkeypatch.setattr(sys, "argv", ["seed_team.py"])
+    monkeypatch.chdir(tmp_path)  # the credentials file lands here, not in the worktree
+    return module, module.main(list(argv))
+
+
+def _team(module):
+    admin = next(e for _, e, is_admin in module.TEAM if is_admin)
+    others = [e for _, e, is_admin in module.TEAM if not is_admin]
+    return admin, others
+
+
+def test_seed_team_never_promotes_or_vaults_an_account_it_did_not_create(
+    app, client, monkeypatch, tmp_path, capsys
+):
+    """R6 review, finding 1: a stranger signs up first with the admin's public address; the team
+    script used to make them system administrator and owner of the team's vault."""
+    from qvault.models.vault import Vault
+
+    spec = importlib.util.spec_from_file_location("seed_team", ROOT / "scripts/seed_team.py")
+    peek = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(peek)
+    admin, others = _team(peek)
+    auth_service.sign_up(admin, "Not Zaid", PW, "Squat")
+
+    module, rc = _seed_team(app, monkeypatch, tmp_path)
+    out = capsys.readouterr().out
+    squatter = User.query.filter_by(email=admin).one()
+    assert rc == 1, "a refusal is not a clean run"
+    assert squatter.role == "user"
+    assert "REFUSED" in out and "'Not Zaid'" in out and "Squat (owner)" in out
+    assert f"--adopt-existing {admin}" in out
+    assert "Zaid Ansari" not in out, "a TEAM name is printed only for an account this run made"
+    assert workspace_service.current_workspace(squatter).name == "Squat"
+    vault = Vault.query.filter_by(name="Board approvals").one()
+    assert not vault.is_member(squatter.id)
+    assert {m.user_id for m in vault.members} == {
+        User.query.filter_by(email=e).one().id for e in others
+    }
+    assert "system_admin_granted" not in {e.event_type for e in LedgerEntry.query.all()}
+
+
+def test_seed_team_adopts_a_self_signed_up_member_only_when_told_and_logs_the_grant(
+    app, monkeypatch, tmp_path, capsys
+):
+    """A genuine team member who signed up by themselves (so owns an empty workspace) is
+    adopted with --adopt-existing: moved into the team's workspace, put in the vault, promoted
+    through the logged path. This used to crash with MembershipError."""
+    from qvault.models.vault import Vault
+
+    spec = importlib.util.spec_from_file_location("seed_team", ROOT / "scripts/seed_team.py")
+    peek = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(peek)
+    admin, others = _team(peek)
+    auth_service.register_user("persona@e.com", "Persona", PW)  # a seeded database
+    zaid = auth_service.sign_up(admin, "Zaid A.", PW, "Zaid's own")
+
+    module, rc = _seed_team(app, monkeypatch, tmp_path, "--adopt-existing", admin.upper())
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    zaid = User.query.filter_by(email=admin).one()
+    assert zaid.role == "admin"
+    assert "Zaid A. (" in out and "promoted to administrator (recorded in the ledger)" in out
+    shared = workspace_service.shared_workspace()
+    assert workspace_service.current_workspace(zaid).id == shared.id
+    assert [m.workspace.name for m in workspace_service.memberships_of(zaid)] == ["Q-Vault"]
+    vault = Vault.query.filter_by(name="Board approvals").one()
+    assert vault.owner_id == zaid.id and len(vault.members) == 1 + len(others)
+    events = [e.event_type for e in LedgerEntry.query.all()]
+    assert "system_admin_granted" in events and "workspace_member_left" in events
+
+
+def test_seed_team_refuses_to_adopt_an_account_whose_workspace_is_in_use(
+    app, monkeypatch, tmp_path, capsys
+):
+    spec = importlib.util.spec_from_file_location("seed_team", ROOT / "scripts/seed_team.py")
+    peek = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(peek)
+    admin, _ = _team(peek)
+    zaid = auth_service.sign_up(admin, "Zaid A.", PW, "Busy")
+    from qvault.services import vault_service
+
+    vault_service.create_vault(zaid, "Kept", "", 1)
+
+    module, rc = _seed_team(app, monkeypatch, tmp_path, "--adopt-existing", admin)
+    out = capsys.readouterr().out
+    assert rc == 1 and "REFUSED" in out and "Busy" in out
+    zaid = User.query.filter_by(email=admin).one()
+    assert zaid.role == "user"
+    assert [m.workspace.name for m in workspace_service.memberships_of(zaid)] == ["Busy"]
