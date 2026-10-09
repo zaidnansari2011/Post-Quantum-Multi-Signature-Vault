@@ -211,7 +211,7 @@ def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
             _unsigned_by(user),
         )
     ).all()
-    return [
+    ids = [
         pid
         for pid, snapshot, creator_id in candidates
         if user.id in set(json.loads(snapshot))
@@ -221,6 +221,15 @@ def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
             and eligibility.own_decision_blocked(db.session.get(Proposal, pid), user.id)
         )
     ]
+    if not ids:
+        return ids
+    # Owner decision 2026-10-09: a decision that can no longer pass asks nobody to approve it.
+    stalled = eligibility.stalled_ids(
+        Proposal.query.filter(Proposal.id.in_(ids)).options(
+            selectinload(Proposal.signatures), selectinload(Proposal.lifecycle)
+        )
+    )
+    return [pid for pid in ids if pid not in stalled]
 
 
 def _tab_condition(user: User, tab: str, now: datetime, needs_ids: list[int] | None = None):
@@ -383,7 +392,12 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
             eligible=eligibility.eligible_ids(p, current=signing_now.get(p.vault_id, ())),
         )
         needs_me = (
-            status == "open" and authorised and p.vault_id in signer_vaults and not signed_by_me
+            status == "open"
+            and authorised
+            and p.vault_id in signer_vaults
+            and not signed_by_me
+            # Owner decision 2026-10-09: a decision that can no longer pass needs nobody.
+            and outlook.reachable
         )
         key, n = status_key(
             status,
@@ -424,6 +438,12 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
                 "can_still_approve": [_name(people, uid, user) for uid in outlook.still],
                 # False when too few of them are left to reach its threshold (``eligibility``).
                 "can_still_pass": status != "open" or outlook.reachable,
+                # How many its signed rule lets vote (less the raiser under S15), for sentences
+                # that count voters ("rejected only if 2 of the 2 who can vote reject").
+                "voters": len(
+                    set(snapshots[p.id])
+                    - ({p.creator_id} if not eligibility.requester_may_approve(p) else set())
+                ),
             }
         )
     return rows
@@ -459,8 +479,9 @@ def status_key(
 
     ``can_still_pass`` is False when too few people can still approve an open decision to reach
     its threshold (``eligibility.outlook``): it then reads Can’t pass instead of Waiting on N.
-    A derived word, not a status: the decision is still open, and Needs your signature still wins
-    for someone who can sign it, since their vote is still taken.
+    A derived word, not a status: the decision is still open. Since the owner's decision of
+    2026-10-09 such a decision needs nobody's signature (callers pass ``needs_me`` False for it),
+    so everyone reads Can’t pass; whoever can still vote may still reject it.
     """
     if status == "open":
         if needs_me:

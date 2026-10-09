@@ -97,14 +97,17 @@ def vault_allows_requester(vault: Vault) -> bool:
     return True if rule is None else bool(rule.requester_can_approve)
 
 
-def requester_may_approve(proposal) -> bool:
+def requester_may_approve(proposal, *, allows: bool | None = None) -> bool:
     """Whether the person who raised ``proposal`` may sign it: under the rule it was raised with
-    AND the vault's rule now (see the module docstring)."""
+    AND the vault's rule now (see the module docstring). ``allows`` is the vault's rule now when
+    the caller already read it (``vault_allows_requester``)."""
     lifecycle = proposal.lifecycle
     frozen = True
     if lifecycle is not None and lifecycle.requester_can_approve is not None:
         frozen = bool(lifecycle.requester_can_approve)
-    return frozen and vault_allows_requester(proposal.vault)
+    if allows is None:
+        allows = vault_allows_requester(proposal.vault)
+    return frozen and allows
 
 
 def own_decision_blocked(proposal, user_id: int) -> bool:
@@ -189,16 +192,18 @@ def cannot_raise(vault: Vault, requester_id: int | None = None) -> str | None:
     return f"A decision raised here could never pass: {words}"
 
 
-def eligible_ids(proposal, *, current: Iterable[int] | None = None) -> set[int]:
+def eligible_ids(
+    proposal, *, current: Iterable[int] | None = None, allows: bool | None = None
+) -> set[int]:
     """Who may sign ``proposal`` now: its frozen signer set AND the vault's signers now, less the
     person who raised it when separation of duties applies to it.
 
     ``current`` is ``current_signer_ids(proposal.vault)`` when the caller already has it (a list
-    decorates many decisions of few vaults).
+    decorates many decisions of few vaults), and ``allows`` the vault's S15 rule likewise.
     """
     now = set(current) if current is not None else current_signer_ids(proposal.vault)
     ids = _snapshot(proposal) & now
-    if not requester_may_approve(proposal):
+    if not requester_may_approve(proposal, allows=allows):
         ids.discard(proposal.creator_id)
     return ids
 
@@ -290,3 +295,63 @@ def outlook(
     allowed = set(eligible) if eligible is not None else eligible_ids(proposal)
     still = tuple(sorted(allowed - set(voted)))
     return Outlook(still=still, needed=max(proposal.required_m - approvals, 0))
+
+
+def stored_outlook(
+    proposal, *, current: Iterable[int] | None = None, allows: bool | None = None
+) -> Outlook:
+    """``outlook`` from the votes as stored (a list does not re-verify every signature; the
+    decision page passes its verified tally to ``outlook`` itself)."""
+    approvals = sum(1 for s in proposal.signatures if s.decision == "approve")
+    return outlook(
+        proposal,
+        approvals=approvals,
+        voted=[s.signer_id for s in proposal.signatures],
+        eligible=eligible_ids(proposal, current=current, allows=allows),
+    )
+
+
+def cannot_pass(
+    proposal, *, current: Iterable[int] | None = None, allows: bool | None = None
+) -> bool:
+    """Whether an open decision can no longer reach its threshold with the people who can still
+    approve it (``Outlook.reachable``).
+
+    Owner decision 2026-10-09 (staging smoke test): such a decision asks nobody to approve it. It
+    leaves Needs you, the approvals inbox, reminders and pushes, nobody is offered Approve and the
+    vote gate takes no approval of it; Reject stays, with its reason. When it becomes Rejected is
+    unchanged: that is the signed M-of-N rule the offline verifier checks (S9). Not permanent: an
+    approver reinstated in the workspace, or made an approver again, can make it passable again.
+    """
+    return (
+        proposal.status == "open"
+        and not stored_outlook(proposal, current=current, allows=allows).reachable
+    )
+
+
+def stalled_ids(proposals: Iterable) -> set[int]:
+    """The ids of the open ``proposals`` that can no longer pass (``cannot_pass``), reading each
+    vault's current signers and S15 rule once."""
+    current: dict[int, set[int]] = {}
+    allows: dict[int, bool] = {}
+    out = set()
+    for p in proposals:
+        if p.status != "open":
+            continue
+        if p.vault_id not in current:
+            current[p.vault_id] = current_signer_ids(p.vault)
+            allows[p.vault_id] = vault_allows_requester(p.vault)
+        if cannot_pass(p, current=current[p.vault_id], allows=allows[p.vault_id]):
+            out.add(p.id)
+    return out
+
+
+def voter_ids(proposal) -> set[int]:
+    """The people its signed rule lets vote: its frozen signer set, less whoever raised it when
+    separation of duties keeps them from signing it. What a count of "the approvers" in a
+    sentence means (staging smoke test 2026-10-09: "Rejected by 2 of the 3 approvers" counted a
+    raiser who could not vote). The signed set itself is unchanged (S9)."""
+    ids = _snapshot(proposal)
+    if not requester_may_approve(proposal):
+        ids.discard(proposal.creator_id)
+    return ids

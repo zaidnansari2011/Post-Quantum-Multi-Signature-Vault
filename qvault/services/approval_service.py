@@ -63,6 +63,14 @@ OWN_DECISION = (
     "or reject it."
 )
 
+#: Owner decision 2026-10-09: a decision too few people can still approve to pass takes no more
+#: approvals (``eligibility.cannot_pass``); a rejection is still taken. The API maps "can no
+#: longer pass" to the code ``cannot_pass``.
+CANNOT_PASS = (
+    "This decision can no longer pass: too few of the people who can approve it are left, so it "
+    "takes no more approvals. You can still reject it."
+)
+
 
 @dataclass(frozen=True)
 class BindingReport:
@@ -424,6 +432,9 @@ def _authorize_vote(
        (``eligibility.requester_may_approve``);
     8. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
        and a concurrent vote may not be visible here yet;
+    8a. an approval of a decision that can no longer pass is refused (owner decision 2026-10-09,
+       ``eligibility.cannot_pass``); a rejection is still taken, and when a decision becomes
+       Rejected is unchanged;
     9. a rejection carries a reason (plan S16), text of at most ``REASON_MAX`` characters. Not
        signed: ``vote_signing_bytes`` is unchanged (S9).
 
@@ -456,6 +467,8 @@ def _authorize_vote(
         raise ApprovalError(OWN_DECISION)
     if vote_of(proposal, signer.id) is not None:
         raise ApprovalError("You have already voted on this proposal.")
+    if decision == "approve" and eligibility.cannot_pass(proposal):
+        raise ApprovalError(CANNOT_PASS)
     if reason is not None and not isinstance(reason, str):
         raise ApprovalError(REASON_NOT_TEXT)
     note = (reason or "").strip()
