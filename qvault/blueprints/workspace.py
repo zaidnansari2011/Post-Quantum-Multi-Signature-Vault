@@ -471,10 +471,18 @@ def _acceptance_state(invitation: Invitation | None) -> str:
             return "wrong_account"
         if ws.membership(invitation.workspace_id, current_user.id) is not None:
             return "already_member"
+        leaving = ws.workspace_to_leave(current_user, invitation.workspace)
+        if leaving is not None and not leaving[1]:
+            return "has_workspace"  # one workspace per person, for now
         return "ready"
     if User.query.filter_by(email=invitation.email).first() is not None:
         return "sign_in"
     return "sign_up"
+
+
+def _leaving(invitation: Invitation):
+    found = ws.workspace_to_leave(current_user, invitation.workspace)
+    return found[0].workspace if found is not None else None
 
 
 def _render_acceptance(token: str, *, form=None, status=None):
@@ -492,6 +500,8 @@ def _render_acceptance(token: str, *, form=None, status=None):
         role_help=ROLE_HELP,
         form=form,
         here=url_for("workspace.accept_page", token=token),
+        # The workspace accepting would take this person out of (one workspace per person).
+        leaving=_leaving(invitation) if state in ("ready", "has_workspace") else None,
     )
     return body, status or (404 if state == "unknown" else 200), _PRIVATE
 

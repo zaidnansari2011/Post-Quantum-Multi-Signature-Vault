@@ -1,8 +1,13 @@
 """``python -m qvault.verify decision.qvault.json`` — check a decision without the server.
 
-Exit codes are the interface: ``0`` verified, ``1`` not verified, ``2`` the file could not be
-read. That is what makes this usable as a gate in someone else's pipeline rather than only as
-something a person reads.
+Exit codes are the interface: ``0`` verified, ``1`` not verified, ``2`` the input is unusable (the
+file could not be read, it is not the kind of document asked for, or a pin is not a fingerprint).
+That is what makes this usable as a gate in someone else's pipeline rather than only as something
+a person reads.
+
+``0`` always means *a decision verified*, unless ``--checkpoint`` was given: the log's public
+signed head (``/transparency/checkpoint.json``) is only checked when the reader asks for it by name,
+so that file renamed to look like a decision exits ``2`` with a message instead of ``0``.
 
 Nothing here contacts Q-Vault. The only inputs are the file and, optionally, the fingerprints the
 reader was told to expect — which is the difference between "signed by a log" and "signed by the
@@ -18,6 +23,8 @@ from pathlib import Path
 
 from qvault.crypto import build_registry
 from qvault.verify import BundleFormatError, load_bundle, verify_bundle
+from qvault.verify.checkpoint import is_checkpoint_document, verify_checkpoint_document
+from qvault.verify.core import PIN_RULE, normalise_pin
 
 TICK, CROSS, DASH = "PASS", "FAIL", "  - "
 
@@ -85,7 +92,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "bundle",
         type=Path,
-        help="an exported decision: the .qvault.html record, the .zip package, or a bare .json",
+        help=(
+            "an exported decision: the .qvault.html record, the .zip package, or a bare .json; "
+            "or, with --checkpoint, the log's signed head saved from /transparency/checkpoint.json"
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint",
+        action="store_true",
+        help="the file is the log's public signed head, not a decision",
+    )
+    parser.add_argument(
+        "--allow-classical",
+        action="store_true",
+        help="with --checkpoint: accept RSA or ECDSA log and witness keys instead of failing",
     )
     parser.add_argument(
         "--expect-log",
@@ -102,11 +122,47 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-colour", action="store_true")
     args = parser.parse_args(argv)
 
+    # A pin that is not a fingerprint is a mistake in the command, not a verdict on the file.
+    for flag, pin in (("--expect-log", args.expect_log), ("--expect-witness", args.expect_witness)):
+        if pin is not None and normalise_pin(pin) is None:
+            print(f"{flag} {pin!r}: {PIN_RULE}", file=sys.stderr)
+            return 2
+
     try:
         raw = args.bundle.read_bytes()
     except OSError as exc:
         print(f"cannot read {args.bundle}: {exc}", file=sys.stderr)
         return 2
+
+    # The log's public signed head (/transparency/checkpoint.json) is checked on its own terms:
+    # its signatures and, when given, the pinned fingerprints (qvault/verify/checkpoint.py). Only
+    # on request: a reader who meant to check a decision must not get exit 0 for a log head.
+    if args.checkpoint:
+        try:
+            doc = json.loads(raw)
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+            print(f"{args.bundle}: that is not valid JSON: {exc}", file=sys.stderr)
+            return 2
+        if isinstance(doc, dict) and str(doc.get("format", "")).startswith("qvault.decision/"):
+            print(
+                f"{args.bundle}: this is a decision, not the log's signed head. "
+                "Check it without --checkpoint.",
+                file=sys.stderr,
+            )
+            return 2
+        report = verify_checkpoint_document(
+            doc,
+            registry=build_registry(prefer=args.backend),
+            expect_log=args.expect_log,
+            expect_witness=args.expect_witness,
+            allow_classical=args.allow_classical,
+        )
+        if args.json:
+            print(json.dumps(report.as_dict(), indent=2))
+        else:
+            colour = not args.no_colour and sys.stdout.isatty()
+            print(_render(report, colour=colour))
+        return 0 if report.ok else 1
 
     # Any artefact the export produces: the self-verifying .html record, the .zip package, or the
     # bare .json. Detected by content, since this argument is a path the user chose. See
@@ -115,6 +171,14 @@ def main(argv: list[str] | None = None) -> int:
         bundle = load_bundle(raw)
     except BundleFormatError as exc:
         print(f"{args.bundle}: {exc}", file=sys.stderr)
+        return 2
+    if is_checkpoint_document(bundle):
+        print(
+            f"{args.bundle}: this is the log's public signed head, not a decision, so no decision "
+            f"was verified. To check the head itself: python -m qvault.verify --checkpoint "
+            f"{args.bundle}",
+            file=sys.stderr,
+        )
         return 2
 
     report = verify_bundle(

@@ -646,6 +646,11 @@ def home(user: User, *, now: datetime | None = None) -> dict:
     # Someone who approves in no vault (a viewer everywhere) is never asked to sign, so Home
     # does not offer them an empty "Yours to sign" as if it might fill.
     sections["approves_anywhere"] = bool(signer_vaults)
+    # Someone in no vault at all (a new workspace's owner, straight after signing up) is told
+    # that, not that they "see decisions" in vaults they don't have.
+    sections["in_a_vault"] = bool(signer_vaults) or (
+        db.session.scalar(_member_vault_ids(user).limit(1)) is not None
+    )
     return sections
 
 

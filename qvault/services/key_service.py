@@ -24,6 +24,7 @@ from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.models.user import User
+from qvault.security import password_attempts
 from qvault.security.passwords import hash_password, verify_password
 from qvault.services import ledger_service, notification_service
 from qvault.services.rotation_policy import rotation_deadline
@@ -47,6 +48,18 @@ DEVICE_ELIGIBLE_SIG_ALGS = ("ML-DSA-65", "ML-DSA-87")
 
 class KeyUnlockError(Exception):
     """Raised when a private key cannot be decrypted (typically a wrong password)."""
+
+
+class PasswordLockedError(KeyUnlockError):
+    """Too many wrong passwords for this account recently: the password was not checked
+    (``qvault.security.password_attempts``). ``str()`` is the sentence to show the person."""
+
+
+def _guard_password(user: User) -> None:
+    """Refuse before any Argon2id work while this account is locked out (R6 review, item 13)."""
+    refusal = password_attempts.refusal(user.id)
+    if refusal:
+        raise PasswordLockedError(refusal)
 
 
 class SignFaultError(Exception):
@@ -120,6 +133,7 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
         raise KeyUnlockError(
             f"key {key.id} has no server-held private half (wrap_domain={key.wrap_domain!r})"
         )
+    _guard_password(user)
 
     with glassbox.step("Derive the key-encryption key (Argon2id)", code=derive_kek) as trace:
         trace.input("password", glassbox.Withheld("never shown, never logged, never stored"))
@@ -147,8 +161,10 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
                 "private key",
                 glassbox.Opaque(secret_key, why="the secret this whole system exists to protect"),
             )
+            password_attempts.record(user.id, ok=True)
             return secret_key
     except InvalidTag as exc:
+        password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: could not unlock the signing key") from exc
     finally:
         del kek
@@ -312,7 +328,9 @@ def change_password(
     password every time — so an old session cannot sign with the new password, but it does remain
     logged in.
     """
+    _guard_password(user)
     if not verify_password(user.password_hash, current_password):
+        password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: cannot change the password")
 
     keys = password_wrapped_keys(user)
@@ -370,8 +388,11 @@ def reissue_signing_key(
 
     Phase 7 automates this on a schedule and adds a rotation policy; here it is user-initiated.
     """
+    _guard_password(user)
     if not verify_password(user.password_hash, password):
+        password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: cannot re-issue the signing key")
+    password_attempts.record(user.id, ok=True)
 
     old = active_signing_key(user)
     new = generate_signing_key(user, password, alg_id=alg_id, commit=False)

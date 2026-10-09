@@ -2,12 +2,13 @@
 {% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/feedback.html" import banner %}
+{% from "_password_step.html" import password_step %}
 {% block title %}{{ {'unknown': 'Invalid invitation link', 'accepted': 'Invitation used', 'revoked': 'Invitation withdrawn',
   'expired': 'Invitation expired', 'void': 'Invitation no longer valid'}.get(state) or 'Join ' ~ invitation.workspace.name }} — Invitation — Q-Vault{% endblock %}
 
 {# One page for every state of an invitation link, signed in or out. ``state`` is one of:
    unknown, accepted, revoked, expired, void (the inviter can no longer invite), wrong_account,
-   already_member, ready, sign_in, sign_up. #}
+   already_member, has_workspace (one workspace per person, for now), ready, sign_in, sign_up. #}
 {% macro details() %}
 <section class="q-panel" aria-label="The invitation">
   <dl class="q-kv">
@@ -61,10 +62,18 @@
     {{ details() }}
 
     {% if state == 'ready' %}
+      {% if leaving %}
+      <p class="q-auth__p">Joining takes you out of {{ leaving.name }}, which has nothing in it yet. Q-Vault shows one workspace per person for now.</p>
+      {% endif %}
       <form method="post" action="{{ url_for('workspace.accept', token=token) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {{ button('Accept and join', 'primary', type='submit', block=True) }}
       </form>
+
+    {% elif state == 'has_workspace' %}
+      {% set has_title %}You already belong to {{ leaving.name }}, which has vaults, other members or pending invitations.{% endset %}
+      {% set has_body %}Q-Vault doesn't support belonging to two workspaces yet, so this account can't join {{ invitation.workspace.name }}. Ask {{ invitation.inviter.display_name }} to invite another address of yours for now. This invitation stays open.{% endset %}
+      {{ banner('warning', has_title, has_body) }}
 
     {% elif state == 'already_member' %}
       <p class="q-auth__p">You're already a member of {{ invitation.workspace.name }}.</p>
@@ -89,9 +98,7 @@
       <form method="post" action="{{ url_for('workspace.register', token=token) }}" novalidate>
         {{ form.hidden_tag() }}
         {{ wtf_field(form.display_name, attrs={'autocomplete': 'name'}) }}
-        {% set pw_caption %}Unlocks your signing key, which is created with your account. It can't be reset for you.{% endset %}
-        {{ wtf_field(form.password, caption=pw_caption, attrs={'autocomplete': 'new-password'}) }}
-        {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}
+        {{ password_step(form) }}
         {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
       </form>
       <p class="q-auth__foot">

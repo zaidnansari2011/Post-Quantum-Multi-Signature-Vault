@@ -79,7 +79,7 @@ from qvault.services import (
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptError
-from qvault.services.key_service import KeyUnlockError
+from qvault.services.key_service import KeyUnlockError, PasswordLockedError
 from qvault.services.proposal_service import (
     FieldsRefused,
     PaymentRequest,
@@ -330,6 +330,8 @@ def approve_reconfiguration(vid: int, rid: int):
             reconfiguration, current_user, form.password.data
         )
         flash("Approved.", "success")
+    except PasswordLockedError as exc:
+        flash(str(exc), "error")
     except KeyUnlockError:
         flash("Incorrect password: your signing key could not be unlocked.", "error")
     except reconfiguration_service.ApprovalRefused as exc:
@@ -1115,6 +1117,8 @@ def vote(vid: int, pid: str):
         signature = approval_service.cast_vote(
             proposal, current_user, form.password.data, decision, reason=form.reason.data
         )
+    except PasswordLockedError as exc:
+        flash(str(exc), "danger")
     except KeyUnlockError:
         flash("Incorrect password — your signing key could not be unlocked.", "danger")
     except ApprovalError as exc:

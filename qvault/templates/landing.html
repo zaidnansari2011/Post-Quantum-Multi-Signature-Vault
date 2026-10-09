@@ -1,56 +1,84 @@
 {% extends "base.html" %}
-{% from "ui/mark.html" import mark %}
 {% from "ui/buttons.html" import button %}
-{% block title %}Approvals that need more than one person — Q-Vault{% endblock %}
+{% from "_log_strip.html" import log_strip %}
+{% block title %}Q-Vault: no single person can move the money{% endblock %}
+{# The front door (plan S22). It names the job, shows the real product, and replaces the old row
+   of crypto statistics with the live log strip. Standing rule for this page: every claim on it
+   can be demonstrated, and what Q-Vault does not do is said as plainly as what it does. No
+   customer logos, badges or figures we do not have. #}
+{% block anon_bodyclass %}q-body q-body--public{% endblock %}
 {% block anon_content %}
 <div class="q-landing">
-  <div class="q-landing__brand">
-    {{ mark(26) }}
-    <span>Q-Vault</span>
-  </div>
-
-  <h1 class="q-landing__t">Approvals that need more than one person.</h1>
-  <p class="q-landing__lead">
-    Shared control over high-value actions, with a signed record of who authorised what.
-    Post-quantum signatures throughout.
-  </p>
-
-  <div class="q-landing__act">
-    {{ button('Create account', 'primary', href=url_for('auth.register')) }}
-    {{ button('Sign in', 'secondary', href=url_for('auth.login')) }}
-  </div>
-
-  {# Live, checkable values — not the names of four algorithms. Every one of these can be
-     confirmed by a stranger against an exported decision, which is the point of the product and
-     was previously stated nowhere on its front door. #}
-  <div class="q-stats">
-    <div class="q-stat">
-      <p class="q-stat__v">{{ log.entries if log.entries is not none else '—' }}</p>
-      <p class="q-stat__l">Audit entries</p>
+  <section class="q-hero" aria-labelledby="hero-t">
+    <h1 class="q-hero__t" id="hero-t">No single person can move the money.</h1>
+    <p class="q-hero__lead">
+      Q-Vault holds a payment, an access grant or any decision until enough of the named people
+      approve it. Each approval is a post-quantum signature over the exact text, and every step
+      goes into an audit log that anyone can check offline. A witness with its own key co-signs
+      the log; for now our team runs it.
+    </p>
+    <div class="q-hero__act">
+      {{ button('Create your workspace', 'primary', href=url_for('auth.register'), size='lg') }}
+      {{ button('Sign in', 'secondary', href=url_for('auth.login'), size='lg') }}
     </div>
-    <div class="q-stat">
-      <p class="q-stat__v">{% if log.root %}<code>{{ log.root[:8] }}</code>{% else %}—{% endif %}</p>
-      <p class="q-stat__l">Merkle root</p>
-    </div>
-    <div class="q-stat">
-      <p class="q-stat__v">{{ log.witnessed if log.witnessed else 'Not yet' }}</p>
-      <p class="q-stat__l">Entries witnessed</p>
-    </div>
-    <div class="q-stat">
-      <p class="q-stat__v">{{ algorithms }}</p>
-      <p class="q-stat__l">PQC algorithms</p>
-    </div>
-  </div>
+    {{ log_strip(facts) }}
+  </section>
 
-  {# The verifier is the one thing here that is useful to someone with no account, so it is the
-     one thing offered to them — as an action, not as a footnote. #}
-  <div class="q-landing__act">
-    {{ button('Verify a decision', 'secondary', href=url_for('verify.index')) }}
-    <span class="q-small">No account needed.</span>
-  </div>
+  {# The real decision page, from the demo workspace, in the reader's theme: the server-chosen
+     theme when there is one, otherwise the system's. #}
+  <figure class="q-shot">
+    {% set light = url_for('static', filename='img/landing-decision-light.webp') %}
+    {% set dark = url_for('static', filename='img/landing-decision-dark.webp') %}
+    {% set alt = "A decision page: the text every approver signs, two of two approvals with each signer and time, and five checks passed with one unavailable." %}
+    {% if theme == 'dark' %}
+    <img src="{{ dark }}" width="768" height="742" alt="{{ alt }}">
+    {% elif theme == 'light' %}
+    <img src="{{ light }}" width="768" height="742" alt="{{ alt }}">
+    {% else %}
+    <picture>
+      <source srcset="{{ dark }}" media="(prefers-color-scheme: dark)">
+      <img src="{{ light }}" width="768" height="742" alt="{{ alt }}">
+    </picture>
+    {% endif %}
+    <figcaption>A decision in the demo workspace, as its approvers see it.</figcaption>
+  </figure>
 
-  <p class="q-small q-landing__foot">
-    <a href="{{ url_for('docs.index') }}">Documentation</a>. A reference system, not production-audited.
-  </p>
+  <section class="q-steps" aria-labelledby="steps-t">
+    <h2 class="q-section__t" id="steps-t">How it works</h2>
+    <ol class="q-steps__l">
+      <li>
+        <h3>Someone raises a decision</h3>
+        <p>A payment, an access grant or any other decision, written out in full. Approvers sign that exact text, so a change made afterwards breaks every signature.</p>
+      </li>
+      <li>
+        <h3>The approvers sign it</h3>
+        <p>On the web or on the phone app, each with their own key. A vault's rule says how many must agree, for example any 2 of 3.</p>
+      </li>
+      <li>
+        <h3>It passes only with enough signatures</h3>
+        <p>Every signature and every outcome goes into the audit log. Anyone you share a decision with can check it offline.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="q-split" aria-labelledby="honest-t">
+    <div>
+      <h2 class="q-section__t" id="honest-t">What it protects, and what it doesn't</h2>
+      <p class="q-muted">
+        With a rule that needs two or more approvers, one person or one stolen password can't
+        approve alone, and changes to the record show. It doesn't stop enough approvers agreeing
+        to something wrong, and it hasn't been independently audited.
+      </p>
+      <p><a href="{{ url_for('public.security') }}">Read the Security page</a></p>
+    </div>
+    <div>
+      <h2 class="q-section__t">Check a decision yourself</h2>
+      <p class="q-muted">
+        Drop an exported decision on the verify page, or download the offline verifier and run it
+        with no network. No account needed.
+      </p>
+      <p><a href="{{ url_for('verify.index') }}">Verify a decision</a></p>
+    </div>
+  </section>
 </div>
 {% endblock %}
