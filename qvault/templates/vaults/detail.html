@@ -15,8 +15,9 @@
     then the tabs. The header also says who may approve their own decision (S15, R5). -#}
 {% block content %}
 {% set approvers = vault.signer_members() | map(attribute='user') | list %}
-{% set approver_names = [] %}
-{% for u in approvers %}{% set _ = approver_names.append('You' if u.id == current_user.id else ui_first_name(u.display_name or u.email)) %}{% endfor %}
+{#- First names, or full names where two approvers share one (ui.short_names). -#}
+{% set approver_full_names = [] %}{% for u in approvers %}{% set _ = approver_full_names.append('You' if u.id == current_user.id else (u.display_name or u.email)) %}{% endfor %}
+{% set approver_names = ui_short_names(approver_full_names) %}
 {% set role_word = {'owner': 'Owner', 'signer': 'Approver', 'viewer': 'Viewer, read only'}[me.member_role] %}
 {% set facts = [] %}
 {% set approvers_fact %}{%- set approver_full = [] %}{% for u in approvers %}{% set _ = approver_full.append(u.display_name or u.email) %}{% endfor %}{{ avatar_stack(approver_full, 4, 20) }}<span>{{ ui_names(approver_names) }}</span>{% endset %}
