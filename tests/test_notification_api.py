@@ -189,7 +189,10 @@ def test_the_requester_reminds_over_the_api_at_most_once_a_day(client, inbox):
     path = f"/api/v1/proposals/{proposal.proposal_uuid}/remind"
 
     r = client.post(path, headers=inbox["ada_phone"])
-    assert r.status_code == 200 and r.get_json() == {"ok": True, "reminded": 2}
+    body = r.get_json()
+    assert r.status_code == 200 and (body["ok"], body["reminded"]) == (True, 2)
+    # P4b, additive: when it went and when the next may (tests/test_api_phone_p4b.py).
+    assert set(body) == {"ok", "reminded", "reminded_at", "next_allowed_at"}
 
     again = client.post(path, headers=inbox["ada_phone"])
     assert again.status_code == 409 and again.get_json()["code"] == "remind_refused"

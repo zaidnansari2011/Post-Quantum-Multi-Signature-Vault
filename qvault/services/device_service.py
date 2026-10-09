@@ -308,3 +308,43 @@ def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) 
 def devices_for(user: User) -> list[Device]:
     """Every device ``user`` has enrolled, newest first — revoked ones included, so they show."""
     return Device.query.filter_by(owner_id=user.id).order_by(Device.id.desc()).all()
+
+
+#: The longest device name, as enrolment allows.
+NAME_MAX = 64
+
+
+def rename(
+    device: Device, name: str, *, actor_id: int | None = None, commit: bool = True
+) -> Device:
+    """Rename a device (phone-ux §6.18, A21). Its owner's label only: nothing signed changes.
+
+    Held to enrolment's length rule and to R8's rule for names people type (``security.text``):
+    a hidden or text-direction character is refused, never silently dropped, so what is stored is
+    what was seen. A removed device keeps the name it was removed under. An unchanged name writes
+    nothing.
+    """
+    from qvault.security import text
+
+    if device.revoked_at is not None:
+        raise DeviceError("already_revoked", "That device was removed, so its name can't change.")
+    cleaned = (name or "").strip()
+    if not cleaned or len(cleaned) > NAME_MAX:
+        raise DeviceError("bad_request", f"A device name of 1-{NAME_MAX} characters is required.")
+    if text.invisible_in(cleaned):
+        raise DeviceError("hidden_characters", f"The name has hidden characters. {text.MESSAGE}")
+    if cleaned == device.name:
+        return device
+    device.name = cleaned
+    ledger_service.append(
+        "device_renamed",
+        {"user_id": device.owner_id, "device_id": device.id, "renamed_by": actor_id},
+        actor=f"user:{actor_id}" if actor_id else "SYSTEM",
+        actor_id=actor_id,
+        ref_type="device",
+        ref_id=str(device.id),
+        commit=False,
+    )
+    if commit:
+        db.session.commit()
+    return device

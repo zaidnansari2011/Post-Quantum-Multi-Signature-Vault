@@ -938,7 +938,19 @@ def _view(notification, *, waits: bool, now: datetime) -> dict:
         ),
         "vault": {"id": vault.id, "name": vault.name} if vault is not None else None,
         "proposal_uuid": proposal.proposal_uuid if proposal is not None else None,
+        # Phone P4b, additive: for a new device, which one (the recipient's own), so "Not you?
+        # Remove that device" can open its remove sheet (phone-ux §6.12, §6.18).
+        "device_id": _device_of(notification),
     }
+
+
+def _device_of(notification) -> int | None:
+    if notification.kind != "device_enrolled":
+        return None
+    prefix = "device_enrolled:"
+    key = notification.dedupe_key
+    tail = key[len(prefix) :] if key.startswith(prefix) else ""
+    return int(tail) if tail.isascii() and tail.isdigit() else None
 
 
 def _iso(moment: datetime | None) -> str | None:

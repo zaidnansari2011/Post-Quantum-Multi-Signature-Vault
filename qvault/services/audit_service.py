@@ -77,6 +77,7 @@ SENTENCES = {
     "demo_keys_expired": "Key deadlines were moved forward for a demonstration.",
     "device_enrolled": "{who} enrolled a device that signs with a key this server cannot open.",
     "device_revoked": "{who} revoked a device; its past signatures still verify.",
+    "device_renamed": "{who} renamed one of their devices.",
     # Making a confidential decision world-readable is a security-relevant act, so it is narrated
     # in the same voice as any other. "Revoked the public record" rather than "unpublished": the
     # sentence must not suggest that copies already downloaded were recalled, because they cannot
