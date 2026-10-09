@@ -1,8 +1,21 @@
 # R9 Recovery: design
 
 **Status:** REVISED after adversarial review (`5717022` reviewed: 1 critical, 4 high, 8 medium, 14
-low, 7 nits; every design-text finding is addressed below, mapped in §15). Awaiting owner approval.
-No code is written until then.
+low, 7 nits; every design-text finding is addressed below, mapped in §15). Owner approved all eight
+§14 answers on 2026-10-09.
+
+**Build status (2026-10-09):** **Phase 1, the Recovery Kit, is built** on `rework/r9-recovery-kit`
+(from `saas-rework` `a9c4195`; Alembic `0010_recovery_kit`, new tables only), not yet reviewed or
+merged. Built as written: the code format and its vectors (shared with the browser), the kit KEK
+with the master-key pepper, the MAC over the public key and `kem_alg`, wraps of every new password
+key (reissue, algorithm switch, rotation), issue at sign-up and on Security, regenerate, the
+72-hour request with compare-and-set cancel and complete, every password proof cancelling (and
+burning the kit), third-party cancels that keep it, the per-account throttle, transactional
+notices to the person, managers and co-signers (in-app, and email and push through R8's outbox),
+notices that cannot be archived while open, the Home banner with Cancel, `credential_epochs`,
+`'lost'` and its consumers, the ledger events and the additive `public_key_sha256`, and the
+forgotten-password page. Where this design was silent, the choices made are listed in §16.
+Phases 2 (phone) and 3 (approvers) are not built.
 **Decision:** S18 ([plan §4](../saas-rework.md#4-design-decisions)), Phase R9 ([plan §7](../saas-rework.md#7-phases)).
 **Evidence:** research [04 §8](research/04-customer-lifecycle.md) and [07](research/07-recovery.md).
 **Branch:** `rework/r9-recovery-design` from `saas-rework` `fe70a6d`. Code citations are to that commit.
@@ -585,3 +598,47 @@ phone; this design's review findings are closed; the phone parity checklist is t
 M1 §4.6; M2 §5.1, §5.2, §5.4; M3 §4.4, §9; M4 §6.2; M5 §8.3; M6 §8.2; M7 §4.2, ⚑5; M8 §7, ⚑6;
 L1 L14 §4.4; L2 L3 §8.3; L4 §6.4; L5 L6 §5.1; L7 §6.4; L8 §4.5; L9 §4.6; L10 §4.2; L11 §5.1;
 L12 §4.2, §4.5; L13 §4.2; N1 §2, §6.1; N2 §5.1, §7; N3 §8.3; N4 N5 §5.1; N6 §14; N7 §4.1.
+
+## 16. Phase 1 as built: choices where this design was silent
+
+Each is the safer reading, recorded here so the review can disagree with it.
+
+1. **The last group typed back is checked against a tag, not the code.** The kit page carries
+   `HMAC(master key, "qvault:kit-confirm:v1|" + kit_uuid + "|" + last group)`; the server compares
+   the typed group's tag. It never sees the code again and stores nothing made from it. The
+   browser also checks before sending. An unconfirmed kit works, and keeps the banner up.
+2. **"Do this later" revokes the kit just shown** (reason `not_saved`, a sixth revoke reason): a
+   code that may have been seen and may not have been kept should not open anything.
+3. **No "turn off" button.** §15 defers it; replacing the kit is how a person kills one.
+4. **The throttle is in the database**, not per process (`recovery_kit_failures`,
+   `recovery_kit_pauses`), so a restart cannot reset it. While paused the code is **not checked
+   at all** and the generic answer is given, so the pause cannot become an oracle; "paused until"
+   is therefore never shown (the generic sentence mentions that kits pause).
+5. **Any wrap that fails to open refuses the whole kit** (`kit_broken`), rather than dropping
+   that key: a damaged wrap is a sign of tampering, and a dropped treasury-seat key would lock
+   funds.
+6. **When a key is reissued, the kit copy of the retired one is deleted** unless a treasury seat
+   names it (the §5.1 rule applied at every reissue, not only at issue).
+7. **Who is told and may cancel** (`recovery_service.watchers`): active owners and admins of every
+   workspace the person belongs to *or* whose vaults they sign in, and approvers of the person's
+   vaults who are still active in that vault's workspace. One definition is used for notices,
+   banners and Cancel, so they cannot disagree.
+8. **Kit issue, regenerate and stale notices go to the person alone** (they did it with their
+   password, or nobody did); the throttle notice goes to everyone in §4.5, as written.
+9. **The daily cap** counts recovery *events* about an account (not copies), excluding
+   completions, which are always told. Kit notices are not capped.
+10. **A refused completion** ends in state `failed` with its reason, logged as `recovery_rejected`
+    {request_uuid, reason}, told as `recovery_cancelled` with `failed: true`; nothing is spent.
+11. **`recovery_requested` also carries `kit_uuid`** (additive), so the log ties a request to the
+    kit that started it.
+12. **Recovery ledger entries are recorded against the person** (`actor = user:<id>`, or the
+    canceller), never as `SYSTEM` with no vault, which the audit page shows to everyone.
+13. **Cancel by the person from Home burns the kit**, like a password proof: it is the person
+    saying "not me".
+14. **The pending web-key columns of §4.1** exist in `recovery_requests` but stay NULL until
+    Phases 2 and 3, so those phases need no new revision for them.
+15. **The phone gets the warning as a push only.** Recovery notices are security pushes (Android
+    channel Security, high priority, locked on), worded by the server, opening the Activity tab;
+    the installed app has no inbox list and no banner, and no phone screen was changed. An
+    in-app banner with Cancel on the phone is left for Phase 2, with the phone's own screens.
+
