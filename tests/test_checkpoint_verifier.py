@@ -142,6 +142,8 @@ def test_the_command_line_never_prints_a_traceback_for_a_bad_file(client, tmp_pa
             assert main(args) in (1, 2), (name, args)
     (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
     assert main([str(tmp_path / "broken.json"), "--checkpoint"]) == 2
+    (tmp_path / "deep.json").write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+    assert main([str(tmp_path / "deep.json"), "--checkpoint"]) == 2
     assert "Traceback" not in capsys.readouterr().err
 
 
