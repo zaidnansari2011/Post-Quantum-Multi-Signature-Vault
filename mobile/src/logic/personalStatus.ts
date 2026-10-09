@@ -30,7 +30,9 @@ export type MismatchReason =
   | 'type_text'
   | 'changed'
   /** The answer for the decision opened was another decision (its uuid is not the route's). */
-  | 'other_decision';
+  | 'other_decision'
+  /** I-5: what the server stored is not what this phone just raised (phone-ux §6.16). */
+  | 'raised';
 
 export type Integrity = { ok: true } | { ok: false; reason: MismatchReason };
 

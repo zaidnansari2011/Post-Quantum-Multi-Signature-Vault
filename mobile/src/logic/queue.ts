@@ -25,6 +25,8 @@ export type QueueFacts = StatusFacts & {
   signed_by_me: boolean;
   can_sign: boolean;
   is_payment?: boolean;
+  /** A1: who raised it. */
+  raised_by?: { id: number; name: string | null } | null;
 };
 
 /**
@@ -147,9 +149,36 @@ export function elsewhereSections<T extends QueueFacts>(
   return [sections.web, sections.device, sections.removed, sections.nowhere].filter((x) => x.rows.length > 0);
 }
 
-/** Open, not waiting on this person, and this person has signed it (§6.4). Soonest first. */
-export function waitingOnOthers<T extends QueueFacts>(all: T[], now: number): T[] {
-  return byDeadline(stillOpen(all, now).filter((p) => p.signed_by_me));
+/**
+ * Open, not waiting on this person, and this person signed it or raised it (§6.4; raising joins
+ * once the summary says who raised it, A1). Soonest first.
+ */
+export function waitingOnOthers<T extends QueueFacts>(all: T[], now: number, viewerId?: number): T[] {
+  return byDeadline(
+    stillOpen(all, now).filter((p) => {
+      if (p.signed_by_me) return true;
+      const waitingOnMe = p.can_sign && !p.signed_by_me;
+      return viewerId !== undefined && p.raised_by?.id === viewerId && !waitingOnMe;
+    }),
+  );
+}
+
+/**
+ * "Gracian or Atharv can approve": who can still act on a decision waiting on others, by the
+ * summary's names (A3) for the ids the server says can still approve. Null when either is missing,
+ * or a name is unknown: the caption is then left out rather than guessed.
+ */
+export function whoCanAct(
+  p: { can_still_approve?: number[]; signers?: Array<{ user_id: number; name: string | null }> },
+  viewerId: number,
+): string | null {
+  if (!p.can_still_approve || !p.signers) return null;
+  const names = p.can_still_approve
+    .filter((id) => id !== viewerId)
+    .map((id) => p.signers!.find((s) => s.user_id === id)?.name ?? null);
+  if (names.length === 0 || names.some((n) => n === null)) return null;
+  const list = names as string[];
+  return `${list.length <= 1 ? list[0] : `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}`} can approve`;
 }
 
 /** How many have a deadline later today (local time), still ahead of now. */
