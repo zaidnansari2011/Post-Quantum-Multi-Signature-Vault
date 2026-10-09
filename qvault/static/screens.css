@@ -4,8 +4,7 @@
  *
  * Built only from tokens.css and the components in components.css and evidence.css, under the same
  * rules: colour from tokens, font sizes from the type scale, radius by role, shadows on overlays
- * only, and the q- prefix, so the compatibility layer (qvault.css) and these never restyle each
- * other. Loaded after evidence.css.
+ * only, and the q- prefix. Loaded after evidence.css.
  */
 
 /* ================================================================ the page region (base.html) */
@@ -37,6 +36,8 @@
 p.q-panel__bd { margin: 0; }
 .q-kv + .q-panel__ft { padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
 .q-panel__hd > .q-badge, .q-panel__hd > .q-tag { flex: none; }
+/* A body that stacks its paragraphs and forms spaces them by the gap alone. */
+.q-panel__bd.q-stack > *, .q-panel__bd form.q-stack, .q-panel__bd form.q-stack > * { margin: 0; }
 /* A panel whose body is a table: the table takes the panel's edge instead of drawing its own. */
 .q-panel--table { overflow: hidden; }
 .q-panel--table > .q-table-wrap { border: 0; border-radius: 0; }
@@ -117,9 +118,10 @@ p.q-panel__bd { margin: 0; }
 .q-members .q-tabs { margin-bottom: var(--space-24); }
 .q-members__note { margin: var(--space-12) 0 0; max-width: 76ch; }
 /* A member's role is a select with Save beside it, on one row in the table; on a phone the select
- * keeps its own width rather than stretching away from its chevron. */
-.q-members .q-inline-form .q-field--inline { flex: 0 0 auto; }
-.q-members .q-inline-form .q-field--inline .q-select { width: auto; max-width: 160px; }
+ * keeps its own width rather than stretching away from its chevron. The same on a vault's Members
+ * tab. */
+:is(.q-members, .q-vault) .q-inline-form .q-field--inline { flex: 0 0 auto; }
+:is(.q-members, .q-vault) .q-inline-form .q-field--inline .q-select { width: auto; max-width: 160px; }
 .q-invite { display: grid; gap: var(--space-24); align-items: start; }
 @media (min-width: 1100px) { .q-invite { grid-template-columns: minmax(0, 640px) 320px; } }
 .q-invite form { display: grid; gap: var(--space-16); margin: 0; }
@@ -127,6 +129,25 @@ p.q-panel__bd { margin: 0; }
 .q-link { display: flex; align-items: center; gap: var(--space-8); }
 .q-link .q-input { flex: 1; min-width: 0; }
 .q-link + p { margin: var(--space-12) 0 0; }
+
+/* ================================================================ the vault page (vaults/detail.html) */
+
+/* Facts and a body in one Treasury panel, in either order, are parted by a hairline. */
+.q-vault .q-kv + .q-panel__bd, .q-vault .q-panel__bd + .q-kv, .q-vault .q-panel__bd + .q-panel__bd { border-top: var(--border-width) solid var(--border); }
+/* Approvers on chain sits in the narrow column: a name needs less room than a fact's label. */
+.q-onchain { --kv-label: 120px; }
+/* Settings: the rule's checkbox keeps a field's spacing above the one Save. */
+.q-vault .q-panel__bd > .q-choice { margin-bottom: var(--space-16); }
+/* On a phone the five tabs fit the width (down to 360px) without their counts, which the list
+ * under them gives anyway, rather than scroll with the last one cut off mid-word. */
+@media (max-width: 767px) {
+  .q-vault .q-tabs { gap: 0; }
+  .q-vault .q-tab__l { padding-inline: var(--space-6); }
+  .q-vault .q-tab[aria-current="page"]::after { left: var(--space-6); right: var(--space-6); }
+  .q-vault .q-tab .q-count { display: none; }
+}
+/* A decision's type is a short name, kept on one line ("Production access"). */
+.q-vault .q-table td.q-c-type { white-space: nowrap; }
 
 /* ================================================================ notifications (inbox) */
 

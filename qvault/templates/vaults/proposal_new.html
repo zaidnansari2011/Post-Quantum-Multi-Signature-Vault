@@ -17,6 +17,11 @@
 {% block content %}
 {% set is_payment = kind == 'payment' %}
 {% set is_typed = kind in ('access', 'contract') %}
+{#- A file a little under the whole request's limit (MAX_CONTENT_LENGTH, 16 MiB), leaving room for
+    the fields beside it: qvault.js refuses a larger one before it uploads, rather than the server
+    answering 413 after the wait. -#}
+{% set max_file = config.MAX_CONTENT_LENGTH - 32768 if config.MAX_CONTENT_LENGTH else None %}
+{% set file_cap = 'Optional. ' ~ ('Up to ' ~ config.MAX_CONTENT_LENGTH // 1048576 ~ ' MB. ' if max_file else '') ~ 'Encrypted at rest; its fingerprint is part of what’s signed.' %}
 {% set deadline_value = form.deadline.data.strftime('%Y-%m-%d %H:%M') if form.deadline.data else (form.deadline.raw_data[0] if form.deadline.raw_data else None) %}
 {{ page_header('New payment' if is_payment else 'New decision',
                'In ' ~ vault.name ~ '. Once it’s raised its text can’t be edited: approvers sign these exact words.') }}
@@ -78,9 +83,9 @@
          ('write', access_levels.write[0], 'Can change data.'),
          ('admin', access_levels.admin[0], 'Can change data, settings and who else has access.')],
        form.level.data or 'read', error=errors.get('level')) }}
+    {#- One caption: the read-back, which says the moment in words once it is chosen. -#}
     {{ due_field('until', 'Until', form.until.data, error=errors.get('until') or form.until.errors, min=due_min,
-                 empty='Choose when access ends.',
-                 caption='Access ends then. Type it as 2026-11-04 17:00, in UTC, or pick it from the calendar.') }}
+                 empty='When access ends. Type it as 2026-11-04 17:00, in UTC, or pick it from the calendar.') }}
     {{ field('reason', 'Reason', value=form.reason.data, error=errors.get('reason') or form.reason.errors, required=True,
              caption='Why it’s needed, in one line.', attrs={'maxlength': 280, 'autocomplete': 'off'}) }}
     {{ field('reference', 'Ticket or reference', value=form.reference.data, error=errors.get('reference') or form.reference.errors,
@@ -111,8 +116,8 @@
     {{ due_field('deadline', 'Due', deadline_value, error=form.deadline.errors, min=due_min,
                  empty='No due date: it stays open until it’s decided.',
                  caption='Optional. When the approvers should decide by, in UTC.') }}
-    {{ file_drop('file', 'The contract', error=form.file.errors,
-                 caption='Optional. Encrypted at rest; its fingerprint is part of what’s signed.') }}
+    {{ file_drop('file', 'The contract', error=form.file.errors, max_bytes=max_file,
+                 caption=file_cap) }}
     <p class="q-compose__note">The decision text is written from these fields, so every approver reads the same words, and a phone checks them before it signs.</p>
     {%- else %}
     {{ field('action_text', 'Decision text', type='textarea', value=form.action_text.data, error=form.action_text.errors, required=True,
@@ -121,8 +126,8 @@
     {{ due_field('deadline', 'Due', deadline_value, error=form.deadline.errors, min=due_min,
                  empty='No due date: it stays open until it’s decided.',
                  caption='Optional. Type it as 2026-10-13 17:00, in UTC, or pick it from the calendar.') }}
-    {{ file_drop('file', 'Attachment', error=form.file.errors,
-                 caption='Optional. Encrypted at rest; its fingerprint is part of what’s signed.') }}
+    {{ file_drop('file', 'Attachment', error=form.file.errors, max_bytes=max_file,
+                 caption=file_cap) }}
     {%- endif %}
   </div>
 

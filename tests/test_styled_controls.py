@@ -4,9 +4,6 @@ Every date, file, select, number, radio and checkbox the inventory listed is now
 system's controls (ui/forms.html). What a screen relies on, checked here on the rendered pages:
 each control carries its styled class, has a label a screen reader can find, and posts the same
 name and value the route reads, so the conversion changed how it looks and nothing it sends.
-
-The decision page, New decision and the vault page are another stream's (R5) while this one
-runs; the one control left there is listed in OUT_OF_BOUNDS, so it is not forgotten.
 """
 
 from __future__ import annotations
@@ -47,12 +44,6 @@ WTFORMS_CONTROLS = {
     "form.role",
     "form.file",
     "form.deadline",
-}
-
-# Templates another stream is editing; each control left there is an open item for that stream.
-OUT_OF_BOUNDS = {
-    "vaults/detail.html": "reconfigure_form.confirm(): a native checkbox, to become "
-    "checkbox('confirm', ..., value='y', id=reconfigure_form.confirm.id)",
 }
 
 
@@ -157,14 +148,14 @@ def test_no_converted_screen_repeats_an_id(app, client, team, url):
     assert sorted({i for i in ids if ids.count(i) > 1}) == []
 
 
-def test_no_template_draws_a_bare_native_control_outside_the_other_streams_screens():
+def test_no_template_draws_a_bare_native_control():
     """The rendered-page test sees only the states its data draws; this reads every template, so
     a control behind a condition (a flag, an empty list) is caught too."""
     tag = re.compile(r"<(input|select)\b[^>]*>", re.S)
     bare = []
     for path in sorted(TEMPLATES.rglob("*.html")):
         rel = path.relative_to(TEMPLATES).as_posix()
-        if rel.startswith("ui/") or rel in OUT_OF_BOUNDS:
+        if rel.startswith("ui/"):
             continue
         source = path.read_text(encoding="utf-8")
         for m in tag.finditer(source):
@@ -183,12 +174,6 @@ def test_no_template_draws_a_bare_native_control_outside_the_other_streams_scree
             if call in WTFORMS_CONTROLS:
                 bare.append(f"{rel}: {call}()")
     assert bare == []
-
-
-def test_the_out_of_bounds_list_still_names_a_control_that_is_there():
-    """Remove the entry once the other stream converts it, so the list never goes stale."""
-    for rel in OUT_OF_BOUNDS:
-        assert "reconfigure_form.confirm()" in (TEMPLATES / rel).read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------------ the same values posted

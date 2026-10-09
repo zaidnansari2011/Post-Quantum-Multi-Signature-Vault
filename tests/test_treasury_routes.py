@@ -108,7 +108,7 @@ def test_an_owner_can_ask_for_a_treasury_and_sees_it_being_made(world):
     assert response.status_code == 200
     assert TreasuryJob.query.count() == 1
     assert "about fifteen minutes" in response.get_data(as_text=True)
-    assert "waiting to start" in _page(world)
+    assert "Waiting to start" in _page(world)  # the job's reason, as a sentence
 
 
 def test_a_signer_who_is_not_the_owner_cannot_ask(world):

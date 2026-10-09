@@ -47,6 +47,7 @@ from qvault.forms import (
     UnpublishForm,
     VaultForm,
     VaultRuleForm,
+    VaultRulesForm,
     VoteForm,
     WithdrawForm,
 )
@@ -429,6 +430,51 @@ def set_requester_rule(vid: int):
         if refusal is not None:
             flash(refusal, "warning")
     return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+
+
+@bp.post("/<int:vid>/settings/rules")
+@login_required
+def save_rules(vid: int):
+    """The Approval rule card's one Save: the threshold and plan S15 together. Each is changed
+    only if it differs, both in one commit, and a threshold the vault refuses saves neither.
+    ``set_threshold`` and ``set_requester_rule`` above still take one setting each."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = VaultRulesForm()
+    back = redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+    if not form.validate_on_submit():
+        flash("Enter a valid number of approvals.", "danger")
+        return back
+    before = vault.policy.threshold_m
+    try:
+        vault_service.set_threshold(
+            vault, form.threshold_m.data, actor_id=current_user.id, commit=False
+        )
+    except PolicyError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return back
+    allowed = bool(form.requester_can_approve.data)
+    rule_changed = vault_service.set_requester_can_approve(
+        vault, allowed, actor_id=current_user.id, commit=False
+    )
+    db.session.commit()
+    if vault.policy.threshold_m != before:
+        flash("Approval threshold updated.", "success")
+    if rule_changed and allowed:
+        flash("The person who raises a decision can now approve it too.", "success")
+    elif rule_changed:
+        flash(
+            "The person who raises a decision can no longer approve or reject it, including "
+            "decisions already open.",
+            "success",
+        )
+    if vault.policy.threshold_m == before and not rule_changed:
+        flash("Nothing changed.", "info")
+    else:
+        refusal = eligibility.cannot_raise(vault)
+        if refusal is not None:
+            flash(refusal, "warning")
+    return back
 
 
 #: What a vault rule change since a decision was raised does to it (``_with_effects``).
