@@ -650,10 +650,20 @@ takes. Details: `witness/README.md`, "Pin its key".
    the value is wrong or something else answers at `WITNESS_URL`: remove the setting
    (`--remove-env-vars WITNESS_KEY_FINGERPRINT`) to go back to accepting any key while you look.
 
+**Trap: the old revision comes back.** `az containerapp update` creates a new revision, and on
+this app the previous one has re-activated beside it before, so half the requests still run without
+the setting. Right after the update, list the revisions and deactivate every old one that is still
+active:
+
+```powershell
+az containerapp revision list -n qvault -g rg-qvault --subscription 4e995e2f-... -o table
+az containerapp revision deactivate -n qvault -g rg-qvault --subscription 4e995e2f-... --revision <old revision name>
+```
+
 If the witness is ever given a new key on purpose, change this setting to the new fingerprint at
 the same time; nothing re-pins it automatically, by design.
 
-*Your effort:* one command and one look at a page.
+*Your effort:* two or three commands and one look at a page.
 
 ## 3. Checks only you can make
 
