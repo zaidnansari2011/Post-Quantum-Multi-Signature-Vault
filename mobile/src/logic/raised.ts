@@ -27,6 +27,8 @@ export type RaisedPayment = {
   valueWei: string;
   /** The vault's treasury address when the form was filled; null when the form never saw one. */
   treasury: string | null;
+  /** The treasury's network when the form was filled (the review sheet named it); null if unseen. */
+  chainId?: number | null;
 };
 
 export type RaisedFields =
@@ -54,6 +56,10 @@ export function checkRaisedPayment(raised: RaisedPayment, detail: RaisedDetail):
   if (raised.treasury !== null && !same(action.treasury, raised.treasury)) {
     return { ok: false, field: 'treasury' };
   }
+  // The network the review sheet named (review A4): the same payment on another chain is another payment.
+  if (raised.chainId !== undefined && raised.chainId !== null && action.chain_id !== raised.chainId) {
+    return { ok: false, field: 'chain_id' };
+  }
   if (paymentText(action) !== detail.signing_inputs.action_text) return { ok: false, field: 'action_text' };
   return { ok: true };
 }
@@ -77,4 +83,25 @@ export function checkRaised(raised: RaisedFields, detail: RaisedDetail): RaisedC
   }
   const text = decisionText(raised.type, Object.fromEntries(sent));
   return text !== null && text === signed.action_text ? { ok: true } : { ok: false, field: 'action_text' };
+}
+
+/**
+ * What this phone raised, by decision, for this run (review A4): I-5 is checked on every open of
+ * the decision, not only the first one the raise navigated to. Memory only, and cleared whenever
+ * the phone is set up again or removed (with the run's other memories).
+ */
+export class RaisedMemory {
+  private readonly raised = new Map<string, RaisedFields>();
+
+  remember(uuid: string, fields: RaisedFields): void {
+    this.raised.set(uuid, fields);
+  }
+
+  get(uuid: string): RaisedFields | undefined {
+    return this.raised.get(uuid);
+  }
+
+  clear(): void {
+    this.raised.clear();
+  }
 }

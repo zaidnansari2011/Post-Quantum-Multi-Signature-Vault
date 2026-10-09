@@ -178,7 +178,8 @@ export default function EnrolScreen() {
   if (step === 'key') {
     const lines: Array<[IconName, string]> = [
       ['key', 'A new signing key is made on this phone. It never leaves it.'],
-      ['fingerprint', `Each signature is confirmed with ${method?.name ?? 'your screen lock'}.`],
+      // The method's own name is the claim; the icon stays neutral (it may be a face, not a finger).
+      ['shield', `Each signature is confirmed with ${method?.name ?? 'your screen lock'}.`],
       ['phone', "If you lose this phone or delete the app, its key is gone. Your vault's approvers can approve a new one."],
     ];
     return (
@@ -303,14 +304,17 @@ export default function EnrolScreen() {
         onClose={() => setForgot(false)}
         title="Forgot your password?"
         footer={
-          <Button
-            label="Continue on the web"
-            onPress={() => {
-              setForgot(false);
-              void Linking.openURL(`${base}/forgot-password`).catch(() => {});
-            }}
-            full
-          />
+          <>
+            <Button
+              label="Continue on the web"
+              onPress={() => {
+                setForgot(false);
+                void Linking.openURL(`${base}/forgot-password`).catch(() => {});
+              }}
+              full
+            />
+            <Button label="Cancel" variant="quiet" onPress={() => setForgot(false)} full />
+          </>
         }
       >
         <View style={s.stack}>

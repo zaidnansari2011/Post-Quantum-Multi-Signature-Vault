@@ -29,15 +29,18 @@ import { decisionText } from '../src/logic/decisionTypes.ts';
 import { deadlineOptions, dueCaption, hoursUntil, untilOptions, utcMinute } from '../src/logic/deadline.ts';
 import { checkRaised, checkRaisedPayment, type RaisedFields, type RaisedPayment } from '../src/logic/raised.ts';
 import {
+  changeConsequence,
   changeSummary,
   checkTreasuryChange,
+  requestedLine,
+  signedChangeLine,
   pendingChanges,
   treasuryChangeStatus,
   type ChangeEntry,
   type ChangeFacts,
   type ChangeStatusInput,
 } from '../src/logic/treasuryChange.ts';
-import { waitingOnOthers, whoCanAct } from '../src/logic/queue.ts';
+import { approvalsHeadline, waitingOnOthers, whoCanAct } from '../src/logic/queue.ts';
 import { defaultDeviceName, rateLimitMessage, signInProblems } from '../src/logic/onboarding.ts';
 import { LOCK_AFTER_MS, awayTime, onLeave, onReturn, type PromptSpan } from '../src/logic/appLock.ts';
 import {
@@ -45,6 +48,7 @@ import {
   newVaultRule,
   newVaultWarning,
   permissions,
+  partLine,
   roleLine,
   ruleChangeLine,
   ruleChips,
@@ -159,7 +163,14 @@ out.changes = {
       return [c.name, checkTreasuryChange(change, c.treasury)];
     }),
   ),
-  summary: Object.fromEntries(input.changes.summary.map((c) => [c.name, changeSummary(c.change, c.signerCount)])),
+  summary: Object.fromEntries(input.changes.summary.map((c) => [c.name, changeSummary(c.change)])),
+  signed: Object.fromEntries(input.changes.summary.map((c) => [c.name, signedChangeLine(c.change.signing_inputs)])),
+  requested: [
+    requestedLine({ requested_at: '2026-10-09T09:00:00+00:00', requested_by: { id: 2, name: 'Brij' } }, 1, now),
+    requestedLine({ requested_at: '2026-10-09T09:00:00+00:00', requested_by: { id: 1, name: 'Zaid' } }, 1, now),
+    requestedLine({ requested_at: '2026-10-09T09:00:00+00:00' }, 1, now),
+  ],
+  consequence: [changeConsequence({ needed: 2, approvals: 1 }), changeConsequence({ needed: 1, approvals: 0 })],
   pending: (() => {
     const split = pendingChanges(input.changes.pending.entries, input.changes.pending.fingerprint, now);
     return { here: split.here.map((e) => e.change.id), web: split.web.map((e) => e.change.id) };
@@ -204,6 +215,7 @@ out.workspace = {
   raise: Object.fromEntries(w.raise.map((c) => [c.name, canRaiseIn(c.role, c.workspace)])),
   rules: w.rules.map(([m, n]) => ruleSentence(m, n)),
   roles: w.roles.map((r) => roleLine(r)),
+  parts: [partLine('owner', true), partLine('signer', false), partLine('viewer', true), partLine(null, false)],
   captions: w.captions.map(([m, n, r]) => vaultCaption(m, n, r)),
   changes: Object.fromEntries(Object.entries(w.changes).map(([k, v]) => [k, ruleChangeLine(v, now)])),
   who: Object.fromEntries(w.who.map((c) => [c.name, whoApproves(c.members, c.m, c.sod, c.viewer)])),
@@ -258,5 +270,15 @@ out.onboarding = {
     noLeave: onReturn({ leftAt: null }, t0, true).lock,
   };
 }
+
+out.headlines = [
+  [4, 1],
+  [1, 1],
+  [2, 3],
+  [0, 1],
+  [0, 2],
+].map(([needsYou, changes]) =>
+  approvalsHeadline({ loading: false, failed: false, needsYou, changes, web: 0, waiting: 0, dueToday: 0 }).title,
+);
 
 writeFileSync(process.argv[3]!, JSON.stringify(out));

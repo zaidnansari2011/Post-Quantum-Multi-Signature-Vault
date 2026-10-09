@@ -41,14 +41,33 @@ W, H = 390, 844
 PASSWORD = "demo-password-2026"
 NOW = datetime.now(UTC)
 taken: list[str] = []
-audit = {"checked": 0, "findings": []}
+audit = {"checked": 0, "findings": [], "overflow": []}
 errors: list[str] = []
 
-TREASURY_VAULT = 1
+TREASURY_VAULT = 1  # renamed "Operations" in the disposable copy (review B7), as is the workspace
 TREASURY = "0xD49174b703d6FBC5088b0f01C6E71B5Ef467f3D0"
 ADA, BRIJ, CHEN = (1, "Ada Okafor"), (2, "Brij Mehta"), (3, "Chen Wei")
 GENERAL = "Payroll adjustment schedule"  # Treasury vault, 2 of 3
 ACCESS_TITLE = "Temporary production read for incident 2214"
+
+# Horizontal overflow (review B1): anything on screen that runs past either edge of the viewport,
+# unless a scrolling or clipping container that itself fits holds it (a chip row that scrolls).
+OVERFLOW = """() => {
+  const W = innerWidth, H = innerHeight, out = [];
+  if (document.scrollingElement.scrollWidth > W + 1) out.push({ what: 'page', width: document.scrollingElement.scrollWidth });
+  for (const el of document.querySelectorAll('body *')) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0 || r.bottom <= 0 || r.top >= H) continue;
+    if (r.right <= W + 1 && r.left >= -1) continue;
+    let held = false;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const cs = getComputedStyle(p), pr = p.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(cs.overflowX) && pr.right <= W + 1 && pr.left >= -1) { held = true; break; }
+    }
+    if (!held) out.push({ what: (el.textContent || el.tagName).trim().slice(0, 40), left: Math.round(r.left), right: Math.round(r.right) });
+  }
+  return out.slice(0, 8);
+}"""
 
 AUDIT = """() => [...document.querySelectorAll('[data-hit-w]')]
   .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
@@ -81,9 +100,17 @@ def new_page(browser, state=None, auth=None, init=None):
         return route.abort()
 
     page.route("**/*", guard)
-    page.on("request", lambda r: inflight.__setitem__("n", inflight["n"] + 1) if "/api/" in r.url else None)
+    page.on(
+        "request",
+        lambda r: inflight.__setitem__("n", inflight["n"] + 1) if "/api/" in r.url else None,
+    )
     for ev in ("requestfinished", "requestfailed"):
-        page.on(ev, lambda r: inflight.__setitem__("n", max(0, inflight["n"] - 1)) if "/api/" in r.url else None)
+        page.on(
+            ev,
+            lambda r: (
+                inflight.__setitem__("n", max(0, inflight["n"] - 1)) if "/api/" in r.url else None
+            ),
+        )
     page.on("pageerror", lambda e: errors.append(str(e)[:300]) or print("PAGEERROR", str(e)[:300]))
     if auth:
         page.add_init_script(f"localStorage.setItem('webshots.auth', {json.dumps(auth)});")
@@ -117,6 +144,8 @@ def shot(page, name, wait_ms=600):
         audit["checked"] += 1
         if target["w"] < 48 or target["h"] < 48 or target["nested"]:
             audit["findings"].append({"screen": name, **target})
+    for over in page.evaluate(OVERFLOW):
+        audit["overflow"].append({"screen": name, **over})
 
 
 def button(page, name):
@@ -173,9 +202,9 @@ def rewrite(pattern, change):
 def open_app(page, link=None):
     url = BASE + "/" + QUERY + (f"&link={urllib.parse.quote(link, safe='')}" if link else "")
     page.goto(url)
-    page.get_by_role("tab", name=re.compile("^Account")).or_(button(page, "More options")).first.wait_for(
-        timeout=90000
-    )
+    page.get_by_role("tab", name=re.compile("^Account")).or_(
+        button(page, "More options")
+    ).first.wait_for(timeout=90000)
     quiet(page)
 
 
@@ -251,7 +280,12 @@ def onboarding(browser):
         lambda r: r.fulfill(
             status=429,
             headers={"Retry-After": "540"},
-            json={"ok": False, "code": "rate_limited", "error": "Too many attempts.", "retry_after": 540},
+            json={
+                "ok": False,
+                "code": "rate_limited",
+                "error": "Too many attempts.",
+                "retry_after": 540,
+            },
         ),
     )
 
@@ -278,14 +312,20 @@ def onboarding(browser):
 
 
 def until_utc(days: int) -> str:
-    local_ = (datetime.now().astimezone() + timedelta(days=days)).replace(hour=17, minute=0, second=0, microsecond=0)
+    local_ = (datetime.now().astimezone() + timedelta(days=days)).replace(
+        hour=17, minute=0, second=0, microsecond=0
+    )
     return local_.astimezone(UTC).strftime("%Y-%m-%d %H:%M")
 
 
 def access_decision(ada):
     everything = api(ada, "/api/v1/proposals?state=all")["proposals"]
     for p in everything:
-        if p["title"] == ACCESS_TITLE and p["status"] == "open" and p.get("decision_type") == "access":
+        if (
+            p["title"] == ACCESS_TITLE
+            and p["status"] == "open"
+            and p.get("decision_type") == "access"
+        ):
             return p
     body = {
         "title": ACCESS_TITLE,
@@ -381,15 +421,36 @@ def main_tour(browser, ada, fp):
     # Waiting on others: one you raised (Remind beside it), one that can't pass.
     def waiting_list(body):
         base = copy.deepcopy(general)
-        mine = dict(base, proposal_uuid="11111111-1111-4111-8111-111111111111", title="Rotate the on-call paging credentials",
-                    status="open", expires_at=iso(timedelta(hours=30)), signed_by_me=False, can_sign=False, approvals=1,
-                    raised_by={"id": ADA[0], "name": ADA[1]}, can_still_approve=[BRIJ[0], CHEN[0]], can_still_pass=True,
-                    signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)])
-        stuck = dict(base, proposal_uuid="22222222-2222-4222-8222-222222222222", title="Raise the API rate limit for Northwind",
-                     status="open", expires_at=iso(timedelta(days=3)), signed_by_me=True, can_sign=False, approvals=1,
-                     can_still_approve=[], can_still_pass=False,
-                     cannot_pass_why=["Chen Wei was removed from the vault, so too few approvers are left to reach 2."],
-                     signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)])
+        mine = dict(
+            base,
+            proposal_uuid="11111111-1111-4111-8111-111111111111",
+            title="Rotate the on-call paging credentials",
+            status="open",
+            expires_at=iso(timedelta(hours=30)),
+            signed_by_me=False,
+            can_sign=False,
+            approvals=1,
+            raised_by={"id": ADA[0], "name": ADA[1]},
+            can_still_approve=[BRIJ[0], CHEN[0]],
+            can_still_pass=True,
+            signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)],
+        )
+        stuck = dict(
+            base,
+            proposal_uuid="22222222-2222-4222-8222-222222222222",
+            title="Raise the API rate limit for Northwind",
+            status="open",
+            expires_at=iso(timedelta(days=3)),
+            signed_by_me=True,
+            can_sign=False,
+            approvals=1,
+            can_still_approve=[],
+            can_still_pass=False,
+            cannot_pass_why=[
+                "Chen Wei was removed from the vault, so too few approvers are left to reach 2."
+            ],
+            signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)],
+        )
         body["proposals"] = [mine, stuck]
 
     def waiting(page, _link):
@@ -409,7 +470,10 @@ def main_tour(browser, ada, fp):
         waiting,
         routes=[
             rewrite(r".*/api/v1/proposals\?state=all.*", waiting_list),
-            (r".*/api/v1/proposals/[0-9a-f-]+/remind$", lambda r: r.fulfill(json={"ok": True, "reminded": 2})),
+            (
+                r".*/api/v1/proposals/[0-9a-f-]+/remind$",
+                lambda r: r.fulfill(json={"ok": True, "reminded": 2}),
+            ),
         ],
     )
 
@@ -425,7 +489,12 @@ def main_tour(browser, ada, fp):
         ada,
         "a12",
         auditor,
-        routes=[rewrite(r".*/api/v1/me$", lambda b: b["workspace"].update(role="auditor", role_name="Auditor"))],
+        routes=[
+            rewrite(
+                r".*/api/v1/me$",
+                lambda b: b["workspace"].update(role="auditor", role_name="Auditor"),
+            )
+        ],
     )
 
     # Vaults and a vault (§6.13, §6.14), with a rule change and separation of duties.
@@ -433,8 +502,14 @@ def main_tour(browser, ada, fp):
         v = body["vault"]
         v["separation_of_duties"] = True
         v["rule_changes"] = [
-            {"event": "vault_threshold_changed", "who": "Ada Okafor", "when": iso(timedelta(days=-7)),
-             "label": "Approvals needed", "before": "1", "after": "2"},
+            {
+                "event": "vault_threshold_changed",
+                "who": "Ada Okafor",
+                "when": iso(timedelta(days=-7)),
+                "label": "Approvals needed",
+                "before": "1",
+                "after": "2",
+            },
         ]
         for m in v["members"]:
             if m["user_id"] == CHEN[0]:
@@ -444,7 +519,7 @@ def main_tour(browser, ada, fp):
         open_app(page)
         tab(page, "Vaults")
         shot(page, "v01_vaults")
-        button(page, "Treasury").click()
+        button(page, "Operations").click()
         page.get_by_text("Members", exact=True).first.wait_for(timeout=60000)
         quiet(page, settle_ms=1200)
         shot(page, "v02_vault")
@@ -477,9 +552,15 @@ def main_tour(browser, ada, fp):
     for name, change in (
         ("t02_change_needs_you", honest_change(fp)),
         ("t01_change_tampered", honest_change(fp, digest="ab" * 32)),
-        ("t03_change_password_key", honest_change(fp, my_custody="password", seat_fingerprint="0123456789abcdef")),
+        (
+            "t03_change_password_key",
+            honest_change(fp, my_custody="password", seat_fingerprint="0123456789abcdef"),
+        ),
         ("t04_change_you_approved", honest_change(fp, approved_by_me=True)),
-        ("t06_change_registering", honest_change(fp, state="registering_keys", signing_inputs=None, digest=None)),
+        (
+            "t06_change_registering",
+            honest_change(fp, state="registering_keys", signing_inputs=None, digest=None),
+        ),
         ("t07_change_applying", honest_change(fp, state="finalizing", approvals=2)),
         ("t09_change_voided", honest_change(fp, state="voided")),
     ):
@@ -499,7 +580,13 @@ def main_tour(browser, ada, fp):
                 page.wait_for_timeout(900)
                 shot(page, "t02c_change_checked")
 
-        run(browser, ada, name[:3], lambda page, lk, steps=steps: steps(page, link), routes=[with_change(change)])
+        run(
+            browser,
+            ada,
+            name[:3],
+            lambda page, lk, steps=steps: steps(page, link),
+            routes=[with_change(change)],
+        )
 
     # New decision (§6.16): from the queue's plus, every type, the payment review, discard.
     def new_decision(page, _link):
@@ -511,13 +598,15 @@ def main_tour(browser, ada, fp):
         button(page, "Choose a vault").click()
         page.wait_for_timeout(900)
         shot(page, "n02_vault_picker")
-        button(page, "Treasury").click()
+        button(page, "Operations").click()
         page.wait_for_timeout(900)
         quiet(page)
         button(page, "Raise decision").click()
         page.wait_for_timeout(500)
         shot(page, "n03_general_missing")
-        page.get_by_role("tab", name="Payment", exact=True).or_(page.get_by_role("radio", name="Payment", exact=True)).first.click()
+        page.get_by_role("tab", name="Payment", exact=True).or_(
+            page.get_by_role("radio", name="Payment", exact=True)
+        ).first.click()
         page.wait_for_timeout(500)
         page.get_by_placeholder("0.25").fill("0.0025")
         page.get_by_placeholder("0x…").fill("0x8ba1f109551bD432803012645Ac136ddd64DBA72")
@@ -529,7 +618,9 @@ def main_tour(browser, ada, fp):
         shot(page, "n05_payment_review")
         button(page, "Edit").click()
         page.wait_for_timeout(700)
-        page.get_by_role("tab", name="Access", exact=True).or_(page.get_by_role("radio", name="Access", exact=True)).first.click()
+        page.get_by_role("tab", name="Access", exact=True).or_(
+            page.get_by_role("radio", name="Access", exact=True)
+        ).first.click()
         page.wait_for_timeout(500)
         page.get_by_placeholder("Elif Kaya").fill("Elif Demir")
         page.get_by_placeholder("prod-db").fill("prod-db")
@@ -559,7 +650,11 @@ def main_tour(browser, ada, fp):
         quiet(page)
 
     def raised_ok(page, _link):
-        raise_general(page, "Rotate the staging paging credentials", "Rotate the staging paging integration keys tonight.")
+        raise_general(
+            page,
+            "Rotate the staging paging credentials",
+            "Rotate the staging paging integration keys tonight.",
+        )
         shot(page, "n09_raised_as_entered")
 
     run(browser, ada, "n09", raised_ok)
@@ -571,7 +666,11 @@ def main_tour(browser, ada, fp):
         route.continue_(post_data=json.dumps(body))
 
     def raised_bad(page, _link):
-        raise_general(page, "Rotate the staging paging credentials (2)", "Rotate the staging paging integration keys tonight.")
+        raise_general(
+            page,
+            "Rotate the staging paging credentials (2)",
+            "Rotate the staging paging integration keys tonight.",
+        )
         shot(page, "n10_raised_not_as_entered")
 
     run(browser, ada, "n10", raised_bad, routes=[(r".*/api/v1/vaults/2/proposals$", doctored)])
@@ -672,6 +771,55 @@ def main_tour(browser, ada, fp):
         page.wait_for_timeout(900)
         shot(page, "l01_locked")
 
+    # A1: the app locks while a sheet is open: the sheet closes, the lock covers everything, and
+    # unlocking shows the page without the sheet. AppState follows the page's visibility.
+    def hide_and_return(page, hidden):
+        page.evaluate(
+            """(hidden) => {
+              for (const k of ['hidden', 'webkitHidden']) Object.defineProperty(document, k, { configurable: true, get: () => hidden });
+              for (const k of ['visibilityState', 'webkitVisibilityState'])
+                Object.defineProperty(document, k, { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+              document.dispatchEvent(new Event('visibilitychange'));
+            }""",
+            hidden,
+        )
+
+    def locked_over_sheet(page, _link):
+        page.clock.install()
+        page.goto(
+            BASE
+            + "/"
+            + QUERY
+            + "&link="
+            + urllib.parse.quote(f"qvault://decision/{general['proposal_uuid']}", safe="")
+        )
+        button(page, "Details").wait_for(timeout=90000)
+        quiet(page)
+        button(page, "Details").click()
+        page.wait_for_timeout(900)
+        shot(page, "l02a_sheet_open_before_lock")
+        # The prompt on return is cancelled, so the lock stays for the shot.
+        page.evaluate("localStorage.setItem('webshots.auth', 'cancel')")
+        hide_and_return(page, True)
+        page.clock.fast_forward(65_000)
+        hide_and_return(page, False)
+        page.get_by_text("Q-Vault is locked").wait_for(timeout=30000)
+        page.wait_for_timeout(900)
+        shot(page, "l02b_locked_over_sheet")
+        page.evaluate("localStorage.setItem('webshots.auth', 'pass')")
+        button(page, "Unlock").click()
+        page.get_by_text("Q-Vault is locked").wait_for(state="hidden", timeout=30000)
+        page.wait_for_timeout(900)
+        shot(page, "l02c_unlocked_sheet_closed")
+
+    run(
+        browser,
+        ada,
+        "l02",
+        locked_over_sheet,
+        init=["localStorage.setItem('webshots.securestore.qvault.device.applock.v1', 'on');"],
+    )
+
     run(
         browser,
         ada,
@@ -731,8 +879,13 @@ def main_tour(browser, ada, fp):
     def as_raiser(body):
         d = body.get("proposal") or {}
         open_now(d)
-        d.update(raised_by={"id": ADA[0], "name": ADA[1]}, separation_of_duties=True, can_sign=False,
-                 signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)], can_withdraw=True)
+        d.update(
+            raised_by={"id": ADA[0], "name": ADA[1]},
+            separation_of_duties=True,
+            can_sign=False,
+            signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)],
+            can_withdraw=True,
+        )
 
     def remind(page, lk):
         open_app(page, lk)
@@ -750,7 +903,10 @@ def main_tour(browser, ada, fp):
         lambda p_, _l: remind(p_, glink),
         routes=[
             rewrite(r".*/api/v1/proposals/" + general["proposal_uuid"] + r"$", as_raiser),
-            (r".*/api/v1/proposals/[0-9a-f-]+/remind$", lambda r: r.fulfill(json={"ok": True, "reminded": 2})),
+            (
+                r".*/api/v1/proposals/[0-9a-f-]+/remind$",
+                lambda r: r.fulfill(json={"ok": True, "reminded": 2}),
+            ),
         ],
     )
 
@@ -759,15 +915,39 @@ def main_tour(browser, ada, fp):
         "signed": False,
         "can_post": True,
         "comments": [
-            {"id": 1, "author": {"id": 2, "name": "Brij Mehta"}, "created_at": iso(timedelta(hours=-3)),
-             "deleted": False, "mine": False, "body": "Does this include the March back pay?",
-             "segments": [{"text": "Does this include the March back pay?", "mention": None}]},
-            {"id": 2, "author": {"id": 1, "name": "Ada Okafor"}, "created_at": iso(timedelta(hours=-2)),
-             "deleted": False, "mine": True, "body": "@Brij Mehta yes, it is in line 4. The real address is 0x41Ed00000000000000000000000000000000008A19.",
-             "segments": [{"text": "@Brij Mehta", "mention": {"user_id": 2}},
-                          {"text": " yes, it is in line 4. The real address is 0x41Ed00000000000000000000000000000000008A19.", "mention": None}]},
-            {"id": 3, "author": {"id": 3, "name": "Chen Wei"}, "created_at": iso(timedelta(hours=-1)),
-             "deleted": True, "mine": False, "body": "", "segments": []},
+            {
+                "id": 1,
+                "author": {"id": 2, "name": "Brij Mehta"},
+                "created_at": iso(timedelta(hours=-3)),
+                "deleted": False,
+                "mine": False,
+                "body": "Does this include the March back pay?",
+                "segments": [{"text": "Does this include the March back pay?", "mention": None}],
+            },
+            {
+                "id": 2,
+                "author": {"id": 1, "name": "Ada Okafor"},
+                "created_at": iso(timedelta(hours=-2)),
+                "deleted": False,
+                "mine": True,
+                "body": "@Brij Mehta yes, it is in line 4. The real address is 0x41Ed00000000000000000000000000000000008A19.",
+                "segments": [
+                    {"text": "@Brij Mehta", "mention": {"user_id": 2}},
+                    {
+                        "text": " yes, it is in line 4. The real address is 0x41Ed00000000000000000000000000000000008A19.",
+                        "mention": None,
+                    },
+                ],
+            },
+            {
+                "id": 3,
+                "author": {"id": 3, "name": "Chen Wei"},
+                "created_at": iso(timedelta(hours=-1)),
+                "deleted": True,
+                "mine": False,
+                "body": "",
+                "segments": [],
+            },
         ],
         "next_after": None,
     }
@@ -781,7 +961,9 @@ def main_tour(browser, ada, fp):
         open_app(page, lk)
         button(page, "Details").wait_for(timeout=60000)
         quiet(page)
-        page.get_by_role("button", name=re.compile("^Discussion")).first.scroll_into_view_if_needed()
+        page.get_by_role(
+            "button", name=re.compile("^Discussion")
+        ).first.scroll_into_view_if_needed()
         page.wait_for_timeout(400)
         shot(page, "d24_discussion_row")
         page.get_by_role("button", name=re.compile("^Discussion")).first.click()
@@ -803,8 +985,14 @@ def main_tour(browser, ada, fp):
     def cant_pass(body):
         d = body.get("proposal") or {}
         open_now(d)
-        d.update(can_sign=False, can_still_pass=False, signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)],
-                 cannot_pass_why=["Brij Mehta and Chen Wei can no longer approve in this vault, so it can't reach 2 approvals."])
+        d.update(
+            can_sign=False,
+            can_still_pass=False,
+            signers=[{"user_id": i, "name": n} for i, n in (ADA, BRIJ, CHEN)],
+            cannot_pass_why=[
+                "Brij Mehta and Chen Wei can no longer approve in this vault, so it can't reach 2 approvals."
+            ],
+        )
         d["signing_inputs"]  # unchanged: the signed set still lists Ada, so row 8 applies
 
     def cant(page, lk):
@@ -846,9 +1034,17 @@ with sync_playwright() as p:
     main_tour(browser, ada, fp)
     browser.close()
 
-(OUT / "audit_p3.json").write_text(json.dumps({**audit, "errors": errors}, indent=2), encoding="utf-8", newline="\n")
-print(f"audit: {audit['checked']} targets checked, {len(audit['findings'])} findings")
+(OUT / "audit_p3.json").write_text(
+    json.dumps({**audit, "errors": errors}, indent=2), encoding="utf-8", newline="\n"
+)
+print(
+    f"audit: {audit['checked']} targets checked, {len(audit['findings'])} findings, {len(audit['overflow'])} overflowing"
+)
+for over in audit["overflow"]:
+    print("   OVERFLOW", over)
 for finding in audit["findings"]:
     print("  ", finding)
 for e in errors:
     print("ERROR", e)
+if audit["findings"] or audit["overflow"]:
+    sys.exit(1)

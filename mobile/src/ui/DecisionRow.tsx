@@ -189,12 +189,13 @@ export function DecisionRow({
     </Touchable>
   );
   if (!trailing) return row;
-  // The row and its second action are siblings, so a screen reader reaches both (§6.4). At large
-  // text the action moves under the row, so the row keeps its width.
+  // The row and its second action are siblings, so a screen reader reaches both (§6.4). The action
+  // sits under the row, aligned with its text, at every text size, so the row's own lines keep their
+  // width and its due time stays right-aligned with the rows around it (review B6).
   return (
-    <View style={[s.withTrailing, stacked && s.withTrailingStacked]}>
-      <View style={stacked ? null : s.flex}>{row}</View>
-      <View style={[s.trailing, stacked && s.trailingStacked]}>{trailing}</View>
+    <View style={s.withTrailing}>
+      {row}
+      <View style={s.trailing}>{trailing}</View>
     </View>
   );
 }
@@ -229,10 +230,8 @@ const useStyles = makeStyles((t) => ({
   amount: { flexShrink: 0 },
   note: { flexShrink: 1, textAlign: 'right' },
   marks: { flexDirection: 'row', alignItems: 'center', gap: t.space[8] },
-  withTrailing: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: t.color.surface },
+  withTrailing: { backgroundColor: t.color.surface },
   flex: { flex: 1 },
-  trailing: { justifyContent: 'center', paddingRight: t.space[8] },
-  withTrailingStacked: { flexDirection: 'column' },
-  trailingStacked: { paddingLeft: t.layout.gutter - t.space[8], paddingBottom: t.space[8], alignItems: 'flex-start' },
+  trailing: { paddingLeft: t.layout.gutter, paddingBottom: t.space[4], marginTop: -t.space[8], alignItems: 'flex-start' },
   due: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
 }));

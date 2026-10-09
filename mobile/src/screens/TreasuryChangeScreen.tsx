@@ -54,8 +54,10 @@ import { devicesQuery, keys, networkFetches, treasuryQuery, vaultsQuery } from '
 import { fetchKey, OFFLINE_SIGNING } from '../logic/freshness.ts';
 import { methodButton } from '../logic/methodLabel.ts';
 import {
+  CHANGE_FAILURE,
   changeConsequence,
-  changeSummary,
+  describedChange,
+  signedChangeLine,
   checkTreasuryChange,
   requestedLine,
   treasuryChangeStatus,
@@ -184,7 +186,10 @@ export default function TreasuryChangeScreen({
   const collecting = change.state === 'collecting_approvals';
   const until = Date.parse(change.valid_until);
   const soon = collecting && !Number.isNaN(until) && until - now < DAY && until > now;
-  const summary = changeSummary(change, treasury?.signer_count ?? null);
+  // What an approval signs (from the signed inputs), and whose keys they are as Q-Vault describes
+  // them (unsigned: the phone can't tie a signed identity to a person yet; review A3).
+  const signedLine = signedChangeLine(change.signing_inputs);
+  const described = describedChange(change.people);
 
   function open() {
     const current = queryClient.getQueryData<typeof data>(keys.treasury(vaultId));
@@ -286,7 +291,7 @@ export default function TreasuryChangeScreen({
   };
   const items: MoreItem[] = [
     { key: 'web', title: 'Open on the web', icon: 'external', onPress: openWeb },
-    { key: 'report', title: 'Copy a report', icon: 'alert', onPress: report },
+    { key: 'report', title: 'Share a report', icon: 'alert', onPress: report },
   ];
 
   const action = status.action;
@@ -303,7 +308,7 @@ export default function TreasuryChangeScreen({
     ) : action.kind === 'report' ? (
       <ActionBar
         stack
-        primary={{ label: 'Copy a report', variant: 'secondary', onPress: report }}
+        primary={{ label: 'Share a report', variant: 'secondary', onPress: report }}
         secondary={{ label: 'Open on the web', variant: 'quiet', onPress: openWeb }}
       />
     ) : null;
@@ -322,7 +327,7 @@ export default function TreasuryChangeScreen({
             <Banner
               tone="critical"
               title="Don't approve this change"
-              detail="The keys shown aren't the ones that would be signed. Nothing has been signed, and this phone won't sign it."
+              detail={`${CHANGE_FAILURE[integrity.why]} Nothing has been signed, and this phone won't sign it.`}
             />
           ) : (
             <View style={s.labelled}>
@@ -343,12 +348,22 @@ export default function TreasuryChangeScreen({
               {`Treasury change in ${vaultName}`}
             </Text>
             <Text role="caption" tone="muted">
-              {requestedLine(change, now)}
+              {requestedLine(change, identity.userId, now)}
             </Text>
           </View>
 
-          {/* A summary of signed identities, not signed prose: sans (§6.15). */}
-          <Text role="body">{summary}</Text>
+          {/* Shown as fact only when this phone's check held: a tampered change shows nothing of
+              what it claims to do (review A3). Sans: a summary of signed identities, not prose. */}
+          {integrity.ok ? (
+            <View style={s.labelled}>
+              <Text role="body">{signedLine}</Text>
+              {described ? (
+                <Text role="body" tone="muted">
+                  {`Q-Vault says: ${described.charAt(0).toLowerCase()}${described.slice(1)}`}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
 
           {integrity.ok ? (
             <View style={s.quorum}>
@@ -399,7 +414,13 @@ export default function TreasuryChangeScreen({
       >
         {snapshot ? (
           <View style={s.stack16}>
-            <Text role="body">{changeSummary(snapshot.change, treasury?.signer_count ?? null)}</Text>
+            {/* All from the frozen copy (I-6): signed counts first, then Q-Vault's description. */}
+            <Text role="body">{signedChangeLine(snapshot.change.signing_inputs)}</Text>
+            {describedChange(snapshot.change.people) ? (
+              <Text role="body" tone="muted">
+                {`Q-Vault says: ${(describedChange(snapshot.change.people) ?? '').replace(/^./, (c) => c.toLowerCase())}`}
+              </Text>
+            ) : null}
             <Text role="body" tone="muted">
               {`${changeConsequence(snapshot.change)} An approval can't be withdrawn.`}
             </Text>
@@ -411,24 +432,36 @@ export default function TreasuryChangeScreen({
         <View style={s.stack16}>
           {integrity.ok ? (
             <>
-              <Check ok text="The keys shown are the ones an approval signs: this phone worked out the change's digest itself." />
+              <Check ok text="This phone worked out the change's digest from the keys and rule Q-Vault sent, and it matches." />
               <Check ok text={`It is a change to ${vaultName}'s treasury.`} />
+              <Check text="Who each key belongs to is Q-Vault's description. This phone can't tell that from the key itself." />
               <Check text="Checked again, with your seat on the treasury, when you approve." />
             </>
           ) : (
-            <Check ok={false} text="The digest this phone worked out doesn't match the one Q-Vault sent, so the keys shown may not be the ones signed." />
+            <Check ok={false} text={CHANGE_FAILURE[integrity.why]} />
           )}
           <Text role="body" tone="muted">
             {"Don't approve a change you don't recognise; ask the person who requested it."}
           </Text>
           {change.digest ? <Identifier label="Change digest" value={change.digest} /> : null}
           {address ? <Identifier label="Treasury" value={address} /> : null}
-          {(change.people?.add ?? []).map((p, i) =>
-            p.key_fingerprint ? <Identifier key={`a${i}`} label={`Joins: ${p.name ?? 'someone'}`} value={p.key_fingerprint} /> : null,
-          )}
-          {(change.people?.remove ?? []).map((p, i) =>
-            p.key_fingerprint ? <Identifier key={`r${i}`} label={`Leaves: ${p.name ?? 'someone'}`} value={p.key_fingerprint} /> : null,
-          )}
+          {/* The signed identities themselves, with Q-Vault's description of each beside it. */}
+          {(change.signing_inputs?.add ?? []).map((identityHex, i) => (
+            <View key={`a${i}`} style={s.identity}>
+              <Identifier label={`Adds key ${i + 1}`} value={identityHex} />
+              <Text role="caption" tone="muted">
+                {describeOwner(change.people?.add[i])}
+              </Text>
+            </View>
+          ))}
+          {(change.signing_inputs?.remove ?? []).map((identityHex, i) => (
+            <View key={`r${i}`} style={s.identity}>
+              <Identifier label={`Removes key ${i + 1}`} value={identityHex} />
+              <Text role="caption" tone="muted">
+                {describeOwner(change.people?.remove[i])}
+              </Text>
+            </View>
+          ))}
         </View>
       </Sheet>
 
@@ -454,6 +487,15 @@ export default function TreasuryChangeScreen({
       ) : null}
     </Screen>
   );
+}
+
+/** Q-Vault's description of one signed identity: whose key, and that key's fingerprint. */
+function describeOwner(owner: { name: string | null; key_fingerprint: string | null } | undefined): string {
+  if (!owner) return "Q-Vault doesn't say whose key this is.";
+  const who = owner.name ?? 'someone';
+  return owner.key_fingerprint
+    ? `Q-Vault says: ${who}, key ${owner.key_fingerprint.slice(0, 8)}`
+    : `Q-Vault says: ${who}`;
 }
 
 function Check({ ok, text }: { ok?: boolean; text: string }) {
@@ -508,4 +550,5 @@ const useStyles = makeStyles((t) => ({
   titleBlock: { gap: t.space[4] },
   quorum: { gap: t.space[8] },
   check: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
+  identity: { gap: t.space[2] },
 }));

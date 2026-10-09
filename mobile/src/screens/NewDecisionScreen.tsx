@@ -44,7 +44,7 @@ import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
 import { isOffline } from '../connectivity.ts';
-import { formatEth, parseEth } from '../crypto/signing.ts';
+import { NETWORKS, formatEth, parseEth } from '../crypto/signing.ts';
 import { middleOut } from '../format.ts';
 import { OfflineNotice } from '../freshness.tsx';
 import { OFFLINE_RAISE } from '../logic/freshness.ts';
@@ -150,6 +150,9 @@ export default function NewDecisionScreen({
   const [reviewing, setReviewing] = useState(false);
   const [discard, setDiscard] = useState<{ action: unknown } | null>(null);
   const [raised, setRaised] = useState(false);
+  // The treasury the form was filled against, captured when the payment goes to review (I-5): the
+  // stored payment must be for this treasury on this network, whatever the server answers later.
+  const [formTreasury, setFormTreasury] = useState<{ address: string; chainId: number } | null>(null);
   // Where to go once the form may be left: the new decision, or wherever Discard was taking it.
   const [leaving, setLeaving] = useState<{ uuid: string; fields: RaisedFields } | { action: unknown } | null>(null);
 
@@ -243,7 +246,13 @@ export default function NewDecisionScreen({
       });
       const raisedFields: RaisedFields =
         effectiveKind === 'payment'
-          ? { kind: 'payment', to: to.trim(), valueWei: valueWei!, treasury: treasury.data?.treasury?.address ?? null }
+          ? {
+              kind: 'payment',
+              to: to.trim(),
+              valueWei: valueWei!,
+              treasury: formTreasury?.address ?? null,
+              chainId: formTreasury?.chainId ?? null,
+            }
           : typed
             ? { kind: 'typed', type: typed.type, fields: typed.fields }
             : { kind: 'general', text: text.trim() };
@@ -279,7 +288,11 @@ export default function NewDecisionScreen({
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length > 0) return;
-    if (effectiveKind === 'payment') setReviewing(true);
+    if (effectiveKind === 'payment') {
+      const t = treasury.data?.treasury;
+      setFormTreasury(t ? { address: t.address, chainId: t.chain_id } : null);
+      setReviewing(true);
+    }
     else raise.mutate();
   };
 
@@ -593,7 +606,7 @@ export default function NewDecisionScreen({
               </Text>
               <GroupedValue value={to.trim()} />
               <Text role="body" tone="muted">
-                on Sepolia
+                {`on ${formTreasury ? (NETWORKS[formTreasury.chainId] ?? `network ${formTreasury.chainId}`) : 'its network'}`}
               </Text>
             </View>
             <KeyValue

@@ -381,7 +381,7 @@ function Messages() {
     <>
       <Story title="Banner: page-level only">
         <View style={s.col}>
-          <Banner tone="critical" title="Don't act on this decision" detail="Its contents don't match the code everyone signs. Nothing has been signed, and this phone won't sign it." actions={[{ label: 'Copy a report', onPress: noop }]} />
+          <Banner tone="critical" title="Don't act on this decision" detail="Its contents don't match the code everyone signs. Nothing has been signed, and this phone won't sign it." actions={[{ label: 'Share a report', onPress: noop }]} />
           <Banner tone="warning" title="Can't load this decision." detail="Check your connection." actions={[{ label: 'Try again', onPress: noop }]} />
           <Banner tone="success" title="Signed on this device." />
           <Banner tone="info" title="Queued" detail="The treasury pays at its next check." />
