@@ -157,6 +157,12 @@ def count_word(n: int, *, capital: bool = True) -> str:
     return str(n)
 
 
+def count_noun(n: int, one: str, many: str | None = None) -> str:
+    """``n`` and its noun, singular or plural: ``1 entry``, ``1,234 entries``, ``0 entries``.
+    Never ``entry(s)``: a sentence names the count it has."""
+    return f"{n:,} {one if n == 1 else (many or one + 's')}"
+
+
 def first_name(name: str | None) -> str:
     """The name people are called by in lists and sentences (screens.md: first names only)."""
     name = (name or "").strip()
@@ -238,6 +244,7 @@ def register(app) -> None:
         ui_due=due,
         ui_code=decision_code,
         ui_count_word=count_word,
+        ui_count=count_noun,
         ui_first_name=first_name,
         ui_names=name_list,
     )

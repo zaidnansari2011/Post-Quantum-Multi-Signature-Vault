@@ -141,7 +141,7 @@
     {% if receipt.key_fingerprint %}<div><dt>Key fingerprint</dt><dd>{{ hash(receipt.key_fingerprint, 'key fingerprint', 16, 0) }}</dd></div>{% endif %}
     <div><dt>Checked again in</dt><dd>{{ '%.2f'|format(receipt.verify_ms) }} ms</dd></div>
     {% if receipt.ledger_seq is not none %}<div><dt>Log entry</dt><dd>#{{ '{:,}'.format(receipt.ledger_seq) }} {{ hash(receipt.ledger_entry_hash, 'entry hash') }}</dd></div>{% endif %}
-    {% if receipt.root_after %}<div><dt>Log root</dt><dd><span class="q-move">{% if receipt.root_before %}{{ hash(receipt.root_before, 'root before') }}<span aria-hidden="true">→</span>{% endif %}{{ hash(receipt.root_after, 'root after') }}</span><span class="q-cap">{{ '{:,}'.format(receipt.tree_size) }} entries after yours.</span></dd></div>{% endif %}
+    {% if receipt.root_after %}<div><dt>Log root</dt><dd><span class="q-move">{% if receipt.root_before %}{{ hash(receipt.root_before, 'root before') }}<span aria-hidden="true">→</span>{% endif %}{{ hash(receipt.root_after, 'root after') }}</span><span class="q-cap">The root of the log with yours as its newest entry. {% set after = receipt.entries_after %}{% if after == 0 %}No entries after yours yet.{% elif after is not none %}{{ ui_count(after, 'entry', 'entries') }} after yours.{% endif %}</span></dd></div>{% endif %}
   </dl>
 </section>
 {% endif %}
