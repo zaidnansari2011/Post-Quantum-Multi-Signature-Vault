@@ -19,6 +19,15 @@ _DEV_SECRET = "dev-insecure-secret-key-change-me"
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 
+def _proxy_hops(value: str | None) -> int | None:
+    """RATE_LIMIT_PROXY_HOPS as a count of trusted proxies, or None when unset or not a count."""
+    try:
+        hops = int((value or "").strip())
+    except ValueError:
+        return None
+    return hops if hops >= 0 else None
+
+
 class BaseConfig:
     # Flask / session
     SECRET_KEY = os.environ.get("SECRET_KEY")
@@ -59,9 +68,13 @@ class BaseConfig:
 
     # Sign-in, sign-up and phone pairing are rate limited per client address, in this process
     # (qvault/security/rate_limit.py). Behind a reverse proxy set RATE_LIMIT_PROXY_HOPS to the
-    # number of proxies in front (Azure Container Apps: 1), or every visitor shares one bucket.
+    # number of proxies in front (Azure Container Apps' ingress: 1; Cloudflare proxying in front
+    # of it: 2), or every visitor shares one bucket. Production refuses to start without it.
     RATE_LIMIT_ENABLED = os.environ.get("RATE_LIMIT_ENABLED", "true").lower() == "true"
-    RATE_LIMIT_PROXY_HOPS = int(os.environ.get("RATE_LIMIT_PROXY_HOPS", "0"))
+    RATE_LIMIT_PROXY_HOPS = _proxy_hops(os.environ.get("RATE_LIMIT_PROXY_HOPS")) or 0
+    # Sign-ups (both forms together) per client address per hour. Raise it for a live demo where
+    # an audience signs up from one network: they all share one address.
+    RATE_LIMIT_SIGNUP_PER_HOUR = int(os.environ.get("RATE_LIMIT_SIGNUP_PER_HOUR", "10"))
 
     # The deliberate tamper demonstration is dev/demo only and OFF by default.
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "false").lower() == "true"
@@ -186,6 +199,18 @@ class ProdConfig(BaseConfig):
                 + ", ".join(missing)
                 + ". Set them in the environment."
             )
+        # Read now, not from the class: a wrong guess either way is a security fault (one bucket
+        # for every visitor, or a bucket each client chooses), so there is no default to fall
+        # back on. 0 is accepted when it is said explicitly.
+        hops = _proxy_hops(os.environ.get("RATE_LIMIT_PROXY_HOPS"))
+        if hops is None:
+            raise RuntimeError(
+                "Refusing to start: set RATE_LIMIT_PROXY_HOPS to the number of reverse proxies in "
+                "front of the app (1 behind Azure Container Apps' ingress, 2 with Cloudflare "
+                "proxying in front of it, 0 with none). Without it the rate limiter either counts "
+                "every visitor as one or lets each client choose its own address."
+            )
+        self.RATE_LIMIT_PROXY_HOPS = hops
 
 
 _CONFIGS = {"development": DevConfig, "testing": TestConfig, "production": ProdConfig}
