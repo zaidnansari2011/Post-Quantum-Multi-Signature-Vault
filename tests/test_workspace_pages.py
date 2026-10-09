@@ -167,26 +167,26 @@ def test_renaming_is_recorded_and_only_managers_can(app, team):
     assert json.loads(event.payload_json)["to"] == "Northwind"
 
 
-def test_separation_of_duties_is_off_by_default_and_stored_when_turned_on(app, team):
+def test_separation_of_duties_is_on_by_default_and_stored_when_turned_off(app, team):
     workspace, ada, _, cleo = team
-    assert workspace.sod_default is False
+    assert workspace.sod_default is True
 
     with pytest.raises(WorkspaceError):
-        workspace_service.set_vault_defaults(workspace, sod_default=True, actor=cleo)
-    workspace_service.set_vault_defaults(workspace, sod_default=True, actor=ada)
-    workspace_service.set_vault_defaults(workspace, sod_default=True, actor=ada)
+        workspace_service.set_vault_defaults(workspace, sod_default=False, actor=cleo)
+    workspace_service.set_vault_defaults(workspace, sod_default=False, actor=ada)
+    workspace_service.set_vault_defaults(workspace, sod_default=False, actor=ada)
 
     db.session.expire_all()
-    assert workspace_service.current_workspace(ada).sod_default is True
+    assert workspace_service.current_workspace(ada).sod_default is False
     assert len(_events("workspace_settings_changed")) == 1
 
 
-def test_a_new_workspace_starts_with_separation_of_duties_off(app):
+def test_a_new_workspace_starts_with_separation_of_duties_on(app):
     zed = _register("zed@other.com", "Zed", place=False)
 
     workspace = workspace_service.create_workspace("Other Co", zed)
 
-    assert workspace.sod_default is False
+    assert workspace.sod_default is True
 
 
 # --------------------------------------------------------------------------------------------
@@ -212,11 +212,13 @@ def test_the_checklist_completes_on_real_events(app):
     brij = _register("brij@e.com", "Brij")
     assert _done(workspace)["key"]
 
+    # Whoever raises a decision can't approve it (on by default), so Brij approves it.
+    vault_service.add_member(vault, brij.email, "signer", actor_id=ada.id)
     proposal = proposal_service.create_proposal(vault, ada, "Pay the auditors", "Pay them.")
     assert _done(workspace)["decision"]
     assert not _done(workspace)["approve"]
 
-    approval_service.cast_vote(proposal, ada, PW, "approve")
+    approval_service.cast_vote(proposal, brij, PW, "approve")
     assert all(_done(workspace).values())
     assert brij is not None
     assert workspace_service.checklist_for(ada) is None
@@ -682,13 +684,16 @@ def test_renaming_the_workspace_from_settings(app, client, team):
     assert "Northwind" in _text(client.get("/workspace/members"))
 
 
-def test_turning_on_separation_of_duties_from_settings(app, client, team):
+def test_turning_separation_of_duties_off_and_on_from_settings(app, client, team):
     workspace, *_ = team
     _login(client, "ada@e.com")
+    assert "On." in _text(client.get("/workspace/settings"))
+
+    client.post("/workspace/settings/vaults", data={})  # an unticked box sends nothing
+    assert workspace.sod_default is False
     assert "Off." in _text(client.get("/workspace/settings"))
 
     client.post("/workspace/settings/vaults", data={"sod_default": "on"})
-
     assert workspace.sod_default is True
     assert "New vaults start with it" in _text(client.get("/workspace/settings"))
 

@@ -40,8 +40,8 @@
                     caption='The person who raises a decision can’t also approve it, so every decision needs the threshold from other people.') }}
         <p class="q-note q-gap">
           {% if workspace.sod_default %}On{% else %}Off{% endif %}.
-          New vaults start with it. It never changes a vault that already exists: each vault’s
-          owner sets theirs in its settings.
+          New vaults start with it, and it is on unless you turn it off. It never changes a vault
+          that already exists: each vault’s owner sets theirs in its settings.
         </p>
         {% if manager %}{{ button('Save', 'secondary', type='submit') }}{% endif %}
       </form>
