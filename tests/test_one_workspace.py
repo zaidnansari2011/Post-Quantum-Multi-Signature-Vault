@@ -6,7 +6,7 @@ invitation used to land back in its own empty workspace: "You joined Larkspur WS
 nothing of Larkspur anywhere. The interim rule:
 
 - if the person's own workspace is empty (they are its only member, they belong to no vault and it
-  has no open invitation), accepting moves them: that membership ends, logged, and they join the
+  has no pending invitation), accepting moves them: that membership ends, logged, and they join the
   inviting workspace with the invited role;
 - otherwise the acceptance is refused with an honest sentence, nothing changes, and the invitation
   stays usable.
@@ -113,7 +113,7 @@ def test_after_the_move_neither_side_sees_the_other_workspaces_history(app, clie
     assert ("workspace", str(larkspur["ws"].id)) in refs(sam)
 
 
-@pytest.mark.parametrize("busy", ["a vault", "another member", "an open invitation"])
+@pytest.mark.parametrize("busy", ["a vault", "another member", "a pending invitation"])
 def test_a_workspace_in_use_is_never_left_and_the_invitation_stays_open(
     app, client, larkspur, busy
 ):
@@ -131,7 +131,7 @@ def test_a_workspace_in_use_is_never_left_and_the_invitation_stays_open(
     token = _invite(larkspur)
 
     page = _text(client.get(f"/invite/{token}"))
-    assert "You already belong to Sam Co, which has vaults or other members." in page
+    assert "You already belong to Sam Co, which has vaults, other members or pending" in page
     assert "Accept and join" not in page
 
     resp = client.post(f"/invite/{token}/accept", follow_redirects=True)
@@ -166,3 +166,15 @@ def test_an_account_already_in_a_shared_workspace_with_others_is_refused(app, la
     with pytest.raises(workspace_service.InvitationError, match="You already belong to Larkspur"):
         workspace_service.accept_invitation(token, larkspur["cleo"])
     assert workspace_service.current_workspace(larkspur["cleo"]).id == larkspur["ws"].id
+
+
+def test_an_expired_invitation_does_not_keep_an_empty_workspace_in_use(app, client, larkspur):
+    from datetime import UTC, datetime, timedelta
+
+    sam = _sign_up(client)
+    own = workspace_service.current_workspace(sam)
+    stale, _ = workspace_service.create_invitation(own, sam, "friend@kestrel.com", "member")
+    stale.expires_at = datetime.now(UTC) - timedelta(days=1)
+    db.session.commit()
+    client.post(f"/invite/{_invite(larkspur)}/accept")
+    assert workspace_service.current_workspace(sam).name == "Larkspur WS"
