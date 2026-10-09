@@ -66,6 +66,17 @@ OVERFLOW = """() => {
     }
     if (!held) out.push({ what: (el.textContent || el.tagName).trim().slice(0, 40), left: Math.round(r.left), right: Math.round(r.right) });
   }
+  // A layout container whose content is wider than it: the browser scrolls it sideways when a field
+  // inside is focused, shifting the whole form (what 2.0 text did to New decision).
+  for (const el of document.querySelectorAll('body *')) {
+    const cs = getComputedStyle(el);
+    // Not a field (its own text scrolls) and not text cut on purpose (an ellipsis, a line clamp).
+    if (/^(INPUT|TEXTAREA)$/.test(el.tagName) || cs.textOverflow === 'ellipsis' || (cs.webkitLineClamp && cs.webkitLineClamp !== 'none')) continue;
+    if (el.clientWidth >= 200 && !/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < H) out.push({ what: 'container ' + (el.textContent || '').trim().slice(0, 30), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth });
+    }
+  }
   return out.slice(0, 8);
 }"""
 
