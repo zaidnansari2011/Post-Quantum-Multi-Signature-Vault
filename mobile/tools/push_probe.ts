@@ -6,11 +6,13 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { targetFromPush } from '../src/logic/links.ts';
+import { onRemoveLocalOnly, onRemoveResult, onSetUpAgain, onUnauthorized } from '../src/logic/session.ts';
 import {
   CHANNELS,
   FOREGROUND,
   accountLine,
   canToggle,
+  forgetsPush,
   pushState,
   shouldPrime,
   type PushGroup,
@@ -38,7 +40,17 @@ for (const [name, data] of Object.entries(input.pushes)) pushes[name] = targetFr
 const toggles: Record<string, boolean> = {};
 for (const g of input.groups) toggles[g.id] = canToggle(g);
 
+// Every way a phone's session can end: which of them stop its pushes first (F4).
+const endings: Record<string, boolean> = {
+  session_ended_401: forgetsPush(onUnauthorized(null).deletes),
+  set_up_again: forgetsPush(onSetUpAgain('session')),
+  removed: forgetsPush(onRemoveResult('removed').deletes),
+  removed_already: forgetsPush(onRemoveResult('already_revoked').deletes),
+  remove_unreachable: forgetsPush(onRemoveResult('unreachable').deletes),
+  remove_local_only: forgetsPush(onRemoveLocalOnly()),
+};
+
 writeFileSync(
   process.argv[3],
-  JSON.stringify({ states, primes, pushes, toggles, channels: CHANNELS, foreground: FOREGROUND }),
+  JSON.stringify({ states, primes, pushes, toggles, endings, channels: CHANNELS, foreground: FOREGROUND }),
 );

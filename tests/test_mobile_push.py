@@ -207,6 +207,31 @@ def test_in_the_foreground_a_push_shows_and_sounds_nothing(results):
     }
 
 
+def test_every_wipe_of_the_phone_stops_its_pushes_first_and_a_401_does_not(results):
+    """F4: removing the phone, removing it locally only, and setting it up again each clear the
+    server's token and the phone's registration before the key goes. A failed removal deletes
+    nothing, and a 401 (the session ended) keeps the key, so neither does."""
+    assert results["endings"] == {
+        "session_ended_401": False,
+        "set_up_again": True,
+        "removed": True,
+        "removed_already": True,
+        "remove_unreachable": False,
+        "remove_local_only": True,
+    }
+
+
+def test_the_session_stops_pushes_before_any_wipe():
+    session = (MOBILE_DIR / "src" / "session.tsx").read_text(encoding="utf-8")
+    apply = session[session.index("const apply = useCallback(") :]
+    apply = apply[: apply.index("[queryClient],")]
+    # The push step comes before anything is deleted.
+    assert apply.index("forgetPushHere") < apply.index("forgetEverything")
+    assert apply.index("forgetPushHere") < apply.index("forgetSession")
+    push = (MOBILE_DIR / "src" / "push.ts").read_text(encoding="utf-8")
+    assert "unregisterForNotificationsAsync" in push and "clearPushToken" in push
+
+
 def test_security_alerts_cannot_be_switched_off_on_the_phone(results):
     assert results["toggles"] == {"needs_you": True, "updates": True, "security": False}
 
