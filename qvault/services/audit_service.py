@@ -38,7 +38,7 @@ from qvault.models.vault import Vault, VaultMember
 from qvault.models.workspace import Workspace, WorkspaceMember
 from qvault.services import workspace_service
 from qvault.services.signing import format_wei
-from qvault.ui import first_name
+from qvault.ui import short_names
 
 # Workspace roles that see the workspace's own events in the audit record.
 WORKSPACE_AUDIT_ROLES = ("owner", "admin", "auditor")
@@ -571,12 +571,13 @@ def decision_feed(user: User, *, limit: int = 6) -> list[dict]:
     }
     actor_ids = {e.actor_id for e in latest.values() if e.actor_id}
     people = {u.id: u for u in User.query.filter(User.id.in_(actor_ids))} if actor_ids else {}
+    # First names, or full names where two people in this feed share one (``ui.short_names``).
+    short = short_names({uid: (u.display_name or u.email) for uid, u in people.items()})
 
     def who(entry: LedgerEntry) -> str:
         if entry.actor_id == user.id:
             return "You"
-        person = people.get(entry.actor_id)
-        return first_name(person.display_name or person.email) if person else "Someone"
+        return short.get(entry.actor_id, "Someone")
 
     feed = []
     for uuid, entry in latest.items():
