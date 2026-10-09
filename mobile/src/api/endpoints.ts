@@ -275,8 +275,14 @@ export function registerPushToken(token: string, pushToken: string) {
   });
 }
 
+/** `quietUnauthorized`: called while this phone is being wiped, when its token may already be dead. */
 export function clearPushToken(token: string) {
-  return request(pushTokenResponse, { method: 'DELETE', path: '/api/v1/me/push-token', token });
+  return request(pushTokenResponse, {
+    method: 'DELETE',
+    path: '/api/v1/me/push-token',
+    token,
+    quietUnauthorized: true,
+  });
 }
 
 export function fetchNotificationSettings(token: string, signal?: AbortSignal) {

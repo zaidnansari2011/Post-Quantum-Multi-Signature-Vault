@@ -107,6 +107,21 @@ export function openSystemSettings(): void {
   void Linking.openSettings().catch(() => {});
 }
 
+/**
+ * Before a local wipe (R8 review, F4): ask the server to forget this phone's token, then drop the
+ * phone's own registration, so even if that request never arrives the old token is dead and Expo
+ * answers DeviceNotRegistered, which makes the server drop it. Best effort, and bounded in time:
+ * a wipe never waits on the network for long.
+ */
+export async function forgetPushHere(token: string | null): Promise<void> {
+  const n = notifications();
+  const steps: Promise<unknown>[] = [];
+  if (token) steps.push(api.clearPushToken(token).catch(() => {}));
+  if (n) steps.push(n.unregisterForNotificationsAsync().catch(() => {}));
+  if (steps.length === 0) return;
+  await Promise.race([Promise.all(steps), new Promise((resolve) => setTimeout(resolve, 4_000))]);
+}
+
 export async function wasPrimed(): Promise<boolean> {
   try {
     return (await SecureStore.getItemAsync(PRIMED_KEY)) === '1';

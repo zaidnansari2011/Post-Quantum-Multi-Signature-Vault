@@ -115,6 +115,15 @@ export const CHANNELS: ReadonlyArray<{ id: string; name: string; importance: Imp
 /** The Notifications page's groups, as the server sends them; security is locked on. */
 export type PushGroup = { id: string; label: string; enabled: boolean; locked: boolean };
 
+/**
+ * Whether a local wipe must first stop this phone's pushes (R8 review, F4): any wipe of the token or
+ * the key. Otherwise the server keeps pushing the old account's alerts to a phone that may now be
+ * someone else's. A 401's ending keeps both, and keeps pushes (the person may sign in again).
+ */
+export function forgetsPush(deletes: { seed: boolean; token: boolean; identity: boolean }): boolean {
+  return deletes.seed || deletes.token || deletes.identity;
+}
+
 /** Whether a switch may be flipped from the phone: never security's. */
 export function canToggle(group: PushGroup): boolean {
   return !group.locked && group.id !== 'security';
