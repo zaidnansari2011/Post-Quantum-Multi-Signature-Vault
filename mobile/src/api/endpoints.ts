@@ -20,6 +20,9 @@ import {
   treasuryResponse,
   vaultDetailResponse,
   vaultsResponse,
+  withdrawResponse,
+  commentsResponse,
+  remindResponse,
 } from './schemas.ts';
 import type { Decision } from '../crypto/signing.ts';
 
@@ -165,6 +168,10 @@ export function createProposal(args: {
   expiresInHours?: number | null;
   /** A payment decision (plan Phase 8): the server builds the signed action and writes the text. */
   payment?: { to: string; valueWei: string } | null;
+  /** A typed decision (plan S13, A13): the server writes its text from these fields. */
+  typed?: { type: string; fields: Record<string, string> } | null;
+  /** "Raise again" (plan S16, A11): the closed decision this one replaces. */
+  raisedAgainFrom?: string | null;
 }) {
   return request(createProposalResponse, {
     method: 'POST',
@@ -174,9 +181,41 @@ export function createProposal(args: {
       title: args.title,
       ...(args.payment
         ? { payment: { to: args.payment.to, value_wei: args.payment.valueWei } }
-        : { action_text: args.actionText }),
+        : args.typed
+          ? { decision_type: args.typed.type, fields: args.typed.fields }
+          : { action_text: args.actionText }),
       expires_in_hours: args.expiresInHours ?? null,
+      ...(args.raisedAgainFrom ? { raised_again_from: args.raisedAgainFrom } : {}),
     },
+  });
+}
+
+/** Withdraw an open decision this person raised (plan S16, A11). Nothing is signed. */
+export function withdrawProposal(token: string, uuid: string) {
+  return request(withdrawResponse, {
+    method: 'POST',
+    path: `/api/v1/proposals/${encodeURIComponent(uuid)}/withdraw`,
+    token,
+    body: {},
+  });
+}
+
+/** A decision's discussion, oldest first (R5). Read only: comments are added on the web. */
+export function fetchComments(token: string, uuid: string, signal?: AbortSignal) {
+  return request(commentsResponse, {
+    path: `/api/v1/proposals/${encodeURIComponent(uuid)}/comments?limit=100`,
+    token,
+    signal,
+  });
+}
+
+/** Remind the approvers who have not voted; at most once a day (R4, A12). */
+export function remindApprovers(token: string, uuid: string) {
+  return request(remindResponse, {
+    method: 'POST',
+    path: `/api/v1/proposals/${encodeURIComponent(uuid)}/remind`,
+    token,
+    body: {},
   });
 }
 

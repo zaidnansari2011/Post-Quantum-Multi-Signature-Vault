@@ -5,24 +5,28 @@
 // `checkDecision`, so a check added here reaches each of them at once. `voteOnProposal` in flows.ts
 // runs its own guard again before any prompt; this does not replace it.
 //
-// The seam for R5's decision types: `verifyDecisionType` re-derives a typed decision's text from
-// its fields and refuses when they differ (reason `type_text`, §6.6 row 1). Until R5's generator
-// lands in src/logic, every decision is checked on its signed text alone, which is what row 17
-// asks for an unknown type: the text is shown and signed, and no typed-fields card is drawn.
+// R5's decision types (S13): after the payload hash is derived and matched, `verifyTypedDecision`
+// writes a typed decision's text again from its unsigned fields and refuses when that is not the
+// signed text (reason `type_text`, §6.6 row 1). When it holds, the rows it returns are the typed
+// card's, each one a line of the signed text. A type or template version this app does not know
+// has no card, and the signed text alone decides (row 17).
 
 import { PayloadMismatchError, verifyProposalIntegrity } from './flows.ts';
 import type { ProposalDetail } from './api/schemas.ts';
+import { verifyTypedDecision, type DecisionType, type FieldRow } from './logic/decisionTypes.ts';
 import type { MismatchReason } from './logic/personalStatus.ts';
 import { SignedContentMemory, signedContentKey } from './logic/signedContent.ts';
 
 export type Checked =
-  | { ok: true; hash: string }
+  | {
+      ok: true;
+      hash: string;
+      /** The type the signed text bears out, or null (none sent, or one this app does not know). */
+      type: DecisionType | null;
+      /** The typed card: the signed text's own `Label: value` lines; null for no card. */
+      rows: FieldRow[] | null;
+    }
   | { ok: false; reason: MismatchReason; expected: string; actual: string };
-
-/** R5 plugs in here; until then there are no typed fields to compare, so nothing can disagree. */
-function verifyDecisionType(_detail: ProposalDetail, _derivedHash: string): { ok: true } | { ok: false } {
-  return { ok: true };
-}
 
 export function checkDecision(detail: ProposalDetail): Checked {
   let hash: string;
@@ -35,10 +39,12 @@ export function checkDecision(detail: ProposalDetail): Checked {
     // Anything else (a malformed hash input the canonical encoder refuses) is not a pass either.
     return { ok: false, reason: 'hash', expected: detail.payload_hash, actual: '(not derived)' };
   }
-  if (!verifyDecisionType(detail, hash).ok) {
+  // Only after the hash holds, so `signing_inputs` is what every approver signs.
+  const typed = verifyTypedDecision(detail);
+  if (!typed.ok) {
     return { ok: false, reason: 'type_text', expected: detail.payload_hash, actual: hash };
   }
-  return { ok: true, hash };
+  return { ok: true, hash, type: typed.type, rows: typed.rows };
 }
 
 /**

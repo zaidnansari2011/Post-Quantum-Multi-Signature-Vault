@@ -61,6 +61,8 @@ export function statusWord(status: string): string {
     case 'open':
       return 'Open';
     default:
-      return status;
+      // A raw server word is never shown (phone-ux §5.4): a status this app does not know is
+      // "Unknown", in the neutral tone wherever it appears.
+      return 'Unknown';
   }
 }
