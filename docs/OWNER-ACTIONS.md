@@ -665,6 +665,53 @@ the same time; nothing re-pins it automatically, by design.
 
 *Your effort:* two or three commands and one look at a page.
 
+### 2.11 Rework R8: an email account with Resend — `TODO` (added 2026-10-09)
+
+*Why it's yours:* a third-party account in your name, and DNS records on your domain.
+
+Decided 2026-10-09: invitation and notification emails go through **Resend** (free tier, 3,000
+emails a month). Until the key exists, R8 is built and tested against a local stand-in, so nothing
+waits on this except the first real email.
+
+1. Sign up at <https://resend.com> (GitHub sign-in is fine).
+2. **Domains → Add domain** → `mail.zaidansari.tech` (a subdomain, so the main domain's mail is
+   untouched), region closest to India.
+3. Resend lists 3–4 records (an MX and a TXT for SPF on `send.mail…`, a TXT `resend._domainkey…`
+   for DKIM, optionally DMARC). In **Cloudflare → zaidansari.tech → DNS**, add each exactly as shown
+   (TXT and MX records are never proxied). Back in Resend press **Verify**; it usually turns green
+   within minutes.
+4. **API Keys → Create** → name `qvault-rework`, permission **Sending access**, domain
+   `mail.zaidansari.tech`. Copy it once (it starts `re_`).
+5. Save it in a new file `C:\Users\Zaid\Documents\4th year project\q-vault-rework\.env.rework`
+   (git ignores `.env.*`) as two lines:
+   `RESEND_API_KEY=re_...` and `MAIL_FROM=Q-Vault <notifications@mail.zaidansari.tech>`.
+   Never paste the key into chat or a commit. At the switch it becomes a Container App secret.
+
+*Your effort:* ~10 minutes, mostly waiting for DNS.
+
+### 2.12 Rework R8: push notifications with Firebase (Android) — `TODO` (added 2026-10-09)
+
+*Why it's yours:* a Google account's Firebase project and the Expo account's credentials.
+
+Decided 2026-10-09: Android push through Firebase Cloud Messaging, set up before the rework APK
+(phone-ux §12 Q3). iOS is out of scope.
+
+1. <https://console.firebase.google.com> → **Add project** → `qvault` (Google Analytics off).
+2. **Add app → Android** → package name **`com.qvault.approvals`** (must match `mobile/app.json`)
+   → Register → **download `google-services.json`**. Skip the SDK steps.
+3. **Project settings → Service accounts → Generate new private key**: a JSON file. This one is a
+   secret.
+4. Put both files in `C:\Users\Zaid\Documents\4th year project\secrets\` (outside every
+   repository; create the folder).
+5. Give the service-account key to Expo: <https://expo.dev> → project **qvault** (owner `zaid7864`)
+   → **Credentials → Android → com.qvault.approvals → FCM V1 service account key → Upload** the
+   file from step 3. This is not a build and changes nothing on phones.
+
+I wire `expo-notifications` and `google-services.json` into the rework's config; it reaches phones
+with the rework APK you build at the end (§2.3).
+
+*Your effort:* ~15 minutes.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
@@ -977,3 +1024,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-09-27 | Added §2.9: the system rebuilt on a teammate's Azure subscription (`rg-qvault`, Central India), `project4.zaidansari.tech` kept; new fingerprints to republish; master key to back up; old deployment to delete. |
 | 2026-10-08 | Added §2.10: pin the live witness key (`WITNESS_KEY_FINGERPRINT`) at the switch to the rework. |
 | 2026-10-08 | Added §3.4: the rework's accessibility checks only a person can make (NVDA on Windows, TalkBack on the phone). |
+| 2026-10-09 | Added §2.11 (Resend email) and §2.12 (Firebase push) for rework R8, after the owner chose both. |
