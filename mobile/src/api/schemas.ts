@@ -116,6 +116,8 @@ export const vaultMember = z.object({
   is_me: z.boolean(),
   // P3, additive: whether they hold a key that can sign (phone-ux §6.14).
   has_key: z.boolean().optional().catch(undefined),
+  // P4b, additive (A21): when they last voted in this vault; null when never.
+  last_signed_at: z.string().nullable().optional().catch(undefined),
 });
 export type VaultMember = z.infer<typeof vaultMember>;
 
@@ -191,6 +193,20 @@ export const proposalSummary = z.object({
   decided_at: z.string().nullable().optional().catch(undefined),
   amount: z.string().nullable().optional().catch(undefined),
   seat: z.enum(['this_device', 'password', 'other_device']).nullable().optional().catch(undefined),
+  // P4b, additive (A21): which way this person voted, so Activity can say "You approved".
+  my_vote: z.enum(['approve', 'reject']).nullable().optional().catch(undefined),
+  // P4b, additive (A12): for the person who raised an open decision only, whether Remind can be
+  // sent now and when it next can. Null for everyone else.
+  remind: z
+    .object({
+      offered: z.boolean(),
+      allowed: z.boolean(),
+      last_sent_at: z.string().nullable(),
+      next_allowed_at: z.string().nullable(),
+    })
+    .nullable()
+    .optional()
+    .catch(undefined),
 });
 export type ProposalSummary = z.infer<typeof proposalSummary>;
 
@@ -443,6 +459,9 @@ export const treasuryResponse = z.object({
           user_id: z.number().int(),
           custody: z.enum(['device', 'password']),
           key_active: z.boolean(),
+          // P4b, additive (A20/A21): the fingerprint of the key it holds for this person only;
+          // null on everyone else's seat.
+          key_fingerprint: z.string().nullable().optional().catch(undefined),
         }),
       ),
     })
@@ -530,6 +549,8 @@ export const notificationSchema = z.object({
   actor: z.object({ id: z.number().int(), display_name: z.string() }).nullable(),
   vault: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   proposal_uuid: z.string().nullable(),
+  // P4b, additive: a new device's id (the recipient's own), for "Not you? Remove that device".
+  device_id: z.number().int().nullable().optional().catch(undefined),
 });
 export type AppNotification = z.infer<typeof notificationSchema>;
 
@@ -571,6 +592,15 @@ export const readAllResponse = z.object({
 export const remindResponse = z.object({
   ok: z.literal(true),
   reminded: z.number().int(),
+  // P4b, additive (A12): when it went, and when the next may.
+  reminded_at: z.string().nullable().optional().catch(undefined),
+  next_allowed_at: z.string().nullable().optional().catch(undefined),
+});
+
+/** A renamed device (P4b, A21): the device as the list shows it. */
+export const renameResponse = z.object({
+  ok: z.literal(true),
+  device: deviceSchema,
 });
 
 // --- P3 and P4 (phone-ux §6.21): withdraw, the discussion thread ------------------------------

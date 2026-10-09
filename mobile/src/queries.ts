@@ -72,6 +72,9 @@ export const keys = {
   treasury: (vaultId: number) => ['treasury', vaultId] as const,
   comments: (uuid: string) => ['comments', uuid] as const,
   people: ['people'] as const,
+  // Under one prefix, so a push (src/push.ts) refreshes the whole inbox with one invalidation.
+  notifications: (section: 'needs_you' | 'updates' | 'archived') => ['notifications', section] as const,
+  unread: ['notifications', 'unread'] as const,
 };
 
 /** Awaiting (Approvals, the badge). */
@@ -181,6 +184,27 @@ export function peopleQuery(token: string) {
     queryKey: keys.people,
     queryFn: recorded(keys.people, (signal) => api.fetchPeople(token, signal)),
     staleTime: STALE_MS.account,
+    ...RETRY,
+  };
+}
+
+/** One section of the inbox (R4, phone-ux §6.12). Unsigned, server-written; never persisted. */
+export function notificationsQuery(token: string, section: 'needs_you' | 'updates' | 'archived') {
+  const queryKey = keys.notifications(section);
+  return {
+    queryKey,
+    queryFn: recorded(queryKey, (signal) => api.fetchNotifications(token, section, signal)),
+    staleTime: STALE_MS.activity,
+    ...RETRY,
+  };
+}
+
+/** The inbox's unread counts: Activity's tab dot (§2.5, §6.12). */
+export function unreadQuery(token: string) {
+  return {
+    queryKey: keys.unread,
+    queryFn: recorded(keys.unread, (signal) => api.fetchUnread(token, signal)),
+    staleTime: STALE_MS.activity,
     ...RETRY,
   };
 }

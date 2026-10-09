@@ -24,7 +24,12 @@ const ICONS: Record<string, [IconName, IconName]> = {
   Account: ['user', 'user-fill'],
 };
 
-export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+export function TabBar({
+  state,
+  descriptors,
+  navigation,
+  dots = {},
+}: BottomTabBarProps & { dots?: Record<string, boolean> }) {
   const s = useStyles();
   const insets = useSafeAreaInsets();
   return (
@@ -45,6 +50,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             icons={ICONS[route.name] ?? ['inbox', 'inbox-fill']}
             focused={focused}
             badge={options.tabBarBadge}
+            dot={dots[route.name] ?? false}
             onPress={onPress}
           />
         );
