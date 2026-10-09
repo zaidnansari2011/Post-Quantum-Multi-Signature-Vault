@@ -2,8 +2,7 @@
  *
  * Built only from tokens.css and the components in components.css, under the same rules: colour
  * from tokens, font sizes from the type scale, radius by role, shadows on overlays only. Loaded
- * after components.css. Every class carries the q- prefix so the compatibility layer (qvault.css)
- * and these never restyle each other.
+ * after components.css. Every class carries the q- prefix.
  */
 
 /* ================================================================ shared pieces */
