@@ -16,6 +16,15 @@ from sqlalchemy.pool import StaticPool
 load_dotenv()
 
 _DEV_SECRET = "dev-insecure-secret-key-change-me"
+
+#: The phone app's Android package, and the SHA-256 fingerprint of the EAS keystore that signs it
+#: (``eas credentials``, OWNER-ACTIONS §2.3). Served in /.well-known/assetlinks.json.
+ANDROID_APP_PACKAGE_DEFAULT = "com.qvault.approvals"
+ANDROID_CERT_SHA256_DEFAULT = (
+    "CE:E1:24:CB:27:03:84:3B:F6:D9:5D:56:36:76:FE:1C:"
+    "28:23:40:0D:5A:4A:D8:D7:F6:E0:F4:94:EE:08:EB:AC"
+)
+
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 
@@ -172,6 +181,15 @@ class BaseConfig:
     EXPO_ACCESS_TOKEN = os.environ.get("EXPO_ACCESS_TOKEN") or None
     # How often the outbox is worked through.
     DELIVERY_TICK_SECONDS = int(os.environ.get("DELIVERY_TICK_SECONDS", "20"))
+
+    # Android App Links (rework phone-ux §10.2, N13). /.well-known/assetlinks.json names the phone
+    # app and the SHA-256 fingerprint of the certificate that signs it, so Android opens this
+    # server's decision links in the app instead of the browser. Neither is a secret: the
+    # fingerprint is in every copy of the APK. The default is the EAS keystore's (OWNER-ACTIONS
+    # §2.3); several may be given, comma-separated (a second signing key), and an empty value turns
+    # the file off.
+    ANDROID_APP_PACKAGE = os.environ.get("ANDROID_APP_PACKAGE", ANDROID_APP_PACKAGE_DEFAULT)
+    ANDROID_CERT_SHA256 = os.environ.get("ANDROID_CERT_SHA256", ANDROID_CERT_SHA256_DEFAULT)
 
 
 class DevConfig(BaseConfig):
