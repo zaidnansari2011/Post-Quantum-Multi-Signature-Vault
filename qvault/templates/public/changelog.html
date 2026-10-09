@@ -14,7 +14,7 @@
     <li>Sign-up says plainly that your password also unlocks your signing key and can't be reset, and asks you to confirm you've read that.</li>
     <li>A <a href="{{ url_for('auth.forgot_password') }}">forgot-password page</a> that says what can and can't be done.</li>
     <li>Signing up never makes anyone an administrator of the whole system.</li>
-    <li>Repeated attempts to sign in, sign up or pair a phone are slowed down.</li>
+    <li>Repeated attempts to sign in, sign up or pair a phone from one address are refused for a while, and so are repeated wrong passwords when you sign or change your password.</li>
     <li>New pages: <a href="{{ url_for('public.security') }}">Security</a>, <a href="{{ url_for('public.status') }}">Status</a>, <a href="{{ url_for('public.pricing') }}">Pricing</a> and this changelog. The front page shows the live log head and whether the witness is current.</li>
   </ul>
 </section>

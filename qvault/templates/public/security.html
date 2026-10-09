@@ -5,7 +5,7 @@
    links to the design record that argues it rather than restating it; the audit status is the
    honest one. #}
 {% block page_title %}Security{% endblock %}
-{% block page_lead %}What Q-Vault protects against, what it doesn't, and how to check a decision without trusting us.{% endblock %}
+{% block page_lead %}What Q-Vault protects against, what it doesn't, and how to check a decision yourself, offline.{% endblock %}
 {% block page %}
 <div class="q-prose q-sec">
 
@@ -37,7 +37,7 @@
     <div class="q-ladder__n" aria-hidden="true">3</div>
     <div>
       <h3>Post-quantum signatures in a witnessed log {{ badge('Q-Vault is here', 'info') }}</h3>
-      <p>Approvals are post-quantum signatures ({{ default_sig }} by default). Every signature and outcome goes into an append-only log whose signed heads an independent witness co-signs, so the record can't be quietly rewritten, and any decision can be checked offline. The <a href="{{ url_for('public.status') }}">status page</a> shows whether the witness is current.</p>
+      <p>Approvals are post-quantum signatures ({{ default_sig }} by default). Every signature and outcome goes into an append-only log whose signed heads a separately keyed witness co-signs, so a rewritten database shows, and any decision can be checked offline. Who runs the witness matters; see below. The <a href="{{ url_for('public.status') }}">status page</a> shows whether the witness is current.</p>
     </div>
   </li>
 </ol>
