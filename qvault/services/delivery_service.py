@@ -30,6 +30,7 @@ phone-ux §6.23 lists (``delivery_copy.PUSH_KINDS``). Nothing here approves anyt
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -44,6 +45,7 @@ from qvault.models.delivery import Delivery, PushToken
 from qvault.models.device import Device
 from qvault.models.proposal import Proposal
 from qvault.models.vault import Vault, VaultMember
+from qvault.models.workspace import Invitation
 from qvault.security.master_key import get_master_key
 from qvault.services import delivery_copy, mail, push
 
@@ -59,6 +61,21 @@ RECEIPT_AFTER = timedelta(minutes=15)
 RECEIPT_GIVE_UP = timedelta(days=1)
 #: A phone may set its push token this many times an hour (it sets it once per launch at most).
 TOKEN_CHANGES_PER_HOUR = 10
+
+#: Invitation emails (R8 review, F1): the most Q-Vault sends in a day, per invitation (resends
+#: included), per inviter, per workspace, and to one address across every workspace. Past any of
+#: them the invitation (or the resend) is refused and nothing is queued.
+INVITATION_WINDOW = timedelta(hours=24)
+INVITATION_EMAILS_PER_INVITATION = 3
+INVITATION_EMAILS_PER_INVITER = 20
+INVITATION_EMAILS_PER_WORKSPACE = 50
+INVITATION_EMAILS_PER_ADDRESS = 3
+
+#: Security events: their pushes still reach a phone removed after they were queued (F5).
+_SECURITY = ("device_enrolled", "password_changed")
+#: What a delivery keeps of its notification's facts: only what the email and push copy read,
+#: never a rejection's reason, an amount or an address (F8).
+_COPY_FACTS = ("by_name", "asked", "stage", "role", "change")
 
 #: The AES-GCM associated data for an invitation token held in the outbox: its own domain, so no
 #: other wrapped secret can be passed off as one.
@@ -192,7 +209,7 @@ def enqueue_notification(
             "vault_id": vault_id,
             "proposal_id": proposal_id,
             "actor_id": actor_id,
-            "data": data,
+            "data": _copy_facts(data),
             "event_key": key,
             "next_attempt_at": now,
             "created_at": now,
@@ -232,6 +249,96 @@ def enqueue_notification(
     return []
 
 
+def _copy_facts(data: str | None) -> str | None:
+    stored = delivery_copy.facts(data)
+    kept = {k: stored[k] for k in _COPY_FACTS if k in stored}
+    if stored.get("reason"):
+        kept["has_reason"] = True
+    return json.dumps(kept, sort_keys=True) if kept else None
+
+
+def invitation_email_refusal(
+    *,
+    workspace_id: int,
+    inviter_id: int,
+    email: str,
+    invitation_id: int | None = None,
+    now: datetime | None = None,
+) -> str | None:
+    """Why another invitation email can't go now (a sentence for the page), or None when it can.
+
+    Counted from the outbox over the last day, whatever became of each email: one withdrawn before
+    it went still counts, so inviting and withdrawing in a loop cannot get round it."""
+    if not channel_ready("email"):
+        return None
+    since = (now or _utcnow()) - INVITATION_WINDOW
+    recent = (
+        select(db.func.count())
+        .select_from(Delivery)
+        .join(Invitation, Invitation.id == Delivery.invitation_id)
+        .where(Delivery.kind == "invitation", Delivery.created_at >= since)
+    )
+    address = (email or "").strip().lower()
+    checks = []
+    if invitation_id is not None:
+        checks.append(
+            (
+                Delivery.invitation_id == invitation_id,
+                INVITATION_EMAILS_PER_INVITATION,
+                f"This invitation has been emailed {INVITATION_EMAILS_PER_INVITATION} times in "
+                "the last 24 hours. Try again tomorrow.",
+            )
+        )
+    checks += [
+        (
+            Delivery.actor_id == inviter_id,
+            INVITATION_EMAILS_PER_INVITER,
+            f"You've sent {INVITATION_EMAILS_PER_INVITER} invitation emails in the last 24 "
+            "hours, the most Q-Vault sends for one person in a day. Try again tomorrow.",
+        ),
+        (
+            Invitation.workspace_id == workspace_id,
+            INVITATION_EMAILS_PER_WORKSPACE,
+            f"This workspace has sent {INVITATION_EMAILS_PER_WORKSPACE} invitation emails in the "
+            "last 24 hours, the most Q-Vault sends for one workspace in a day. Try again tomorrow.",
+        ),
+        (
+            db.func.lower(Invitation.email) == address,
+            INVITATION_EMAILS_PER_ADDRESS,
+            "Q-Vault can't email another invitation to this address today. Try again tomorrow.",
+        ),
+    ]
+    for condition, limit, sentence in checks:
+        if (db.session.scalar(recent.where(condition)) or 0) >= limit:
+            return sentence
+    return None
+
+
+def invitation_email_states(invitation_ids: Iterable[int]) -> dict[int, str]:
+    """The state of each invitation's latest email, for the Invited list: ``queued``,
+    ``retrying`` (a send failed and will be tried again), ``sent`` or ``failed``. An invitation
+    with no email (email not set up, or its latest one replaced or withdrawn) is absent."""
+    ids = sorted(set(invitation_ids))
+    if not ids:
+        return {}
+    rows = db.session.execute(
+        select(Delivery.invitation_id, Delivery.status, Delivery.attempts, Delivery.last_error)
+        .where(Delivery.kind == "invitation", Delivery.invitation_id.in_(ids))
+        .order_by(Delivery.id)
+    ).all()
+    states: dict[int, str] = {}
+    for invitation_id, status, attempts, last_error in rows:  # the latest row wins
+        if status == "sent":
+            states[invitation_id] = "sent"
+        elif status in ("pending", "sending"):
+            states[invitation_id] = "retrying" if attempts and last_error else "queued"
+        elif status == "dead":
+            states[invitation_id] = "failed"
+        else:
+            states.pop(invitation_id, None)
+    return states
+
+
 def enqueue_invitation(invitation, token: str, *, now: datetime | None = None) -> Delivery | None:
     """Queue the invitation email (S11, S12). The link's token exists only now, in this request:
     it is held wrapped under the master key until the email is sent, then erased."""
@@ -246,6 +353,8 @@ def enqueue_invitation(invitation, token: str, *, now: datetime | None = None) -
                     channel="email",
                     kind="invitation",
                     invitation_id=invitation.id,
+                    # Who sent it, for the per-inviter cap.
+                    actor_id=invitation.inviter_id,
                     event_key=f"invitation:{invitation.id}",
                     # A resend issues a new link, and so a new email; the same link never twice.
                     dedupe_key=f"email:invitation:{invitation.id}:{invitation.token_hash.hex()[:32]}",
@@ -334,6 +443,17 @@ def register_push_token(device, token: object, *, now: datetime | None = None) -
     if row is None:
         row = PushToken(device_id=device.id, user_id=device.owner_id, changes=0, created_at=now)
         db.session.add(row)
+        try:
+            db.session.flush()
+        except IntegrityError:
+            # Two first registrations from the same phone at once (F11): the other request wrote
+            # the device's row first, so this one carries on with that row.
+            db.session.rollback()
+            row = token_for(device)
+            if row is None:
+                raise PushTokenError("busy", "Try again in a moment.", 409) from None
+            if row.token == token:
+                return row
     window = _aware(row.window_started_at)
     if window is None or now - window >= timedelta(hours=1):
         row.window_started_at = now
@@ -345,6 +465,18 @@ def register_push_token(device, token: object, *, now: datetime | None = None) -
         )
     holder = PushToken.query.filter(PushToken.token == token, PushToken.id != row.id).one_or_none()
     if holder is not None:
+        # The token moves only from this person's own other enrolment, or from one that can no
+        # longer sign in (removed or expired). Anyone else's live token stays where it is (F2):
+        # otherwise whoever learnt it could take a stranger's lock screen for their own alerts.
+        held_by = holder.device
+        if holder.user_id != device.owner_id and held_by is not None and held_by.is_usable(now):
+            db.session.rollback()
+            raise PushTokenError(
+                "token_in_use",
+                "Another account on Q-Vault uses this phone's notifications. Remove that "
+                "account from this phone first.",
+                409,
+            )
         holder.token = None
         holder.revoked_at = now
         holder.revoked_reason = "moved"
@@ -355,7 +487,15 @@ def register_push_token(device, token: object, *, now: datetime | None = None) -
     row.revoked_at = None
     row.revoked_reason = None
     row.changes = (row.changes or 0) + 1
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Two first registrations from the same phone at once: one wins the device's row.
+        db.session.rollback()
+        settled = token_for(device)
+        if settled is not None and settled.token == token:
+            return settled
+        raise PushTokenError("busy", "Try again in a moment.", 409) from None
     return row
 
 
@@ -366,6 +506,19 @@ def revoke_push_token(
     row = token_for(device)
     if row is None or row.token is None:
         return False
+    if reason == "device_removed":
+        # A security alert queued before the phone was removed still goes to it (F5): someone
+        # who removes the owner's phone right after enrolling their own must not silence it.
+        db.session.execute(
+            update(Delivery)
+            .where(
+                Delivery.push_token_id == row.id,
+                Delivery.status == "pending",
+                Delivery.kind.in_(_SECURITY),
+            )
+            .values(push_to=row.token)
+            .execution_options(synchronize_session=False)
+        )
     row.token = None
     row.revoked_at = now or _utcnow()
     row.revoked_reason = reason
@@ -389,20 +542,49 @@ class TickResult:
 def run(*, now: datetime | None = None) -> TickResult:
     """The scheduled job: send what is due, then read the receipts of pushes sent a while ago."""
     now = now or _utcnow()
+    sweep_held_links(now=now)
     sent, skipped, failed = deliver_due(now=now)
     return TickResult(sent, skipped, failed, check_receipts(now=now))
+
+
+def sweep_held_links(*, now: datetime | None = None) -> int:
+    """Erase the held link of every invitation email that can no longer go: its invitation was
+    accepted, withdrawn or has expired (F9). Runs every tick, whether or not email is set up, so a
+    link is never kept for an email that will not be sent. Returns how many were erased."""
+    now = now or _utcnow()
+    rows = db.session.scalars(
+        select(Delivery).where(Delivery.kind == "invitation", Delivery.secret.is_not(None))
+    ).all()
+    erased = 0
+    for row in rows:
+        invitation = row.invitation
+        if row.status in ("sent", "skipped", "dead"):
+            row.secret = row.secret_nonce = None
+            erased += 1
+        elif invitation is None or invitation.state(now) != "pending":
+            if row.status == "pending":
+                _finish(row, "skipped", error="the invitation is no longer open")
+            else:
+                row.secret = row.secret_nonce = None
+            erased += 1
+    if erased:
+        db.session.commit()
+    return erased
 
 
 def deliver_due(*, now: datetime | None = None, limit: int = BATCH) -> tuple[int, int, int]:
     """Send up to ``limit`` due deliveries. Returns (sent, skipped, failed this time)."""
     now = now or _utcnow()
-    # Claims left by a worker that stopped mid-send go back in the queue.
-    db.session.execute(
-        update(Delivery)
-        .where(Delivery.status == "sending", Delivery.claimed_at < now - LEASE)
-        .values(status="pending", claimed_at=None)
-        .execution_options(synchronize_session=False)
-    )
+    # Claims left by a worker that stopped mid-send go back in the queue, unless the row has had
+    # all its tries: one whose send kills the worker would otherwise come back forever (F11).
+    lapsed = db.session.scalars(
+        select(Delivery).where(Delivery.status == "sending", Delivery.claimed_at < now - LEASE)
+    ).all()
+    for row in lapsed:
+        if row.attempts >= MAX_ATTEMPTS:
+            _finish(row, "dead", error="the worker stopped while sending it, too many times")
+        else:
+            row.status, row.claimed_at = "pending", None
     db.session.commit()
     due = db.session.scalars(
         select(Delivery.id)
@@ -437,8 +619,54 @@ def deliver_due(*, now: datetime | None = None, limit: int = BATCH) -> tuple[int
             row = db.session.get(Delivery, delivery_id)
             outcome = _retry(row, now, f"internal error: {type(exc).__name__}")
         counts[outcome] += 1
-        db.session.commit()
+        _save(delivery_id)
     return counts["sent"], counts["skipped"], counts["failed"]
+
+
+_SAVED = (
+    "status",
+    "claimed_at",
+    "next_attempt_at",
+    "last_error",
+    "provider_ref",
+    "receipt",
+    "token_hash",
+    "sent_at",
+    "secret",
+    "secret_nonce",
+    "push_to",
+)
+
+
+def _save(delivery_id: int) -> None:
+    """Commit what the send did. If that commit fails (a locked database), the row's outcome is
+    written again on its own; only if that fails too is the row left claimed, to be retried after
+    ``LEASE``. An email then goes with the same idempotency key, so Resend answers that it was
+    already sent (``MailAlreadySent``) rather than sending it twice."""
+    values = None
+    try:
+        db.session.commit()
+        return
+    except Exception:  # noqa: BLE001 - the outcome must be kept if it can be
+        row = db.session.get(Delivery, delivery_id)
+        values = {name: getattr(row, name) for name in _SAVED} if row is not None else None
+        db.session.rollback()
+        if current_app.config.get("TESTING"):
+            raise
+        current_app.logger.exception("delivery %s: saving its outcome failed", delivery_id)
+    if values is None:
+        return
+    try:
+        db.session.execute(
+            update(Delivery)
+            .where(Delivery.id == delivery_id)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        current_app.logger.exception("delivery %s: left claimed until its lease ends", delivery_id)
 
 
 def _finish(row: Delivery, status: str, *, error: str | None = None) -> None:
@@ -447,9 +675,11 @@ def _finish(row: Delivery, status: str, *, error: str | None = None) -> None:
     row.next_attempt_at = None
     if error is not None:
         row.last_error = error[:200]
-    # The invitation link goes nowhere else once the email is sent or abandoned.
+    # The invitation link goes nowhere else once the email is sent or abandoned; nor does a
+    # removed phone's token that a security push was still owed to.
     row.secret = None
     row.secret_nonce = None
+    row.push_to = None
 
 
 def _skip(row: Delivery, why: str) -> str:
@@ -531,6 +761,11 @@ def _deliver_email(row: Delivery, now: datetime) -> str:
         message = _message(row, copy, base, base + copy.path, row.recipient.email)
     try:
         row.provider_ref = mail.send(message)
+    except mail.MailAlreadySent as exc:
+        # An earlier try of this very email was taken by Resend (its idempotency key says so).
+        _finish(row, "sent", error=str(exc))
+        row.sent_at = now
+        return "sent"
     except mail.MailRefused as exc:
         _finish(row, "dead", error=str(exc))
         return "failed"
@@ -592,10 +827,16 @@ def _message(row: Delivery, copy, base: str, url: str, to: str) -> mail.Message:
 
 def _deliver_push(row: Delivery, now: datetime) -> str:
     token = row.push_token
-    if token is None or token.token is None:
+    device = token.device if token is not None else None
+    if device is None or device.owner_id != row.recipient_id:
+        return _skip(row, "the phone was removed")
+    to = token.token
+    if row.push_to and row.kind in _SECURITY:
+        # A security alert queued before this phone was removed (F5): it still goes, once.
+        to = row.push_to
+    elif to is None:
         return _skip(row, "the phone no longer takes pushes")
-    device = token.device
-    if device is None or device.owner_id != row.recipient_id or not device.is_usable(now):
+    elif not device.is_usable(now):
         return _skip(row, "the phone was removed")
     why = _still_relevant(row, now)
     if why is not None:
@@ -613,25 +854,32 @@ def _deliver_push(row: Delivery, now: datetime) -> str:
     if copy is None:
         return _skip(row, "no push for this event")
     message = push.PushMessage(
-        to=token.token,
+        to=to,
         title=copy.title,
         body=copy.body,
         data=copy.data,
         channel_id=copy.channel_id,
         priority=copy.priority,
     )
+    row.token_hash = _token_hash(to)
     try:
         row.provider_ref = push.send(message)
     except push.PushRefused as exc:
-        if exc.code == "DeviceNotRegistered":
+        if exc.code == "DeviceNotRegistered" and token.token == to:
             revoke_push_token(device, "not_registered", now=now, commit=False)
         _finish(row, "dead", error=str(exc))
         return "failed"
     except push.PushUnavailable as exc:
         return _retry(row, now, str(exc))
+    if row.provider_ref == "logged":
+        row.receipt = "logged"  # the log transport sent nothing, so no receipt will come
     _finish(row, "sent")
     row.sent_at = now
     return "sent"
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def check_receipts(*, now: datetime | None = None) -> int:
@@ -668,10 +916,17 @@ def check_receipts(*, now: datetime | None = None) -> int:
             continue
         row.receipt = receipt[:40]
         recorded += 1
-        if receipt == "DeviceNotRegistered" and row.push_token is not None:
-            device = row.push_token.device
-            if device is not None:
-                revoke_push_token(device, "not_registered", now=now, commit=False)
+        current = row.push_token
+        if (
+            receipt == "DeviceNotRegistered"
+            and current is not None
+            and current.token is not None
+            and row.token_hash == _token_hash(current.token)
+            and current.device is not None
+        ):
+            # Only the token that push went to (F3): a phone that has registered a new one since
+            # keeps it.
+            revoke_push_token(current.device, "not_registered", now=now, commit=False)
     db.session.commit()
     return recorded
 

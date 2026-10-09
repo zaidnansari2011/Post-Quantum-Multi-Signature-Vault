@@ -422,11 +422,11 @@ def test_the_invite_form_and_link_page_say_the_link_is_emailed_when_email_is_set
 ):
     _login(client, "ada@e.com")
 
-    assert "Q-Vault emails the link to the address you enter" in _text(
+    assert "Q-Vault will email the link to the address you enter" in _text(
         client.get("/workspace/invite")
     )
     r, link = _invite_on_page(client)
-    assert "Q-Vault is emailing it to sam@e.com" in _text(r)
+    assert "Q-Vault will email it to sam@e.com" in _text(r)
     # The link shown starts at the configured address, like the email's.
     assert f"https://qvault.example/invite/{link.group(1)}" in r.get_data(as_text=True)
 

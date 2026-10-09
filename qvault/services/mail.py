@@ -29,11 +29,15 @@ from dataclasses import dataclass, field
 
 from flask import current_app
 
+from qvault.security.text import visible
+
 RESEND_URL = "https://api.resend.com/emails"
 TIMEOUT_S = 10.0
 MAX_RESPONSE_BYTES = 64 * 1024
 #: Longest subject sent; a longer one is cut with an ellipsis.
 MAX_SUBJECT = 140
+#: An invitation link in a message's text, for the log transport to withhold.
+_INVITE_LINK = re.compile(r"(/invite/)[A-Za-z0-9_-]+")
 
 #: One plain address: no display name, no list, nothing a header parser could split.
 _ADDRESS = re.compile(
@@ -55,6 +59,11 @@ class MailUnavailable(MailError):
     """It was not sent this time; it may go if tried again later."""
 
 
+class MailAlreadySent(MailError):
+    """Resend already took this email on an earlier try: its idempotency key was used before with
+    a body that has since changed by a word (a time written a minute later). Not sent again."""
+
+
 @dataclass(frozen=True)
 class Message:
     to: str
@@ -68,12 +77,10 @@ class Message:
 
 
 def header_value(value: str, *, limit: int | None = None) -> str:
-    """``value`` as one safe header line: control characters (CR and LF among them) become spaces,
-    runs of space fold to one, and it is cut to ``limit`` characters with an ellipsis."""
-    cleaned = "".join(
-        " " if (ord(ch) < 32 or 127 <= ord(ch) < 160 or ch in "  ") else ch for ch in str(value)
-    )
-    cleaned = " ".join(cleaned.split())
+    """``value`` as one safe header line: control characters (CR and LF among them) and line
+    separators become spaces, characters that are not seen (bidi overrides, zero-width) are
+    dropped, runs of space fold to one, and it is cut to ``limit`` characters with an ellipsis."""
+    cleaned = visible(value)
     if limit is not None and len(cleaned) > limit:
         cleaned = cleaned[: limit - 1].rstrip() + "…"
     return cleaned
@@ -140,7 +147,8 @@ def send(message: Message) -> str:
             "email (not sent: MAIL_TRANSPORT=log) to %s: %s", message.to, subject
         )
         if current_app.debug:
-            current_app.logger.info("%s", message.text)
+            # An invitation's link is a credential: the log shows where it points, not the token.
+            current_app.logger.info("%s", _INVITE_LINK.sub(r"\1[link withheld]", message.text))
         return "logged"
     return _resend(config, message, subject, headers)
 
@@ -175,7 +183,9 @@ def _resend(config, message: Message, subject: str, headers: dict[str, str]) -> 
         # Only the status and Resend's error name are kept: its message can quote the request.
         name = _error_name(exc)
         what = f"Resend answered HTTP {exc.code}" + (f" ({name})" if name else "")
-        if exc.code == 429 or exc.code >= 500 or exc.code in (408, 409):
+        if exc.code == 409 and name == "invalid_idempotent_request":
+            failure = MailAlreadySent(what)
+        elif exc.code == 429 or exc.code >= 500 or exc.code in (408, 409):
             failure = MailUnavailable(what)
         else:
             failure = MailRefused(what)

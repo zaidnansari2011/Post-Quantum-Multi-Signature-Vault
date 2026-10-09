@@ -64,6 +64,8 @@ def upgrade() -> None:
         sa.Column("dedupe_key", sa.String(length=255), nullable=False),
         sa.Column("secret_nonce", sa.LargeBinary(), nullable=True),
         sa.Column("secret", sa.LargeBinary(), nullable=True),
+        sa.Column("token_hash", sa.String(length=64), nullable=True),
+        sa.Column("push_to", sa.String(length=255), nullable=True),
         sa.Column("status", sa.String(length=12), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
