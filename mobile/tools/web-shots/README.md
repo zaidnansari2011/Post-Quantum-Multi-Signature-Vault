@@ -22,6 +22,12 @@ Both shooters run the touch-target audit (phone-ux §4.6): `ui/Touchable` writes
 target to `data-hit-w` / `data-hit-h` (react-native-web ignores `hitSlop`), and any target under
 48 x 48, or nested inside another target, is written to `audit.json` and printed.
 
+The rework APK's native modules (`src/native/`: clipboard, device name, NetInfo, the switcher
+cover, the splash, the date dialog) report themselves absent on the web before their packages are
+loaded, so the harness always renders each one's fallback: Share for Copy, the kind of phone for
+its name, offline from failed requests only, no cover, no "Pick a day…" dialog. None of them needs
+a shim here.
+
 `?theme` and `?fontScale` go through `ThemeProvider`'s harness overrides: react-native-web reports
 no system dark mode and a fixed font scale, so `ui/Text` multiplies each role itself, capped by the
 role's `maxScale` (phone-ux §8.1). The real check of both stays the handset.
