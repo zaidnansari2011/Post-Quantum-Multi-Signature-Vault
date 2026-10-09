@@ -620,6 +620,27 @@ History of this database, for the record:
 held a lock `drop_all` waited on — SQLite never shows it), and the image workflow did not rebuild
 when only `scripts/` changed, though the image ships `scripts/`. Both fixed (`68a4ab7`, `6923a39`).
 
+### 2.11 Rework switch: the administrator and rate limiting — `TODO` (added 2026-10-09)
+
+For the rework image (R10 staging and the switch), two settings the deployment needs:
+
+1. **Who administers the system.** Signing up never makes anyone a system administrator any more
+   (before R6, the first stranger to sign up on an empty database did). The operator's scripts
+   (`seed_demo.py`, `reset_to_team.py`) still make their first account the administrator. To make
+   or remove one on an existing database, run the one-off job with:
+
+   ```bash
+   python scripts/grant_admin.py --env production --email zaidnansari2011@gmail.com
+   python scripts/grant_admin.py --env production --email <address> --remove
+   ```
+
+   The person must have an account. The change is recorded in their own audit history.
+2. **Rate limiting behind Azure's proxy.** Sign-in, sign-up and phone pairing are limited per
+   client address. Container Apps puts one proxy in front, so set
+   `RATE_LIMIT_PROXY_HOPS=1` on the app; without it every visitor shares one bucket (20 sign-ins
+   per 10 minutes for everyone). The counts are per process, which is right for one replica; if
+   the app is ever scaled out, the limits multiply by the replica count.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`

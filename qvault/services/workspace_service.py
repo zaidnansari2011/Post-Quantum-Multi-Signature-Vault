@@ -670,7 +670,12 @@ def register_through_invitation(token: str, display_name: str, password: str) ->
                 "invitation.",
             )
         user = auth_service.register_user(
-            invitation.email, display_name, password, place=False, commit=False
+            invitation.email,
+            display_name,
+            password,
+            place=False,
+            commit=False,
+            bootstrap_admin=False,
         )
         _accept(invitation, user)
         db.session.commit()
