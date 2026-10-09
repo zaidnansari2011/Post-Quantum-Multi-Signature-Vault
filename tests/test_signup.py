@@ -524,3 +524,61 @@ def test_the_forgot_password_page_is_reachable_signed_in_too(app, client):
     r = client.get("/forgot-password")
 
     assert r.status_code == 200 and "We can't reset your password" in _text(r)
+
+
+# --------------------------------------------------------------------------------------------
+# The R6 review's nits
+
+
+def test_a_workspace_auditor_sees_the_systems_events_on_its_vaults_and_a_stranger_does_not(
+    app, client, larkspur
+):
+    """An auditor need not be in any vault, but an expiry or a payout on one of their
+    workspace's vaults is exactly what they audit. Someone outside the workspace still never
+    sees it."""
+    audrey = auth_service.register_user("audrey@larkspur.com", "Audrey Hale", PW)
+    workspace = workspace_service.current_workspace(larkspur["ada"])
+    workspace_service.change_role(workspace, audrey.id, "auditor", actor=larkspur["ada"])
+    assert not larkspur["vault"].is_member(audrey.id)
+    due = datetime.now(UTC) + timedelta(days=1)
+    lapsed = proposal_service.create_proposal(
+        larkspur["vault"], larkspur["ada"], "Pay Whitlock invoice", "Pay it.", deadline=due
+    )
+    assert approval_service.refresh_expiry(lapsed, now=due + timedelta(minutes=1))
+    entry = LedgerEntry.query.filter_by(event_type="proposal_expired").one()
+
+    assert entry.id in [e.id for e in audit_service.search(audrey, Filters()).items]
+    _sign_up(client)
+    nova = User.query.filter_by(email="nova@kestrel.com").one()
+    assert entry.id not in [e.id for e in audit_service.search(nova, Filters()).items]
+    # A plain member who is in no vault is not an auditor and still doesn't see it.
+    mo = auth_service.register_user("mo@larkspur.com", "Mo", PW)
+    assert entry.id not in [e.id for e in audit_service.search(mo, Filters()).items]
+
+
+def test_a_workspace_slug_lost_to_a_concurrent_sign_up_is_retried_not_called_a_taken_email(
+    app, monkeypatch
+):
+    auth_service.sign_up("first@kestrel.com", "First", PW, "Kestrel Labs")
+    real = workspace_service._slug_for
+    calls = []
+
+    def racing(name):
+        calls.append(name)
+        return "kestrel-labs" if len(calls) == 1 else real(name)  # the first try loses the race
+
+    monkeypatch.setattr(workspace_service, "_slug_for", racing)
+    second = auth_service.sign_up("second@kestrel.com", "Second", PW, "Kestrel Labs")
+    assert len(calls) == 2
+    assert workspace_service.current_workspace(second).slug == "kestrel-labs-2"
+    assert User.query.filter_by(email="second@kestrel.com").count() == 1
+
+
+def test_a_slug_that_keeps_losing_is_a_clear_refusal_and_leaves_nothing(app, monkeypatch):
+    auth_service.sign_up("first@kestrel.com", "First", PW, "Kestrel Labs")
+    monkeypatch.setattr(workspace_service, "_slug_for", lambda name: "kestrel-labs")
+    with pytest.raises(workspace_service.WorkspaceError, match="try again") as caught:
+        auth_service.sign_up("second@kestrel.com", "Second", PW, "Kestrel Labs")
+    assert not isinstance(caught.value, EmailTakenError)
+    assert User.query.filter_by(email="second@kestrel.com").first() is None
+    assert Workspace.query.count() == 1, "only the first sign-up's workspace"

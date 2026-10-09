@@ -17,6 +17,10 @@ from qvault.services import key_service, ledger_service, workspace_service
 _DUMMY_PASSWORD_HASH = hash_password("timing-equaliser-not-a-real-account")
 
 
+#: How many times sign-up is tried when its workspace's slug loses a race (``sign_up``).
+SIGN_UP_ATTEMPTS = 3
+
+
 class EmailTakenError(Exception):
     """Raised when registering an email that already exists."""
 
@@ -110,20 +114,30 @@ def sign_up(email: str, display_name: str, password: str, workspace_name: str) -
     """
     # Refused before anything is written, so a bad name costs no Argon2id work and no rollback.
     workspace_name = workspace_service.clean_workspace_name(workspace_name)
-    try:
-        user = register_user(
-            email, display_name, password, place=False, commit=False, bootstrap_admin=False
-        )
-        workspace_service.create_workspace(workspace_name, user, commit=False)
-        db.session.commit()
-    except IntegrityError as exc:
-        # A concurrent registration of the same address won the UNIQUE(email) race.
-        db.session.rollback()
-        raise EmailTakenError(_normalise_email(email)) from exc
-    except Exception:
-        db.session.rollback()
-        raise
-    return user
+    for attempt in range(SIGN_UP_ATTEMPTS):
+        try:
+            user = register_user(
+                email, display_name, password, place=False, commit=False, bootstrap_admin=False
+            )
+            workspace_service.create_workspace(workspace_name, user, commit=False)
+            db.session.commit()
+            return user
+        except IntegrityError as exc:
+            db.session.rollback()
+            # Two UNIQUE columns can lose a race here: the email (a concurrent registration of
+            # the same address) and the workspace's slug (a concurrent sign-up with the same
+            # workspace name). Only the first is "already registered"; the second is retried,
+            # and _slug_for then sees the slug the other sign-up took.
+            if User.query.filter_by(email=_normalise_email(email)).first() is not None:
+                raise EmailTakenError(_normalise_email(email)) from exc
+            if attempt + 1 == SIGN_UP_ATTEMPTS:
+                raise workspace_service.WorkspaceError(
+                    "busy", "We couldn't create your workspace just now. Please try again."
+                ) from exc
+        except Exception:
+            db.session.rollback()
+            raise
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def update_display_name(user: User, display_name: str, *, commit: bool = True) -> User:

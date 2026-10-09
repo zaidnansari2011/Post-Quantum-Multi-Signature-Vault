@@ -14,7 +14,8 @@
     <p class="q-hero__lead">
       Q-Vault holds a payment, an access grant or any decision until enough of the named people
       approve it. Each approval is a post-quantum signature over the exact text, and every step
-      goes into a log that anyone can check without trusting us.
+      goes into an audit log that anyone can check offline. A witness with its own key co-signs
+      the log; for now our team runs it.
     </p>
     <div class="q-hero__act">
       {{ button('Create your workspace', 'primary', href=url_for('auth.register'), size='lg') }}
