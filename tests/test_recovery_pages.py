@@ -408,3 +408,92 @@ def test_the_code_appears_in_no_log_ledger_notice_delivery_or_trace(app, client,
         for secret in secrets:
             assert secret not in clean(haystack)
     assert NEW not in caplog.text
+
+
+# --------------------------------------------------------------------------------------------
+# The accessibility guard on every new page
+
+
+def test_every_recovery_page_passes_the_accessibility_guard(app, client, team):
+    from test_accessibility import problems
+
+    pages = {"recover": client.get("/recover"), "status, none": client.get("/recover/status")}
+    pages["recover, typo"] = client.post(
+        "/recover",
+        data={"email": team.ada.email, "code": "0" * 31, "password": NEW, "confirm": NEW},
+    )
+    pages["recover, refused"] = client.post(
+        "/recover",
+        data={"email": team.ada.email, "code": "0" * 32, "password": NEW, "confirm": NEW},
+    )
+    issued = issue(team.ada)
+    client.post(
+        "/recover",
+        data={"email": team.ada.email, "code": issued.code, "password": NEW, "confirm": NEW},
+    )
+    pages["status, waiting"] = client.get("/recover/status")
+    _login(client, team.bob)
+    pages["home, banners"] = client.get("/")
+    pages["security, no kit"] = client.get("/account/security")
+    pages["kit"] = client.post("/account/recovery-kit", data={"password": PW})
+    pages["security, unconfirmed"] = client.get("/account/security")
+    found = {
+        (key, problem) for key, r in pages.items() for problem in problems(r.get_data(as_text=True))
+    }
+    assert sorted(found) == []
+    assert 'aria-invalid="true"' in pages["recover, typo"].get_data(as_text=True)
+    assert 'role="alert"' in pages["recover, refused"].get_data(as_text=True)
+
+
+# --------------------------------------------------------------------------------------------
+# End to end, and the same answer for every miss
+
+
+def test_a_kit_made_at_sign_up_recovers_after_a_reissue_and_a_password_change(app, client):
+    from qvault.services import auth_service, key_service
+
+    code = _code_on(_sign_up(client))
+    nova = User.query.filter_by(email="nova@kestrel.org").one()
+    key_service.reissue_signing_key(nova, PW)
+    key_service.change_password(nova, PW, "a-later-password-1")
+    key = key_service.active_signing_key(nova)
+    started = start(nova, code)
+    recovery_service.complete(started.request, now=started.request.completes_at)
+    assert auth_service.authenticate(nova.email, NEW) is not None
+    db.session.refresh(key)
+    assert key_service.active_signing_key(nova).id == key.id
+    key_service.unlock_secret_key(nova, key, NEW)
+
+
+def test_the_page_answers_unknown_email_no_kit_wrong_code_and_paused_identically(app, client, team):
+    from datetime import UTC, datetime, timedelta
+
+    from qvault.models.recovery import RecoveryKitPause
+
+    issued = issue(team.ada)
+    wrong = kit_code.encode((kit_code.decode(issued.code) + 7) % 2**150)
+
+    def attempt(email, code):
+        r = client.post(
+            "/recover", data={"email": email, "code": code, "password": NEW, "confirm": NEW}
+        )
+        body = re.sub(r'name="email"[^>]*value="[^"]*"', "", r.get_data(as_text=True))
+        return r.status_code, body
+
+    answers = [
+        attempt("nobody@qvault.org", issued.code),
+        attempt(team.bob.email, issued.code),
+        attempt(team.ada.email, wrong),
+    ]
+    db.session.add(
+        RecoveryKitPause(
+            user_id=team.ada.id,
+            paused_until=datetime.now(UTC) + timedelta(hours=1),
+            created_at=datetime.now(UTC),
+        )
+    )
+    db.session.commit()
+    answers.append(attempt(team.ada.email, issued.code))
+    assert {status for status, _ in answers} == {400}
+    assert len({body for _, body in answers}) == 1
+    assert RecoveryRequest.query.count() == 0
