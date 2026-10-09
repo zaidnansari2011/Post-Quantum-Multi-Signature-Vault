@@ -1038,6 +1038,11 @@ already-proven setting rather than guessed.
 10. **Approve a treasury change (P3).** When a vault owner asks for a treasury update on the web,
    the change appears in Approvals on a phone whose key the treasury holds; open it, "Approve
    change", read the sheet, approve with the phone's lock, and see "Approval signed".
+11. **App lock over everything (P3 review A1).** With app lock on, open a decision's Approve sheet
+   (or New decision, typed half way), press Home, wait over a minute, come back: the lock screen must
+   cover everything, the sheet must be gone, New decision must still hold what you typed after
+   unlocking, and with TalkBack or VoiceOver on, swiping must not reach anything under the lock. On
+   an iPhone, the app switcher must show the mark over an open sheet too.
 
 ## 4. Submission and delivery
 

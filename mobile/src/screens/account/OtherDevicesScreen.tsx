@@ -131,7 +131,7 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
           ) : (
             <List>
               {active.map((d) => (
-                <ListRow key={d.id} icon="phone" title={d.name} caption={added(d)} onPress={() => setOpen(d)} />
+                <ListRow key={d.id} icon="phone" title={d.name} caption={added(d)} captionLines={4} onPress={() => setOpen(d)} />
               ))}
             </List>
           )}

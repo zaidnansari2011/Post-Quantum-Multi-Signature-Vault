@@ -2618,7 +2618,40 @@ Where P3 departs from the text above, and why:
 - **Remind.** The route returns how many were reminded, not `next_allowed_at`; a refusal shows the
   server's own sentence, which says when the next is allowed.
 - **Server additions (additive, P3):** the vault detail's `separation_of_duties`, `rule_changes`
-  (latest five, before and after) and members' `has_key`; `/me.workspace.separation_of_duties_default`.
+  (latest five, before and after) and members' `has_key`; `/me.workspace.separation_of_duties_default`;
+  the reconfiguration view's `requested_by`.
+
+**P3 review fix pass (2026-10-09).** After an adversarial review of the stream:
+
+- **App lock covers every top (§6.1).** The lock screen is a full-screen RN `<Modal>` mounted last;
+  every dismissible sheet and the acknowledgement close the moment the app locks
+  (`src/lockState.ts`); New decision and New vault, which iOS presents above the root, keep their
+  draft but draw the lock over themselves (`LockGate`), and screen readers reach nothing under the
+  lock. A sheet with a signature in flight stays (it cannot be dismissed) and the lock draws over it.
+- **App lock's minute (§6.1).** The time the app leaves is always recorded; on return exactly the
+  time an OS prompt was up is subtracted (`src/logic/appLock.ts`, `authPrompt.ts` keeps the spans),
+  so leaving during a prompt or a moment after one still locks, and a long PIN entry never does.
+- **Treasury change (§6.15) says only what the phone verified.** What an approval signs is written
+  from the signed inputs ("Adds 1 key and removes 1. Afterwards the treasury needs 2 approvals.");
+  whose keys they are is labelled "Q-Vault says", because the phone cannot yet tie a signed identity
+  to a person or a key (API gap below); the evidence lists the signed identities with Q-Vault's
+  description of each; a tampered change shows none of its claim, and "What failed" names the
+  check. One quorum: "Once 2 of you approve this change, it takes effect." The requester is named.
+- **I-5** also compares the payment's chain id, against the treasury captured when the payment
+  went to review; what the phone raised is remembered for the run, so I-5 runs on every open of that
+  decision (not across a restart: the record is memory only, like every signed fact the phone holds).
+- **Vault (§6.14):** one line for your part and separation of duties; a threshold change, short,
+  only for 30 days; no "Open 0"; at large text the Members, Treasury and History rows come before the
+  open decisions. Vault rows say only the exception ("You can view.").
+- **Copy:** "Share a report" (it opens the share sheet); "No key yet, so can't approve";
+  "Approves here until" for the device token's expiry; the headline names decisions and treasury
+  changes apart ("Four decisions and a treasury change need your signature").
+- **Other devices** show each key's first eight characters, and say when the list failed to load.
+- **2.0 text:** no input, label row or text link runs past the gutter (inputs may shrink, a field's
+  label row and a long link wrap); the screenshot run now fails on any overflow.
+- **API gaps found (§10.3):** an identity-to-key mapping a phone can check (so "removes this phone's
+  key" could be said, and names bound to identities); `my_vote` on summaries; `next_allowed_at` on
+  Remind; "Last signed" per member; a device rename route; seat fingerprints on the treasury view.
 
 **P4: Features as their APIs land** (over the air, except where marked)
 
@@ -2704,6 +2737,8 @@ or a try/import) and fall back: Share for copy, TransportError for offline, an i
 | A17 | `seat` (`this_device`, `password`, `other_device`, null) on awaiting payment summaries; the reconfigurations waiting on you listed with the awaiting decisions; **on the web,** the treasury-change view shows the same 8-character code from the digest | "Approve on the web" grouping and the badge (§6.3); treasury changes in Approvals (§6.15); a code on treasury changes | R2 (code: R7 web) |
 | A18 | Security events for device added, device removed and device re-authenticated, delivered to the account's other devices | Security items and pushes (§6.12, §6.18, §6.23) | R4 |
 | A19 | *(Optional, owner's call, §12 Q8)* a decline for a treasury reconfiguration | Rejecting a treasury change | — |
+| A20 | A treasury identity the phone can check against a key it can fingerprint (or the key itself in the reconfiguration view) | Naming whose key a change adds or removes as fact, and "Removes this phone's key" (§6.15; P3 review A3) | R7 or later (adversarial review: it changes what an approval can be shown to mean) |
+| A21 | `my_vote` on summaries; `next_allowed_at` on Remind; `last_signed_at` per vault member; a device rename route; seat fingerprints in the treasury view | "You approved" in Activity; "You can remind again tomorrow"; "Last signed 2 Oct"; This phone's "Change"; which treasury a removed device leaves | Any (additive) |
 
 ---
 

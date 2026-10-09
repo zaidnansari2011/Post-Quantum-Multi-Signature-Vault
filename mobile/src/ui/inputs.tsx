@@ -482,7 +482,15 @@ const useStyles = makeStyles((t) => ({
   // One field-to-field rhythm everywhere: 16 below each field, whatever it carries.
   field: { gap: t.space[8], paddingBottom: t.space[16] },
   labelRowWithLink: { minHeight: 44, marginVertical: -t.space[8] },
-  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 18 },
+  // Wraps at large text: "Password" and "Forgot password?" don't fit one line at 2.0 (review B1).
+  labelRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: t.space[12],
+    minHeight: 18,
+  },
   inputBox: {
     minHeight: 48,
     borderRadius: t.radius.control,
