@@ -1,12 +1,20 @@
 # P3 shots: Vaults, the treasury change, New decision and vault, Activity, Account, onboarding
 
 Shot on 2026-10-09 by `mobile/tools/web-shots/p3.py` (390 x 844 at 2x) against a disposable backend
-on a copy of the demo database. First screen only. `light_1` and `dark_1` hold every shot; `light_2`
-and `dark_2` (emulated 2.0 text) hold the screens whose layout at large text is worth reviewing.
-Every PNG is a 256-colour palette image, as P2's are (152 PNGs, 6.7 MB). The touch-target audit
-(every target 48 x 48 or larger, none nested) ran on every shot: 729 targets in `light_1`, 781 in
-`dark_1`, 164 in each of `light_2` and `dark_2`, 0 findings. The 2.0 sets are `o01`, `a10`, `a11`,
-`v02`, `t02`, `t02b`, `n04`, `n06`, `nv03`, `ac01`, `acc02` and `d20`.
+on a copy of the demo database, renamed to the workspace "Northwind" and the vault "Operations".
+Re-shot whole after the P3 review's fix pass. First screen only. `light_1` and `dark_1` hold every
+shot; `light_2` and `dark_2` (emulated 2.0 text) hold the screens whose layout at large text is worth
+reviewing. Every PNG is a 256-colour palette image, as P2's are (162 PNGs, 7.1 MB).
+
+Two audits run on every shot, and the run fails on any finding. Touch targets (every target 48 x 48
+or larger, none nested): 696 targets in `light_1`, 748 in `dark_1`, 183 in `light_2`, 197 in
+`dark_2`, 0 findings. Overflow (no element past the screen's right edge, and no container whose
+content is wider than it, text inputs and deliberately truncated text aside): 0 at 1.0; at 2.0 it
+caught "Create a workspace on the web" on `o01` running 18 px past the gutter, which was fixed
+(a text link now wraps) and `o01` and `acc04` re-shot with 0. The 2.0 sets are `o01`, `a10`,
+`a11`, `v02`, `v04`, `t02`, `t02b`, `n04`, `n06`, `nv03`, `ac01`, `acc02`, `acc04` and `d20`.
+At 2.0 the address field in `n04` scrolls inside itself: react-native-web's textarea does not grow
+with its text as the native field does.
 
 **How the states are made.** As in P2, a state is one real record whose reply is rewritten in the
 browser, changing only UNSIGNED fields (status, votes, `can_sign`, `raised_by`, rule changes, a
@@ -24,7 +32,7 @@ signed or sent to the chain: approve sheets are opened and cancelled.
 | `o06`, `o07` | §6.2 | This phone gets its own key; Key created with the fingerprint |
 | `o08` | §6.2, I-9 | A phone with no screen lock is refused, with the way to set one |
 | `o09` | §6.2, §6.22 | The first visit: "You're in Q-Vault. You approve in ..." |
-| `a10` | §6.3, §6.15 | A treasury change in the queue, by when it runs out; the headline says "items", never calls it a decision |
+| `a10` | §6.3, §6.15 | A treasury change in the queue, by when it runs out; the headline names decisions and treasury changes apart |
 | `a11`, `a11b` | §6.4 | Waiting on others: one you raised (who can still act, Remind beside the row), one that can't pass (the server's reason); the reminder sent |
 | `a12`, `v06` | §6.22 | An auditor: no plus, no Create a vault |
 | `v01` | §6.13 | Vaults: rule and your part, "1 needs you", Create a vault last |
@@ -36,6 +44,7 @@ signed or sent to the chain: approve sheets are opened and cancelled.
 | `ac01` to `ac03` | §6.12 | Your decisions: sections, outcomes and your part; Decided; a search with no match |
 | `acc01` to `acc09` | §6.18 | Account with the workspace role; This phone (app lock switch); Key details; Other devices; a device; removing it; Treasury approvals; Notifications (before R8); Help and about |
 | `l01` | §6.1 | App lock: Q-Vault is locked (the prompt was cancelled) |
+| `l02a` to `l02c` | §6.1, review A1 | A decision's Approve sheet open; the app leaves for over a minute and returns: the lock covers everything; unlocked, the sheet is gone |
 | `d20`, `d20b` | §6.21, S13 | A typed decision's card from the verified rows; the signed text one tap away |
 | `d21` | §6.6 row 1 | A typed field changed after signing: refused as `type_text` |
 | `d22`, `d22b` | §6.21 | The overflow with Withdraw; the withdraw sheet |
