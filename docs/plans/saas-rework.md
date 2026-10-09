@@ -498,9 +498,11 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 | S18 recovery | New cryptography, product promise | **Decided:** the three routes; the written design is reviewed before R9 code |
 | S25 dark mode | Scope | **Decided:** built in from R1 in both themes; the phone's needs a new APK |
 | Logo mark | Brand | From the quorum seal, approved on the style tile |
-| Staging environment | Cost on the teammate's subscription (a scale-to-zero container app and a database on the existing server) | Yes, in R10 |
-| Email provider | A third-party account and DNS records (SPF, DKIM, DMARC) on `zaidansari.tech` | Azure Communication Services Email (already on Azure) or Postmark |
-| Push notifications | Firebase (FCM) project for Android; an Apple Developer account (US$99/yr) for iOS | FCM now; iOS only if a team member uses an iPhone |
+| Staging environment | Cost on the teammate's subscription (a scale-to-zero container app and a database on the existing server) | **Decided (2026-10-09):** yes, in R10, created by us through the az CLI on the team subscription (the owner has that access) |
+| Email provider | A third-party account and DNS records (SPF, DKIM, DMARC) on `zaidansari.tech` | **Decided (2026-10-09): Resend**, sending from `mail.zaidansari.tech` (OWNER-ACTIONS §2.11) |
+| Push notifications | Firebase (FCM) project for Android; an Apple Developer account (US$99/yr) for iOS | **Decided (2026-10-09): FCM for Android**, no iOS (OWNER-ACTIONS §2.12) |
+| Public checkpoint | The landing page's "Verify offline" needs the signed log head without signing in | **Decided (2026-10-09):** a read-only public endpoint serving the latest signed checkpoint (already public in exports) |
+| Phone "Set up this phone again" | After `signature_invalid` / `device_key_not_active` the phone offers to delete its key and pair again, after "Try again" and two explained taps | **Decided (2026-10-09):** keep it |
 | Screenshot reviews | Eyes | After R1, R2, R6 and R7 |
 | Handset tests | Hardware | After R3, R5, R7, R8 |
 
