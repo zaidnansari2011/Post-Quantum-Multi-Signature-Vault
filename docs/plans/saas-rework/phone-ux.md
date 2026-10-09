@@ -2677,26 +2677,54 @@ profile, `rework`:
 - the hard-coded `updates.requestHeaders["expo-channel-name"]: "preview"` removed or overridden.
   Check it in the built APK before installing (plan §0, §11).
 
-| # | Change | Needed for |
-| --- | --- | --- |
-| N1 | `userInterfaceStyle: "automatic"` | Dark mode (§3.5) |
-| N2 | `rework` profile, channel and runtime version | Plan B safety |
-| N3 | S19 and everything since reaches phones | — |
-| N4 | The approved mark: icon, adaptive foreground, background and monochrome; adaptive `backgroundColor` #0E1729 | Brand |
-| N5 | `expo-splash-screen`: **a new native dependency** (not installed today), with its config plugin and light and dark images | §6.1 |
-| N6 | `@react-native-community/netinfo` | Offline (§2.6) |
-| N7 | `@react-native-async-storage/async-storage` | Persisted cache (§2.6) |
-| N8 | `expo-device` | Real device names (§6.2). Until then P3 names the phone "Android phone" or "iPhone" |
-| N9 | `predictiveBackGestureEnabled: true` | §2.3 |
-| N10 | `expo-screen-capture` | App lock privacy (§6.1). P3 built app lock without it: Android's switcher is not covered until this lands |
-| N11 | `expo-clipboard` | Copy and Paste (Share covers copy until then) |
-| N12 | `expo-notifications`, FCM `google-services.json`, `POST_NOTIFICATIONS`, channels | Push (R8). **Only if the owner's Firebase project exists by then** (§12, Q3) |
-| N13 | Android App Links intent filters (`autoVerify`) plus `/.well-known/assetlinks.json` served by Flask | https decision and invitation links |
-| N14 | `expo-file-system` and `expo-sharing` (or a PDF view) | Attachments (§6.5; §12, Q2) |
-| N15 | `expo-camera` | QR pairing and address scan (P4; can wait for a later APK) |
-| N16 | `@react-native-community/datetimepicker` | The platform date picker for "Pick a day…" (§6.16). P3 ships the four honest chips without it |
-| N17 | `react-native-svg`, **only if** the icon font from the tile's sprite proves lossy | Icons (§2.2) |
-| N18 | `android.allowBackup: false` in `app.json` (or a backup rule excluding the AsyncStorage database) | The persisted cache never leaves the phone in a Google backup (§2.6, I-14) |
+**Prepared 2026-10-09 (stream `rework/apk-native`).** Owner decisions the same day: **one APK**, at
+the same application id `com.qvault.approvals` (it installs over the live app; `versionCode` 2), and
+it talks to **staging** until the switch, when an over-the-air update repoints it to the live
+domain (OWNER-ACTIONS §2.3 has the build, the install and the repoint). The `rework` profile is in
+`eas.json` (channel `rework`, internal APK, environment `preview`, `QVAULT_API_BASE_URL` set to
+staging); `app.config.js` turns that variable into `extra.apiBaseUrl`, with the live domain as the
+default; the request header is gone, so the build profile's channel is the only one. Checked with
+`expo config` and an `expo prebuild` into a scratch copy: runtime `rework-1`, the staging URL only
+when the variable is set, `googleServicesFile` only when `GOOGLE_SERVICES_JSON` is set, and the
+manifest below. Every module the APK adds is loaded only by `src/native/` after checking the binary
+has it, so Expo Go and the web harness take each one's fallback (held by
+`tests/test_mobile_native_surface.py`).
+
+| # | Change | Needed for | Status |
+| --- | --- | --- | --- |
+| N1 | `userInterfaceStyle: "automatic"` | Dark mode (§3.5) | Done (P1) |
+| N2 | `rework` profile, channel and runtime version | Plan B safety | Done: see above |
+| N3 | S19 and everything since reaches phones | — | With the build |
+| N4 | The approved mark: icon, adaptive foreground, background and monochrome; adaptive `backgroundColor` #0E1729 | Brand | Done: rendered from the tile's 32-unit master (`style-tile/mark/closing.svg`), unchanged: `--chrome-text` on #0E1729 for the launcher icon (the mark sheet's app icon), white for monochrome and the notification icon (`assets/notification-icon.png`); the template's background PNG is gone (the colour does it) |
+| N5 | `expo-splash-screen`: **a new native dependency** (not installed today), with its config plugin and light and dark images | §6.1 | Done: `expo-splash-screen` ~57.0.9; the mark in the accent on `bg` (#F7F8FA / #11161E), 48 dp, the size of the app's first frame. Held from `App.tsx` until the session is read, released at the latest after 2.5 s (`src/native/splash.ts`) |
+| N6 | `@react-native-community/netinfo` | Offline (§2.6) | Done: 12.0.1. **Departure:** it does not drive React Query's `onlineManager`, which pauses queries and mutations instead of failing them ("Raise" would send itself on reconnect; "Checking…" would never end). Losing the network shows the offline bar at once; getting it back refetches what is on screen, whose answer clears the bar. Its Google reachability pings are off (`src/native/network.ts`) |
+| N7 | `@react-native-async-storage/async-storage` | Persisted cache (§2.6) | **Dropped:** the encrypted summary cache is a file in the cache directory through `expo-file-system` (`src/persist.ts`, P2), which neither Auto Backup nor device-to-device transfer copies |
+| N8 | `expo-device` | Real device names (§6.2). Until then P3 names the phone "Android phone" or "iPhone" | Done: ~57.0.2; the phone's own name, then its model, then the kind of phone, cut to the server's 64 characters (the name field's limit was 80; now 64) |
+| N9 | `predictiveBackGestureEnabled: true` | §2.3 | Done: the manifest gets `enableOnBackInvokedCallback="true"`. React Native 0.86's activity takes back through an `OnBackPressedCallback`, so `BackHandler` and `usePreventRemove` still see it; **check on a handset** that sheets close on back and New decision's discard sheet still appears (OWNER-ACTIONS §3.5) |
+| N10 | `expo-screen-capture` | App lock privacy (§6.1). P3 built app lock without it: Android's switcher is not covered until this lands | Done: ~57.0.4; FLAG_SECURE held while app lock is on (`src/native/screenCapture.ts`), and the switch's caption now says it also stops screenshots, only where it is true. Its screenshot-detection and media permissions are blocked (unused) |
+| N11 | `expo-clipboard` | Copy and Paste (Share covers copy until then) | Done: ~57.0.2; every Copy (identifiers, the decision code) uses the clipboard, with Share as the fallback (`src/native/clipboard.ts`). Paste is not wired: nothing asks for it yet |
+| N12 | `expo-notifications`, FCM `google-services.json`, `POST_NOTIFICATIONS`, channels | Push (R8). **Only if the owner's Firebase project exists by then** (§12, Q3) | Done (R8): plugin with `defaultChannel: "needs_you"`, the new white notification icon, `#2D60C3`; `google-services.json` from the EAS file variable `GOOGLE_SERVICES_JSON` (environment `preview`, OWNER-ACTIONS §2.12) |
+| N13 | Android App Links intent filters (`autoVerify`) plus `/.well-known/assetlinks.json` served by Flask | https decision and invitation links | Done for **decision** links (`/vaults/.*/proposals/.*`) on both `project4.zaidansari.tech` and the staging host; Flask serves the file from `ANDROID_APP_PACKAGE` and `ANDROID_CERT_SHA256` (default: the EAS keystore's fingerprint), `tests/test_assetlinks.py`. **Invitation links are left out on purpose:** the app cannot accept an invitation yet (§6.22), and a verified link it cannot handle would open the app and do nothing; adding them later needs another APK |
+| N14 | `expo-file-system` and `expo-sharing` (or a PDF view) | Attachments (§6.5; §12, Q2) | Done: `expo-sharing` ~57.0.22 declared (no config plugin: that is for receiving shares), `expo-file-system` declared since P2. Not wired: attachments wait for the bearer download route (A6) |
+| N15 | `expo-camera` | QR pairing and address scan (P4; can wait for a later APK) | Done: ~57.0.6, in so that pairing needs no second APK. `CAMERA` only: `RECORD_AUDIO` blocked, microphone text removed; the iOS text says the camera only scans a QR code. Not wired |
+| N16 | `@react-native-community/datetimepicker` | The platform date picker for "Pick a day…" (§6.16). P3 ships the four honest chips without it | Module in (9.1.0) with `src/native/datePicker.ts` (`canPickDate`, `pickDate`, Android's Material dialog). **The chip is not on New decision yet:** it also needs the time chips, the 60-day bound and a harness mock, which is screen work for a P4 stream |
+| N17 | `react-native-svg`, **only if** the icon font from the tile's sprite proves lossy | Icons (§2.2) | **Not added:** the icon font has shipped since P1 with no glyph found distorted in the P1 to P3 reviews. If one ever is, it needs another APK |
+| N18 | `android.allowBackup: false` in `app.json` (or a backup rule excluding the AsyncStorage database) | The persisted cache never leaves the phone in a Google backup (§2.6, I-14) | Done |
+
+**The manifest of a prebuild** (2026-10-09, with the build's environment): permissions `CAMERA`,
+`INTERNET`, `POST_NOTIFICATIONS`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, `VIBRATE`, plus what libraries
+merge in at build time (`ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE` for NetInfo,
+`RECEIVE_BOOT_COMPLETED` and FCM's own for push); removed with `tools:node="remove"`:
+`RECORD_AUDIO`, `READ_MEDIA_IMAGES`, `DETECT_SCREEN_CAPTURE`, `SYSTEM_ALERT_WINDOW`, external
+storage. `allowBackup="false"`, `enableOnBackInvokedCallback="true"`, the two `autoVerify` filters,
+the `qvault` scheme, the adaptive icon with its monochrome layer, and the splash theme with a
+night variant.
+
+**Versions** are the ones `expo install` pairs with SDK 57. `expo install --check` also suggests
+newer patch releases of modules this branch already had (`expo` 57.0.27, `react-native` 0.86.3,
+`expo-updates` 57.0.25 and others, and `react-native-worklets` 0.10.1, below the 0.10.4 that
+§5.9 pins). They were left as they are: a core upgrade is its own change, with the full suite, and
+a patch to native code cannot ship over the air either way.
 
 `expo-file-system` (N14) is already in `node_modules` (through `expo`), so N14 adds only `expo-sharing` or a viewer; declare `expo-file-system` in `package.json` and confirm autolinking includes it in the APK.
 `expo-application` is not needed: the version comes from `expo-constants` and `expo-updates`, both
@@ -2710,7 +2738,10 @@ what is installed): `@tanstack/react-query-persist-client` and
 
 **Before the APK,** code paths that need these modules feature-detect them (`requireOptionalNativeModule`
 or a try/import) and fall back: Share for copy, TransportError for offline, an in-memory cache, and
-`Platform` names for the device. The harness mocks them.
+`Platform` names for the device. The harness mocks them. *Done as `src/native/`: each module checks
+the binary (`requireOptionalNativeModule` for Expo modules, `TurboModuleRegistry.get` for the
+community ones) before its package is loaded; on the web every check is false, so the harness
+renders the fallbacks without shims.*
 
 ### 10.3 API needs, in one list (phone side)
 

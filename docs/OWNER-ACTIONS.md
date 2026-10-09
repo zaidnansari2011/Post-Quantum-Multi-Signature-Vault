@@ -172,6 +172,96 @@ Do these **in order** — step 3 must happen before step 5, or the APK ships wit
 `app.json` with a static `runtimeVersion`, `expo-updates` installed and wired, and the permission
 set trimmed to `INTERNET`, `USE_BIOMETRIC`, `USE_FINGERPRINT`, `VIBRATE`.
 
+#### The rework APK (prepared 2026-10-09, branch `rework/apk-native`) — `TODO`
+
+One APK, built once. Everything after it ships over the air on the `rework` channel. It has the
+same application id as the live app (`com.qvault.approvals`) and the same EAS keystore, so it
+installs **over** the live app and keeps nothing of it but the keystore's identity: an old
+runtime-2 install's enrolment does not carry over (the rework talks to a different server). Until
+the switch it talks to **staging**; at the switch one over-the-air update points it at the live
+domain. Its contents and why: phone-ux §10.2.
+
+1. **Once, before the first build: the Firebase file** (§2.12). From `q-vault-rework/mobile`:
+
+   `npx eas env:create --scope project --name GOOGLE_SERVICES_JSON --type file --value "C:\Users\Zaid\Documents\4th year project\secrets\google-services (1).json" --visibility secret --environment preview`
+
+   `preview` is the environment the `rework` profile builds with (`"environment": "preview"` in
+   `eas.json`). Without the variable the APK builds and runs, but no push ever reaches it.
+
+2. **Build** (from `q-vault-rework/mobile`, after the integrator has merged this branch):
+
+   `npx eas build --profile rework --platform android`
+
+   The profile is channel `rework`, an internal-distribution APK, environment `preview`, and
+   `QVAULT_API_BASE_URL=https://qvault-staging.livelybeach-69506dc5.centralindia.azurecontainerapps.io`.
+   Nothing in `app.json` names a channel any more, so the profile's is the only one.
+
+3. **Check the APK before installing it** (plan §0): download it, then
+   `aapt dump xmltree app.apk AndroidManifest.xml` (Android SDK build tools) and look for
+   `expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY` holding
+   `{"expo-channel-name":"rework"}`, `expo_runtime_version` `rework-1`, and
+   `android:allowBackup` false. EAS's build page shows the channel and runtime too.
+
+4. **Install:** open the build's link (or QR) on the phone, download the `.apk`, and allow your
+   browser to install apps when Android asks. It replaces the live app in place. Open it, **Set
+   up this phone** with your **staging** account (§2.14), and turn on notifications.
+
+   **Before installing over the live app, read this.** The new app finds the live app's sign-in,
+   which staging does not know, and shows "Session ended". "Set up this phone again" then makes a
+   new key and **deletes the live key on that phone**. If that key holds a seat on a live
+   treasury (the live app's Account, "Treasury key") or is the only way that person approves on
+   the live site, move the seat to the web password key first, or install the rework APK on a
+   different phone. After the switch, remove the old live device on the web, since its key no
+   longer exists.
+
+5. **Every over-the-air update before the switch** must carry the staging address, or it moves
+   the phones to the live domain early. From `q-vault-rework/mobile`, in PowerShell:
+
+   ```powershell
+   $env:QVAULT_API_BASE_URL = "https://qvault-staging.livelybeach-69506dc5.centralindia.azurecontainerapps.io"
+   npx expo config --type public | Select-String apiBaseUrl   # must show the staging address
+   npx eas update --channel rework --message "<what changed>"
+   ```
+
+   Why this works: `extra.apiBaseUrl` travels inside each update's manifest, and the app reads it
+   from `Constants.expoConfig`, which a running update replaces (expo-constants:
+   `manifest.extra.expoClient`). `eas update` reads `app.config.js` on this machine, and an
+   `eas.json` build profile's `env` does **not** apply to it. That is the whole repoint
+   mechanism, and also the trap.
+
+6. **At the switch: repoint to the live domain.** Once `project4.zaidansari.tech` serves the
+   rework (and so `/.well-known/assetlinks.json`):
+
+   ```powershell
+   $env:QVAULT_API_BASE_URL = "https://project4.zaidansari.tech"
+   npx expo config --type public | Select-String apiBaseUrl   # must show the live domain
+   npx eas update --channel rework --message "Point at the live domain"
+   ```
+
+   Each phone downloads it on its next launch and runs it on the one after. The live server has
+   a different database, so every phone then shows "Session ended" and is set up again with the
+   person's live account (a new key on the phone). From then on, leave the variable unset or set
+   to the live domain for every update.
+
+7. **Decision links (App Links).** Android checks `/.well-known/assetlinks.json` on each host
+   when the APK is installed. Staging serves it once this branch is deployed there (the
+   fingerprint below is the default). The live domain only serves it after the switch, so after
+   the switch reinstall the same APK over itself (tap the downloaded `.apk` again; nothing is
+   lost) to make Android check again. To check:
+   `adb shell pm get-app-links com.qvault.approvals` shows each host as `verified`. On Android 11
+   and older, all hosts must verify or none do, so links open in the browser there until both
+   serve the file.
+
+   The EAS keystore's SHA-256, served by Flask (`ANDROID_CERT_SHA256`, comma-separated if a
+   second key is ever added; empty turns the file off):
+   `CE:E1:24:CB:27:03:84:3B:F6:D9:5D:56:36:76:FE:1C:28:23:40:0D:5A:4A:D8:D7:F6:E0:F4:94:EE:08:EB:AC`.
+   `npx eas credentials` shows it if the keystore ever changes.
+
+8. **Handset checks** that only this APK makes possible are in §3.5: push, dark splash and icon,
+   the app switcher blank with app lock on (and screenshots blocked then), Copy putting text on
+   the clipboard, the phone's own name at set-up, predictive back (sheets close on back, New
+   decision's discard sheet still appears), the offline bar appearing at once in airplane mode.
+
 **The rule that keeps OTA working:** bump `runtimeVersion` in `app.json` whenever a native module
 or any `plugins`/`android`/`ios`/`icon`/`scheme` value changes — and only then. JavaScript, assets
 and `extra` never need it. ADR-0018 explains why this is a hand-maintained string rather than the
@@ -730,12 +820,12 @@ Decided 2026-10-09: Android push through Firebase Cloud Messaging, set up before
 **Wired (R8, 2026-10-09).** `expo-notifications` is in the rework's config, and
 `mobile/app.config.js` reads `google-services.json` from the EAS file variable
 `GOOGLE_SERVICES_JSON`. The file is never committed (`mobile/.gitignore`). **One step remains, before
-the rework APK (§2.3):** from `q-vault-rework/mobile`, once:
+the rework APK (§2.3, step 1):** from `q-vault-rework/mobile`, once:
 
-`npx eas env:create --name GOOGLE_SERVICES_JSON --type file --value "C:\Users\Zaid\Documents\4th year project\secrets\google-services (1).json" --visibility secret --environment preview`
+`npx eas env:create --scope project --name GOOGLE_SERVICES_JSON --type file --value "C:\Users\Zaid\Documents\4th year project\secrets\google-services (1).json" --visibility secret --environment preview`
 
-Use the environment the `rework` build profile builds with. Without the variable, the APK builds and
-runs, but no push ever reaches it. For a local `expo run:android`, copy the file to
+`preview` is the environment the `rework` build profile builds with (`eas.json`). Without the
+variable, the APK builds and runs, but no push ever reaches it. For a local `expo run:android`, copy the file to
 `mobile/google-services.json` instead (git ignores it).
 
 6. **Switch on Enhanced Push Security** — `TODO` (added 2026-10-09, R8 review F2). Do this
