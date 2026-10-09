@@ -43,16 +43,37 @@ def _password() -> str:
     return "".join(secrets.choice(ALPHABET) for _ in range(20))
 
 
-def main() -> int:
+def _describe(user, workspace_service) -> str:
+    """Who an existing account really is: its own name, when it was made, and where it lives."""
+    spaces = ", ".join(
+        f"{m.workspace.name} ({m.role})" for m in workspace_service.memberships_of(user)
+    )
+    created = f"{user.created_at:%Y-%m-%d %H:%M}" if user.created_at else "unknown"
+    return f"'{user.display_name}', created {created}, workspace: {spaces or 'none'}"
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--vault-name", default="Board approvals")
     ap.add_argument("--threshold", type=int, default=3)
-    args = ap.parse_args()
+    ap.add_argument(
+        "--adopt-existing",
+        metavar="EMAIL",
+        action="append",
+        default=[],
+        help=(
+            "treat the existing account with this address as that team member. Only after "
+            "checking the name and date this script prints for it: sign-up does not verify "
+            "addresses yet, so an account under a team address may be a stranger's"
+        ),
+    )
+    args = ap.parse_args(argv)
+    adopt = {e.strip().lower() for e in args.adopt_existing}
 
     from qvault import create_app
     from qvault.extensions import db
     from qvault.models.user import User
-    from qvault.services import auth_service, vault_service
+    from qvault.services import auth_service, vault_service, workspace_service
     from qvault.services.auth_service import EmailTakenError
 
     app = create_app("development")
@@ -61,17 +82,39 @@ def main() -> int:
     with app.app_context():
         print("\n  REGISTERING TEAM")
         members = []
+        refused = []
         for name, email, _is_admin in TEAM:
             existing = User.query.filter_by(email=email.lower()).first()
             if existing is not None:
-                print(f"    {name:<18} already registered (id {existing.id}) — skipped")
+                # The addresses above are public, and sign-up does not verify that whoever made an
+                # account owns its address (until R8). So an account this run did not create is
+                # never assumed to be the team member: never promoted, never put in the vault,
+                # unless the operator has looked at it and named it with --adopt-existing.
+                who = _describe(existing, workspace_service)
+                if email.lower() not in adopt:
+                    print(f"    {email:<32} REFUSED: an account already exists ({who}).")
+                    print(f"    {'':<32} Not created by this run, so not promoted or added.")
+                    print(f"    {'':<32} If it is really theirs: --adopt-existing {email}")
+                    refused.append(email)
+                    continue
+                try:
+                    left = workspace_service.join_shared_workspace_from(existing)
+                except workspace_service.WorkspaceError as exc:
+                    db.session.rollback()
+                    print(f"    {email:<32} REFUSED: {exc.message}")
+                    refused.append(email)
+                    continue
+                print(f"    {email:<32} adopted ({who})")
+                if left is not None:
+                    print(f"    {'':<32} moved out of its empty workspace {left.name!r}")
                 members.append(existing)
                 continue
             pw = _password()
             try:
                 user = auth_service.register_user(email, name, pw)
             except EmailTakenError:
-                print(f"    {name:<18} email taken — skipped")
+                print(f"    {email:<32} email taken: skipped")
+                refused.append(email)
                 continue
             members.append(user)
             issued.append((name, email, pw))
@@ -79,27 +122,31 @@ def main() -> int:
 
         # Admin exists only for the first registrant (auth_service.py), and on a migrated database
         # that is a seeded persona. Promote explicitly so the crypto-agility, rotation and
-        # benchmark demonstrations can be driven by a real person.
+        # benchmark demonstrations can be driven by a real person: only an account this run
+        # created or the operator adopted, and through the logged path.
         print("\n  ADMIN")
-        for name, email, is_admin in TEAM:
-            if not is_admin:
+        ours = {m.email: m for m in members}
+        for _name, email, is_admin in TEAM:
+            user = ours.get(email.lower())
+            if not is_admin or user is None:
                 continue
-            user = User.query.filter_by(email=email.lower()).first()
-            if user is None:
-                continue
+            label = f"{user.display_name} ({user.email})"
             if user.role == "admin":
-                print(f"    {name} is already an administrator")
+                print(f"    {label} is already an administrator")
             else:
-                user.role = "admin"
-                db.session.commit()
-                print(f"    {name} promoted to administrator")
+                auth_service.set_system_admin(user.email)
+                print(f"    {label} promoted to administrator (recorded in the ledger)")
 
         print("\n  VAULT")
         from qvault.models.vault import Vault
 
         vault = Vault.query.filter_by(name=args.vault_name).first()
         if vault is not None:
-            print(f"    '{args.vault_name}' already exists (id {vault.id}) — skipped")
+            print(f"    '{args.vault_name}' already exists (id {vault.id}): skipped")
+        elif not members:
+            print("    no team member to own it: skipped")
+        elif not 1 <= args.threshold <= len(members):
+            print(f"    a threshold of {args.threshold} needs 1 to {len(members)} members: skipped")
         else:
             owner = members[0]
             vault = vault_service.create_vault(
@@ -110,11 +157,14 @@ def main() -> int:
             )
             print(
                 f"    created '{vault.name}' (id {vault.id})"
-                f" at {args.threshold}-of-{len(members)}"
+                f" at {args.threshold}-of-{len(members)}, owned by {owner.display_name}"
             )
             for member in members[1:]:
                 vault_service.add_member(vault, member.email, "signer", actor_id=owner.id)
                 print(f"      + {member.display_name} (signer)")
+
+    if refused:
+        print(f"\n  Refused {len(refused)}: " + ", ".join(refused))
 
     if issued:
         out = pathlib.Path("instance/team-credentials.txt")
@@ -132,7 +182,7 @@ def main() -> int:
         print("  instance/ is git-ignored. Hand these out privately, then delete the file.")
     else:
         print("\n  No new accounts — nothing to hand out.")
-    return 0
+    return 1 if refused else 0
 
 
 if __name__ == "__main__":

@@ -45,3 +45,6 @@ yarn-error.*
 # Back it up somewhere outside this repo -- it must never be committed and must never be lost.
 credentials/
 *.keystore
+
+# Firebase's Android config (FCM, plan R8): supplied at build time, never committed
+google-services.json

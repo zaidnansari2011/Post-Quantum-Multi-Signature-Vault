@@ -7,6 +7,14 @@ owner, exactly as if they had added the person by hand. Removing someone from th
 refused while they still belong to a vault, so each vault's members are only ever changed through
 the vault's own path.
 
+**Two ways in, and neither lands anyone in a workspace uninvited** (plan S21). Signing up
+(``auth_service.sign_up``, the ``/register`` page) creates the person's own workspace, which they
+own. An invitation link joins the inviter's workspace with the invitation's role. The third path,
+``auth_service.register_user`` with its default ``place=True``, is the operator's: the seed scripts,
+the team reset, the adversary lab and most tests use it to put people into the deployment's
+**shared workspace** (``shared_workspace``, found by its reserved slug ``q-vault``), which is where
+the migration put everyone who was here before workspaces. No route calls it.
+
 **Scoping.** The people list, the vault member picker and adding a vault member by email only
 reach active members of the caller's workspace. Vaults have no workspace column yet (adding one
 means migrating every database built by ``create_all``, which the switch in plan R10 does), so a
@@ -25,7 +33,7 @@ new link and kills the old one.
 Every change is a ledger event with ``ref_type="workspace"`` and the workspace id as ``ref_id``:
 ``workspace_created``, ``invitation_created``, ``invitation_resent``, ``invitation_revoked``,
 ``invitation_accepted``, ``workspace_role_changed`` and ``workspace_member_removed``. Putting
-existing users into the first workspace (``ensure_default_workspace`` and the Alembic revision
+existing users into the shared workspace (``ensure_default_workspace`` and the Alembic revision
 ``0002_workspaces``) writes none: it changes nobody's standing.
 """
 
@@ -57,10 +65,12 @@ from qvault.models.workspace import (
     Workspace,
     WorkspaceMember,
 )
-from qvault.services import ledger_service
+from qvault.security import text
+from qvault.services import ledger_service, mail
 
-# The workspace existing users join, and the one a person who registers without an invitation
-# joins until sign-up creates its own (plan S21, phase R6). Kept equal to the constants in
+# The shared workspace: the one existing users were moved into, and the one the operator path
+# (register_user with place=True) joins. Its slug is reserved, so a workspace someone signs up
+# with can be called "Q-Vault" without ever becoming it. Kept equal to the constants in
 # migrations/versions/0002_workspaces.py by tests/test_migrations.py.
 DEFAULT_WORKSPACE_NAME = "Q-Vault"
 DEFAULT_WORKSPACE_SLUG = "q-vault"
@@ -100,9 +110,13 @@ def _date(moment: datetime) -> str:
 # Reading
 
 
-def default_workspace() -> Workspace | None:
-    """The first workspace created: the one existing users were moved into."""
-    return Workspace.query.order_by(Workspace.id.asc()).first()
+def shared_workspace() -> Workspace | None:
+    """The deployment's shared workspace, by its reserved slug, or None before it exists.
+
+    Found by slug rather than as the first workspace: on a deployment where someone signed up
+    first, the first workspace is theirs, and the operator path must never put people into it.
+    """
+    return Workspace.query.filter_by(slug=DEFAULT_WORKSPACE_SLUG).first()
 
 
 def membership(workspace: Workspace | int, user: User | int) -> WorkspaceMember | None:
@@ -387,15 +401,15 @@ def ensure_default_workspace(*, commit: bool = True) -> Workspace | None:
     return workspace
 
 
-def place_registrant(user: User) -> WorkspaceMember:
-    """Where a person who registers without an invitation goes.
+def join_shared_workspace(user: User) -> WorkspaceMember:
+    """The operator path: put this new account into the deployment's shared workspace.
 
-    The first account on an empty system creates the first workspace and owns it, as it is already
-    the administrator. Everyone after joins that workspace as a Member, which is how the product
-    has always behaved (one deployment, one team) until sign-up creates a workspace of its own
-    (plan S21, phase R6). The caller commits.
+    For the seed scripts, the team reset, the adversary lab and tests, never for a route: someone
+    who signs up gets a workspace of their own (``auth_service.sign_up``). Whoever arrives while
+    there is no shared workspace creates it and owns it; everyone after joins as a Member. The
+    caller commits.
     """
-    workspace = default_workspace()
+    workspace = shared_workspace()
     role = "member"
     if workspace is None:
         workspace = _create_workspace(DEFAULT_WORKSPACE_NAME, DEFAULT_WORKSPACE_SLUG)
@@ -405,22 +419,73 @@ def place_registrant(user: User) -> WorkspaceMember:
     return member
 
 
+def memberships_of(user: User | int) -> list[WorkspaceMember]:
+    """Every workspace this person belongs to, in the order they joined, whatever the status."""
+    user_id = user if isinstance(user, int) else user.id
+    return (
+        WorkspaceMember.query.filter_by(user_id=user_id)
+        .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
+        .all()
+    )
+
+
+def join_shared_workspace_from(user: User, *, commit: bool = True) -> Workspace | None:
+    """The operator path for an account that already exists (``scripts/seed_team.py`` with
+    ``--adopt-existing``): put it in the shared workspace, one workspace per person.
+
+    Someone who signed up has a workspace of their own. If it is vacant they leave it, logged
+    (``make_room_to_join``); if not, this refuses with ``WorkspaceError`` and changes nothing.
+    Returns the workspace they left, or None. Joining is not logged, as in
+    ``join_shared_workspace``.
+    """
+    shared = shared_workspace()
+    if shared is not None and membership(shared, user) is not None:
+        return None
+    if shared is None:
+        shared = _create_workspace(DEFAULT_WORKSPACE_NAME, DEFAULT_WORKSPACE_SLUG)
+    left = make_room_to_join(
+        user, shared, ask="Leave it, or adopt this account into the team some other way."
+    )
+    owners = WorkspaceMember.query.filter_by(workspace_id=shared.id, role="owner").count()
+    db.session.add(
+        WorkspaceMember(
+            workspace_id=shared.id, user_id=user.id, role="member" if owners else "owner"
+        )
+    )
+    if commit:
+        db.session.commit()
+    return left
+
+
 def _slug_for(name: str) -> str:
+    """A slug no workspace has, and never the shared workspace's, even before it exists."""
     base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:56] or "workspace"
     slug, n = base, 1
-    while Workspace.query.filter_by(slug=slug).first() is not None:
+    while (
+        slug == DEFAULT_WORKSPACE_SLUG or Workspace.query.filter_by(slug=slug).first() is not None
+    ):
         n += 1
         slug = f"{base}-{n}"
     return slug
 
 
-def create_workspace(name: str, owner: User, *, commit: bool = True) -> Workspace:
-    """A new workspace with ``owner`` as its first Owner. What sign-up will call (plan S21)."""
+def clean_workspace_name(name: str | None) -> str:
+    """The name as it will be stored, or a refusal. Shared by creating and renaming."""
     name = (name or "").strip()
     if not name:
         raise WorkspaceError("name_required", "Give the workspace a name.")
+    if text.invisible_in(name):
+        raise WorkspaceError(
+            "name_invisible", f"The workspace name has hidden characters. {text.MESSAGE}"
+        )
     if len(name) > 120:
         raise WorkspaceError("name_too_long", "Workspace names are limited to 120 characters.")
+    return name
+
+
+def create_workspace(name: str, owner: User, *, commit: bool = True) -> Workspace:
+    """A new workspace with ``owner`` as its first and only Owner. What sign-up calls (plan S21)."""
+    name = clean_workspace_name(name)
     workspace = _create_workspace(name, _slug_for(name))
     db.session.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="owner"))
     _log("workspace_created", workspace, owner.id, {"name": name})
@@ -541,7 +606,9 @@ def create_invitation(
     _require_rank(actor_member, role, "invite an owner")
 
     email = (email or "").strip().lower()
-    if not _EMAIL.match(email) or len(email) > 255:
+    # The mail layer's own rule too (R8 review, F7): an address it would refuse is refused here,
+    # where the inviter can correct it, not later in a log nobody reads.
+    if not _EMAIL.match(email) or len(email) > 255 or not mail.valid_address(email):
         raise InvitationError("bad_email", "Enter a valid email address.")
     existing = User.query.filter_by(email=email).first()
     if existing is not None and membership(workspace, existing) is not None:
@@ -556,6 +623,7 @@ def create_invitation(
 
     grants = _normalise_grants(vault_grants)
     _check_grants(workspace, inviter.id, grants, role)
+    _check_email_limits(workspace, inviter, email)
 
     token, digest = _new_token()
     invitation = Invitation(
@@ -582,9 +650,35 @@ def create_invitation(
             "expires_at": invitation.expires_at.isoformat(),
         },
     )
+    _email_link(invitation, token)
     if commit:
         db.session.commit()
     return invitation, token
+
+
+def _check_email_limits(
+    workspace: Workspace, inviter: User, email: str, invitation: Invitation | None = None
+) -> None:
+    """Refuse an invitation (or a resend) whose email would pass a daily limit (R8 review, F1).
+    Nothing is created or queued then. No limit applies where email is not set up."""
+    from qvault.services import delivery_service
+
+    refusal = delivery_service.invitation_email_refusal(
+        workspace_id=workspace.id,
+        inviter_id=inviter.id,
+        email=email,
+        invitation_id=invitation.id if invitation is not None else None,
+    )
+    if refusal is not None:
+        raise InvitationError("email_limit", refusal)
+
+
+def _email_link(invitation: Invitation, token: str) -> None:
+    """Queue the invitation email with the link (plan R8), in this transaction. Sent by the
+    scheduler; when email is not set up, nothing is queued and the link is only shown."""
+    from qvault.services import delivery_service
+
+    delivery_service.enqueue_invitation(invitation, token)
 
 
 def invitation_for_token(token: str) -> Invitation | None:
@@ -642,6 +736,85 @@ def inviter_still_entitled(invitation: Invitation, inviter_member: WorkspaceMemb
     return can_manage(inviter_member) and _RANK[inviter_member.role] >= _RANK[invitation.role]
 
 
+def is_vacant_for(workspace: Workspace, user: User | int) -> bool:
+    """Whether ``user`` could leave ``workspace`` with nothing lost: they are its only member,
+    they belong to no vault anywhere (so they own none), and it has no pending invitation."""
+    user_id = user if isinstance(user, int) else user.id
+    others = db.session.scalar(
+        select(func.count(WorkspaceMember.id)).where(
+            WorkspaceMember.workspace_id == workspace.id, WorkspaceMember.user_id != user_id
+        )
+    )
+    if others:
+        return False
+    in_a_vault = (
+        db.session.scalar(select(VaultMember.id).where(VaultMember.user_id == user_id).limit(1))
+        is not None
+        or db.session.scalar(select(Vault.id).where(Vault.owner_id == user_id).limit(1)) is not None
+    )
+    if in_a_vault:
+        return False
+    # A pending invitation is someone about to join; an expired one can no longer bring anyone in.
+    now = _now()
+    return not any(i.state(now) == "pending" for i in open_invitations(workspace))
+
+
+def workspace_to_leave(user: User, joining: Workspace) -> tuple[WorkspaceMember, bool] | None:
+    """The membership joining ``joining`` would end, and whether it can end with nothing lost;
+    None when the person belongs to no other workspace (see ``make_room_to_join``)."""
+    others = (
+        WorkspaceMember.query.filter(
+            WorkspaceMember.user_id == user.id, WorkspaceMember.workspace_id != joining.id
+        )
+        .order_by(WorkspaceMember.joined_at.asc(), WorkspaceMember.id.asc())
+        .all()
+    )
+    if not others:
+        return None
+    return others[0], len(others) == 1 and is_vacant_for(others[0].workspace, user)
+
+
+def make_room_to_join(user: User, joining: Workspace, *, ask: str) -> Workspace | None:
+    """One workspace per person, for now (R6 review, item 4). Before ``user`` joins ``joining``,
+    take them out of the workspace they already have, if leaving it loses nothing.
+
+    Until vaults store their workspace (R10) the product shows each person one workspace, their
+    earliest, so someone who signed up (and so owns a workspace) and then accepted an invitation
+    used to land back in their own empty workspace and never see the one they joined. Now:
+
+    - no other membership: nothing to do;
+    - one other workspace that is vacant (``is_vacant_for``): the membership is removed and that
+      is logged (``workspace_member_left`` with ``moved_to``). The workspace row is kept, empty:
+      its own ledger events name its id, and a deleted row's id could be handed to a new
+      workspace, which would then be shown the old one's history;
+    - anything else is refused, naming the workspace, and nothing is changed. ``ask`` finishes
+      the sentence: who to ask, and for what.
+
+    Returns the workspace left, or None. The caller commits (or rolls back on a refusal).
+    """
+    found = workspace_to_leave(user, joining)
+    if found is None:
+        return None
+    member, vacant = found
+    current = member.workspace
+    if not vacant:
+        raise WorkspaceError(
+            "has_workspace",
+            f"You already belong to {current.name}, which has vaults, other members or pending "
+            f"invitations. Q-Vault doesn't support belonging to two workspaces yet, so you can't "
+            f"join {joining.name} from this account. {ask}",
+        )
+    role = member.role
+    db.session.delete(member)
+    _log(
+        "workspace_member_left",
+        current,
+        user.id,
+        {"user_id": user.id, "role": role, "moved_to": joining.id},
+    )
+    return current
+
+
 def _accept(invitation: Invitation, user: User) -> WorkspaceMember:
     from qvault.services import vault_service  # vault_service imports this module
 
@@ -654,6 +827,18 @@ def _accept(invitation: Invitation, user: User) -> WorkspaceMember:
         )
     if membership(workspace, user) is not None:
         raise InvitationError("already_member", f"You're already a member of {workspace.name}.")
+    inviter = (
+        invitation.inviter.display_name if invitation.inviter else "the person who invited you"
+    )
+    try:
+        make_room_to_join(
+            user,
+            workspace,
+            ask=f"Ask {inviter} to invite another address of yours for now. This invitation "
+            "stays open.",
+        )
+    except WorkspaceError as exc:
+        raise InvitationError(exc.code, exc.message) from exc
 
     now = _now()
     member = WorkspaceMember(
@@ -731,7 +916,12 @@ def register_through_invitation(token: str, display_name: str, password: str) ->
                 "invitation.",
             )
         user = auth_service.register_user(
-            invitation.email, display_name, password, place=False, commit=False
+            invitation.email,
+            display_name,
+            password,
+            place=False,
+            commit=False,
+            bootstrap_admin=False,
         )
         _accept(invitation, user)
         db.session.commit()
@@ -793,6 +983,7 @@ def resend_invitation(
             f"{exc.message} Ask the vault's owner to send the new link, or withdraw this "
             "invitation and invite them again.",
         ) from exc
+    _check_email_limits(workspace, actor, invitation.email, invitation)
     invitation.inviter = actor
     token, digest = _new_token()
     invitation.token_hash = digest
@@ -807,6 +998,7 @@ def resend_invitation(
             "expires_at": invitation.expires_at.isoformat(),
         },
     )
+    _email_link(invitation, token)
     if commit:
         db.session.commit()
     return invitation, token
@@ -1008,11 +1200,7 @@ def rename_workspace(
 ) -> Workspace:
     """Change the workspace's name. Its slug, which nothing shows yet, stays the same."""
     _require_manager(workspace, actor)
-    name = (name or "").strip()
-    if not name:
-        raise WorkspaceError("name_required", "Give the workspace a name.")
-    if len(name) > 120:
-        raise WorkspaceError("name_too_long", "Workspace names are limited to 120 characters.")
+    name = clean_workspace_name(name)
     if name == workspace.name:
         return workspace
     previous = workspace.name

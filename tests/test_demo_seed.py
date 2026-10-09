@@ -20,7 +20,7 @@ import pytest
 from qvault.extensions import db
 from qvault.models.key import Key
 from qvault.models.ledger import LedgerEntry
-from qvault.services import ledger_service, rotation_service
+from qvault.services import auth_service, ledger_service, rotation_service
 
 # The demo is built as a new deployment would be: new vaults take the product's S15 default.
 pytestmark = pytest.mark.separation_default
@@ -204,14 +204,11 @@ def test_ageing_the_keys_is_recorded_in_the_ledger(app):
 
 
 def test_the_demo_control_is_absent_in_a_production_like_config(app, client):
+    # Administration is an operator's grant, never a sign-up's (R6): the operator's first account.
+    auth_service.register_user("admin@e.com", "A", "password-123")
     client.post(
-        "/register",
-        data={
-            "display_name": "A",
-            "email": "admin@e.com",
-            "password": "password-123",
-            "confirm": "password-123",
-        },
+        "/login",
+        data={"email": "admin@e.com", "password": "password-123"},
         follow_redirects=True,
     )
     assert client.post("/admin/rotation/demo/expire").status_code in (302, 400)
@@ -234,6 +231,8 @@ def test_the_demo_control_requires_an_admin(app, client):
                 "email": email,
                 "password": "password-123",
                 "confirm": "password-123",
+                "workspace_name": "Test workspace",
+                "understood": "y",
             },
             follow_redirects=True,
         )

@@ -19,6 +19,15 @@ _DEV_SECRET = "dev-insecure-secret-key-change-me"
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 
+def _proxy_hops(value: str | None) -> int | None:
+    """RATE_LIMIT_PROXY_HOPS as a count of trusted proxies, or None when unset or not a count."""
+    try:
+        hops = int((value or "").strip())
+    except ValueError:
+        return None
+    return hops if hops >= 0 else None
+
+
 class BaseConfig:
     # Flask / session
     SECRET_KEY = os.environ.get("SECRET_KEY")
@@ -56,6 +65,16 @@ class BaseConfig:
     # cannot rotate a key whose private half it has never held, so custody is time-bounded on the
     # token instead of the key: re-enrol to continue. See ADR-0016.
     DEVICE_TOKEN_MAX_AGE_DAYS = int(os.environ.get("DEVICE_TOKEN_MAX_AGE_DAYS", "90"))
+
+    # Sign-in, sign-up and phone pairing are rate limited per client address, in this process
+    # (qvault/security/rate_limit.py). Behind a reverse proxy set RATE_LIMIT_PROXY_HOPS to the
+    # number of proxies in front (Azure Container Apps' ingress: 1; Cloudflare proxying in front
+    # of it: 2), or every visitor shares one bucket. Production refuses to start without it.
+    RATE_LIMIT_ENABLED = os.environ.get("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    RATE_LIMIT_PROXY_HOPS = _proxy_hops(os.environ.get("RATE_LIMIT_PROXY_HOPS")) or 0
+    # Sign-ups (both forms together) per client address per hour. Raise it for a live demo where
+    # an audience signs up from one network: they all share one address.
+    RATE_LIMIT_SIGNUP_PER_HOUR = int(os.environ.get("RATE_LIMIT_SIGNUP_PER_HOUR", "10"))
 
     # The deliberate tamper demonstration is dev/demo only and OFF by default.
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "false").lower() == "true"
@@ -133,6 +152,27 @@ class BaseConfig:
     # Phase 9). Unset: the committed chain/deployments/<network>.json. "none" turns it off.
     TREASURY_RECORD_PATH = os.environ.get("TREASURY_RECORD_PATH") or ""
 
+    # Email and phone push (plan R8, S12). Both are delivered from an outbox by the scheduler,
+    # never in the request that caused them (qvault/services/delivery_service.py).
+    # The address every link in an email starts with, e.g. https://project4.zaidansari.tech. Links
+    # are never built from a request's Host header, which a client chooses. Unset: no email.
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL") or None
+    # Resend (owner decision 2026-10-09). A secret: never logged, never in an error message.
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY") or None
+    MAIL_FROM = os.environ.get("MAIL_FROM") or None
+    # "resend", "log" (development: writes each email's recipient and subject to the log), "memory"
+    # (tests) or "off". Unset: "resend" when RESEND_API_KEY is set, otherwise "off".
+    MAIL_TRANSPORT = os.environ.get("MAIL_TRANSPORT") or None
+    # "expo" (Expo's push service, which hands Android pushes to FCM), "log" (development: writes
+    # each push's title to the log), "memory" (tests) or "off". Development defaults to "log".
+    PUSH_TRANSPORT = os.environ.get("PUSH_TRANSPORT", "expo")
+    # Expo's access token, sent with every push once "Enhanced push security" is switched on for the
+    # Expo project (OWNER-ACTIONS §2.12); with it on, only this server can push to the app.
+    # A secret.
+    EXPO_ACCESS_TOKEN = os.environ.get("EXPO_ACCESS_TOKEN") or None
+    # How often the outbox is worked through.
+    DELIVERY_TICK_SECONDS = int(os.environ.get("DELIVERY_TICK_SECONDS", "20"))
+
 
 class DevConfig(BaseConfig):
     DEBUG = True
@@ -140,6 +180,9 @@ class DevConfig(BaseConfig):
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "true").lower() == "true"
     GLASSBOX_ENABLED = os.environ.get("GLASSBOX_ENABLED", "true").lower() == "true"
     ATTACK_LAB_ENABLED = os.environ.get("ATTACK_LAB_ENABLED", "true").lower() == "true"
+    # A laptop running a copy of production data holds real phones' tokens: never push to them
+    # unless asked for by name (plan R8 review, F11).
+    PUSH_TRANSPORT = os.environ.get("PUSH_TRANSPORT", "log")
 
 
 class TestConfig(BaseConfig):
@@ -155,6 +198,9 @@ class TestConfig(BaseConfig):
     ENABLE_TAMPER_DEMO = True
     WTF_CSRF_ENABLED = False
     SCHEDULER_ENABLED = False  # tests drive the rotation/expiry jobs directly, no background thread
+    # Many tests sign in and up far more often than a person would; tests/test_rate_limit.py
+    # turns the limiter on where it is the subject.
+    RATE_LIMIT_ENABLED = False
     LOG_ORIGIN = "qvault.test/ledger"
     WITNESS_URL = None  # tests drive the witness in-process; no sockets in the suite
     WITNESS_KEY_FINGERPRINT = None  # a test that pins sets it; never the developer's .env value
@@ -168,6 +214,14 @@ class TestConfig(BaseConfig):
     ONCHAIN_EXECUTION_ENABLED = False
     # Never the committed record: a test that wants one points this at a temporary file.
     TREASURY_RECORD_PATH = "none"
+    # Email and push go to in-memory stand-ins: the suite never reaches Resend or Expo, and never
+    # sees the developer's key.
+    PUBLIC_BASE_URL = "https://qvault.example"
+    RESEND_API_KEY = None
+    MAIL_FROM = "Q-Vault <notifications@qvault.example>"
+    MAIL_TRANSPORT = "memory"
+    PUSH_TRANSPORT = "memory"
+    EXPO_ACCESS_TOKEN = None
 
 
 class ProdConfig(BaseConfig):
@@ -183,6 +237,28 @@ class ProdConfig(BaseConfig):
                 + ", ".join(missing)
                 + ". Set them in the environment."
             )
+        # Read now, not from the class. None (unset or not a count) is kept as None: the web
+        # entry point refuses to serve with it (``require_serving_settings``), while an operator's
+        # script, which serves no one, still runs.
+        self.RATE_LIMIT_PROXY_HOPS = _proxy_hops(os.environ.get("RATE_LIMIT_PROXY_HOPS"))
+
+
+def require_serving_settings(app) -> None:
+    """Refuse to serve production traffic without the settings that have no safe default.
+
+    RATE_LIMIT_PROXY_HOPS: a wrong guess either way is a security fault (one bucket for every
+    visitor, or a bucket each client chooses), so production has no default. 0 is accepted when it
+    is said explicitly. Called by ``wsgi.py``, the only way the app is served.
+    """
+    if app.config.get("DEBUG") or app.config.get("TESTING"):
+        return
+    if app.config.get("RATE_LIMIT_ENABLED") and app.config.get("RATE_LIMIT_PROXY_HOPS") is None:
+        raise RuntimeError(
+            "Refusing to start: set RATE_LIMIT_PROXY_HOPS to the number of reverse proxies in "
+            "front of the app (1 behind Azure Container Apps' ingress, 2 with Cloudflare "
+            "proxying in front of it, 0 with none). Without it the rate limiter either counts "
+            "every visitor as one or lets each client choose its own address."
+        )
 
 
 _CONFIGS = {"development": DevConfig, "testing": TestConfig, "production": ProdConfig}

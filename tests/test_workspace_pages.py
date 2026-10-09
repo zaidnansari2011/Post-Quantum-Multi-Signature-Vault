@@ -22,7 +22,7 @@ from test_device_vaults import _enrol
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
 from qvault.models.user import User
-from qvault.models.workspace import Invitation
+from qvault.models.workspace import Invitation, WorkspaceMember
 from qvault.services import (
     approval_service,
     auth_service,
@@ -363,8 +363,10 @@ def test_the_removal_page_names_only_this_workspaces_vaults(app, client, team):
     workspace, ada, _, cleo = team
     zed = _register("zed@other.com", "Zed", place=False)
     other = workspace_service.create_workspace("Other Co", zed)
-    _, token = workspace_service.create_invitation(other, zed, cleo.email)
-    workspace_service.accept_invitation(token, cleo)
+    # In two workspaces at once: no longer reachable through an invitation (one workspace per
+    # person, R6 review), but databases from before that rule can hold it.
+    db.session.add(WorkspaceMember(workspace_id=other.id, user_id=cleo.id, role="member"))
+    db.session.commit()
     theirs = vault_service.create_vault(zed, "Zed's vault", "", 1)
     vault_service.add_member(theirs, cleo.email, "viewer", actor_id=zed.id)
     _login(client, "ada@e.com")
@@ -407,11 +409,26 @@ def test_creating_an_invitation_shows_its_link_once(app, client, team):
 
 
 def test_the_invite_form_says_email_is_not_sent(app, client, team):
+    app.config["MAIL_TRANSPORT"] = "off"  # R8: the suite sets email up; this instance has none
     _login(client, "ada@e.com")
 
     page = _text(client.get("/workspace/invite"))
 
-    assert "doesn't send email yet" in page
+    assert "doesn't send email here" in page
+
+
+def test_the_invite_form_and_link_page_say_the_link_is_emailed_when_email_is_set_up(
+    app, client, team
+):
+    _login(client, "ada@e.com")
+
+    assert "Q-Vault will email the link to the address you enter" in _text(
+        client.get("/workspace/invite")
+    )
+    r, link = _invite_on_page(client)
+    assert "Q-Vault will email it to sam@e.com" in _text(r)
+    # The link shown starts at the configured address, like the email's.
+    assert f"https://qvault.example/invite/{link.group(1)}" in r.get_data(as_text=True)
 
 
 def test_the_invite_form_offers_only_the_inviters_own_vaults(app, client, team):
@@ -546,7 +563,7 @@ def test_a_new_person_creates_an_account_from_the_link_and_joins(app, client, in
 
     r = client.post(
         f"/invite/{token}/register",
-        data={"display_name": "Sam", "password": PW, "confirm": PW},
+        data={"display_name": "Sam", "password": PW, "confirm": PW, "understood": "y"},
     )
 
     assert r.status_code == 302
@@ -563,7 +580,7 @@ def test_a_bad_sign_up_form_shows_its_errors_and_creates_nothing(app, client, in
 
     r = client.post(
         f"/invite/{token}/register",
-        data={"display_name": "Sam", "password": PW, "confirm": "different"},
+        data={"display_name": "Sam", "password": PW, "confirm": "different", "understood": "y"},
     )
 
     assert r.status_code == 400 and "Passwords must match" in _text(r)
@@ -619,7 +636,8 @@ def test_the_wrong_account_cannot_accept_by_posting_either(app, client, invited)
 def test_an_accepted_link_says_so(app, client, invited):
     _, token, _ = invited
     client.post(
-        f"/invite/{token}/register", data={"display_name": "Sam", "password": PW, "confirm": PW}
+        f"/invite/{token}/register",
+        data={"display_name": "Sam", "password": PW, "confirm": PW, "understood": "y"},
     )
 
     assert "You joined Q-Vault" in _text(client.get(f"/invite/{token}"))

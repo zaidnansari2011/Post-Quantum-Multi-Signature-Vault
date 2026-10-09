@@ -76,7 +76,7 @@ function unauthorized(code: string | null): void {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   body?: unknown;
   token?: string | null;

@@ -6,7 +6,7 @@
 {% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Invite people', None)]) }}{% endblock %}
 
 {% block content %}
-{% set lead %}You'll get a link to send them. It works once and expires after {{ ttl_days }} days.{% endset %}
+{% set lead %}{% if delivery_ready('email') %}Q-Vault will email them a link, and shows it to you as well. {% else %}You'll get a link to send them. {% endif %}It works once and expires after {{ ttl_days }} days.{% endset %}
 {{ page_header('Invite someone to ' ~ workspace.name, description=lead) }}
 
 <div class="q-invite">
@@ -53,10 +53,18 @@
   <section class="q-panel" aria-labelledby="inv-how">
     <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-how">How it arrives</h2></div>
     <div class="q-panel__bd">
+      {% if delivery_ready('email') %}
       <p>
-        Q-Vault doesn't send email yet, so nothing is sent for you. Copy the link from the next page
+        Q-Vault will email the link to the address you enter, usually within a minute; the Invited
+        list shows when it's sent, or if it couldn't be. The next page shows the link too, if you'd
+        rather send it yourself as well. Q-Vault emails one address at most 3 invitations a day.
+      </p>
+      {% else %}
+      <p>
+        Q-Vault doesn't send email here, so nothing is sent for you. Copy the link from the next page
         and send it to them yourself, by email or chat.
       </p>
+      {% endif %}
       <p class="q-note">
         The link is shown once. If it's lost, get a new one from the Invited tab; the old link then stops working.
       </p>
