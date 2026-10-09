@@ -7,6 +7,8 @@ person would; every test here turns it on and shrinks the limits so the edge is 
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from qvault.models.user import User
@@ -135,3 +137,117 @@ def test_the_limiter_is_on_by_default_outside_the_suite():
 
     assert DevConfig.RATE_LIMIT_ENABLED is True
     assert ProdConfig.RATE_LIMIT_ENABLED is True
+
+
+# ------------------------------------------------------------------------------ the R6 review
+
+
+def test_production_refuses_to_start_without_an_explicit_proxy_hop_count(monkeypatch):
+    """With the old default of 0 behind Azure's ingress, every visitor was one address, so one
+    attacker's guesses locked everyone out. There is no safe default, so production has none."""
+    import config
+
+    monkeypatch.setattr(config.BaseConfig, "SECRET_KEY", "s" * 32)
+    monkeypatch.setattr(config.BaseConfig, "SERVER_MASTER_KEY", "0" * 64)
+    for unset in (None, "", "  ", "one", "-1", "1.5"):
+        if unset is None:
+            monkeypatch.delenv("RATE_LIMIT_PROXY_HOPS", raising=False)
+        else:
+            monkeypatch.setenv("RATE_LIMIT_PROXY_HOPS", unset)
+        with pytest.raises(RuntimeError, match="RATE_LIMIT_PROXY_HOPS"):
+            config.ProdConfig()
+    for value, hops in (("0", 0), ("1", 1), (" 2 ", 2)):
+        monkeypatch.setenv("RATE_LIMIT_PROXY_HOPS", value)
+        assert config.ProdConfig().RATE_LIMIT_PROXY_HOPS == hops
+
+
+def test_the_sign_up_limit_is_a_setting(limited, client):
+    limited.config["RATE_LIMITS"] = {}
+    limited.config["RATE_LIMIT_SIGNUP_PER_HOUR"] = 3
+    assert rate_limit.limits()["sign_up"] == (3, 3600)
+    data = {"display_name": "N", "workspace_name": "W", "password": PW, "confirm": PW,
+            "understood": "y"}  # fmt: skip
+    codes = [
+        client.post("/register", data={**data, "email": f"n{i}@e.com"}).status_code
+        for i in range(4)
+    ]
+    assert 429 not in codes[:3] and codes[3] == 429
+
+
+def test_a_short_window_never_forgets_a_long_windows_count():
+    """The sweep used the current hit's window for every key, so a sign-in hit (10 minutes)
+    forgot a full sign-up bucket (1 hour) once the table was large."""
+    lim = rate_limit.Limiter()
+    for _ in range(10):
+        assert lim.hit("sign_up", "6.6.6.6", 10, 3600, now=0.0) == 0
+    for i in range(20_000):
+        lim.hit("sign_in", f"10.0.{i // 256}.{i % 256}", 20, 600, now=1.0)
+    for i in range(2_000):  # plenty of sweeping, 11 minutes on
+        lim.hit("sign_in", f"10.9.{i // 256}.{i % 256}", 20, 600, now=661.0)
+    assert lim.hit("sign_up", "6.6.6.6", 10, 3600, now=662.0) > 0, "still refused"
+    # The sign-in keys from 11 minutes ago are being forgotten as hits arrive.
+    assert len(lim) < 22_000
+
+
+def test_memory_is_bounded_and_a_hit_never_scans_the_table():
+    lim = rate_limit.Limiter(max_keys=5_000)
+    for i in range(20_000):
+        lim.hit("sign_up", f"2001:db8:{i:x}::/64", 10, 3600, now=1.0)
+    assert len(lim) == 5_000, "the least recently counted are dropped past the cap"
+
+    big = rate_limit.Limiter()
+    for i in range(rate_limit.MAX_KEYS):
+        big.hit("sign_up", f"k{i}", 10, 3600, now=1.0)  # every key live: nothing to sweep
+    start = time.perf_counter()
+    for i in range(2_000):
+        big.hit("sign_up", f"new{i}", 10, 3600, now=2.0)
+    per_hit = (time.perf_counter() - start) / 2_000
+    assert len(big) == rate_limit.MAX_KEYS
+    # The old sweep took 7.7 ms a hit at 30,000 keys and grew with the table; this is constant.
+    assert per_hit < 0.001, f"{per_hit * 1000:.3f} ms per hit"
+
+
+@pytest.mark.parametrize(
+    "raw, key",
+    [
+        ("203.0.113.7", "203.0.113.7"),
+        ("203.0.113.7:40001", "203.0.113.7"),
+        (" 203.0.113.7 ", "203.0.113.7"),
+        ('"203.0.113.7"', "203.0.113.7"),
+        ("2001:db8::1", "2001:db8::/64"),
+        ("2001:db8::ffff:1", "2001:db8::/64"),
+        ("[2001:db8::1]:443", "2001:db8::/64"),
+        ("[2001:db8:0:1::1]", "2001:db8:0:1::/64"),
+        ("fe80::1%eth0", "fe80::/64"),
+        ("::ffff:198.51.100.4", "198.51.100.4"),
+        ("unknown", None),
+        ("", None),
+        ("[2001:db8::1", None),
+        ("300.1.1.1", None),
+        ("<script>", None),
+    ],
+)
+def test_an_address_is_parsed_not_taken_as_text(raw, key):
+    assert rate_limit.normalise_address(raw) == key
+
+
+def test_an_ipv6_client_is_counted_by_its_slash_64(limited, client):
+    codes = [_login(client, addr=f"2001:db8::{i + 1:x}").status_code for i in range(5)]
+    assert codes[:3] == [200] * 3 and codes[3:] == [429, 429]
+    assert _login(client, addr="2001:db8:0:1::1").status_code == 200, "the next /64 is another"
+
+
+def test_a_forwarded_port_does_not_make_a_new_bucket(limited, client):
+    limited.config["RATE_LIMIT_PROXY_HOPS"] = 1
+    codes = [
+        _login(client, addr="10.0.0.9", **{"X-Forwarded-For": f"203.0.113.7:{port}"}).status_code
+        for port in range(40000, 40005)
+    ]
+    assert codes[3:] == [429, 429]
+
+
+def test_a_forwarded_value_that_is_not_an_address_falls_back_to_the_connection(limited, client):
+    limited.config["RATE_LIMIT_PROXY_HOPS"] = 1
+    for i in range(3):
+        _login(client, addr="10.0.0.9", **{"X-Forwarded-For": f"garbage-{i}"})
+    assert _login(client, addr="10.0.0.9", **{"X-Forwarded-For": "nonsense"}).status_code == 429
