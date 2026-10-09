@@ -24,7 +24,9 @@ from qvault.forms import InviteRegisterForm
 from qvault.models.user import User
 from qvault.models.vault import Vault
 from qvault.models.workspace import INVITABLE_VAULT_ROLES, WORKSPACE_ROLES, Invitation
+from qvault.services import delivery_service
 from qvault.services import workspace_service as ws
+from qvault.services.notification_copy import _path
 from qvault.services.workspace_service import InvitationError, WorkspaceError
 
 bp = Blueprint("workspace", __name__)
@@ -129,6 +131,8 @@ def members():
     names = _vault_names(open_invitations)
     # The last active owner's role is shown, not offered: the service would refuse any change.
     sole_owner = sum(1 for m in active if m.role == "owner") == 1
+    # What became of each invitation's email (R8 review, F7), in one query.
+    email_states = delivery_service.invitation_email_states(i.id for i in open_invitations)
     return render_template(
         "workspace/members.html",
         workspace=workspace,
@@ -150,6 +154,7 @@ def members():
                 "invitation": i,
                 "state": _invitation_state(i, by_user),
                 "grants": _grant_rows(i, names),
+                "email": email_states.get(i.id),
             }
             for i in open_invitations
         ],
@@ -256,6 +261,7 @@ _INVITE_FIELD_ERRORS = {
     "bad_email": "email",
     "already_member": "email",
     "already_invited": "email",
+    "email_limit": "email",
     "bad_role": "role",
     "not_allowed": "role",
     "auditor_approver": "role",
@@ -282,13 +288,22 @@ def _render_invite(workspace, me, *, email="", role="member", chosen=None, statu
 
 
 def _render_link(invitation: Invitation, token: str, *, resent: bool):
+    # From PUBLIC_BASE_URL when it is set, like the email's (R8), rather than the request's Host.
+    base = delivery_service.public_base_url()
     response = render_template(
         "workspace/link.html",
         invitation=invitation,
-        link=url_for("workspace.accept_page", token=token, _external=True),
+        link=(
+            base + _path("workspace.accept_page", token=token)
+            if base
+            else url_for("workspace.accept_page", token=token, _external=True)
+        ),
         grants=_grant_rows(invitation),
         role_name=ws.role_name,
         resent=resent,
+        # Whether an email was queued for this link (R8 review, F7): the page says so only then.
+        emailing=delivery_service.invitation_email_states([invitation.id]).get(invitation.id)
+        == "queued",
     )
     return response, 200, {"Cache-Control": "no-store"}
 

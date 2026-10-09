@@ -185,6 +185,11 @@ native code and would crash on launch, in a loop no further update could rescue.
 this build is JavaScript and ships over the air** — layout, copy, colour, motion, and any screen
 built against an endpoint that already exists.
 
+**Superseded on the rework (R8, 2026-10-09):** the rework adds `expo-notifications` at runtime
+`rework-1`. It reaches phones only with the rework APK, and that build needs the Firebase file first
+(§2.12, one command). The working branch's runtime-2 APK is unchanged. The original decision
+follows.
+
 **Decided against:** `expo-notifications`. Android push needs `google-services.json` compiled into
 the binary, so adding push later forces a new APK *even if* the module is already bundled —
 including it now buys nothing and puts `POST_NOTIFICATIONS` on a signing app's manifest for a
@@ -689,6 +694,21 @@ waits on this except the first real email.
 
 *Your effort:* ~10 minutes, mostly waiting for DNS.
 
+**Still to do at the switch (R10), added 2026-10-09 by R8.** On the rework's Container App, set:
+
+- `RESEND_API_KEY` as a **secret** (a secretref, never a plain env var).
+- `MAIL_FROM=Q-Vault <notifications@mail.zaidansari.tech>` as a plain env var.
+- `PUBLIC_BASE_URL=https://project4.zaidansari.tech` as a plain env var. On staging, use the
+  staging address. Every link in an email starts with it, and without it no email is sent.
+
+Push needs one more secret, `EXPO_ACCESS_TOKEN`, once you have switched on Enhanced Push
+Security (§2.12, step 6). Set it as a secret on the Container App. `PUSH_TRANSPORT` defaults to
+`expo` in production. Development defaults to `log`, so a laptop never pushes to real phones.
+
+Proven 2026-10-09: Resend accepted two test emails sent through the real outbox to its test
+address `delivered@resend.dev`. Run one replica, or expect each replica to work the outbox. That
+is safe, as the plan's R8 known gaps explain.
+
 ### 2.12 Rework R8: push notifications with Firebase (Android) — `DONE` 2026-10-09 (project `qvault-90763`; FCM V1 key assigned to `com.qvault.approvals` in Expo)
 
 *Why it's yours:* a Google account's Firebase project and the Expo account's credentials.
@@ -707,8 +727,35 @@ Decided 2026-10-09: Android push through Firebase Cloud Messaging, set up before
    → **Credentials → Android → com.qvault.approvals → FCM V1 service account key → Upload** the
    file from step 3. This is not a build and changes nothing on phones.
 
-I wire `expo-notifications` and `google-services.json` into the rework's config; it reaches phones
-with the rework APK you build at the end (§2.3).
+**Wired (R8, 2026-10-09).** `expo-notifications` is in the rework's config, and
+`mobile/app.config.js` reads `google-services.json` from the EAS file variable
+`GOOGLE_SERVICES_JSON`. The file is never committed (`mobile/.gitignore`). **One step remains, before
+the rework APK (§2.3):** from `q-vault-rework/mobile`, once:
+
+`npx eas env:create --name GOOGLE_SERVICES_JSON --type file --value "C:\Users\Zaid\Documents\4th year project\secrets\google-services (1).json" --visibility secret --environment preview`
+
+Use the environment the `rework` build profile builds with. Without the variable, the APK builds and
+runs, but no push ever reaches it. For a local `expo run:android`, copy the file to
+`mobile/google-services.json` instead (git ignores it).
+
+6. **Switch on Enhanced Push Security** — `TODO` (added 2026-10-09, R8 review F2). Do this
+   before the switch. Without it, anyone who learns a phone's push token can push any text to that
+   phone through Expo directly, without Q-Vault. With it on, Expo takes pushes only from the holder
+   of an access token, which only this server has.
+   1. <https://expo.dev> → account `zaid7864` → **Settings → Access tokens → Create token**. Name it
+      `qvault-push`. Copy it once.
+   2. Project **qvault** → **Settings → Push notifications** (or **Credentials**) → switch on
+      **Enhanced Push Security**.
+   3. At the switch, set the token on the rework's Container App as the secret
+      `EXPO_ACCESS_TOKEN`. Never put it in a commit or a chat.
+
+   Q-Vault already sends the token with every push when the setting is there. Order matters:
+   turning on Enhanced Push Security before the server has the token stops every push until it
+   does.
+
+Then, on a handset (§3.5): enrol, press "Turn on notifications", have someone raise a decision on
+the web, and check three things. The push arrives within about half a minute. It shows no amount
+and no payee. Tapping it opens the decision and approves nothing.
 
 *Your effort:* ~15 minutes.
 
@@ -955,6 +1002,18 @@ already-proven setting rather than guessed.
    not the instant the radio drops.) If the queue does not paint offline after a restart, the APK
    is missing expo-file-system's native module (it should come with `expo`); the app then simply
    keeps no cache, and nothing else breaks.
+4. **Push (R8), on the rework APK built with the Firebase file (§2.12).** After enrolling, the
+   "Get told when something needs you" sheet should appear once. "Turn on notifications" should
+   bring up Android's permission prompt; nothing should ask before that.
+   *To check:*
+   - Raise a decision on the web as someone else. Within about half a minute the phone shows
+     "Needs your signature" with the vault's name and the due time, and with no title, amount or
+     payee. This holds on the lock screen too.
+   - Tapping the push opens that decision. Nothing approves from the notification or its shade.
+   - With Q-Vault open, a push shows no banner, and the queue updates instead.
+   - Account → Notifications shows "On". Switching "Updates" off stops the "Approved" push to the
+     person who raised the decision.
+   - Removing the phone stops its pushes.
 
 ## 4. Submission and delivery
 
@@ -1106,3 +1165,5 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-10-08 | Added §3.4: the rework's accessibility checks only a person can make (NVDA on Windows, TalkBack on the phone). |
 | 2026-10-08 | Added §3.5: rework phone handset checks (Class 3 biometrics on Android 9 and 10, the prompt with the refresh, offline). |
 | 2026-10-09 | Added §2.11 (Resend email) and §2.12 (Firebase push) for rework R8, after the owner chose both. |
+| 2026-10-09 | R8 built: §2.11 gains the switch-time settings (`RESEND_API_KEY` as a secret, `MAIL_FROM`, `PUBLIC_BASE_URL`); §2.12 gains the one EAS command for the Firebase file before the rework APK, and the handset check; §2.3's "decided against expo-notifications" is marked superseded on the rework. |
+| 2026-10-09 | R8 review fixes: §2.12 gains step 6 (switch on Expo Enhanced Push Security and set `EXPO_ACCESS_TOKEN` as a secret at the switch); §2.11 says push needs that secret. |

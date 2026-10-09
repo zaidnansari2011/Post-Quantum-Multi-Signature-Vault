@@ -23,7 +23,16 @@ from wtforms.validators import (
     Length,
     NumberRange,
     Optional,
+    ValidationError,
 )
+
+from qvault.security import text
+
+
+def _visible_only(form, field) -> None:
+    """A name other people see may not hide characters (plan R8 review, F6)."""
+    if text.invisible_in(field.data):
+        raise ValidationError(text.MESSAGE)
 
 
 class _PasswordStep(FlaskForm):
@@ -49,11 +58,13 @@ class RegisterForm(_PasswordStep):
     """Create your workspace: a new account and a new workspace it owns
     (``auth_service.sign_up``). It never joins an existing workspace; an invitation link does."""
 
-    display_name = StringField("Full name", validators=[DataRequired(), Length(max=255)])
+    display_name = StringField(
+        "Full name", validators=[DataRequired(), Length(max=255), _visible_only]
+    )
     email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
     workspace_name = StringField(
         "Workspace name",
-        validators=[DataRequired(message="Name your workspace."), Length(max=120)],
+        validators=[DataRequired(message="Name your workspace."), Length(max=120), _visible_only],
     )
     submit = SubmitField("Create workspace")
 
@@ -62,7 +73,9 @@ class InviteRegisterForm(_PasswordStep):
     """Creating an account from an invitation link. No email field: the account's address is the
     one the invitation was sent to (workspace_service.register_through_invitation)."""
 
-    display_name = StringField("Full name", validators=[DataRequired(), Length(max=255)])
+    display_name = StringField(
+        "Full name", validators=[DataRequired(), Length(max=255), _visible_only]
+    )
     submit = SubmitField("Create account and join")
 
 
@@ -75,7 +88,7 @@ class LoginForm(FlaskForm):
 
 
 class VaultForm(FlaskForm):
-    name = StringField("Vault name", validators=[DataRequired(), Length(max=255)])
+    name = StringField("Vault name", validators=[DataRequired(), Length(max=255), _visible_only])
     description = TextAreaField("Description", validators=[Optional(), Length(max=2000)])
     # InputRequired, not DataRequired: a 0 is an answer (and out of range), not a missing one.
     threshold_m = IntegerField(
@@ -132,7 +145,9 @@ class VaultRulesForm(FlaskForm):
 
 
 class ProfileForm(FlaskForm):
-    display_name = StringField("Display name", validators=[DataRequired(), Length(max=255)])
+    display_name = StringField(
+        "Display name", validators=[DataRequired(), Length(max=255), _visible_only]
+    )
     submit = SubmitField("Save")
 
 

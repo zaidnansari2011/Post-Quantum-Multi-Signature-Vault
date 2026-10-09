@@ -152,6 +152,27 @@ class BaseConfig:
     # Phase 9). Unset: the committed chain/deployments/<network>.json. "none" turns it off.
     TREASURY_RECORD_PATH = os.environ.get("TREASURY_RECORD_PATH") or ""
 
+    # Email and phone push (plan R8, S12). Both are delivered from an outbox by the scheduler,
+    # never in the request that caused them (qvault/services/delivery_service.py).
+    # The address every link in an email starts with, e.g. https://project4.zaidansari.tech. Links
+    # are never built from a request's Host header, which a client chooses. Unset: no email.
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL") or None
+    # Resend (owner decision 2026-10-09). A secret: never logged, never in an error message.
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY") or None
+    MAIL_FROM = os.environ.get("MAIL_FROM") or None
+    # "resend", "log" (development: writes each email's recipient and subject to the log), "memory"
+    # (tests) or "off". Unset: "resend" when RESEND_API_KEY is set, otherwise "off".
+    MAIL_TRANSPORT = os.environ.get("MAIL_TRANSPORT") or None
+    # "expo" (Expo's push service, which hands Android pushes to FCM), "log" (development: writes
+    # each push's title to the log), "memory" (tests) or "off". Development defaults to "log".
+    PUSH_TRANSPORT = os.environ.get("PUSH_TRANSPORT", "expo")
+    # Expo's access token, sent with every push once "Enhanced push security" is switched on for the
+    # Expo project (OWNER-ACTIONS §2.12); with it on, only this server can push to the app.
+    # A secret.
+    EXPO_ACCESS_TOKEN = os.environ.get("EXPO_ACCESS_TOKEN") or None
+    # How often the outbox is worked through.
+    DELIVERY_TICK_SECONDS = int(os.environ.get("DELIVERY_TICK_SECONDS", "20"))
+
 
 class DevConfig(BaseConfig):
     DEBUG = True
@@ -159,6 +180,9 @@ class DevConfig(BaseConfig):
     ENABLE_TAMPER_DEMO = os.environ.get("ENABLE_TAMPER_DEMO", "true").lower() == "true"
     GLASSBOX_ENABLED = os.environ.get("GLASSBOX_ENABLED", "true").lower() == "true"
     ATTACK_LAB_ENABLED = os.environ.get("ATTACK_LAB_ENABLED", "true").lower() == "true"
+    # A laptop running a copy of production data holds real phones' tokens: never push to them
+    # unless asked for by name (plan R8 review, F11).
+    PUSH_TRANSPORT = os.environ.get("PUSH_TRANSPORT", "log")
 
 
 class TestConfig(BaseConfig):
@@ -190,6 +214,14 @@ class TestConfig(BaseConfig):
     ONCHAIN_EXECUTION_ENABLED = False
     # Never the committed record: a test that wants one points this at a temporary file.
     TREASURY_RECORD_PATH = "none"
+    # Email and push go to in-memory stand-ins: the suite never reaches Resend or Expo, and never
+    # sees the developer's key.
+    PUBLIC_BASE_URL = "https://qvault.example"
+    RESEND_API_KEY = None
+    MAIL_FROM = "Q-Vault <notifications@qvault.example>"
+    MAIL_TRANSPORT = "memory"
+    PUSH_TRANSPORT = "memory"
+    EXPO_ACCESS_TOKEN = None
 
 
 class ProdConfig(BaseConfig):

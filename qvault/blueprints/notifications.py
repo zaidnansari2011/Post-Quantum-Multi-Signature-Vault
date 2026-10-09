@@ -22,7 +22,12 @@ from qvault.extensions import db
 from qvault.models.proposal import Proposal
 from qvault.security.decorators import get_membership_or_403
 from qvault.security.redirects import safe_next
-from qvault.services import notification_copy, notification_service
+from qvault.services import (
+    delivery_copy,
+    delivery_service,
+    notification_copy,
+    notification_service,
+)
 from qvault.services.notification_service import PreferenceError, RemindRefused
 
 bp = Blueprint("notifications", __name__)
@@ -47,7 +52,15 @@ def _helpers():
             return None
         return notification_service.remind_state(proposal, current_user)
 
-    return {"notification_unread": notification_unread, "remind_state": remind_state}
+    def delivery_ready(channel):
+        """Whether email or phone push is set up on this instance (R8)."""
+        return delivery_service.channel_ready(channel)
+
+    return {
+        "notification_unread": notification_unread,
+        "remind_state": remind_state,
+        "delivery_ready": delivery_ready,
+    }
 
 
 def _back(default: str):
@@ -161,18 +174,30 @@ def read_all():
 @bp.route("/account/notifications", methods=["GET", "POST"])
 @login_required
 def preferences():
-    """The events × channels grid. Only in-app delivers until R8, so only its column can be
-    changed; email and push say they are not set up rather than offering switches that do
-    nothing."""
+    """The events × channels grid. A channel that is not set up on this instance (no email
+    provider, push switched off) says so rather than offering switches that do nothing; push is
+    offered only for the events a phone is told about (phone-ux §6.23)."""
+    email = delivery_service.channel_ready("email")
+    push = delivery_service.channel_ready("push")
     if request.method == "POST":
-        chosen = set(request.form.getlist("in_app"))
+        chosen = {
+            channel: set(request.form.getlist(channel)) for channel in notification_service.CHANNELS
+        }
         try:
             for row in notification_service.preferences(current_user):
                 if row["locked"]:
                     continue
-                notification_service.set_preference(
-                    current_user, row["kind"], "in_app", row["kind"] in chosen, commit=False
-                )
+                kind = row["kind"]
+                switches = [
+                    ("in_app", True),
+                    ("email", email),
+                    ("push", push and kind in delivery_copy.PUSH_KINDS),
+                ]
+                for channel, shown in switches:
+                    if shown:
+                        notification_service.set_preference(
+                            current_user, kind, channel, kind in chosen[channel], commit=False
+                        )
         except PreferenceError as exc:  # pragma: no cover - the form offers only known kinds
             flash(str(exc), "error")
         else:
@@ -185,6 +210,10 @@ def preferences():
         "notifications/preferences.html",
         groups=notification_copy.PREFERENCE_GROUPS,
         grid=grid,
+        email_ready=email,
+        push_ready=push,
+        push_kinds=delivery_copy.PUSH_KINDS,
+        has_phone=push and delivery_service.has_push(current_user.id),
     )
 
 

@@ -10,7 +10,8 @@ signer_preference (on-chain execution, docs/plans/onchain-execution.md); workspa
 workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md S10, S11);
 notification and notification_preference (in-app notifications, plan R4); vault_rule and
 proposal_lifecycle (decision depth, plan R5); decision_comment (a decision's unsigned
-discussion, R5); decision_fields (a typed decision's unsigned fields, R5).
+discussion, R5); decision_fields (a typed decision's unsigned fields, R5); delivery and
+push_token (the email and push outbox, plan R8).
 Added in later phases: rotation_event.
 """
 
@@ -20,6 +21,7 @@ from .anchor import LedgerAnchor
 from .checkpoint import LogCheckpoint, WitnessCosignature, WitnessKeyRefusal
 from .comment import DecisionComment
 from .config_models import AlgorithmConfig
+from .delivery import Delivery, PushToken
 from .device import Device
 from .execution import Execution, ExecutionTransaction
 from .file import VaultFile
@@ -79,4 +81,6 @@ __all__ = [
     "Notification",
     "NotificationPreference",
     "UserSetting",
+    "Delivery",
+    "PushToken",
 ]

@@ -33,7 +33,7 @@ from qvault.models.proposal import Proposal
 from qvault.models.signature import Signature
 from qvault.models.user import User
 from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember, VaultPolicy, VaultRule
-from qvault.security import master_key
+from qvault.security import master_key, text
 from qvault.services import ledger_service, notification_service, workspace_service
 from qvault.services.rotation_policy import rotation_deadline
 
@@ -69,6 +69,8 @@ def create_vault(
         )
     if threshold_m < 1:
         raise PolicyError("The approval threshold M must be at least 1.")
+    if text.invisible_in(name):
+        raise PolicyError(f"The vault name has hidden characters. {text.MESSAGE}")
 
     registry = current_app.extensions["crypto"]
     kem_alg = AlgorithmConfig.current().active_kem_alg

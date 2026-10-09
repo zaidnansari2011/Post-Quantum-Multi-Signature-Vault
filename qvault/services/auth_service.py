@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from qvault.crypto.kdf import DEFAULT_PARAMS, new_salt
 from qvault.extensions import db
 from qvault.models.user import User
+from qvault.security import text
 from qvault.security.passwords import hash_password, verify_password
 from qvault.services import key_service, ledger_service, workspace_service
 
@@ -56,6 +57,9 @@ def register_user(
     operator grants the role afterwards with ``scripts/grant_admin.py``.
     """
     email = _normalise_email(email)
+    if text.invisible_in(display_name):
+        # The forms refuse it first, with this sentence (plan R8 review, F6).
+        raise ValueError(f"The name has hidden characters. {text.MESSAGE}")
     if User.query.filter_by(email=email).first() is not None:
         raise EmailTakenError(email)
 
@@ -154,6 +158,8 @@ def update_display_name(user: User, display_name: str, *, commit: bool = True) -
     name = (display_name or "").strip()
     if not name:
         raise ValueError("A display name cannot be empty.")
+    if text.invisible_in(name):
+        raise ValueError(f"The name has hidden characters. {text.MESSAGE}")
     user.display_name = name[:255]
     if commit:
         db.session.commit()

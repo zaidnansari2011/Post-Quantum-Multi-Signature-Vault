@@ -65,7 +65,8 @@ from qvault.models.workspace import (
     Workspace,
     WorkspaceMember,
 )
-from qvault.services import ledger_service
+from qvault.security import text
+from qvault.services import ledger_service, mail
 
 # The shared workspace: the one existing users were moved into, and the one the operator path
 # (register_user with place=True) joins. Its slug is reserved, so a workspace someone signs up
@@ -473,6 +474,10 @@ def clean_workspace_name(name: str | None) -> str:
     name = (name or "").strip()
     if not name:
         raise WorkspaceError("name_required", "Give the workspace a name.")
+    if text.invisible_in(name):
+        raise WorkspaceError(
+            "name_invisible", f"The workspace name has hidden characters. {text.MESSAGE}"
+        )
     if len(name) > 120:
         raise WorkspaceError("name_too_long", "Workspace names are limited to 120 characters.")
     return name
@@ -601,7 +606,9 @@ def create_invitation(
     _require_rank(actor_member, role, "invite an owner")
 
     email = (email or "").strip().lower()
-    if not _EMAIL.match(email) or len(email) > 255:
+    # The mail layer's own rule too (R8 review, F7): an address it would refuse is refused here,
+    # where the inviter can correct it, not later in a log nobody reads.
+    if not _EMAIL.match(email) or len(email) > 255 or not mail.valid_address(email):
         raise InvitationError("bad_email", "Enter a valid email address.")
     existing = User.query.filter_by(email=email).first()
     if existing is not None and membership(workspace, existing) is not None:
@@ -616,6 +623,7 @@ def create_invitation(
 
     grants = _normalise_grants(vault_grants)
     _check_grants(workspace, inviter.id, grants, role)
+    _check_email_limits(workspace, inviter, email)
 
     token, digest = _new_token()
     invitation = Invitation(
@@ -642,9 +650,35 @@ def create_invitation(
             "expires_at": invitation.expires_at.isoformat(),
         },
     )
+    _email_link(invitation, token)
     if commit:
         db.session.commit()
     return invitation, token
+
+
+def _check_email_limits(
+    workspace: Workspace, inviter: User, email: str, invitation: Invitation | None = None
+) -> None:
+    """Refuse an invitation (or a resend) whose email would pass a daily limit (R8 review, F1).
+    Nothing is created or queued then. No limit applies where email is not set up."""
+    from qvault.services import delivery_service
+
+    refusal = delivery_service.invitation_email_refusal(
+        workspace_id=workspace.id,
+        inviter_id=inviter.id,
+        email=email,
+        invitation_id=invitation.id if invitation is not None else None,
+    )
+    if refusal is not None:
+        raise InvitationError("email_limit", refusal)
+
+
+def _email_link(invitation: Invitation, token: str) -> None:
+    """Queue the invitation email with the link (plan R8), in this transaction. Sent by the
+    scheduler; when email is not set up, nothing is queued and the link is only shown."""
+    from qvault.services import delivery_service
+
+    delivery_service.enqueue_invitation(invitation, token)
 
 
 def invitation_for_token(token: str) -> Invitation | None:
@@ -949,6 +983,7 @@ def resend_invitation(
             f"{exc.message} Ask the vault's owner to send the new link, or withdraw this "
             "invitation and invite them again.",
         ) from exc
+    _check_email_limits(workspace, actor, invitation.email, invitation)
     invitation.inviter = actor
     token, digest = _new_token()
     invitation.token_hash = digest
@@ -963,6 +998,7 @@ def resend_invitation(
             "expires_at": invitation.expires_at.isoformat(),
         },
     )
+    _email_link(invitation, token)
     if commit:
         db.session.commit()
     return invitation, token

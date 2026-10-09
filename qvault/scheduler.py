@@ -1,10 +1,10 @@
 """APScheduler integration (Phase 7).
 
 Registers the background jobs — automated key rotation, the proposal-expiry sweep, decision
-reminders (plan R4), the witness sync and, when a relayer is configured, the chain work — each
-running inside an application context. The job bodies live in services as
-plain functions, so they are equally callable from a test or an admin "run now" button; the
-scheduler only decides *when* they run.
+reminders (plan R4), the email and push outbox (R8), the witness sync and, when a relayer is
+configured, the chain work — each running inside an application context. The job bodies live
+in services as plain functions, so they are equally callable from a test or an admin "run now"
+button; the scheduler only decides *when* they run.
 
 The witness sync belongs here rather than in the request path. Offering a checkpoint means an
 HTTP round trip to another process, and putting that in ``after_request`` would make every write
@@ -38,6 +38,7 @@ def init_scheduler(app):
 
     from qvault.services import (
         checkpoint_service,
+        delivery_service,
         notification_service,
         payout_service,
         reconfiguration_service,
@@ -75,6 +76,16 @@ def init_scheduler(app):
         _in_context(notification_service.send_reminders),
         CronTrigger.from_crontab(app.config["NOTIFICATION_REMINDER_CRON"], timezone="UTC"),
         id="notification_reminders",
+        replace_existing=True,
+    )
+    # Email and phone push (plan R8): the outbox, sent here and never in the request that queued
+    # it. Each row is claimed before it is sent, so a second scheduler sends nothing twice. Always
+    # scheduled, even with both channels off (R8 review, F9): rows queued before they were turned
+    # off then run out their tries, and an invitation's held link is erased once it can't be used.
+    scheduler.add_job(
+        _in_context(delivery_service.run),
+        IntervalTrigger(seconds=int(app.config.get("DELIVERY_TICK_SECONDS", 20))),
+        id="deliveries",
         replace_existing=True,
     )
     if app.extensions.get("relayer") is not None:

@@ -42,6 +42,8 @@ import NewVaultScreen from './src/screens/NewVaultScreen.tsx';
 import WaitingScreen from './src/screens/WaitingScreen.tsx';
 import SessionEndedScreen from './src/screens/SessionEndedScreen.tsx';
 import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnrolled } from './src/links.ts';
+import { usePushWiring } from './src/push.ts';
+import { NotificationsPrimer } from './src/screens/NotificationsPrimer.tsx';
 import { wireFocusManager } from './src/freshness.tsx';
 import { RETRY } from './src/queries.ts';
 import { STALE_MS } from './src/logic/freshness.ts';
@@ -182,8 +184,10 @@ function MainTabs({
 }
 
 function Routes() {
-  const { status } = useSession();
+  const { status, token } = useSession();
   const t = useTheme();
+  // Push for the life of an enrolled session: foreground behaviour, the token, taps (R8, §2.4).
+  usePushWiring(status === 'enrolled' ? token : null, queryClient);
 
   // A link kept while not enrolled (or while the session had ended) opens once the screens are up.
   useEffect(() => setLinksEnrolled(status === 'enrolled'), [status]);
@@ -206,73 +210,77 @@ function Routes() {
   if (status === 'ended') return <SessionEndedScreen />;
 
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: t.color.bg },
-      }}
-    >
-      <Stack.Screen name="Tabs">
-        {({ navigation }) => (
-          <MainTabs
-            onOpen={(uuid) => navigation.navigate('Decision', { uuid })}
-            onOpenQueued={(uuid) => navigation.navigate('Decision', { uuid, opened: 'queue' })}
-            onOpenVault={(vaultId) => navigation.navigate('Vault', { vaultId })}
-            onRaise={() => navigation.navigate('NewDecision')}
-            onCreateVault={() => navigation.navigate('NewVault')}
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen name="Decision" getId={({ params }) => params.uuid}>
-        {({ navigation, route }) => (
-          <DecisionScreen
-            key={route.params.uuid}
-            uuid={route.params.uuid}
-            via={route.params.via}
-            opened={route.params.opened}
-            onBack={() => navigation.goBack()}
-            // Replaces this decision, so Back from the next one lands on the queue (§2.3).
-            onNext={(next) => navigation.replace('Decision', { uuid: next, opened: 'queue' })}
-            onOpenTreasuryApprovals={() => navigation.navigate('Tabs', { screen: 'Account' })}
-            onRaiseIn={(vaultId, vaultName) => navigation.navigate('NewDecision', { vaultId, vaultName })}
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen name="Vault">
-        {({ navigation, route }) => (
-          <VaultScreen
-            vaultId={route.params.vaultId}
-            onBack={() => navigation.goBack()}
-            onOpenDecision={(uuid) => navigation.navigate('Decision', { uuid })}
-            onRaise={(vaultId, vaultName) =>
-              navigation.navigate('NewDecision', { vaultId, vaultName })
-            }
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen name="NewVault">
-        {({ navigation }) => (
-          <NewVaultScreen
-            onBack={() => navigation.goBack()}
-            // Replace, so back from the new vault lands on the vault list rather than on a filled
-            // form that would create a duplicate if submitted again.
-            onCreated={(vaultId) => navigation.replace('Vault', { vaultId })}
-          />
-        )}
-      </Stack.Screen>
-      <Stack.Screen name="NewDecision">
-        {({ navigation, route }) => (
-          <NewDecisionScreen
-            vaultId={route.params?.vaultId}
-            vaultName={route.params?.vaultName}
-            onBack={() => navigation.goBack()}
-            // Replace rather than push: going "back" from a decision you just raised should return
-            // to the vault, not to a filled-in form that would raise a second copy if resubmitted.
-            onRaised={(uuid) => navigation.replace('Decision', { uuid })}
-          />
-        )}
-      </Stack.Screen>
-    </Stack.Navigator>
+    <>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: t.color.bg },
+        }}
+      >
+        <Stack.Screen name="Tabs">
+          {({ navigation }) => (
+            <MainTabs
+              onOpen={(uuid) => navigation.navigate('Decision', { uuid })}
+              onOpenQueued={(uuid) => navigation.navigate('Decision', { uuid, opened: 'queue' })}
+              onOpenVault={(vaultId) => navigation.navigate('Vault', { vaultId })}
+              onRaise={() => navigation.navigate('NewDecision')}
+              onCreateVault={() => navigation.navigate('NewVault')}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Decision" getId={({ params }) => params.uuid}>
+          {({ navigation, route }) => (
+            <DecisionScreen
+              key={route.params.uuid}
+              uuid={route.params.uuid}
+              via={route.params.via}
+              opened={route.params.opened}
+              onBack={() => navigation.goBack()}
+              // Replaces this decision, so Back from the next one lands on the queue (§2.3).
+              onNext={(next) => navigation.replace('Decision', { uuid: next, opened: 'queue' })}
+              onOpenTreasuryApprovals={() => navigation.navigate('Tabs', { screen: 'Account' })}
+              onRaiseIn={(vaultId, vaultName) => navigation.navigate('NewDecision', { vaultId, vaultName })}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Vault">
+          {({ navigation, route }) => (
+            <VaultScreen
+              vaultId={route.params.vaultId}
+              onBack={() => navigation.goBack()}
+              onOpenDecision={(uuid) => navigation.navigate('Decision', { uuid })}
+              onRaise={(vaultId, vaultName) =>
+                navigation.navigate('NewDecision', { vaultId, vaultName })
+              }
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="NewVault">
+          {({ navigation }) => (
+            <NewVaultScreen
+              onBack={() => navigation.goBack()}
+              // Replace, so back from the new vault lands on the vault list rather than on a filled
+              // form that would create a duplicate if submitted again.
+              onCreated={(vaultId) => navigation.replace('Vault', { vaultId })}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="NewDecision">
+          {({ navigation, route }) => (
+            <NewDecisionScreen
+              vaultId={route.params?.vaultId}
+              vaultName={route.params?.vaultName}
+              onBack={() => navigation.goBack()}
+              // Replace rather than push: going "back" from a decision you just raised should return
+              // to the vault, not to a filled-in form that would raise a second copy if resubmitted.
+              onRaised={(uuid) => navigation.replace('Decision', { uuid })}
+            />
+          )}
+        </Stack.Screen>
+      </Stack.Navigator>
+      {/* Once, after enrolment, where this server sends pushes (§6.2 step 3). */}
+      <NotificationsPrimer />
+    </>
   );
 }
 
