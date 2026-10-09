@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Banner,
   Button,
+  ColdStartHint,
   DecisionRow,
   EmptyState,
   List,
@@ -29,8 +30,9 @@ import {
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
-import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
+import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
+import { fetchedThisRun, keys, vaultQuery } from '../queries.ts';
 import type { VaultMember } from '../api/schemas.ts';
 import { mayPropose } from '../proposing.ts';
 import { decisionStatus, statusWord } from '../status.ts';
@@ -50,10 +52,10 @@ export default function VaultScreen({
   const s = useStyles();
   const { token } = useEnrolledSession();
 
-  const query = useQuery({
-    queryKey: ['vault', vaultId],
-    queryFn: ({ signal }) => api.fetchVault(token, vaultId, signal),
-  });
+  const query = useQuery(vaultQuery(token, vaultId));
+  useRefreshOnFocus([keys.vault(vaultId)]);
+  const confirmed = query.dataUpdatedAt > 0 && fetchedThisRun(keys.vault(vaultId));
+  const coldStart = useColdStart(!confirmed && query.isFetching);
   const vault = query.data?.vault;
 
   // By the status every screen shows, worked out on each render: one whose deadline has passed
@@ -66,7 +68,9 @@ export default function VaultScreen({
     return (
       <Screen>
         <NavBar onBack={onBack} />
+        <OfflineNotice at={query.dataUpdatedAt} />
         <Scroll>
+          <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
           {query.error ? (
             <Banner
               tone={query.error instanceof ApiError && query.error.status === 404 ? 'neutral' : 'warning'}
@@ -92,6 +96,7 @@ export default function VaultScreen({
   return (
     <Screen>
       <NavBar onBack={onBack} title={vault.name} />
+      <OfflineNotice at={query.dataUpdatedAt} />
       <Scroll refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
         <View style={s.top}>
           <Text role="titleSm">{policySentence(vault.threshold_m, vault.signer_count)}</Text>

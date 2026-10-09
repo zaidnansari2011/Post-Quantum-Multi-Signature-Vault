@@ -7,8 +7,6 @@ import * as api from './api/endpoints.ts';
 import { getAlgorithm, negotiateAlgorithm } from './crypto/algorithms.ts';
 import {
   deviceEnrolmentBytes,
-  formatEth,
-  NETWORKS,
   paymentText,
   signingInputsToPayloadHash,
   voteSigningBytes,
@@ -19,6 +17,11 @@ import { executionDigest, reconfigureDigest } from './crypto/execution.ts';
 import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import type { Custody, ProtectionLevel, StoredIdentity } from './custody.ts';
 import type { ProposalDetail, ReconfigurationView } from './api/schemas.ts';
+import { decisionCode } from './logic/decisionCode.ts';
+import { treasuryChangePrompt, votePrompt, type PromptCopy } from './logic/prompt.ts';
+
+// The prompt's strings live in src/logic/prompt.ts (phone-ux §5.13); re-exported for the probes.
+export { promptSubject, promptSummary } from './logic/prompt.ts';
 
 /**
  * The server described a proposal whose stated hash is not the hash of its own stated contents.
@@ -91,8 +94,8 @@ async function requireScreenLock(custody: Custody, when: 'enrol' | 'sign'): Prom
  * returns 'none' without asking when the lock is gone, which can happen between the check and
  * the prompt (the lock removed while the sheet was open).
  */
-async function confirmedPresence(custody: Custody, promptMessage: string): Promise<ProtectionLevel> {
-  const protection = await custody.confirmPresence(promptMessage);
+async function confirmedPresence(custody: Custody, prompt: PromptCopy): Promise<ProtectionLevel> {
+  const protection = await custody.confirmPresence(prompt);
   if (protection === 'none') throw new NoScreenLockError('sign');
   return protection;
 }
@@ -241,6 +244,26 @@ export function paymentApproval(
   return ours;
 }
 
+/** This phone no longer holds the seed its identity was enrolled with (SecureStore cleared). */
+export class KeyMissingError extends Error {
+  constructor() {
+    super('This device no longer holds a signing key. Enrol it again.');
+    this.name = 'KeyMissingError';
+  }
+}
+
+/**
+ * The server answered a vote with a record of a different signature from the one this phone sent.
+ * Unlike every refusal before it, something WAS sent, so this is never reported as "nothing was
+ * signed".
+ */
+export class ServerRecordMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ServerRecordMismatchError';
+  }
+}
+
 export interface VoteOutcome {
   status: string;
   approvals: number;
@@ -248,31 +271,6 @@ export interface VoteOutcome {
   signatureSha256: string;
   algId: string | null;
   protection: ProtectionLevel;
-}
-
-/**
- * The decision's signed text, cut to fit an OS biometric prompt: the first line, at most 80
- * characters, ending in an ellipsis when anything was dropped. The full text is on the sheet the
- * person has just read; this only tells them which decision the prompt is for.
- */
-export function promptSummary(actionText: string): string {
-  const whole = actionText.trim();
-  const firstLine = whole.split(/\r\n|[\n\r\u2028\u2029]/, 1)[0];
-  const chars = Array.from(firstLine);
-  if (firstLine === whole && chars.length <= 80) return whole;
-  return chars.slice(0, 79).join('').trimEnd() + '…';
-}
-
-/**
- * What the biometric prompt names. A payment's text spends its first 80 characters on the
- * treasury's own address, so a payment is named by its amount, recipient and network instead,
- * from the signed payment (which verifyProposalIntegrity has matched to the signed text). Never
- * cut: a cut amount or address would be worse than a long prompt.
- */
-export function promptSubject(inputs: ProposalDetail['signing_inputs']): string {
-  const action = inputs.action;
-  if (action === undefined) return promptSummary(inputs.action_text);
-  return `Pay ${formatEth(action.value_wei)} to ${action.to} on ${NETWORKS[action.chain_id]}.`;
 }
 
 export async function voteOnProposal(args: {
@@ -290,16 +288,15 @@ export async function voteOnProposal(args: {
   const execution = paymentApproval(args.detail, payloadHash, args.decision, args.identity);
   await requireScreenLock(args.custody, 'sign');
 
-  const verb = args.decision === 'approve' ? 'Approve' : 'Reject';
-  // The prompt names the decision by its signed text, never by its title: the title is not under
-  // the hash, so a server could make it say anything (as approveTreasuryChange's prompt does).
+  // The prompt names the decision by its signed text and the code of the hash derived above, never
+  // by its title: the title is not under the hash, so a server could make it say anything.
   const protection = await confirmedPresence(
     args.custody,
-    `${verb}: ${promptSubject(args.detail.signing_inputs)}`,
+    votePrompt({ decision: args.decision, code: decisionCode(payloadHash), inputs: args.detail.signing_inputs }),
   );
 
   const pair = await args.custody.deriveKeyPair(args.identity.algId);
-  if (!pair) throw new Error('This device no longer holds a signing key. Enrol it again.');
+  if (!pair) throw new KeyMissingError();
   if (execution !== null && publicKeyFingerprint(pair.publicKey) !== args.identity.fingerprint) {
     // The seat check compared the stored fingerprint; this is the key that will actually sign.
     throw new NotThisPhonesSeatError(args.detail.execution?.seat_fingerprint ?? null);
@@ -335,11 +332,11 @@ export async function voteOnProposal(args: {
   // record is not the vote this device made.
   const localDigest = toHex(sha256(signature));
   if (result.vote.signature_sha256 !== localDigest) {
-    throw new Error('The server recorded a different signature from the one this device sent.');
+    throw new ServerRecordMismatchError('The server recorded a different signature from the one this device sent.');
   }
   const localExecution = executionSignature === null ? null : toHex(sha256(executionSignature));
   if ((result.vote.execution_signature_sha256 ?? null) !== localExecution) {
-    throw new Error('The server recorded a different payment approval from the one this device sent.');
+    throw new ServerRecordMismatchError('The server recorded a different payment approval from the one this device sent.');
   }
 
   return {
@@ -415,12 +412,11 @@ export async function approveTreasuryChange(args: {
   // The prompt states the signed facts: how many keys join and leave, and the new threshold.
   const protection = await confirmedPresence(
     args.custody,
-    `Approve treasury change: add ${inputs.add.length}, remove ${inputs.remove.length}, ` +
-      `then ${inputs.threshold} to approve`,
+    treasuryChangePrompt({ add: inputs.add.length, remove: inputs.remove.length, threshold: inputs.threshold }),
   );
 
   const pair = await args.custody.deriveKeyPair(args.identity.algId);
-  if (!pair) throw new Error('This device no longer holds a signing key. Enrol it again.');
+  if (!pair) throw new KeyMissingError();
   if (publicKeyFingerprint(pair.publicKey) !== args.identity.fingerprint) {
     // The seat check compared the stored fingerprint; this is the key that will actually sign.
     throw new NotThisPhonesSeatError(args.change.seat_fingerprint, 'change');
@@ -437,7 +433,7 @@ export async function approveTreasuryChange(args: {
   });
   const localDigest = toHex(sha256(signature));
   if (result.approval.signature_sha256 !== localDigest) {
-    throw new Error('The server recorded a different approval from the one this device sent.');
+    throw new ServerRecordMismatchError('The server recorded a different approval from the one this device sent.');
   }
   return {
     state: result.reconfiguration.state,

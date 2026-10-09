@@ -355,12 +355,16 @@ a linked decision on a cold start therefore lands on the queue, never on an empt
 notification shade while Q-Vault is open), the stacks already hold something, so "Under it" needs
 rules. They are checked in order by one `openLink(target)` function, which also handles cold starts:
 
+Checked in this order (rules 6 and 7 first, then 2, 3, 1, 4, 5): nothing at all happens to the
+screen while a signature is in flight, and an open sheet is closed before anything is refetched
+under it (§2.6).
+
 | # | Situation when the tap arrives | What happens |
 | --- | --- | --- |
-| 1 | The same decision (same uuid) or treasury change is already the top screen | Refetch it in place. No push, no animation. Both routes declare `getId` from their id, so React Navigation never stacks a duplicate |
-| 2 | An approve or reject sheet is busy (a signature in flight) | Hold the link. Apply it once the signature settles and the acknowledgement is closed (or replaced by Next decision). Never interrupt a signature |
-| 3 | An approve or reject sheet is open but idle | Close the sheet (as Cancel would), then apply rule 5 |
-| 4 | New decision or New vault is open with unsaved input | Push the decision over the modal and keep the form. Back from the decision returns to the form, intact |
+| 2 | An approve or reject sheet is busy (a signature in flight, or the check after an unreadable answer), or the acknowledgement is showing | Hold the link. Apply it once the signature settles and the acknowledgement is closed (or replaced by Next decision). Never interrupt a signature, even for the same decision |
+| 3 | An approve or reject sheet is open but idle | Close the sheet (as Cancel would); then rule 1 if the link is for the decision under it, otherwise rule 5. If the sheet did not close (a signature started in the same frame), hold the link as rule 2 |
+| 1 | The same decision (same uuid) or treasury change is already the top screen | Refetch it in place. No push, no animation. A `via=web` link also sets the route's `via`, so its approve sheet shows the comparison block. Both routes declare `getId` from their id, so React Navigation never stacks a duplicate |
+| 4 | New decision or New vault is open with unsaved input | Push a screen target over the modal and keep the form: a decision, a vault, or a treasury change (as its vault until §6.15's route exists, P3). Back returns to the form, intact. A tab target (Activity, Account) is kept and applied when the form closes |
 | 5 | Anything else | Switch to the Approvals tab, pop its stack to the root, then push the target on the App stack. Back always lands on the queue, as promised |
 | 6 | App lock is on and the app is locked | Show the lock screen; after unlock, apply rules 1–5 |
 | 7 | Not enrolled | Store the link, run onboarding, then apply rule 5 |
@@ -518,7 +522,7 @@ fetched from the network **in this process** less than 60 s ago. Otherwise the b
 | Tab-root headline on scroll | Collapses into the nav bar title (the large-title pattern) | Collapses the same way (Material's large top app bar) |
 | Overflow | Tile `i-more` | Tile `i-more-vertical` |
 | Share and copy | React Native `Share` (no rebuild) | Same |
-| Biometric wording | "Face ID" / "Touch ID" | "fingerprint" / "face unlock" / "your phone's PIN", derived from `detectProtection()` together with the hardware types (§5.13) |
+| Biometric wording | "Face ID" / "Touch ID" | "fingerprint" / "face unlock" / "your screen lock", derived from `detectProtection()` together with the hardware types (§5.13) |
 | Haptics | `expo-haptics` notification and impact types | `performAndroidHapticsAsync` (the device haptics engine) |
 | Dark chrome | System status bar style follows the theme | Navigation bar colour follows the theme (edge-to-edge) |
 | Scrolled title | The decision title appears in the nav bar once its heading scrolls off | Same |
@@ -832,13 +836,19 @@ plain `node` type stripping (`tests/test_mobile_canonical.py`), and there is no 
 - **Stacked layout** at `fontScale ≥ 1.6` or window width < 340: Approve first, full width, then
   Reject.
 - **Message slot:** a single line above the buttons, inside the bar, for action errors after a sheet
-  closes ("Not signed. Q-Vault didn't receive your signature, so nothing changed."). Tone colour on
-  the text plus an icon, and announced to screen readers.
-- **Replacements:**
-  - When the person can't sign, the bar shows one centred line instead of buttons:
-    - "You raised this, so you can't approve it." (with "Remind" once R4 lands, §6.6 state 3)
-    - "Signing needs a connection…"
-    - "Approve this on the web, where your password key is." (with Reject kept, §6.6 state 7)
+  closes ("Your signature wasn't counted, because this was already decided."). Tone colour on the
+  text plus an icon, and announced to screen readers.
+- **Replacements.** The bar never repeats the personal line (fix pass, design finding 2): a line in
+  place of the buttons appears only when it comes with something to do, or says what the page
+  does not.
+  - You raised it (§6.6 state 3): no bar until R4's "Remind" exists; the personal line carries
+    "You raised this, so you can't approve it."
+  - Offline: "Signing needs a connection, so Q-Vault can check this decision first." (the one line
+    with no button: nothing else on the page says why Approve and Reject are gone).
+  - The treasury holds another key of yours (§6.6 state 7): Reject (a rejection carries no treasury
+    signature), and beside it, at 2:3, a secondary "Open on the web" when the web can approve it
+    (the password key's seat). The personal line says why; the one-time switch is a link on the page
+    under it.
   - When the decision failed the integrity check, the bar holds no signing button at all: "Copy a
     report" (secondary) and "Open on the web" (quiet) (§6.6).
   - When nothing applies, there is no bar.
@@ -870,8 +880,10 @@ source, and "not yours to act on" should not look like a status that needs atten
   raw).
 - **Status line,** at the top of every decision: the badge on the left, the due time or outcome date
   on the right (`caption`). The due time is in the warning tone with a `time-outline` icon when it is
-  within 24 h. Below it sits the **personal line** (`body`, `textMuted`), one sentence from §6.6's
-  table.
+  within 24 h. A payment whose signed `valid_until` has passed while it is open shows "Treasury
+  limit passed 7 Oct" there instead, in the warning tone with the alert icon (§6.6 row 2a), never a
+  "Pay by" in the past. Below it sits the **personal line** (`body`, `textMuted`), one sentence
+  from §6.6's table (also for a state the app doesn't know, row 0: never a caption-sized aside).
 
 ### 5.5 Seal (quorum marks)
 
@@ -1088,20 +1100,28 @@ On iPhones the first Face ID dialog may show no reason text at all; verify on a 
 | Create the key at setup | "Create your Q-Vault signing key" | — | "The key stays on this phone." |
 | Unlock the app (app lock) | "Unlock Q-Vault" | — | — |
 
-- **Options:** remove the explicit `requireConfirmation: false` the code sets today, so SDK 57's
-  default (`true`) applies (Android reserves passive authentication for "lower-risk actions only");
-  `biometricsSecurityLevel: 'strong'` (today Expo's default `'weak'`); `disableDeviceFallback: false`
-  (the PIN still works); `cancelLabel: "Cancel"`.
+- **Options, as shipped (the handset-proven set):** `disableDeviceFallback: false` (the PIN still
+  works), `cancelLabel: "Cancel"`, `requireConfirmation: false`, and the platform's default
+  biometric level (Expo's `'weak'`). `biometricsSecurityLevel: 'strong'` is **not** on: with the PIN
+  fallback, expo-local-authentication 57.0.2 asks androidx.biometric for
+  `BIOMETRIC_STRONG | DEVICE_CREDENTIAL`, which androidx rejects on Android 9 and 10 (API 28-29)
+  inside `PromptInfo.Builder.build()`, outside the module's catch, so those phones could not sign at
+  all. **The change to make once a handset has proved it** (OWNER-ACTIONS 3.5 item 1): pass
+  `'strong'` only where it builds (`Platform.OS !== 'android' || Platform.Version >= 30`), and drop
+  `requireConfirmation: false` so a face match is confirmed. Until then a phone whose only biometric
+  is Class 2 face unlock may be offered the face first, then the PIN.
 - The code in the prompt title is the same recomputed code the sheet shows. It ties the OS dialog to
   the sheet without trusting the title (S19).
 - **Button labels name the method** (HIG), derived from `detectProtection()` (which already
   requires `BIOMETRIC_STRONG` before it reports `'biometric'`) together with
   `supportedAuthenticationTypesAsync()` for the hardware type: "Sign with Face ID", "Sign with Touch
-  ID", "Sign with fingerprint", "Sign with face unlock", or "Sign with your phone's PIN". A phone
-  whose only biometric is Class 2 face unlock reports `'device'` (PIN), and with
-  `biometricsSecurityLevel: 'strong'` its prompt shows only the PIN screen, so its button must read
-  "Sign with your phone's PIN", not "face unlock". The mapping is a pure function in `src/logic/`
-  with a probe over each combination. Never "passcode".
+  ID", "Sign with fingerprint", "Sign with face unlock", or "Sign with your screen lock". A phone
+  whose only biometric is Class 2 face unlock reports `'device_credential'`; its button reads "Sign
+  with your screen lock", never "face unlock", and not "PIN" either, because until the strong level
+  ships (above) its prompt may offer the face before the PIN. "Screen lock" is true of both. A
+  lockout on such a phone reads "Too many tries. Unlock your phone with its PIN, then try again."
+  The mapping is a pure function in `src/logic/` with a probe over each combination. Never
+  "passcode".
 
 ---
 
@@ -1267,7 +1287,7 @@ up to six rows. Nothing else. The headline collapses into the nav bar on scroll 
 
 1. **`RootHeader`:**
    - The headline is a sentence: "Three decisions need your signature" / "One decision needs your
-     signature" / "Nothing needs your signature".
+     signature" / "Nothing needs your signature". Headlines carry no full stop, in every state.
    - The supporting line, only when true: "One is due today." / "Two are due today."
    - Trailing: a 44 pt plus icon button, `accessibilityLabel="New decision"`, top-aligned to the
      headline's first line.
@@ -1284,6 +1304,15 @@ up to six rows. Nothing else. The headline collapses into the nav bar on scroll 
    - The group ends with one `ListRow`: "Approve treasury payments on this phone", caption "Switch
      once, and these come to this phone", opening Account → Treasury approvals (§6.18). It is shown
      only when the seat is your password key.
+   - **Payments no key of yours here can approve** get their own groups, each titled only with what
+     is true of every row in it, never implying they can be approved elsewhere:
+     - the treasury's seat for you is another of your phones: "Approve on your other device", row
+       note "Approve on {device name}";
+     - the seat is a phone you removed (the key IS on the treasury, it just can't sign): "Your key
+       here is on a removed phone" (plural "Your keys here are on removed phones"), row note "Key on
+       a removed phone";
+     - the treasury holds no key of yours at all: "Your key isn't on this treasury" (plural "…these
+       treasuries"), row note "No key of yours on it".
    - **How the phone knows, before opening each one:** API A17 adds `seat` (`this_device`,
      `password`, `other_device`, or null) to awaiting summaries. Until it exists, the phone fetches
      the detail of each awaiting **payment** in the background (usually a handful) and reads
@@ -1301,10 +1330,10 @@ up to six rows. Nothing else. The headline collapses into the nav bar on scroll 
 | State | Shows |
 | --- | --- |
 | First load, nothing cached | Headline "Checking for decisions", then 3 skeleton rows after 150 ms, and the cold-start hint at 4 s |
-| Loaded, empty | Headline "Nothing needs your signature." Supporting line, only if true: "3 decisions are waiting on others." (it opens §6.4). No button: raising is in the header |
-| Only web-only items | Headline "Nothing needs your signature here." Supporting line "2 payments need you on the web." Then the "Approve on the web" group (item 3) |
-| Load failed, nothing cached | Headline **"Can't check your approvals"**, line "Check your connection. Nothing has changed on your decisions.", and a primary "Try again" button. **Never an empty headline over a failure** (`app_05`) |
-| Refresh failed, cache shown | The cached list with the offline bar; the headline is computed from the cache |
+| Loaded, empty | Headline "Nothing needs your signature", no supporting line: the "Waiting on others" row right under it (item 4) gives the count and is the one that opens them. No button: raising is in the header |
+| Only web-only items | Headline "Nothing needs your signature here". Supporting line "2 payments need you on the web." Then the "Approve on the web" group (item 3) |
+| Load failed, nothing cached (or only an empty list from disk) | Headline **"Can't check your approvals"**, line "Check your connection. Nothing has changed on your decisions.", and a primary "Try again" button. **Never an empty headline over a failure** (`app_05`) |
+| Refresh failed, cache shown (in this run, or restored from disk after a restart) | The cached list with the offline bar, which says when it was fetched; the headline is computed from the cache. No failure headline, no "Nothing has changed" line and no "Try again" button over a list: the offline bar is the one offline signal, and pull to refresh retries |
 | Offline | Same as above |
 | 401 | The Session ended screen (§6.20). The query does not call `handleUnauthorized` during render |
 | Removed from the workspace (R3) | Headline "You're no longer in a workspace", line "Ask an admin to invite you again.", no list |
@@ -1391,14 +1420,23 @@ up to six rows. Nothing else. The headline collapses into the nav bar on scroll 
    - The seal (14 pt) and "1 of 2 approvals".
    - Then one computed sentence, `body` and `textMuted`:
      - "One more approval approves this. Gracian or Atharv can also approve."
-     - For a payment: "One more approval pays this."
-   - With rejections, add "1 rejection. It's rejected if 2 more reject."
+     - For a payment: "One more approval pays this." A payment past its signed limit says
+       "approves this" instead (§6.6 row 2a): nothing will pay it.
+     - The names are left out when the personal line already gives them (row 4, "Waiting on Brij
+       or Chen").
+   - With rejections, add "1 rejection. It's rejected if 2 more reject." Rejections are said one
+     way only: in this sentence while it is open, and once it is decided by the status line and
+     Who decided; the seal shows approvals only.
+   - Withdrawn: no seal and no sentence (approvals already given stop counting).
    - **The heading-plus-empty-line pair "0 signatures / No one has signed this yet" is gone.**
 8. **Who decided** (only when someone has voted): a compact list with no card. Each line has a 24
    avatar, "Hassan approved" or "Atharv rejected", and the time on the right.
    - A rejection reason shows under its line in `body`, `textMuted`, in quotation marks, cut to 2
      lines and expanding on tap.
-   - Your own line reads "You approved, on this phone" or "You approved, on the web".
+   - Your own line reads "You approved, on your phone" or "You approved, on the web", with your own
+     initials in the avatar. The time on the right reads "10:24", "Yesterday" or "4 Oct".
+   - Right after you sign, your line is there at once, from the vote's answer, before the refetch
+     lands (§6.11).
    - Custody is never "key held on the server" on the row; it lives in the evidence sheet.
    - More than 4 lines collapse to 3 plus "See all 6".
 9. **"Checked on this phone"** (`DisclosureRow`): a success icon, the label, and on the right "Code
@@ -1444,11 +1482,12 @@ from A3 (unsigned display); "you" replaces the viewer everywhere.
 | --- | --- | --- | --- | --- |
 | 1 | Integrity check failed, or the signed content changed between fetches (I-16) | — (critical panel instead) | — | **No signing at all:** "Copy a report" and "Open on the web" in place of the buttons (see Tampered below; departure D7) |
 | 2 | Open; you can sign; not voted | Needs your signature | (none; the quorum sentence covers it) | Reject, Approve |
-| 3 | Open; you raised it; separation of duties on (S15) | Waiting on N | "You raised this, so you can't approve it." | "Remind" (R4) and the overflow Withdraw |
-| 4 | Open; you approved | Waiting on N | "You approved {time}. Waiting on Brij or Chen." | None |
-| 5 | Open; you rejected | Waiting on N | "You rejected this {time}. It's rejected only if {k} more reject." | None |
+| 2a | As row 2, a payment whose signed `valid_until` has passed | Needs your signature | "The time the treasury allows for this payment ran out on 7 Oct, so approving it won't pay it." The status line's right reads "Treasury limit passed 7 Oct" (warning, alert icon); the quorum sentence says "approves this", never "pays this"; the reject sheet drops "if {n} more approve, it passes"; the approve sheet and the acknowledgement say it won't be paid | Reject, Approve |
+| 3 | Open; you raised it; separation of duties on (S15) | Waiting on N | "You raised this, so you can't approve it." | "Remind" (R4) and the overflow Withdraw. Until R4, no bar (the line is not repeated there) |
+| 4 | Open; you approved | Waiting on N | "You approved this. Waiting on Brij or Chen." (the time is on your line in Who decided; the quorum sentence leaves the names out) | None |
+| 5 | Open; you rejected | Waiting on N | "You rejected this. It's rejected only if {k} more reject." | None |
 | 6 | Open; not in the signed signer set | Waiting on N | "You're not an approver on this decision." | None |
-| 7 | Open; this phone's key isn't the treasury's seat for you (payment) | Needs your signature | Password key: "This vault's treasury holds your password key, so approve this payment on the web." Another device's key: "This vault's treasury holds the key of {device name}. Approve this payment there." | Line in place of Approve: "Approve this on the web, where your password key is." Reject stays (a rejection carries no treasury signature; `paymentApproval` returns early for reject). Under the bar's line, for the password-key case, a quiet link: "Approve treasury payments on this phone", opening Account → Treasury approvals (§6.18), so the person can move to the phone key once and stop being sent to the web |
+| 7 | Open; this phone's key isn't the treasury's seat for you (payment) | Needs your signature | Password key: "This vault's treasury holds your password key, so approve this payment on the web." Another device's key: "This vault's treasury holds the key of {device name}. Approve this payment there." A removed phone's key: "This vault's treasury holds the key of a phone that was removed, so an approval from this phone wouldn't be paid." No key of yours: "This vault's treasury doesn't hold a key of yours, so an approval from this phone wouldn't be paid." | Reject stays (a rejection carries no treasury signature; `paymentApproval` returns early for reject). For the password key, beside it at 2:3, a secondary "Open on the web"; the bar repeats no line. On the page, right under the personal line, for the password-key case, a quiet link: "Approve treasury payments on this phone", opening Account → Treasury approvals (§6.18), so the person can move to the phone key once and stop being sent to the web |
 | 8 | Open; you're in the signer set but `can_sign` is false, or the reverse (I-10) | Waiting on N | "You can't sign this from here." | None |
 | 9 | Approved, not a payment | Approved | "Approved {date} by Hassan and you." | None |
 | 10 | Approved payment, payout queued or submitting | Queued | "The treasury pays at its next check, usually within a few minutes." (submitting: "Sent to Sepolia, waiting for a block.") | None |
@@ -1489,14 +1528,22 @@ contradictory (`app_28`).
     | `display_policy` | "The approval rule sent to show you isn't the one that would be signed." |
     | `type_text` (R5) | "The fields shown don't produce the text that would be signed." |
     | `changed` (I-16) | "The text changed while you were reading it." |
+    | `other_decision` (I-16) | "Q-Vault sent a different decision from the one you opened." (the answer's uuid, or the uuid signed into it, is not the route's) |
 
   - **Then:** "Nothing has been signed, and this phone won't sign it."
   - **Actions:** "Copy a report" (Share: decision ID, the reason, the derived and stated hashes, the
     app version and the time) and "Contact your admin" (a `mailto:` to the workspace owner when R3
     gives one; otherwise hidden).
-- **The signed text is labelled, not hidden:** a `caption` above it in `status.critical.fg` reads
-  "This is the text the server sent. It doesn't match what would be signed." The text drops to
-  `decision` size.
+- **The signed text is labelled, not hidden:** a `caption` above it in `status.critical.fg`, chosen by
+  the reason, so text that matched its hash is never called wrong:
+  - `hash`, `payment_text`, `display_text`: "This is the text the server sent. It doesn't match what
+    would be signed." (`tamper.labelText`)
+  - `display_policy`: "This text checks out. The approval rule shown with it doesn't."
+  - `type_text`: "This is the text that would be signed. The fields shown don't produce it."
+  - `changed` and `other_decision`: no text at all, only a caption saying why neither version (or
+    the other decision's text) is shown.
+
+  The text drops to `decision` size.
 - **The quorum and due time are hidden.** The badge is not shown.
 - **The evidence sheet's Hashes tab** shows only the differing values, marked, with the derived value
   first.
@@ -1521,11 +1568,11 @@ top of a scrolled page. The server codes are kept, reworded:
 | Code or error | Where | Copy | Action |
 | --- | --- | --- | --- |
 | `already_voted` | Page refetches; status line updates | — | — |
-| `proposal_closed` | Sheet closes; page refetches; status line is the new state with the "before you signed" prefix | "This was decided before your signature arrived. Nothing was signed." | — |
-| `chain_unavailable` | Sheet stays open, inline | "Sepolia didn't answer, so nothing was signed. Try again in a minute." | "Try again" |
+| `proposal_closed` | Sheet closes; page refetches; status line is the new state with the "before your signature arrived" prefix; bar message | "Your signature wasn't counted, because this was already decided." | — |
+| `chain_unavailable` | Sheet stays open, inline | "Sepolia didn't answer, so your signature wasn't counted. Try again in a minute." | "Try again" |
 | `not_a_signer` | Sheet closes; bar message | "You're not an approver on this decision." | — |
 | `device_key_not_active`, `signature_invalid`, `SelfVerificationError`, missing seed | Sheet closes; a page banner (critical) | "This phone's key can't sign any more. Nothing was signed." | "Set up this phone again" (runs §6.20's re-setup) |
-| Transport error | Sheet stays open, inline | "Not signed. Q-Vault didn't receive your signature, so nothing changed." | "Try again" |
+| Transport error after the vote was sent (no answer, a timeout or reset, the app put away, or an answer the phone can't read) | Sheet stays open and busy, inline, neutral; the page asks Q-Vault again at once | "Q-Vault may have received your signature. Checking…" Then, from Q-Vault's own record: your vote is there → the sheet closes and the page shows it; it isn't → "Q-Vault didn't receive your signature, so nothing changed." (warning); the check failed too → "This phone couldn't check whether Q-Vault received your signature. Trying again won't count it twice." (warning). Never "nothing changed" from the failed request alone | "Try again" (a vote Q-Vault already has is refused as `already_voted`) |
 | Biometric cancelled | Sheet stays open, inline, neutral | "Face ID was cancelled. Nothing was signed." | The sign button is live again |
 | Biometric locked out | Sheet stays open, inline, warning | "Face ID is locked. Unlock your phone with its PIN, then try again." | — |
 | No device lock (`NoScreenLockError` from `flows.ts`, I-9) | Sheet stays open, inline, critical | "Set a screen lock to sign with this phone." | "Open settings" |
@@ -1555,7 +1602,8 @@ checked here"):
 5. Approve-time payments: "The treasury holds this phone's key for you." Before you approve:
    "Checked again when you approve."
 6. "Recorded in the transparency log and witnessed." Neutral until a per-decision log status exists
-   (A7): "Checked on the web: open the log there."
+   (A7): "The transparency log is checked on the web." with the link "Open the log" under it, opening
+   the web's log page (`/ledger/transparency`).
 7. **Footer:** "Your key: 7879 dce6 4eab 4126, on this phone." and "Code A397-71F8" with copy and
    the same info button as the sheet's quiet line (§5.11).
 
@@ -1648,15 +1696,17 @@ consequences.
    - **The field is not autofocused.** The chips come first, and the keyboard appears only when the
      person taps the field; the footer then rides above the keyboard (§5.9).
 3. **What you're rejecting:**
-   - **General:** the signed text, collapsed to 3 lines with "Show all". The person has just read it
-     on the page, and the reason is this sheet's new job.
+   - **General:** the signed text, collapsed to 3 lines, with "Show all" only when it is longer than
+     that (a control that does nothing is not shown). The person has just read it on the page, and
+     the reason is this sheet's new job.
    - **Payment:** the payment card with the recipient **in full** (`expanded="always"`, §1.4 rule 8),
      as in the approve sheet.
 4. **Consequence,** one or two short sentences, computed (I-4; `screens.md` finding 1). Let r be the
    rejections before yours; a decision is rejected when rejections exceed N − M:
    - If r + 1 > N − M: "Your rejection ends this decision for everyone, and you can't withdraw it."
    - Otherwise, with k = (N − M + 1) − (r + 1): "This is rejected only if {k} more reject it; if
-     {M − a} more approve, it passes."
+     {M − a} more approve, it passes." For a payment past its signed limit (§6.6 row 2a), only "This
+     is rejected only if {k} more reject it.": approving it no longer pays it.
 5. **Footer:** danger "Sign rejection with Face ID" (the method per §5.13) and quiet "Cancel".
 
 - **No decision code** in this sheet (§5.11): a rejection authorises nothing.
@@ -1715,7 +1765,9 @@ research 06 §3.13, which allowed tap-outside (D3).
 (`announceForAccessibility` on iOS, a live region on Android).
 
 **The page underneath** afterwards (`app_42`, `app_45`, `app_48`) shows the status line with its
-personal line ("You approved 10:24. Waiting on Brij or Chen.") **and nothing else new**. The green
+personal line ("You approved this. Waiting on Brij or Chen.") **and nothing else new**. It is
+complete at once, from the vote's own answer: your line in Who decided (with its time), and the
+date in "Approved 8 Oct by Brij Mehta and you." when yours closed it; the refetch then confirms it. The green
 "Signed on this device. Signature 40fc58f7…" banner and the "You have signed this" chip are both
 removed: they said the same thing three times and put a hash in a success message. A first rejection
 no longer shows a green banner (the defect in research 06 §2).
@@ -2146,9 +2198,13 @@ There is one destructive action, replacing "Sign out" and "Revoke this device" (
 - **Consequence** (`body`): "This phone's key is deleted and can't sign again. Decisions it already
   signed stay valid. To approve from this phone later, set it up again."
 - **When the treasury holds this phone's key** (computed from `/me.my_key` and the vault treasuries):
-  "The Operations treasury holds this phone's key for you. After removing it, you can't approve
-  Operations payments until an owner updates the treasury." A checkbox, "I understand", is required
-  before the danger button acts.
+  "The treasury of the Operations vault holds this phone's key for you. After removing it, you can't
+  approve that vault's payments until an owner updates its treasury." (Several: "The treasuries of
+  the Operations and Payroll vaults hold this phone's key for you. After removing it, you can't
+  approve their payments until an owner updates them.") A checkbox, "I understand", on the sheet's
+  own edge, is required before the danger button acts. The button stays live (§1.4 rule 6, §5.2):
+  pressed without the tick, it removes nothing and says under the checkbox "Tick 'I understand' to
+  remove this phone."
 - **What remains true:** "You can still approve on the web with your password."
 - **Buttons:** danger "Remove this phone"; quiet "Cancel".
 
@@ -2159,10 +2215,20 @@ There is one destructive action, replacing "Sign out" and "Revoke this device" (
 3. Wipe the persisted cache.
 4. Return to onboarding step 1.
 
-On a network failure the sheet stays open: "Can't reach Q-Vault, so this phone wasn't removed. Try
-again." **The key is never deleted locally while the server still counts it as active**, unless the
+On a network failure the sheet stays open: "Q-Vault didn't answer, so this phone may not have been
+removed. Try again." (no answer says nothing about whether the request arrived: its reply may be what
+was lost). **The key is never deleted locally while the server still counts it as active**, unless the
 person chooses "Remove from this phone only" (quiet, shown only after a failure), whose copy says the
 web will still list it.
+
+- **A 401 to the removal** (the session expired, or the phone was already removed on the web: today
+  the server answers both with `token_invalid`) is the sheet's to explain, not the session's: the
+  request is made with `quietUnauthorized`, so Session ended does not replace the sheet. The sheet
+  says "Q-Vault no longer accepts this phone's session, so it couldn't remove it from here. It may
+  already be removed: check on the web, or remove it from this phone only." and offers "Remove from
+  this phone only". Once A9 distinguishes `device_revoked`, that answer counts as `already_revoked`.
+- **A 2xx answer the phone can't read** is a removal: the server did it, only its reply was garbled.
+  No answer at all, or an error page, is not: nothing is deleted.
 
 ### 6.20 Session ended, device removed, key missing
 
@@ -2170,7 +2236,7 @@ web will still list it.
 
 | Cause (server code, A9) | Screen | Copy | Action |
 | --- | --- | --- | --- |
-| `token_expired` | Session ended (full screen, mark on top) | "Your session on this phone ended. Sign in again to keep approving. Your key stays on this phone." | Email (prefilled) and password, then "Sign in". This issues a fresh token **for the same device key**, proved by a signature from it (A9). Until A9 exists: "Set up this phone again", which explains that a new key is made |
+| `token_expired` | Session ended (full screen, mark on top) | "Your session on this phone ended. Sign in again to keep approving. Your key stays on this phone." Until A9: "To keep approving here, set this phone up again with your email and password. That makes a new key for this phone." with the caption "The old key can't sign without a session and stays listed on the web until you remove it there." | Email (prefilled) and password, then "Sign in". This issues a fresh token **for the same device key**, proved by a signature from it (A9). Until A9 exists: "Set up this phone again", which deletes the old seed with the identity (a seed with no identity can never sign again) and runs onboarding |
 | `device_revoked` | Device removed | "This phone was removed from your account on {date}. Its key can't sign any more." | "Set up this phone again" (deletes the old seed, then onboarding). **The persisted cache is wiped the moment this 401 arrives**, before the screen draws: a phone removed from the web because it was stolen must not keep opening onto its queue (I-14) |
 | Unknown 401 | Session ended | As `token_expired` | As `token_expired` |
 | Seed missing while enrolled (SecureStore cleared) | Device removed variant | "This phone no longer holds its signing key. Set it up again to approve here." | "Set up this phone again" |
@@ -2363,20 +2429,20 @@ a `tests/test_mobile_*.py`, over RN-free modules in `src/logic/`; or a grep test
 | --- | --- | --- | --- |
 | I-1 | **Check before asking, and never sign what wasn't verified.** Every integrity check (`verifyProposalIntegrity`, `paymentApproval`, `treasuryChangeApproval`, the R5 type re-derivation, the I-9 lock check, the I-16 change check) runs before any biometric prompt, and `deriveKeyPair` runs only after all of them. A refusal never follows a prompt. A decision that fails a check offers **no** signing, approve or reject (§6.6) | §6.6, §6.10 | Existing guard probes, plus a probe that a tampered detail throws for `decision: 'reject'` before `confirmPresence` |
 | I-2 | **Render and prompt only signed fields (S19).** The signed text, amount, recipient, network, threshold and code come from `signing_inputs` and the hash the phone derived. Titles, vault names, signer names, payout status, comments and notifications are unsigned display: sans, never in the prompt, never in the code. **A recipient name never replaces or precedes the address;** it may appear only from a source the phone controls or a signed field, after the address. **In the signing sheets and the Android prompt, a payment's recipient is shown in full** (§1.4 rule 8) | §5.12, §5.13, §6.5, §6.8 | Probe: the sheet's and prompt's strings (built in `src/logic/`) contain the full `action.to` for a payment |
-| I-3 | **A 401 never deletes the key.** Only "Remove this phone", or a server-confirmed revocation, deletes the seed | §6.20 | Probe over the 401 handler's decision function |
+| I-3 | **A 401 never deletes the key.** Only "Remove this phone" (once the server confirms it, or the person's "Remove from this phone only" after a failure), a server-confirmed revocation, or the person's own "Set up this phone again" (told it makes a new key) deletes the seed. Whatever deletes the identity deletes the seed with it: a seed with no identity can never sign and would sit in the keystore unnamed | §6.19, §6.20 | Probe over the 401 handler's and each ending's decision function |
 | I-4 | **Consequence copy is computed from the signed policy** (M, N, signers) and the live counts. It never claims an outcome the rule doesn't produce | §6.8, §6.9, §6.11 | Probe over every M of N from 1 of 1 to 3 of 5 with every count |
 | I-5 | **The phone checks what it raised.** After creating a decision, the stored signed text (general) or the signed action's fields (payment) must equal what was entered, or the decision opens as tampered | §6.16 | Probe over `checkRaisedPayment` and the text comparison |
 | I-6 | **The sheet signs its snapshot.** The detail is frozen when the sheet opens; polling pauses; a refetch completing while it is open never reaches the sheet; the signature is over the frozen, re-verified snapshot | §2.6 | Probe over the snapshot preparation function |
 | I-7 | **Never sign from cache.** Signing needs a network fetch made in this process under 60 s ago, recorded in a per-process map, never `dataUpdatedAt`; restored data is read only, and decision bodies are never persisted | §2.6 | Probe over `canOpenSigningSheet`, including a restored entry with a recent `dataUpdatedAt` |
 | I-8 | **An attachment opens only if its hash matches** `signing_inputs.file_sha256`, hashed on the phone | §6.5 | Probe over the file check |
-| I-9 | **No lock, no key, no signature,** enforced in `flows.ts`, not only in the UI. `enrolThisDevice` refuses before `createKeyPair` when `detectProtection()` is `'none'`; `voteOnProposal` and `approveTreasuryChange` throw `NoScreenLockError` when `confirmPresence` returns `'none'`, before `deriveKeyPair`. Prompts use `biometricsSecurityLevel: 'strong'` with the PIN fallback | §6.2, §5.13 | E2E stand-in changed to report `'biometric'`; a probe where it reports `'none'` and each flow refuses before `deriveKeyPair` |
+| I-9 | **No lock, no key, no signature,** enforced in `flows.ts`, not only in the UI. `enrolThisDevice` refuses before `createKeyPair` when `detectProtection()` is `'none'`; `voteOnProposal` and `approveTreasuryChange` throw `NoScreenLockError` when `confirmPresence` returns `'none'`, before `deriveKeyPair`. Prompts use the handset-proven options (§5.13: the PIN fallback, `requireConfirmation: false`, the platform's default level); `biometricsSecurityLevel: 'strong'` waits for the handset check in OWNER-ACTIONS 3.5 item 1, which carries the gate to ship (`Platform.Version >= 30` on Android) | §6.2, §5.13 | E2E stand-in changed to report `'biometric'`; a probe where it reports `'none'` and each flow refuses before `deriveKeyPair` |
 | I-10 | **"Can I sign" needs both** the signed signer set (`signing_inputs.policy.signers` includes the user) **and** the server's `can_sign`. If they disagree, no signing is offered (state 8) | §6.6 | Probe over `personalStatus()` |
 | I-11 | **The decision code is a consistency check, not a proof.** It is computed from the phone's own hash and compared by the person. Copy never says it proves the decision is safe: 32 bits can be ground by a compromised server (about 2³² SHA-256 operations), so the guarantee stays the phone's own text check. Record this in S17 | §5.11 | Probe: `decisionCode` of vector `a39771f8…` is `A397-71F8`; grep that no copy string contains "prove" |
 | I-12 | **Nothing signs from outside the decision screen.** No approve or reject in lists, swipes, long presses, notifications, widgets or the inbox | §1.4 | Grep: `voteOnProposal` and `approveTreasuryChange` are imported only by the signing-sheet module; no notification category with actions is registered (`setNotificationCategoryAsync` never appears) |
 | I-13 | **Lock-screen privacy.** Push bodies carry no amounts or counterparties; with app lock on, the app-switcher snapshot is covered (iOS cover, Android `FLAG_SECURE`) | §6.1, §6.23 | Server-side test of push bodies (R8); handset check of the switcher |
 | I-14 | **The persisted cache holds list summaries only, encrypted, never backed up,** never tokens, keys, signed text or addresses; it is wiped on Remove this phone, on `device_revoked`, on re-setup, and when a different person enrols | §2.6 | Probe over the dehydrate allow-list; config check for `allowBackup: false` |
 | I-15 | **Comments and notifications never sit inside a signing sheet,** never use the serif, and never autolink addresses | §6.21 | Grep and component review |
-| I-16 | **Signed content never changes under the reader.** For the same uuid, a later fetch whose derived payload hash (or `signing_inputs`) differs from an earlier one in this run puts the decision in the tampered state ("The text changed while you were reading it"); it is never silently re-rendered, and an open sheet closes before any prompt | §2.6, §6.6 | Probe over `detectSignedContentChange` |
+| I-16 | **Signed content never changes under the reader.** For the same uuid, a later fetch whose derived payload hash (or `signing_inputs`) differs from an earlier one in this run puts the decision in the tampered state ("The text changed while you were reading it"); it is never silently re-rendered, and an open sheet closes before any prompt. The memory is kept under the uuid the person **opened** (the route), and an answer whose own uuid, or the uuid signed into it (`signing_inputs.proposal_id`), is not the route's is refused as `other_decision`, sticky for the run: a server answering one decision with a second and then a third must not have each "seen once" | §2.6, §6.6 | Probe over `detectSignedContentChange`, and over `checkInRun` and the sheets with a route answered by other decisions |
 
 **A live defect, reported to the owner now as a working-project fix** (like S19, under the plan's
 rules for fixes to the live product): today `keystore.confirmPresence` returns `'none'` without
@@ -2634,7 +2700,7 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
    - On Android, `expo-secure-store` checks `canAuthenticate(BIOMETRIC_STRONG)` only, and its prompt
      has a Cancel button and **no PIN fallback**. On iOS it maps to `biometryCurrentSet`, again with
      no passcode fallback. So **phones with only a PIN, or only Class 2 face unlock, could not set
-     up at all**, and "Sign with your phone's PIN" (§5.13) would disappear.
+     up at all**, and "Sign with your screen lock" (§5.13) would disappear.
    - **Changing enrolled fingerprints or Face ID locks the key** for good; the phone must be set up
      again ("Face ID changed on this phone, so its signing key was locked. Set this phone up again
      to keep approving.").
@@ -2689,7 +2755,7 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
 | Key | Copy |
 | --- | --- |
 | `approvals.headline.n` | "{Three} decisions need your signature" / "One decision needs your signature" |
-| `approvals.headline.zero` | "Nothing needs your signature." |
+| `approvals.headline.zero` | "Nothing needs your signature" (headlines carry no full stop) |
 | `approvals.headline.loading` | "Checking for decisions" |
 | `approvals.headline.failed` | "Can't check your approvals" |
 | `approvals.failed.line` | "Check your connection. Nothing has changed on your decisions." |
@@ -2698,7 +2764,8 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
 | `network.offline` | "Offline. Showing what was here at {time}." |
 | `network.signingNeedsConnection` | "Signing needs a connection, so Q-Vault can check this decision first." |
 | `decision.quorum.general` | "One more approval approves this." / "{n} more approvals approve this." then "{names} can also approve." |
-| `decision.quorum.payment` | "One more approval pays this." / "{n} more approvals pay this." |
+| `decision.quorum.payment` | "One more approval pays this." / "{n} more approvals pay this." (past its signed limit: the general wording) |
+| `decision.payByPassed` | "The time the treasury allows for this payment ran out on {7 Oct}, so approving it won't pay it." with "Treasury limit passed {7 Oct}" on the status line |
 | `decision.notApprover` | "You're not an approver on this decision." |
 | `decision.ownNoApprove` | "You raised this, so you can't approve it." |
 | `decision.closedBeforeOpen` | "{Outcome} by {names} before you opened this." |
@@ -2717,9 +2784,12 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
 | `approvals.webGroup.fix` | "Approve treasury payments on this phone" / "Switch once, and these come to this phone" |
 | `decision.offlineNotLoaded` | "The full decision opens when you're back online." |
 | `biometric.cancelled` | "Face ID was cancelled. Nothing was signed." |
-| `biometric.locked` | "Face ID is locked. Unlock your phone with its PIN, then try again." |
+| `biometric.locked` | "Face ID is locked. Unlock your phone with its PIN, then try again." (screen lock: "Too many tries. Unlock your phone with its PIN, then try again.") |
 | `biometric.noLock` | "Set a screen lock to sign with this phone." |
-| `sign.transport` | "Not signed. Q-Vault didn't receive your signature, so nothing changed." |
+| `sign.uncertain` | "Q-Vault may have received your signature. Checking…" (sent, no readable answer) |
+| `sign.notReceived` | "Q-Vault didn't receive your signature, so nothing changed." (only once Q-Vault's own record, fetched since, holds no vote of yours) |
+| `sign.unchecked` | "This phone couldn't check whether Q-Vault received your signature. Trying again won't count it twice." |
+| `sign.alreadyDecided` | "Your signature wasn't counted, because this was already decided." |
 | `ack.approved.partial` | "Approval signed" / "One more approval is needed. {names} can give it." |
 | `ack.approved.final` | "Decision approved" / "Yours was the approval that met the rule." |
 | `ack.rejected.open` | "Rejection signed" / "This is still open. It's rejected only if {k} more reject it." |
@@ -2730,11 +2800,14 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
 | `tamper.changed` | "The text changed while you were reading it." |
 | `device.remove.title` | "Remove {device name}?" |
 | `device.remove.consequence` | "Its key stops signing at once. Anything it already signed stays valid." |
-| `tamper.labelText` | "This is the text the server sent. It doesn't match what would be signed." |
+| `tamper.labelText` | "This is the text the server sent. It doesn't match what would be signed." (only for `hash`, `payment_text`, `display_text`; see §6.6 Tampered for the others) |
+| `tamper.labelPolicy` | "This text checks out. The approval rule shown with it doesn't." |
 | `raise.general.caption` | "Once raised, the text can't be changed." |
 | `raise.payment.review.line` | "Once requested, this can't be changed. To change it, withdraw it and raise a new one." |
 | `remove.consequence` | "This phone's key is deleted and can't sign again. Decisions it already signed stay valid. To approve from this phone later, set it up again." |
-| `session.ended` | "Your session on this phone ended. Sign in again to keep approving. Your key stays on this phone." |
+| `session.ended` | "Your session on this phone ended. Sign in again to keep approving. Your key stays on this phone." (with A9) |
+| `session.ended.interim` | "To keep approving here, set this phone up again with your email and password. That makes a new key for this phone." / caption "The old key can't sign without a session and stays listed on the web until you remove it there." (until A9) |
+| `remove.untickedConsent` | "Tick 'I understand' to remove this phone." |
 | `enrol.promise` | "Approve decisions with a key that lives on this phone." |
 | `enrol.noLock.title` | "Set a screen lock to use Q-Vault" |
 | `enrol.newPhone` | "This looks like a new phone or a fresh install. Set it up to approve here. Your old phone's key stays valid until you remove it on the web." |

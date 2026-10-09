@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as SystemUI from 'expo-system-ui';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DarkTheme, DefaultTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -25,12 +25,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ActivityIndicator, View } from 'react-native';
 
 import { setApiBaseUrl } from './src/config.ts';
-import { SessionProvider, useSession, useEnrolledSession } from './src/session.tsx';
+import { SessionProvider, useSession } from './src/session.tsx';
 import { Screen, TabBar, Text, ToastProvider } from './src/ui/index.tsx';
 import { useAppFonts } from './src/ui/fonts.ts';
 import { ThemeProvider, useTheme, type Scheme } from './src/theme/index.ts';
-import * as api from './src/api/endpoints.ts';
-import { stillOpen } from './src/status.ts';
+import { useApprovals } from './src/approvals.ts';
 import EnrolScreen from './src/screens/EnrolScreen.tsx';
 import HomeScreen from './src/screens/HomeScreen.tsx';
 import ActivityScreen from './src/screens/ActivityScreen.tsx';
@@ -40,6 +39,12 @@ import VaultsScreen from './src/screens/VaultsScreen.tsx';
 import VaultScreen from './src/screens/VaultScreen.tsx';
 import NewDecisionScreen from './src/screens/NewDecisionScreen.tsx';
 import NewVaultScreen from './src/screens/NewVaultScreen.tsx';
+import WaitingScreen from './src/screens/WaitingScreen.tsx';
+import SessionEndedScreen from './src/screens/SessionEndedScreen.tsx';
+import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnrolled } from './src/links.ts';
+import { wireFocusManager } from './src/freshness.tsx';
+import { RETRY } from './src/queries.ts';
+import { STALE_MS } from './src/logic/freshness.ts';
 
 // Set before any request can be made. `extra.apiBaseUrl` lets a teammate point a build at a
 // different server without touching source.
@@ -47,52 +52,98 @@ const configured = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined
 if (configured) setApiBaseUrl(configured);
 
 export type RootStackParamList = {
-  Tabs: undefined;
-  Decision: { uuid: string };
+  Tabs: { screen?: string } | undefined;
+  // `getId` is the uuid, so a link to the decision already on top never stacks a second copy.
+  Decision: { uuid: string; via?: 'web'; opened?: 'queue' };
   Vault: { vaultId: number };
   // Undefined params: reached from the queue, where no vault is chosen yet.
   NewDecision: { vaultId?: number; vaultName?: string } | undefined;
   NewVault: undefined;
 };
 
+export type ApprovalsStackParamList = {
+  Approvals: undefined;
+  Waiting: undefined;
+};
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const ApprovalsStack = createNativeStackNavigator<ApprovalsStackParamList>();
 const Tabs = createBottomTabNavigator();
+
+// Returning to the app refetches what is stale, except while the OS's own authentication prompt
+// has it in the background (phone-ux §2.6, src/authPrompt.ts).
+wireFocusManager();
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // The server scales to zero, so a cold start is expensive. Serving cached data for a minute
-      // keeps navigation instant instead of paying that repeatedly.
-      staleTime: 60_000,
-      refetchOnWindowFocus: false,
+      // Each query in src/queries.ts sets its own time from §2.6's table; a minute for the rest. The
+      // server scales to zero, so serving a fresh answer keeps navigation instant.
+      staleTime: STALE_MS.vaults,
+      // Refetch what is stale when the app comes back to the front (focusManager, above).
+      refetchOnWindowFocus: true,
+      // One retry after 2 s, transport failures only; never a 401 or a refusal.
+      ...RETRY,
     },
   },
 });
+// A link to a decision already on screen refetches it in place (§2.4 rule 1).
+configureLinks(queryClient);
 
 /**
- * The badge count.
+ * The badge count (phone-ux §2.5).
  *
- * Read from the same query key the queue uses, and narrowed the same way (`stillOpen`), so the
- * number on the tab and the number of cards on the screen cannot disagree -- a badge that outlives
- * its list is how an approvals app trains someone to ignore it.
+ * The same hook the queue renders from, so the number on the tab is the number of rows under
+ * "Needs your signature" -- a badge that outlives its list is how an approvals app trains someone
+ * to ignore it -- and it never counts a payment this phone cannot sign ("Approve on the web").
  */
 function useAwaitingCount(): number | undefined {
-  const { token } = useEnrolledSession();
-  const { data } = useQuery({
-    queryKey: ['proposals', 'awaiting'],
-    queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
-  });
-  const n = stillOpen(data?.proposals ?? []).length;
+  const n = useApprovals().groups.needsYou.length;
   return n > 0 ? n : undefined;
+}
+
+/** The Approvals tab's own stack: the queue, and Waiting on others under it, tab bar kept (§2.1). */
+function ApprovalsTab({
+  onOpen,
+  onRaise,
+  onOpenTreasuryApprovals,
+}: {
+  onOpen: (uuid: string) => void;
+  onRaise: () => void;
+  onOpenTreasuryApprovals: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <ApprovalsStack.Navigator
+      screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.color.bg } }}
+    >
+      <ApprovalsStack.Screen name="Approvals">
+        {({ navigation }) => (
+          <HomeScreen
+            onOpen={onOpen}
+            onRaise={onRaise}
+            onOpenWaiting={() => navigation.navigate('Waiting')}
+            onOpenTreasuryApprovals={onOpenTreasuryApprovals}
+          />
+        )}
+      </ApprovalsStack.Screen>
+      <ApprovalsStack.Screen name="Waiting">
+        {({ navigation }) => <WaitingScreen onBack={() => navigation.goBack()} onOpen={onOpen} />}
+      </ApprovalsStack.Screen>
+    </ApprovalsStack.Navigator>
+  );
 }
 
 function MainTabs({
   onOpen,
+  onOpenQueued,
   onOpenVault,
   onRaise,
   onCreateVault,
 }: {
   onOpen: (uuid: string) => void;
+  /** From a list that showed it open: a closed answer then says it closed before you opened it. */
+  onOpenQueued: (uuid: string) => void;
   onOpenVault: (vaultId: number) => void;
   onRaise: () => void;
   onCreateVault: () => void;
@@ -109,7 +160,13 @@ function MainTabs({
       }}
     >
       <Tabs.Screen name="Home" options={{ title: 'Approvals', tabBarBadge: awaiting }}>
-        {() => <HomeScreen onOpen={onOpen} onRaise={onRaise} />}
+        {({ navigation }) => (
+          <ApprovalsTab
+            onOpen={onOpenQueued}
+            onRaise={onRaise}
+            onOpenTreasuryApprovals={() => navigation.navigate('Account')}
+          />
+        )}
       </Tabs.Screen>
       <Tabs.Screen name="Vaults" options={{ title: 'Vaults' }}>
         {() => <VaultsScreen onOpen={onOpenVault} onCreate={onCreateVault} />}
@@ -128,6 +185,9 @@ function Routes() {
   const { status } = useSession();
   const t = useTheme();
 
+  // A link kept while not enrolled (or while the session had ended) opens once the screens are up.
+  useEffect(() => setLinksEnrolled(status === 'enrolled'), [status]);
+
   if (status === 'loading') {
     return (
       <Screen>
@@ -142,6 +202,8 @@ function Routes() {
   }
 
   if (status === 'anonymous') return <EnrolScreen />;
+  // The key is still on the phone (I-3); this screen says what ended and what setting up again does.
+  if (status === 'ended') return <SessionEndedScreen />;
 
   return (
     <Stack.Navigator
@@ -154,15 +216,26 @@ function Routes() {
         {({ navigation }) => (
           <MainTabs
             onOpen={(uuid) => navigation.navigate('Decision', { uuid })}
+            onOpenQueued={(uuid) => navigation.navigate('Decision', { uuid, opened: 'queue' })}
             onOpenVault={(vaultId) => navigation.navigate('Vault', { vaultId })}
             onRaise={() => navigation.navigate('NewDecision')}
             onCreateVault={() => navigation.navigate('NewVault')}
           />
         )}
       </Stack.Screen>
-      <Stack.Screen name="Decision">
+      <Stack.Screen name="Decision" getId={({ params }) => params.uuid}>
         {({ navigation, route }) => (
-          <DecisionScreen uuid={route.params.uuid} onBack={() => navigation.goBack()} />
+          <DecisionScreen
+            key={route.params.uuid}
+            uuid={route.params.uuid}
+            via={route.params.via}
+            opened={route.params.opened}
+            onBack={() => navigation.goBack()}
+            // Replaces this decision, so Back from the next one lands on the queue (§2.3).
+            onNext={(next) => navigation.replace('Decision', { uuid: next, opened: 'queue' })}
+            onOpenTreasuryApprovals={() => navigation.navigate('Tabs', { screen: 'Account' })}
+            onRaiseIn={(vaultId, vaultName) => navigation.navigate('NewDecision', { vaultId, vaultName })}
+          />
         )}
       </Stack.Screen>
       <Stack.Screen name="Vault">
@@ -228,7 +301,7 @@ function Chrome({ children }: { children: ReactNode }) {
     };
   }, [t]);
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} ref={navigationRef} onReady={flushLinks} onStateChange={flushLinks}>
       {children}
       <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
     </NavigationContainer>
@@ -252,6 +325,8 @@ export function QVaultApp({
   const fontsReady = useAppFonts();
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  // Links for the life of the app: the one it started with, and every one while it runs (§2.4).
+  useEffect(() => listenForLinks(), []);
 
   return (
     // The gesture root the sheets' drag needs (§5.9). Modals carry their own, for Android.

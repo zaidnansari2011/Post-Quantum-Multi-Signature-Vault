@@ -23,6 +23,7 @@ export function ActionBar({
   message,
   line,
   caption,
+  stack = false,
   children,
 }: {
   /** The one primary action, on the right. */
@@ -35,6 +36,8 @@ export function ActionBar({
   line?: string | null;
   /** A line above a single button: "Once raised, the text can't be changed." */
   caption?: string | null;
+  /** Always one above the other, full width: two equal choices, neither of them signing. */
+  stack?: boolean;
   /** Anything else under the buttons (the quiet link of §6.6 state 7). */
   children?: ReactNode;
 }) {
@@ -42,7 +45,7 @@ export function ActionBar({
   const s = useStyles();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const stacked = t.stacked || width < t.breakpoints.narrowWidth;
+  const stacked = stack || t.stacked || width < t.breakpoints.narrowWidth;
 
   return (
     <View style={[s.bar, t.elevation.bar, { paddingBottom: t.space[12] + insets.bottom }]}>

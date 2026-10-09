@@ -35,6 +35,8 @@ export type DecisionRowProps = {
   expiresAt: string | null;
   /** `waiting`: "Waiting on 1" leads line 3. `web`: line 3's right says so. `outcome`: history. */
   variant?: 'queue' | 'waiting' | 'web' | 'outcome';
+  /** The web variant's note on line 3 (default "Approve on the web"): where it can be approved. */
+  note?: string;
   /** The outcome variant's line 3: "Approved", with its date. */
   outcome?: { word: string; tone: TextTone; when?: string | null };
   onPress: () => void;
@@ -50,6 +52,7 @@ export function DecisionRow({
   required,
   expiresAt,
   variant = 'queue',
+  note = 'Approve on the web',
   outcome,
   onPress,
   now = Date.now(),
@@ -68,8 +71,8 @@ export function DecisionRow({
         {outcome.when ? `${outcome.word} ${outcome.when}` : outcome.word}
       </Text>
     ) : variant === 'web' ? (
-      <Text role="caption" tone="muted">
-        Approve on the web
+      <Text role="caption" tone="muted" numberOfLines={1} style={s.note}>
+        {note}
       </Text>
     ) : due ? (
       <View style={s.due}>
@@ -100,7 +103,7 @@ export function DecisionRow({
     variant === 'outcome' && outcome
       ? `${outcome.word}${outcome.when ? ` ${outcome.when}` : ''}`
       : variant === 'web'
-        ? 'Approve on the web'
+        ? `${note}${due ? `. Due ${due}` : ''}`
         : due
           ? `Due ${due}`
           : null,
@@ -127,9 +130,25 @@ export function DecisionRow({
           </Text>
         ) : null}
       </View>
-      <Text role="caption" tone="muted" numberOfLines={1}>
-        {line2}
-      </Text>
+      {variant === 'web' && due ? (
+        // The "Approve on the web" variant: line 3 says where, so the due time moves here (§5.6).
+        <View style={[s.line, stacked && s.lineStacked]}>
+          <Text role="caption" tone="muted" numberOfLines={1} style={stacked ? null : s.title}>
+            {line2}
+          </Text>
+          {/* Due soon carries the clock as well as the tone, never colour alone (§8.5). */}
+          <View style={s.due}>
+            {soon ? <Icon name="clock" size={14} color={t.color.status.warning.fg} /> : null}
+            <Text role="caption" tone={soon ? 'warning' : 'muted'} tabular>
+              {due}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <Text role="caption" tone="muted" numberOfLines={1}>
+          {line2}
+        </Text>
+      )}
       <View style={[s.line, s.line3, stacked && s.lineStacked]}>
         {left}
         {right}
@@ -166,6 +185,7 @@ const useStyles = makeStyles((t) => ({
   line3: { alignItems: 'center', marginTop: t.space[2] },
   title: { flex: 1 },
   amount: { flexShrink: 0 },
+  note: { flexShrink: 1, textAlign: 'right' },
   marks: { flexDirection: 'row', alignItems: 'center', gap: t.space[8] },
   due: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
 }));

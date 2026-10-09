@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   Banner,
+  ColdStartHint,
   CollapsedBar,
   DecisionRow,
   DecisionRowSkeleton,
@@ -29,8 +30,9 @@ import {
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
-import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
+import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
+import { allQuery, fetchedThisRun, keys } from '../queries.ts';
 import type { ProposalSummary } from '../api/schemas.ts';
 import { decisionStatus, statusWord } from '../status.ts';
 import { deadlineWhen, parseInstant } from '../time.ts';
@@ -53,19 +55,17 @@ const OUTCOME_TONE: Record<string, TextTone> = {
 
 export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
   const s = useStyles();
-  const { token, handleUnauthorized } = useEnrolledSession();
+  const { token } = useEnrolledSession();
   const [filter, setFilter] = useState<Filter>('all');
   const header = useCollapsingHeader();
 
-  const query = useQuery({
-    queryKey: ['proposals', 'all'],
-    queryFn: ({ signal }) => api.fetchProposals(token, 'all', signal),
-    retry: (count, err) => !(err instanceof ApiError) && count < 2,
-  });
+  const query = useQuery(allQuery(token));
+  useRefreshOnFocus([keys.all]);
+  // Reading `dataUpdatedAt` here also re-renders on an answer equal to the copy from disk.
+  const confirmed = query.dataUpdatedAt > 0 && fetchedThisRun(keys.all);
+  const coldStart = useColdStart(!confirmed && query.isFetching);
 
-  if (query.error instanceof ApiError && query.error.status === 401) {
-    void handleUnauthorized();
-  }
+  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
 
   // Not memoised on the data: a decision that passes its deadline while the list is cached moves
   // from Open to Declined the next time the screen draws.
@@ -79,6 +79,7 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
 
   return (
     <Screen>
+      <OfflineNotice at={query.dataUpdatedAt} />
       <View style={s.flex}>
         <CollapsedBar title="Activity" visible={header.collapsed} />
         <FlatList
@@ -117,6 +118,7 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
             <View style={s.head}>
               <RootHeader
                 onLayout={header.onHeaderLayout} title="Activity" />
+              <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
               <Segmented label="Show" options={FILTERS} value={filter} onChange={setFilter} />
               {transportFailure ? (
                 <Banner

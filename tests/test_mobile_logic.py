@@ -5,8 +5,10 @@
   check a person compares, never a proof).
 * ``signingMethod`` names the phone's lock on the button ("Sign with Face ID"), from what
   ``detectProtection()`` reports and the biometric hardware: a phone whose only biometric is Class 2
-  face unlock reports ``device_credential`` and must say PIN, never "face unlock"; a phone with no
-  lock cannot sign at all (I-9); and no label ever says "passcode".
+  face unlock reports ``device_credential`` and must say "your screen lock", never "face unlock"
+  (its prompt may still offer the face first until the strong level is cleared on a handset, so
+  not "PIN" either); a phone with no lock cannot sign at all (I-9); and no label ever says
+  "passcode".
 """
 
 from __future__ import annotations
@@ -43,8 +45,8 @@ METHODS = {
         "device_credential",
         [],
         "ios",
-        "your phone's PIN",
-        "Sign with your phone's PIN",
+        "your screen lock",
+        "Sign with your screen lock",
     ),
     "pixel_fingerprint_and_face": (
         "biometric",
@@ -60,20 +62,20 @@ METHODS = {
         "face unlock",
         "Sign with face unlock",
     ),
-    # Class 2 face unlock only: detectProtection reports device_credential, the prompt is the PIN.
+    # Class 2 face unlock only: detectProtection reports device_credential; the label names neither.
     "android_weak_face_only": (
         "device_credential",
         [FACE],
         "android",
-        "your phone's PIN",
-        "Sign with your phone's PIN",
+        "your screen lock",
+        "Sign with your screen lock",
     ),
     "android_pin_only": (
         "device_credential",
         [],
         "android",
-        "your phone's PIN",
-        "Sign with your phone's PIN",
+        "your screen lock",
+        "Sign with your screen lock",
     ),
     "android_iris_only": ("biometric", [IRIS], "android", "biometrics", "Sign with biometrics"),
     "no_screen_lock": ("none", [FINGERPRINT], "android", None, "Sign"),

@@ -63,11 +63,16 @@ export function fetchDevices(token: string, signal?: AbortSignal) {
   return request(devicesResponse, { path: '/api/v1/devices', token, signal });
 }
 
-export function revokeDevice(token: string, deviceId: number) {
+/**
+ * `quietUnauthorized`: for this phone's own removal, a 401 is the remove sheet's to explain (§6.19);
+ * the session is not ended under it.
+ */
+export function revokeDevice(token: string, deviceId: number, options: { quietUnauthorized?: boolean } = {}) {
   return request(revokeResponse, {
     method: 'POST',
     path: `/api/v1/devices/${deviceId}/revoke`,
     token,
+    quietUnauthorized: options.quietUnauthorized,
   });
 }
 
