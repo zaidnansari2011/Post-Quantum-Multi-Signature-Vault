@@ -775,7 +775,15 @@ def test_me_and_the_challenge_name_the_workspace_and_role(app, client, team):
     ).get_json()
     me = client.get("/api/v1/me", headers=_enrol(client, brij)).get_json()
 
-    expected = {"id": team[0].id, "name": "Q-Vault", "role": "admin", "role_name": "Admin"}
+    # Both also say how a new vault starts (P3: the phone's New vault warns before creating one
+    # that could pass nothing under separation of duties).
+    expected = {
+        "id": team[0].id,
+        "name": "Q-Vault",
+        "role": "admin",
+        "role_name": "Admin",
+        "separation_of_duties_default": True,
+    }
     assert challenge["workspace"] == expected
     assert me["workspace"] == expected
 
