@@ -621,7 +621,7 @@ def inviter_still_entitled(invitation: Invitation, inviter_member: WorkspaceMemb
 
 def is_vacant_for(workspace: Workspace, user: User | int) -> bool:
     """Whether ``user`` could leave ``workspace`` with nothing lost: they are its only member,
-    they belong to no vault anywhere (so they own none), and it has no open invitation."""
+    they belong to no vault anywhere (so they own none), and it has no pending invitation."""
     user_id = user if isinstance(user, int) else user.id
     others = db.session.scalar(
         select(func.count(WorkspaceMember.id)).where(
@@ -637,16 +637,9 @@ def is_vacant_for(workspace: Workspace, user: User | int) -> bool:
     )
     if in_a_vault:
         return False
-    open_invitation = db.session.scalar(
-        select(Invitation.id)
-        .where(
-            Invitation.workspace_id == workspace.id,
-            Invitation.accepted_at.is_(None),
-            Invitation.revoked_at.is_(None),
-        )
-        .limit(1)
-    )
-    return open_invitation is None
+    # A pending invitation is someone about to join; an expired one can no longer bring anyone in.
+    now = _now()
+    return not any(i.state(now) == "pending" for i in open_invitations(workspace))
 
 
 def workspace_to_leave(user: User, joining: Workspace) -> tuple[WorkspaceMember, bool] | None:
@@ -690,9 +683,9 @@ def make_room_to_join(user: User, joining: Workspace, *, ask: str) -> Workspace 
     if not vacant:
         raise WorkspaceError(
             "has_workspace",
-            f"You already belong to {current.name}, which has vaults or other members. Q-Vault "
-            f"doesn't support belonging to two workspaces yet, so you can't join "
-            f"{joining.name} from this account. {ask}",
+            f"You already belong to {current.name}, which has vaults, other members or pending "
+            f"invitations. Q-Vault doesn't support belonging to two workspaces yet, so you can't "
+            f"join {joining.name} from this account. {ask}",
         )
     role = member.role
     db.session.delete(member)
