@@ -59,6 +59,11 @@ export const meResponse = z.object({
     .nullable()
     .optional()
     .catch(undefined),
+  // R8: whether this server sends pushes, and holds this phone's token. Absent from an older one.
+  push: z
+    .lazy(() => pushStatus)
+    .optional()
+    .catch(undefined),
 });
 export type Me = z.infer<typeof meResponse>;
 export const myKeySchema = z.object({
@@ -498,3 +503,27 @@ export const remindResponse = z.object({
   ok: z.literal(true),
   reminded: z.number().int(),
 });
+
+// --- Phone push (plan R8). ----------------------------------------------------------------------
+//
+// Whether this server sends pushes and holds this phone's token. The token itself is never sent
+// back. Absent from an older server, which sends no pushes.
+
+export const pushStatus = z.object({ available: z.boolean(), registered: z.boolean() });
+export type PushStatus = z.infer<typeof pushStatus>;
+
+export const pushTokenResponse = z.object({ ok: z.literal(true), push: pushStatus });
+
+export const pushGroupSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  enabled: z.boolean(),
+  locked: z.boolean(),
+});
+
+export const notificationSettingsResponse = z.object({
+  ok: z.literal(true),
+  push: pushStatus.extend({ groups: z.array(pushGroupSchema) }),
+  email: z.object({ available: z.boolean() }),
+});
+export type NotificationSettings = z.infer<typeof notificationSettingsResponse>;

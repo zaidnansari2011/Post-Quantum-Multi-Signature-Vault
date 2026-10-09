@@ -327,7 +327,9 @@ def test_a_page_far_past_the_end_is_an_empty_page_not_an_error(client, team):
 # Preferences
 
 
-def test_the_grid_lists_every_event_once_with_email_and_push_not_set_up(client, team):
+def test_the_grid_lists_every_event_once_with_email_and_push_not_set_up(app, client, team):
+    # R8: the suite sets both up (in-memory); this is an instance with neither.
+    app.config.update(MAIL_TRANSPORT="off", PUSH_TRANSPORT="off")
     _login(client, team.brij)
     html = client.get("/account/notifications").get_data(as_text=True)
 

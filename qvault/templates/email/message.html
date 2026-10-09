@@ -1,0 +1,76 @@
+{#- One email (plan R8). Rendered with autoescape on: every value here is plain text from
+    delivery_copy, escaped where it lands. One call to action, the raw address below it, and never a
+    button that approves or signs (S12). Inline styles and tables, because mail clients drop most CSS;
+    the dark block is for the clients that honour prefers-color-scheme. -#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{ copy.subject }}</title>
+<style>
+  @media (prefers-color-scheme: dark) {
+    .qv-page { background: #11161E !important; }
+    .qv-card { background: #171C25 !important; border-color: #313947 !important; }
+    .qv-ink { color: #EEF1F6 !important; }
+    .qv-muted { color: #B9C0CD !important; }
+    .qv-rule { border-color: #313947 !important; }
+    .qv-link { color: #8BB3FA !important; }
+    .qv-button { background: #376ACF !important; }
+  }
+  @media (max-width: 520px) { .qv-card { padding: 20px !important; } }
+</style>
+</head>
+<body class="qv-page" style="margin:0;padding:0;background:#F7F8FA;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="qv-page" style="background:#F7F8FA;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+        <tr>
+          <td class="qv-ink" style="padding:0 4px 12px;font:600 15px/22px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16233A;">Q-Vault</td>
+        </tr>
+        <tr>
+          <td class="qv-card" style="background:#FFFFFF;border:1px solid #DDE1E9;border-radius:8px;padding:28px;">
+            <h1 class="qv-ink" style="margin:0 0 12px;font:600 20px/28px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16233A;">{{ copy.heading }}</h1>
+            {% for line in copy.lines %}
+            <p class="qv-ink" style="margin:0 0 12px;font:400 15px/22px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16233A;">{{ line }}</p>
+            {% endfor %}
+            {% if copy.facts %}
+            {#- Names someone chose appear only here, quoted, as values of labelled facts. -#}
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 0;">
+              {% for label, value in copy.facts %}
+              <tr>
+                <td class="qv-muted" style="padding:2px 16px 2px 0;vertical-align:top;font:400 14px/20px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#4A5568;white-space:nowrap;">{{ label }}</td>
+                <td class="qv-ink" style="padding:2px 0;vertical-align:top;font:400 14px/20px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#16233A;word-break:break-word;">{{ value }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% endif %}
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0 16px;">
+              <tr>
+                <td class="qv-button" style="background:#2D60C3;border-radius:6px;">
+                  <a href="{{ url }}" style="display:inline-block;padding:11px 18px;font:600 15px/20px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#FFFFFF;text-decoration:none;">{{ copy.action }}</a>
+                </td>
+              </tr>
+            </table>
+            <p class="qv-muted" style="margin:0 0 4px;font:400 13px/20px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#4A5568;">Or open this address:</p>
+            <p style="margin:0;font:400 13px/20px ui-monospace,Menlo,Consolas,monospace;word-break:break-all;"><a class="qv-link" href="{{ url }}" style="color:#2D60C3;">{{ url }}</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td class="qv-muted" style="padding:16px 4px 0;font:400 12px/18px -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#4A5568;">
+            <p style="margin:0 0 6px;">{{ copy.reason }}</p>
+            {% if preferences %}
+            <p style="margin:0 0 6px;">Choose which emails you get: <a class="qv-link" href="{{ preferences }}" style="color:#2D60C3;">notification settings</a>.</p>
+            {% endif %}
+            <p style="margin:0;">Q-Vault never asks you to approve or sign from an email. If an email does, it isn't from us.</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
