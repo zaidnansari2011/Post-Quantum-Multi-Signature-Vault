@@ -7,9 +7,10 @@
 //
 // It is a consistency check, never described as a proof (I-11).
 
-import { Share, View } from 'react-native';
+import { View } from 'react-native';
 
 import { spokenCode } from '../logic/decisionCode.ts';
+import { copyText } from '../native/clipboard.ts';
 import { makeStyles, scaleCap } from '../theme/index.ts';
 import { IconButton } from './Button.tsx';
 import { Text } from './Text.tsx';
@@ -52,7 +53,7 @@ export function CodeBlock({ code }: { code: string }) {
         >
           {code}
         </Text>
-        <IconButton icon="copy" label="Copy the decision code" onPress={() => void Share.share({ message: code })} size={20} />
+        <IconButton icon="copy" label="Copy the decision code" onPress={() => void copyText(code)} size={20} />
       </View>
       <Text role="body">Check this matches the code on your web page.</Text>
       <Text role="caption" tone="subtle">

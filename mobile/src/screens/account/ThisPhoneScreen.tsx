@@ -30,6 +30,7 @@ import { devicesQuery } from '../../queries.ts';
 import { useSigningMethod } from '../../signingMethod.ts';
 import { dayMonth } from '../../logic/words.ts';
 import { RemoveThisPhoneSheet } from './RemoveThisPhoneSheet.tsx';
+import { canCoverSwitcher } from '../../native/screenCapture.ts';
 
 const ALGORITHMS: Record<string, string> = {
   'ML-DSA-44': 'ML-DSA-44, FIPS 204',
@@ -97,7 +98,9 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
                   <Text role="caption" tone="muted">
                     {Platform.OS === 'ios'
                       ? 'Asked when Q-Vault opens, and after a minute away. The app switcher shows a cover instead of your decisions.'
-                      : 'Asked when Q-Vault opens, and after a minute away.'}
+                      : canCoverSwitcher()
+                        ? 'Asked when Q-Vault opens, and after a minute away. The app switcher hides your decisions. Also stops screenshots of Q-Vault on this phone.'
+                        : 'Asked when Q-Vault opens, and after a minute away.'}
                   </Text>
                 </View>
                 <Switch

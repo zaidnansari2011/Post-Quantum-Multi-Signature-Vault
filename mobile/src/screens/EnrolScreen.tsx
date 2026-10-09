@@ -40,7 +40,8 @@ import { ApiError, TransportError } from '../api/client.ts';
 import { getApiBaseUrl } from '../config.ts';
 import { NoScreenLockError } from '../flows.ts';
 import { useSigningMethod } from '../signingMethod.ts';
-import { defaultDeviceName, rateLimitMessage, signInProblems } from '../logic/onboarding.ts';
+import { DEVICE_NAME_MAX, defaultDeviceName, rateLimitMessage, signInProblems } from '../logic/onboarding.ts';
+import { deviceNames } from '../native/device.ts';
 
 type Step = 'signin' | 'key' | 'nolock' | 'done';
 
@@ -58,7 +59,7 @@ export default function EnrolScreen() {
   const [problems, setProblems] = useState<{ email?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
-  const [deviceName, setDeviceName] = useState(defaultDeviceName(Platform.OS));
+  const [deviceName, setDeviceName] = useState(() => defaultDeviceName(Platform.OS, deviceNames()));
   const [naming, setNaming] = useState(false);
   const [keyProblem, setKeyProblem] = useState<{ tone: 'neutral' | 'warning' | 'critical'; text: string } | null>(null);
   const [created, setCreated] = useState<string | null>(null);
@@ -103,7 +104,7 @@ export default function EnrolScreen() {
         setStep('nolock');
         return;
       }
-      const result = await enrol({ email: email.trim(), password, deviceName: deviceName.trim() || defaultDeviceName(Platform.OS) });
+      const result = await enrol({ email: email.trim(), password, deviceName: deviceName.trim() || defaultDeviceName(Platform.OS, deviceNames()) });
       setCreated(result.fingerprint);
       setFinish(() => result.finish);
       setStep('done');
@@ -207,7 +208,7 @@ export default function EnrolScreen() {
                   value={deviceName}
                   onChangeText={setDeviceName}
                   autoCapitalize="sentences"
-                  maxLength={80}
+                  maxLength={DEVICE_NAME_MAX}
                   caption="Shown in your device list, so you can tell your phones apart."
                   onBlur={() => setNaming(false)}
                   autoFocus
