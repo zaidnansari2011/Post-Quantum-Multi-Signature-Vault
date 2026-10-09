@@ -4,8 +4,7 @@
  *
  * Built only from tokens.css and the components in components.css and evidence.css, under the same
  * rules: colour from tokens, font sizes from the type scale, radius by role, shadows on overlays
- * only, and the q- prefix, so the compatibility layer (qvault.css) and these never restyle each
- * other. Loaded after evidence.css.
+ * only, and the q- prefix. Loaded after evidence.css.
  */
 
 /* ================================================================ the page region (base.html) */

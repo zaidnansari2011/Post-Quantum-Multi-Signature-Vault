@@ -1,7 +1,7 @@
 /* Q-Vault base layer: the reset, the page, the type roles, links, focus and motion.
  *
- * Loaded after tokens.css and before everything else, so components and the compatibility layer
- * (qvault.css) override it, never the other way round. Every value is a token: this file names no
+ * Loaded after tokens.css and before everything else, so the components and screens override
+ * it, never the other way round. Every value is a token: this file names no
  * colour of its own. Element defaults stay close to the browser's (paragraph and list margins are
  * kept) because the existing screens were laid out against them.
  */
