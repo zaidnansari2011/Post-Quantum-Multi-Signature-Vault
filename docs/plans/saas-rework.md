@@ -471,6 +471,8 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 
 ### Phase R9: Recovery · ⚑ design approval
 
+- **Owner approved the design 2026-10-09** (all eight recommendations in its §14). Build order: Phase 1 the Recovery Kit now; Phase 2 the phone route with the R7 app build; Phase 3 the approvers route after R8, behind a flag, off.
+
 - [x] Written design for the Recovery Kit and quorum key replacement (S18), reviewed adversarially before code (2026-10-09: [recovery-design.md](saas-rework/recovery-design.md); the review found 1 critical, 4 high, 8 medium, all taken into the revision; awaiting the owner's eight answers before code)
 - [ ] Forgot-password flow offering the three routes; key replacement as a vault decision with a cancel window; every step notified and audited
 - **Done when:** a user who forgot their password regains the ability to sign by each route, in tests and once by hand, and the review's findings are closed.
@@ -532,7 +534,7 @@ progress-log row. **Any prefix of these phases is a coherent product** (§0).
 | S18 recovery | New cryptography, product promise | **Decided:** the three routes; the written design is reviewed before R9 code |
 | S25 dark mode | Scope | **Decided:** built in from R1 in both themes; the phone's needs a new APK |
 | Logo mark | Brand | From the quorum seal, approved on the style tile |
-| Staging environment | Cost on the teammate's subscription (a scale-to-zero container app and a database on the existing server) | **Decided (2026-10-09):** yes, in R10, created by us through the az CLI on the team subscription (the owner has that access) |
+| Staging environment | Cost on the teammate's subscription (a scale-to-zero container app and a database on the existing server) | **Decided (2026-10-09):** yes, in R10, created by us through the az CLI on the team subscription (the owner has that access); at Azure's default `*.azurecontainerapps.io` address (no DNS). `project4.zaidansari.tech` is DNS-only in Cloudflare (grey cloud), so `RATE_LIMIT_PROXY_HOPS=1` |
 | Email provider | A third-party account and DNS records (SPF, DKIM, DMARC) on `zaidansari.tech` | **Decided (2026-10-09): Resend**, sending from `mail.zaidansari.tech` (OWNER-ACTIONS §2.11) |
 | Push notifications | Firebase (FCM) project for Android; an Apple Developer account (US$99/yr) for iOS | **Decided (2026-10-09): FCM for Android**, no iOS (OWNER-ACTIONS §2.12) |
 | Public checkpoint | The landing page's "Verify offline" needs the signed log head without signing in | **Decided (2026-10-09):** a read-only public endpoint serving the latest signed checkpoint (already public in exports) |
