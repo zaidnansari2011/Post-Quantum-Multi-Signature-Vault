@@ -513,6 +513,8 @@ people vouching, and logs it all in a witnessed log.
 
 ## 14. Questions for the owner
 
+**Answered 2026-10-09: the owner approved all eight recommendations as written below.** Phase 1 (the Recovery Kit) is cleared to build.
+
 | # | Question | Recommendation |
 | --- | --- | --- |
 | ⚑1 | Is the Recovery Kit live before email warnings exist (R8)? | Yes, with the 72-hour wait, because warnings also reach admins and fellow approvers as a Home banner with Cancel, and any use of the real password cancels. Route (b) stays off until R8. |

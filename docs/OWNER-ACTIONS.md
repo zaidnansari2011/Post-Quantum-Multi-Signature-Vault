@@ -794,8 +794,8 @@ For the rework image (R10 staging and the switch), settings the deployment needs
    - `2` when Cloudflare proxies in front of it (the orange cloud on the DNS record);
    - `0` only with no proxy at all.
 
-   The integrator confirms which applies at R10 staging (does the custom domain go through
-   Cloudflare's proxy?). The counts are per process, which is right for one replica; if the app is
+   **Answered 2026-10-09:** `project4.zaidansari.tech` is DNS-only in Cloudflare (grey cloud), so
+   the value is **1**. The counts are per process, which is right for one replica; if the app is
    ever scaled out, the limits multiply by the replica count.
 3. **Sign-ups during a live demo.** Sign-up (both forms together) allows
    `RATE_LIMIT_SIGNUP_PER_HOUR` per address per hour, 10 by default. An audience on one campus
