@@ -68,7 +68,8 @@ export function MembersSheet({
               captionTone={noKey ? 'warning' : 'muted'}
               value={role}
               onPress={m.email ? () => setShown(shown === m.user_id ? null : m.user_id) : undefined}
-              accessibilityHint={m.email ? 'Shows their email' : undefined}
+              chevron={false}
+              accessibilityHint={m.email ? (shown === m.user_id ? 'Hides their email' : 'Shows their email') : undefined}
             />
           );
         })}
@@ -139,14 +140,20 @@ export function TreasurySheet({
           </List>
         ) : null}
 
-        <View style={s.lead} accessible accessibilityLabel={`Balance, ${status?.balance?.replace(/ETH$/, 'ether') ?? 'unavailable'}`}>
-          <Text role="figure" tabular>
-            {status?.balance ?? 'Unavailable'}
+        {status?.balance ? (
+          <View style={s.lead} accessible accessibilityLabel={`Balance, ${status.balance.replace(/ETH$/, 'ether')}`}>
+            <Text role="figure" tabular>
+              {status.balance}
+            </Text>
+            <Text role="caption" tone="muted">
+              {`In the ${vaultName} treasury on Sepolia`}
+            </Text>
+          </View>
+        ) : (
+          <Text role="body" tone="muted">
+            {`The ${vaultName} treasury on Sepolia. Sepolia didn't answer, so its balance isn't known right now.`}
           </Text>
-          <Text role="caption" tone="muted">
-            {status?.balance ? `In the ${vaultName} treasury on Sepolia` : "Sepolia didn't answer, so the balance isn't known right now."}
-          </Text>
-        </View>
+        )}
 
         <View>
           <Identifier label="Address" value={treasury.address} />

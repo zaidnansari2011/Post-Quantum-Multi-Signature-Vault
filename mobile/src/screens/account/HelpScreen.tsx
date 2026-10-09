@@ -56,7 +56,13 @@ export default function HelpScreen({ onBack }: { onBack: () => void }) {
             <ListRow icon="docs" title="Documentation" onPress={web('/docs')} accessibilityHint="Opens on the web" />
             <ListRow icon="pulse" title="Status" onPress={web('/status')} accessibilityHint="Opens on the web" />
             <ListRow icon="document" title="Licences" onPress={() => setLicences(true)} />
-            <ListRow icon="download" title="Check for updates" caption={checking ? 'Checking…' : null} onPress={() => void check()} />
+            <ListRow
+              icon="download"
+              title="Check for updates"
+              caption={checking ? 'Checking…' : null}
+              chevron={false}
+              onPress={() => void check()}
+            />
           </List>
           {update ? <InlineMessage tone={update.tone} text={update.text} /> : null}
           <Text role="caption" tone="subtle">
