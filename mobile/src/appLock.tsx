@@ -17,9 +17,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 
 import * as keystore from './keystore.ts';
-import { authPromptInFlight } from './authPrompt.ts';
+import { authPromptOpen, promptSpans } from './authPrompt.ts';
 import { onLeave, onReturn, type LockClock } from './logic/appLock.ts';
 import { setLinksLocked } from './links.ts';
+import { setAppLocked } from './lockState.ts';
 
 type AppLockValue = {
   /** Read from the keystore yet. */
@@ -63,20 +64,26 @@ export function AppLockProvider({ children, active }: { children: ReactNode; act
 
   // Only an enrolled app has anything to hide; without a key there is nothing to lock.
   const lockedNow = active && enabled && locked;
-  useEffect(() => setLinksLocked(lockedNow), [lockedNow]);
+  useEffect(() => {
+    setLinksLocked(lockedNow);
+    // Sheets close, modal forms draw the lock over themselves (src/lockState.ts).
+    setAppLocked(lockedNow);
+  }, [lockedNow]);
 
   useEffect(() => {
     const onChange = (state: AppStateStatus) => {
       const now = Date.now();
-      const promptUp = authPromptInFlight(now);
       if (state === 'background' || state === 'inactive') {
-        clock.current = onLeave(clock.current, now, promptUp);
-        if (Platform.OS === 'ios' && enabledRef.current && !promptUp) setCovered(true);
+        // Always recorded: leaving during a prompt, or a moment after one, still arms the lock. The
+        // prompt's own time is subtracted on return (src/logic/appLock.ts).
+        clock.current = onLeave(clock.current, now);
+        // Not over the OS prompt itself (Face ID makes the app inactive), but the moment it is gone.
+        if (Platform.OS === 'ios' && enabledRef.current && !authPromptOpen()) setCovered(true);
         return;
       }
       if (state === 'active') {
         setCovered(false);
-        const back = onReturn(clock.current, now, enabledRef.current);
+        const back = onReturn(clock.current, now, enabledRef.current, promptSpans());
         clock.current = back.clock;
         if (back.lock) setLocked(true);
       }
@@ -85,17 +92,25 @@ export function AppLockProvider({ children, active }: { children: ReactNode; act
     return () => subscription.remove();
   }, []);
 
-  const unlock = useCallback(async () => {
-    try {
-      const level = await keystore.confirmPresence(UNLOCK_PROMPT);
-      // A phone whose lock was removed since cannot be asked: it is let in, and the switch on This
-      // phone says app lock needs a screen lock.
-      void level;
-      setLocked(false);
-      return true;
-    } catch {
-      return false;
-    }
+  // One prompt at a time: the root's lock screen and a modal form's both ask on appearance.
+  const unlocking = useRef<Promise<boolean> | null>(null);
+  const unlock = useCallback(() => {
+    if (unlocking.current) return unlocking.current;
+    const attempt = (async () => {
+      try {
+        await keystore.confirmPresence(UNLOCK_PROMPT);
+        // A phone whose lock was removed since cannot be asked: it is let in, and This phone's
+        // switch says app lock needs a screen lock (removing the lock needed the phone's PIN).
+        setLocked(false);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        unlocking.current = null;
+      }
+    })();
+    unlocking.current = attempt;
+    return attempt;
   }, []);
 
   const setEnabled = useCallback(async (on: boolean) => {

@@ -51,7 +51,7 @@ import NewDecisionScreen from './src/screens/NewDecisionScreen.tsx';
 import NewVaultScreen from './src/screens/NewVaultScreen.tsx';
 import WaitingScreen from './src/screens/WaitingScreen.tsx';
 import SessionEndedScreen from './src/screens/SessionEndedScreen.tsx';
-import LockScreen from './src/screens/LockScreen.tsx';
+import { LockGate, LockModal } from './src/screens/LockScreen.tsx';
 import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnrolled } from './src/links.ts';
 import { usePushWiring } from './src/push.ts';
 import { NotificationsPrimer } from './src/screens/NotificationsPrimer.tsx';
@@ -302,6 +302,12 @@ function Routes() {
 
   return (
     <>
+      {/* Under the lock, screen readers reach none of this (§6.1). */}
+      <View
+        style={{ flex: 1 }}
+        accessibilityElementsHidden={lock.locked}
+        importantForAccessibility={lock.locked ? 'no-hide-descendants' : 'auto'}
+      >
       <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.color.bg } }}>
         <Stack.Screen name="Tabs">
           {({ navigation }) => (
@@ -358,6 +364,7 @@ function Routes() {
         <Stack.Group screenOptions={{ presentation: 'modal' }}>
           <Stack.Screen name="NewVault">
             {({ navigation }) => (
+              <LockGate>
               <NewVaultScreen
                 onClose={() => navigation.goBack()}
                 // To the new vault inside the Vaults tab, so Back lands on the list rather than on a
@@ -366,10 +373,12 @@ function Routes() {
                   navigation.navigate('Tabs', { screen: 'Vaults', params: { screen: 'Vault', params: { vaultId } } })
                 }
               />
+              </LockGate>
             )}
           </Stack.Screen>
           <Stack.Screen name="NewDecision">
             {({ navigation, route }) => (
+              <LockGate>
               <NewDecisionScreen
                 vaultId={route.params?.vaultId}
                 vaultName={route.params?.vaultName}
@@ -379,24 +388,17 @@ function Routes() {
                 // return to a filled-in form that would raise a second copy if resubmitted (§2.3).
                 onRaised={(uuid, raised) => navigation.replace('Decision', { uuid, raised })}
               />
+              </LockGate>
             )}
           </Stack.Screen>
         </Stack.Group>
       </Stack.Navigator>
+      </View>
       {/* Once, after enrolment, where this server sends pushes (§6.2 step 3). */}
       <NotificationsPrimer />
-      {lock.locked ? <LockScreen /> : lock.covered ? <PrivacyCover /> : null}
+      {/* Mounted last, as a full-screen Modal: above every sheet and window (§6.1). */}
+      <LockModal locked={lock.locked} covered={lock.covered} />
     </>
-  );
-}
-
-/** iOS: drawn while the switcher may snapshot the app, with app lock on (§6.1). */
-function PrivacyCover() {
-  const s = useStyles();
-  return (
-    <View style={s.cover} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <Launch />
-    </View>
   );
 }
 
@@ -480,5 +482,4 @@ export function QVaultApp({
 
 const useStyles = makeStyles((t) => ({
   launch: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.color.bg },
-  cover: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 },
 }));
