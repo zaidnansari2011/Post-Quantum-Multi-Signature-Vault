@@ -2575,6 +2575,51 @@ on the `rework` channel, and the owner tests on a handset throughout.
   - on a handset: dirty-form discard with iOS swipe, Android back and predictive back; app lock with
     the PIN fallback not tripping the 1-minute lock; the reject sheet's footer above the keyboard.
 
+**P3 status (2026-10-09, stream `rework/p3-phone-depth`).** Built: every screen in the list above,
+with the R3 and R5 parts of P4 (below). Shots: `docs/plans/saas-rework/shots/p3/`
+(`tools/web-shots/p3.py`). Probes: `tools/p3_probe.ts` through `tests/test_mobile_p3.py` (I-5's
+`checkRaisedPayment` and text check, `treasuryChangeStatus` for every row of §6.15, the change's
+own digest check, a tampered typed field refused as `type_text`, Activity, the workspace rules,
+EIP-55, honest deadlines, the 429 copy and app lock's timing); a grep test refuses native `Alert`.
+Where P3 departs from the text above, and why:
+
+- **Navigation.** Vault and its full lists live inside the Vaults tab (tab bar kept), as §2.1 says.
+  A link to a vault that arrives over a dirty New decision is kept and applied when the form
+  closes, rather than pushed over it (reaching a tab would close the form underneath; §2.4 rule 4
+  still pushes a decision or a treasury change).
+- **Splash (§6.1).** `expo-splash-screen` is not installed (N5), so until the rework APK the first
+  frame is the mark on `bg` (a glyph of the icon font, `mark`), never "Unlocking" and a spinner.
+- **App lock (§6.1).** Built, off by default (owner Q7), timing rules in `src/logic/appLock.ts`,
+  the iOS privacy cover drawn while `inactive`. Android's cover needs `expo-screen-capture` (N10):
+  until the APK, Android's app switcher can still show Q-Vault, and the switch's caption says
+  nothing about screenshots, because it would not be true yet.
+- **Onboarding (§6.2).** Step 1 checks the password with `POST /devices/challenge` before step 2
+  makes a key, so a wrong password (or a 429, "Too many attempts. Try again in N minutes.") is said
+  under the password field. The device name is "Android phone" / "iPhone" until `expo-device` (N8).
+  "Forgot password?" opens §6.2's sheet (without the Recovery Kit line until R9), whose button goes
+  to `https://<server>/forgot-password` (R6). Step 3 (notifications) is R8's.
+- **New decision (§6.16).** "Pick a day..." waits for the date picker (N16); "Paste" and "Scan" wait
+  for N11 and N15. Access's "person" is a text field (the template's field is free text), not a
+  picker. The vault last raised in is remembered for the run, not across restarts.
+- **New vault (§6.17).** `/people` sends names and ids only (by design), so the people sheet cannot
+  show an email to tell two people with the same name apart.
+- **Vault (§6.14).** "Last signed 2 Oct" per member needs an API field that does not exist; members
+  without an active key say "No key yet, can't approve yet" (`has_key`, added to the vault detail).
+- **Account (§6.18).** Renaming the device needs an API route that does not exist, so This phone
+  shows the name without "Change". The remove-another-device sheet cannot yet name which treasury
+  holds that device's key (the treasury view does not send seat fingerprints), so it says the
+  consequence conditionally. Notifications is the pre-R8 page.
+- **Activity (§6.12).** The list says that you voted, not which way, so "You approved" / "You
+  rejected" appear only where the counts settle it; otherwise "You voted" (API gap: `my_vote` on
+  summaries). Open decisions sort first (they have no `created_at` on the summary).
+- **Discussion (§6.21).** Read only: `GET /proposals/<uuid>/comments` has no POST yet, so the
+  thread says comments are added on the web and links there. Mentions are drawn where the server
+  resolved them; nothing in a comment is a link.
+- **Remind.** The route returns how many were reminded, not `next_allowed_at`; a refusal shows the
+  server's own sentence, which says when the next is allowed.
+- **Server additions (additive, P3):** the vault detail's `separation_of_duties`, `rule_changes`
+  (latest five, before and after) and members' `has_key`; `/me.workspace.separation_of_duties_default`.
+
 **P4: Features as their APIs land** (over the air, except where marked)
 
 - **R3:** the workspace line and states, scoped people, permission flags (A5).
@@ -2608,15 +2653,15 @@ profile, `rework`:
 | N5 | `expo-splash-screen`: **a new native dependency** (not installed today), with its config plugin and light and dark images | §6.1 |
 | N6 | `@react-native-community/netinfo` | Offline (§2.6) |
 | N7 | `@react-native-async-storage/async-storage` | Persisted cache (§2.6) |
-| N8 | `expo-device` | Real device names (§6.2) |
+| N8 | `expo-device` | Real device names (§6.2). Until then P3 names the phone "Android phone" or "iPhone" |
 | N9 | `predictiveBackGestureEnabled: true` | §2.3 |
-| N10 | `expo-screen-capture` | App lock privacy (§6.1) |
+| N10 | `expo-screen-capture` | App lock privacy (§6.1). P3 built app lock without it: Android's switcher is not covered until this lands |
 | N11 | `expo-clipboard` | Copy and Paste (Share covers copy until then) |
 | N12 | `expo-notifications`, FCM `google-services.json`, `POST_NOTIFICATIONS`, channels | Push (R8). **Only if the owner's Firebase project exists by then** (§12, Q3) |
 | N13 | Android App Links intent filters (`autoVerify`) plus `/.well-known/assetlinks.json` served by Flask | https decision and invitation links |
 | N14 | `expo-file-system` and `expo-sharing` (or a PDF view) | Attachments (§6.5; §12, Q2) |
 | N15 | `expo-camera` | QR pairing and address scan (P4; can wait for a later APK) |
-| N16 | `@react-native-community/datetimepicker` | The platform date picker for "Pick a day…" (§6.16) |
+| N16 | `@react-native-community/datetimepicker` | The platform date picker for "Pick a day…" (§6.16). P3 ships the four honest chips without it |
 | N17 | `react-native-svg`, **only if** the icon font from the tile's sprite proves lossy | Icons (§2.2) |
 | N18 | `android.allowBackup: false` in `app.json` (or a backup rule excluding the AsyncStorage database) | The persisted cache never leaves the phone in a Google backup (§2.6, I-14) |
 
@@ -2652,7 +2697,7 @@ or a try/import) and fall back: Share for copy, TransportError for offline, an i
 | A10 | Short-lived (≤ 2 min), single-use enrolment token shown as a QR on the web, confirmed on the web before the key is registered, raising a security notification (§6.2a) | Pair with the web | R6–R7 (**adversarial review**: a new way to bind a signing key without a password) |
 | A11 | `POST /proposals/<uuid>/withdraw`, `can_withdraw`, `raised_again_from` | Withdraw, raise again | R5 |
 | A12 | `POST /proposals/<uuid>/remind` returning `reminded_at` and `next_allowed_at` | Remind | R4 |
-| A13 | `create_proposal {type, fields, raised_again_from}`; detail `decision_type`, `type_fields`, `template_version` | Decision types | R5 |
+| A13 | `create_proposal {decision_type, fields, raised_again_from}`; detail `decision_type`, `fields`, `template_version` (the API names them `fields`, not `type_fields`) | Decision types | R5 (done; phone wired in P3) |
 | A14 | Comments routes | Discussion | R5 |
 | A15 | Push token register and revoke; notification preferences | Push | R8 |
 | A16 | `reason_required` on reject, behind capability `reject-reason-1` | Reject with reason | R5 |
