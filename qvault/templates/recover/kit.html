@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/feedback.html" import banner %}
+{% block title %}Use your Recovery Kit — Q-Vault{% endblock %}
+
+{#- /recover (plan R9, design §5.3): the one address a kit says its code may be typed at. The page
+    answers an unknown email, a missing kit, a wrong code and a paused kit in the same words; only
+    once the code has opened the kit does it say anything specific. The code is never written back
+    into the form. recover.js runs the kit's typo check in the browser too, from the same vectors. -#}
+{% macro body() %}
+<div class="q-auth q-auth--wide">
+  <h1 class="q-auth__t">Use your Recovery Kit</h1>
+  <p class="q-auth__p">
+    Type the code from your kit and choose a new password. Your signing key stays the same. The new
+    password takes effect 72 hours from now. Until then nothing changes, and you, your workspace’s
+    admins and your fellow approvers are told and can cancel it.
+  </p>
+  {{ banner('info', 'Type this code only at ' ~ address ~ ', the address printed on your kit.', 'Nobody from Q-Vault or your company will ever ask for it.') }}
+  {%- if refusal %}
+  {{ banner('critical', refusal, announce=True) }}
+  {%- endif %}
+  <form method="post" novalidate autocomplete="off" data-kit-entry>
+    {{ form.hidden_tag() }}
+    {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
+    {{ wtf_field(form.code, caption='32 characters in 8 groups of 4, as printed. Spaces and dashes are fine.', mono=True,
+                 attrs={'autocomplete': 'off', 'autocapitalize': 'characters', 'spellcheck': 'false', 'data-kit-code': ''}) }}
+    {{ wtf_field(form.password, caption='At least 8 characters. It also unlocks your signing key.', attrs={'autocomplete': 'new-password'}) }}
+    {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}
+    {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
+  </form>
+  <p class="q-auth__foot">
+    No kit? <a href="{{ url_for('auth.forgot_password') }}">See the other ways back</a>
+  </p>
+</div>
+{% endmacro %}
+
+{% block content %}{{ body() }}<script src="{{ url_for('static', filename='recover.js') }}" defer></script>{% endblock %}
+{% block anon_content %}{{ body() }}<script src="{{ url_for('static', filename='recover.js') }}" defer></script>{% endblock %}

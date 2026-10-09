@@ -1,0 +1,62 @@
+{# Account recovery banners (plan R9, design §4.5 and §5.4).
+
+   recovery_banners(banners)
+     One banner per open recovery the reader should know about: of their own account, or of
+     someone whose workspace they manage or whose vault they approve in. Computed from the
+     requests table (recovery_service.banners_for), never from notices, so archiving or deleting a
+     notice cannot hide it. Each has Cancel. A cancel by the person burns the kit; anyone else's
+     does not.
+
+   kit_banner(state, where='home')
+     "Save your Recovery Kit" while the reader has none, has not confirmed the one they were shown,
+     or has one that stopped working. Worded more strongly for treasury signers: only the kit keeps
+     the key a treasury holds for them. #}
+{% from "ui/feedback.html" import banner %}
+{% from "ui/buttons.html" import button %}
+
+{% macro recovery_banners(banners) -%}
+{%- for b in banners %}
+{%- set name = b.subject.display_name %}
+{%- if b.viewer_as == 'self' %}
+  {%- set title = 'Someone is recovering your account' %}
+  {%- set body = 'They used your Recovery Kit and chose a new password. Unless it is cancelled, it takes effect on ' ~ ui_absolute(b.completes_at) ~ ', and your signing key then opens with their password. If this isn’t you, cancel it now: your Recovery Kit then stops working too, because someone else has it.' %}
+{%- else %}
+  {%- set title = 'Someone is recovering ' ~ name ~ '’s account' %}
+  {%- set body = 'Someone used ' ~ name ~ '’s Recovery Kit. Unless it is cancelled, on ' ~ ui_absolute(b.completes_at) ~ ' they get ' ~ name ~ '’s signing key, including any place on a treasury. If ' ~ name ~ ' didn’t start it, cancel it.' %}
+{%- endif %}
+<div class="q-recovery-banner">
+{% call banner('critical', title, body) %}
+  <form method="post" action="{{ url_for('recover.cancel', request_uuid=b.request.request_uuid) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ button('Cancel recovery', 'danger', type='submit', size='sm') }}
+  </form>
+{% endcall %}
+</div>
+{%- endfor %}
+{%- endmacro %}
+
+{% macro kit_banner(state, where='home') -%}
+{%- if state and state.problem %}
+{%- if state.problem == 'stale' %}
+  {%- set title = 'Your Recovery Kit stopped working' %}
+{%- elif state.problem == 'unconfirmed' %}
+  {%- set title = 'Did you save your Recovery Kit?' %}
+{%- else %}
+  {%- set title = 'Save a Recovery Kit' %}
+{%- endif %}
+{%- if state.treasury_signer %}
+  {%- set body = 'A treasury holds your password key. If you forget your password, only a Recovery Kit gives you back that same key; any other way back gives you a new one, and the treasury’s signers must then move your seat.' %}
+{%- elif state.problem == 'unconfirmed' %}
+  {%- set body = 'You didn’t type back the last group of the kit you were shown. If you didn’t keep it, make a new one: the old one stops working.' %}
+{%- else %}
+  {%- set body = 'If you forget your password, a Recovery Kit lets you choose a new one and keep your signing key. Without one, we can’t give that key back.' %}
+{%- endif %}
+<div class="q-recovery-banner">
+{% call banner('warning', title, body) %}
+  {%- if where == 'home' %}
+  {{ button('Make a Recovery Kit', 'secondary', href=url_for('account.security') ~ '#recovery', size='sm') }}
+  {%- endif %}
+{% endcall %}
+</div>
+{%- endif %}
+{%- endmacro %}

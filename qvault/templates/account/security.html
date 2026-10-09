@@ -1,18 +1,22 @@
 {% extends "base.html" %}
 {#- Account: Security (rework R2; plan section 5: keys, devices, sessions, recovery status). Only
     what the product does today is shown: there is no session list, so there is no session list
-    here, and recovery is stated as it stands (S18 is planned, R9). -#}
+    here. Recovery is the Recovery Kit (plan R9 Phase 1): what there is, and making or replacing
+    one with the password. -#}
 {% from "ui/navigation.html" import page_header %}
 {% from "ui/forms.html" import field, radio_group %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/data.html" import hash %}
 {% from "ui/status.html" import badge %}
+{% from "recover/_banners.html" import recovery_banners %}
 {% block title %}Security — Account — Q-Vault{% endblock %}
 {% block crumbs %}{% from "ui/navigation.html" import breadcrumbs %}{{ breadcrumbs([('Account', url_for('account.index')), ('Security', None)]) }}{% endblock %}
 
 {% block content %}
 {{ page_header('Account', facts=[('Signed in as', current_user.email)]) }}
 {% set account_tab = 'security' %}{% include "account/_tabs.html" %}
+
+{{ recovery_banners(open_recoveries | selectattr('viewer_as', 'equalto', 'self') | list) }}
 
 <div class="q-acct">
   <section class="q-panel" aria-labelledby="key-t">
@@ -83,10 +87,35 @@
     </div>
   </section>
 
-  <section class="q-panel" aria-labelledby="rc-t">
-    <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery</h2>{{ badge('Not available') }}</div>
+  {%- set ks = kit_state %}
+  <section class="q-panel" aria-labelledby="rc-t" id="recovery">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery Kit</h2>
+      {%- if ks.problem is none %}{{ badge('Saved', 'success') }}
+      {%- elif ks.problem == 'unconfirmed' %}{{ badge('Not confirmed', 'warning') }}
+      {%- elif ks.problem == 'stale' %}{{ badge('Stopped working', 'critical') }}
+      {%- else %}{{ badge('None', 'warning') }}{% endif %}</div>
+    {%- if ks.kit and ks.problem != 'stale' %}
+    <dl class="q-kv">
+      <div><dt>Kit id</dt><dd><code class="q-mono">{{ kit_short_id(ks.kit) }}</code><span class="q-cap">Printed on your kit, so you can tell which one is current.</span></dd></div>
+      <div><dt>Made</dt><dd>{{ ui_absolute(ks.kit.created_at) }}</dd></div>
+      <div><dt>Saved</dt><dd>{{ ui_absolute(ks.kit.confirmed_at) if ks.kit.confirmed_at else 'Not confirmed: the last group was never typed back' }}</dd></div>
+    </dl>
+    {%- endif %}
     <div class="q-panel__bd">
-      <p>There is no password reset. If you forget your password, your password key can’t be unlocked, and Q-Vault can’t unlock it for you. A paired phone keeps its own key and can still sign until its pairing ends.</p>
+      {%- if ks.problem == 'stale' %}
+      <p>Your kit stopped working: Q-Vault can no longer check it, so it can’t be used. Make a new one.</p>
+      {%- elif ks.kit %}
+      <p>If you forget your password, type this kit’s code at the address printed on it to choose a new one and keep your signing key{% if ks.treasury_signer %}, including your place on a treasury{% endif %}. It takes 72 hours, and you, your workspace’s admins and your fellow approvers are told and can cancel it.</p>
+      {%- else %}
+      <p>There is no password reset. If you forget your password without a kit, your password key can’t be unlocked, and Q-Vault can’t unlock it for you. A Recovery Kit is a code you keep offline that opens a second copy of your signing key.</p>
+      {%- endif %}
+      <form method="post" action="{{ url_for('recover.issue') }}" class="q-acct__inline q-gap">
+        {{ kit_form.hidden_tag() }}
+        {{ field('password', 'Password to ' ~ ('replace your kit' if ks.kit else 'make a kit'), type='password', id='f-kit-password', required=True,
+                 caption=('Makes a new kit and stops the old one working.' if ks.kit else 'Shows a code once, to print or download and keep offline.'),
+                 attrs={'autocomplete': 'current-password'}) }}
+        {{ button('Replace Recovery Kit' if ks.kit else 'Make a Recovery Kit', 'secondary', type='submit') }}
+      </form>
     </div>
   </section>
 
@@ -98,7 +127,7 @@
       <thead><tr><th scope="col">Algorithm</th><th scope="col">Fingerprint</th><th scope="col">Retired</th><th scope="col">Still verifies</th></tr></thead>
       <tbody>
         {% for k in retired_keys %}
-        <tr><td>{{ k.alg_id }}</td><td>{{ hash(k.public_fingerprint(), 'key fingerprint', 16, 0) }}</td><td>{{ ui_absolute(k.retired_at) if k.retired_at else 'Unknown' }}</td><td>{{ 'Yes' if k.can_verify else 'No' }}</td></tr>
+        <tr><td>{{ k.alg_id }}{% if k.wrap_domain == 'lost' %}<span class="q-cap">Can’t be opened (replaced by recovery)</span>{% endif %}</td><td>{{ hash(k.public_fingerprint(), 'key fingerprint', 16, 0) }}</td><td>{{ ui_absolute(k.retired_at) if k.retired_at else 'Unknown' }}</td><td>{{ 'Yes' if k.can_verify else 'No' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>

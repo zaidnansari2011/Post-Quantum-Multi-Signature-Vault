@@ -159,7 +159,8 @@ def test_the_sign_up_page_tells_an_invited_person_to_use_their_link(client):
 def test_signing_up_lands_on_home_with_the_getting_started_checklist(app, client):
     r = _sign_up(client)
 
-    assert r.status_code == 302 and r.headers["Location"] == "/"
+    # The Recovery Kit is shown first, once (plan R9); Home is where it leads.
+    assert r.status_code == 200 and "Save your Recovery Kit" in _text(r)
     home = _text(client.get("/"))
     assert "Get Kestrel Labs started" in home
     assert "Create a vault" in home
@@ -214,7 +215,7 @@ def test_extra_fields_cannot_steer_a_sign_up_into_another_workspace(app, client)
         next=f"/invite/{token}",
     )
 
-    assert r.status_code == 302 and r.headers["Location"] == "/"
+    assert r.status_code == 200 and "Save your Recovery Kit" in _text(r)  # plan R9
     nova = User.query.filter_by(email="nova@kestrel.com").one()
     assert workspace_service.membership(shared, nova) is None
     assert Invitation.query.one().accepted_at is None
@@ -412,7 +413,7 @@ def test_signing_up_through_an_invitation_joins_that_workspace_and_makes_none(
 
     r = _accept_by_sign_up(client, token)
 
-    assert r.status_code == 302
+    assert r.status_code == 200  # the Recovery Kit, shown once (plan R9)
     sam = User.query.filter_by(email="sam@kestrel.com").one()
     (member,) = WorkspaceMember.query.filter_by(user_id=sam.id).all()
     assert (member.workspace_id, member.role) == (workspace.id, "auditor")

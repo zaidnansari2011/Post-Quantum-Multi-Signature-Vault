@@ -56,7 +56,7 @@ def _sign_up(client, email="sam@kestrel.com", workspace="Sam Co"):
             "understood": "y",
         },
     )
-    assert resp.status_code == 302
+    assert resp.status_code == 200  # the Recovery Kit, shown once (plan R9)
     return User.query.filter_by(email=email).one()
 
 

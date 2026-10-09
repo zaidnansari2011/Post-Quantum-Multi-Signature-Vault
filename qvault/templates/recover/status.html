@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/feedback.html" import banner %}
+{% block title %}Your recovery — Q-Vault{% endblock %}
+
+{#- /recover/status (plan R9, design §4.2): the browser that started a recovery, by its HttpOnly
+    cookie, sees when it takes effect and can cancel it (which never burns the kit). Once the wait
+    is over, loading this page completes it if the scheduler has not. -#}
+{% macro body() %}
+{%- set cancelled_by = {
+    'self': 'by the account’s owner',
+    'password': 'by someone using the account’s current password',
+    'manager': 'by an admin of the account’s workspace',
+    'cosigner': 'by one of the account’s fellow approvers',
+    'status_holder': 'from this browser',
+} %}
+<div class="q-auth q-auth--wide">
+  {%- if not req %}
+  <h1 class="q-auth__t">No recovery from this browser</h1>
+  <p class="q-auth__p">This page shows a recovery started in this browser, and there isn’t one.</p>
+  {{ button('Use your Recovery Kit', 'secondary', href=url_for('recover.kit'), block=True) }}
+  {%- elif req.state == 'waiting' %}
+  <h1 class="q-auth__t">Your recovery is under way</h1>
+  <dl class="q-kv q-gap">
+    <div><dt>Takes effect</dt><dd>{{ ui_absolute(req.completes_at) }}</dd></div>
+    <div><dt>Started</dt><dd>{{ ui_absolute(req.created_at) }}</dd></div>
+  </dl>
+  <p class="q-auth__p">
+    Until then nothing changes: the account’s current password still works, and the new one
+    doesn’t yet. After that time, sign in with the new password, or come back to this page.
+  </p>
+  <p class="q-auth__p">
+    We’ve told the account’s owner, its workspace’s admins and its fellow approvers. Any of them can
+    cancel it, and using the current password anywhere cancels it too.
+  </p>
+  <form method="post" action="{{ url_for('recover.status_cancel') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ button('Cancel this recovery', 'danger', type='submit', block=True) }}
+  </form>
+  {%- elif req.state == 'completed' %}
+  <h1 class="q-auth__t">The account is recovered</h1>
+  <p class="q-auth__p">
+    The new password works now, and every other sign-in was ended. The signing key is the same.
+    After you sign in, make a new Recovery Kit: this one was used up.
+  </p>
+  {{ button('Sign in', 'primary', href=url_for('auth.login'), block=True) }}
+  {%- elif req.state == 'failed' %}
+  <h1 class="q-auth__t">This recovery didn’t go through</h1>
+  {{ banner('critical', 'Q-Vault stopped it when it was due' ~ (': ' ~ req.end_reason if req.end_reason else '') ~ '.', 'Nothing about the account changed.') }}
+  {%- else %}
+  <h1 class="q-auth__t">This recovery was cancelled</h1>
+  <p class="q-auth__p">
+    It was cancelled {{ cancelled_by.get(req.cancelled_as, '') }}{% if req.finished_at %} on {{ ui_absolute(req.finished_at) }}{% endif %}.
+    Nothing about the account changed.{% if req.kit_burned %} The Recovery Kit it used no longer works.{% endif %}
+  </p>
+  {%- endif %}
+</div>
+{% endmacro %}
+
+{% block content %}{{ body() }}{% endblock %}
+{% block anon_content %}{{ body() }}{% endblock %}

@@ -15,6 +15,7 @@ from qvault.services import (
     inbox_service,
     proposal_service,
     public_status,
+    recovery_service,
     treasury_service,
     workspace_service,
 )
@@ -45,6 +46,11 @@ def index():
         ],
         # A new workspace's first steps, for its owners and admins, until done or hidden.
         checklist=workspace_service.checklist_for(current_user),
+        # Account recovery (plan R9): an open recovery of this person's account or of anyone they
+        # watch over, computed from the requests table so no notice can hide it; and whether they
+        # still need to save a Recovery Kit.
+        open_recoveries=recovery_service.banners_for(current_user),
+        kit_state=recovery_service.kit_state(current_user),
     )
 
 
