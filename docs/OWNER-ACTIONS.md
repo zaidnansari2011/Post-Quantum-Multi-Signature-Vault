@@ -701,8 +701,9 @@ waits on this except the first real email.
 - `PUBLIC_BASE_URL=https://project4.zaidansari.tech` as a plain env var. On staging, use the
   staging address. Every link in an email starts with it, and without it no email is sent.
 
-Push needs no server secret, because `PUSH_TRANSPORT` defaults to `expo`. Set `EXPO_ACCESS_TOKEN`
-as a secret only if you switch on "Enhanced push security" for the Expo project.
+Push needs one more secret, `EXPO_ACCESS_TOKEN`, once you have switched on Enhanced Push
+Security (§2.12, step 6). Set it as a secret on the Container App. `PUSH_TRANSPORT` defaults to
+`expo` in production. Development defaults to `log`, so a laptop never pushes to real phones.
 
 Proven 2026-10-09: Resend accepted two test emails sent through the real outbox to its test
 address `delivered@resend.dev`. Run one replica, or expect each replica to work the outbox. That
@@ -736,6 +737,21 @@ the rework APK (§2.3):** from `q-vault-rework/mobile`, once:
 Use the environment the `rework` build profile builds with. Without the variable, the APK builds and
 runs, but no push ever reaches it. For a local `expo run:android`, copy the file to
 `mobile/google-services.json` instead (git ignores it).
+
+6. **Switch on Enhanced Push Security** — `TODO` (added 2026-10-09, R8 review F2). Do this
+   before the switch. Without it, anyone who learns a phone's push token can push any text to that
+   phone through Expo directly, without Q-Vault. With it on, Expo takes pushes only from the holder
+   of an access token, which only this server has.
+   1. <https://expo.dev> → account `zaid7864` → **Settings → Access tokens → Create token**. Name it
+      `qvault-push`. Copy it once.
+   2. Project **qvault** → **Settings → Push notifications** (or **Credentials**) → switch on
+      **Enhanced Push Security**.
+   3. At the switch, set the token on the rework's Container App as the secret
+      `EXPO_ACCESS_TOKEN`. Never put it in a commit or a chat.
+
+   Q-Vault already sends the token with every push when the setting is there. Order matters:
+   turning on Enhanced Push Security before the server has the token stops every push until it
+   does.
 
 Then, on a handset (§3.5): enrol, press "Turn on notifications", have someone raise a decision on
 the web, and check three things. The push arrives within about half a minute. It shows no amount
@@ -1151,3 +1167,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-10-08 | Added §3.5: rework phone handset checks (Class 3 biometrics on Android 9 and 10, the prompt with the refresh, offline). |
 | 2026-10-09 | Added §2.11 (Resend email) and §2.12 (Firebase push) for rework R8, after the owner chose both. |
 | 2026-10-09 | R8 built: §2.11 gains the switch-time settings (`RESEND_API_KEY` as a secret, `MAIL_FROM`, `PUBLIC_BASE_URL`); §2.12 gains the one EAS command for the Firebase file before the rework APK, and the handset check; §2.3's "decided against expo-notifications" is marked superseded on the rework. |
+| 2026-10-09 | R8 review fixes: §2.12 gains step 6 (switch on Expo Enhanced Push Security and set `EXPO_ACCESS_TOKEN` as a secret at the switch); §2.11 says push needs that secret. |
