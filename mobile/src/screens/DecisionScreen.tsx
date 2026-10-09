@@ -105,6 +105,7 @@ import { EvidenceSheet, type EvidenceTab } from './decision/EvidenceSheet.tsx';
 import { DetailsSheet, MoreSheet, TamperPanel, TypedCard, WhoDecided, type MoreItem } from './decision/parts.tsx';
 import { checkRaised, type RaisedFields } from '../logic/raised.ts';
 import { andList } from '../logic/words.ts';
+import { remindView, type RemindView } from '../logic/remind.ts';
 import type { AgainFrom } from './NewDecisionScreen.tsx';
 import { commentsQuery } from '../queries.ts';
 import { SigningSheet } from './decision/SigningSheet.tsx';
@@ -766,12 +767,16 @@ export default function DecisionScreen({
             ? 'Reminder sent to 1 approver'
             : `Reminder sent to ${result.reminded} approvers`,
       );
+      // The decision's `remind` now says when the next may go (A12): the bar waits until then.
+      void query.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] });
     } catch (err) {
       // The server's own sentence for a reminder it won't send says when the next is allowed.
       setBarMessage({
         tone: 'neutral',
         text: err instanceof ApiError && err.code === 'remind_refused' ? err.message : "Couldn't send a reminder. Try again.",
       });
+      if (err instanceof ApiError && err.code === 'remind_refused') void query.refetch();
     } finally {
       setReminding(false);
     }
@@ -991,6 +996,7 @@ export default function DecisionScreen({
         onRaiseAgain={raiseAgain}
         onRemind={() => void remind()}
         reminding={reminding}
+        remind={remindView(detail?.remind, Date.now())}
       />
 
       <SigningSheet
@@ -1090,6 +1096,7 @@ function Bar({
   onRaiseAgain,
   onRemind,
   reminding,
+  remind,
 }: {
   actions: ReturnType<typeof personalStatus>['actions'];
   busy: boolean;
@@ -1107,6 +1114,8 @@ function Bar({
   /** Row 3: remind the approvers who haven't voted (R4), once a day. */
   onRemind: () => void;
   reminding: boolean;
+  /** When Remind can next be sent (A12): until then the button waits and says when. */
+  remind: RemindView;
 }) {
   if (offline && (actions.kind === 'sign' || actions.kind === 'web')) {
     // The phone checks a decision against the network before any sheet (I-7): none offline.
@@ -1164,7 +1173,14 @@ function Bar({
       return (
         <ActionBar
           message={message}
-          primary={{ label: reminding ? 'Sending…' : 'Remind', variant: 'secondary', onPress: onRemind, busy: reminding }}
+          caption={remind.line}
+          primary={{
+            label: reminding ? 'Sending…' : 'Remind',
+            variant: 'secondary',
+            onPress: onRemind,
+            busy: reminding,
+            disabled: !remind.live,
+          }}
         />
       );
     case 'raiseAgain':

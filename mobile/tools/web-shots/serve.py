@@ -79,4 +79,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"serving {DIST} on http://127.0.0.1:{PORT}, /api -> {sys.argv[3]}", flush=True)
+    # A screen that loads every vault's treasury at once (P4b's remove sheets) opens more
+    # connections at a time than the default backlog of 5, which Windows then refuses.
+    ThreadingHTTPServer.request_queue_size = 64
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

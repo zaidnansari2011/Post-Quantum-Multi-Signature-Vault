@@ -13,6 +13,7 @@ import { Button, CheckboxRow, InlineMessage, Sheet, Text } from '../../ui/index.
 import { useEnrolledSession } from '../../session.tsx';
 import { meQuery, treasuryQuery, vaultsQuery } from '../../queries.ts';
 import { andList } from '../../logic/words.ts';
+import { treasuriesHolding } from '../../logic/seats.ts';
 
 export function RemoveThisPhoneSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { token, identity, removeThisPhone, removeFromThisPhoneOnly } = useEnrolledSession();
@@ -35,18 +36,18 @@ export function RemoveThisPhoneSheet({ visible, onClose }: { visible: boolean; o
   const treasuries = useQueries({
     queries: (vaults.data?.vaults ?? []).map((v) => ({ ...treasuryQuery(token, v.vault_id), enabled: visible && onPhone })),
   });
-  const holding = onPhone
-    ? (vaults.data?.vaults ?? []).filter((_v, i) =>
-        treasuries[i]?.data?.treasury?.signers.some(
-          (x) => x.user_id === identity.userId && x.custody === 'device' && x.key_active,
-        ),
-      )
-    : [];
+  // A treasury names the key it holds for this person (A20/A21): this phone's own fingerprint is
+  // compared with it. An older server sends no fingerprint, and then a device seat counts as unknown.
+  const seats = treasuriesHolding(
+    (vaults.data?.vaults ?? []).map((v, i) => ({ name: v.name, treasury: treasuries[i]?.data })),
+    identity.userId,
+    identity.fingerprint,
+  );
+  const names = onPhone ? seats.names : [];
   // Not known (still loading, or unreadable): ask for "I understand" as well, rather than assume
   // that no treasury holds it. A person whose treasuries register the password key needs neither.
-  const unknown = !me.data || (onPhone && (!vaults.data || treasuries.some((q) => !q.data)));
-  const needsConsent = holding.length > 0 || (unknown && me.data?.my_key?.custody !== 'password');
-  const names = holding.map((v) => v.name);
+  const unknown = !me.data || (onPhone && (!vaults.data || seats.unknown));
+  const needsConsent = names.length > 0 || (unknown && me.data?.my_key?.custody !== 'password');
 
   const close = () => {
     if (busy) return;
@@ -115,7 +116,7 @@ export function RemoveThisPhoneSheet({ visible, onClose }: { visible: boolean; o
       <Text role="body">
         {"This phone's key is deleted and can't sign again. Decisions it already signed stay valid. To approve from this phone later, set it up again."}
       </Text>
-      {holding.length > 0 ? (
+      {names.length > 0 ? (
         <Text role="body">
           {names.length === 1
             ? `The treasury of the ${names[0]} vault holds this phone's key for you. After removing it, you can't approve that vault's payments until an owner updates its treasury.`

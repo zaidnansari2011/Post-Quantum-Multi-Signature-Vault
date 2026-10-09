@@ -21,7 +21,9 @@ export type LinkTarget =
   | { kind: 'treasuryChange'; vaultId: number; changeId: number }
   | { kind: 'vault'; vaultId: number }
   | { kind: 'activity' }
-  | { kind: 'security'; deviceId: number };
+  | { kind: 'security'; deviceId: number }
+  /** Account, Other devices, with no sheet open: an inbox row about a device (P4b). */
+  | { kind: 'devices' };
 
 function id(text: string | undefined): number | null {
   return text !== undefined && ID.test(text) ? Number(text) : null;

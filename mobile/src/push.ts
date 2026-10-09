@@ -19,15 +19,15 @@
 // Push needs a build with expo-notifications and the FCM file (the rework APK, OWNER-ACTIONS
 // §2.3); Expo Go on Android and the web harness report `unavailable` and nothing here runs.
 
-import { useEffect, useRef } from 'react';
-import { Linking, Platform } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AppState, Linking, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import type { QueryClient } from '@tanstack/react-query';
 
 import * as api from './api/endpoints.ts';
 import { openPush } from './links.ts';
-import { CHANNELS, FOREGROUND, type PushPermission } from './logic/push.ts';
+import { CHANNELS, FOREGROUND, pushState, showOffLine, type PushPermission } from './logic/push.ts';
 import { targetFromPush } from './logic/links.ts';
 import { keys } from './queries.ts';
 
@@ -60,8 +60,23 @@ async function ensureChannels(n: NotificationsModule): Promise<void> {
   }
 }
 
+/**
+ * The web screenshot harness only (the shipped app is Android and iOS, where this never runs): a
+ * permission the harness sets through its secure-store shim, so the states that depend on it can
+ * be drawn.
+ */
+async function harnessPermission(): Promise<PushPermission> {
+  try {
+    const value = await SecureStore.getItemAsync('qvault.harness.push.permission');
+    return value === 'granted' || value === 'denied' || value === 'undetermined' ? value : 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+}
+
 /** What the OS allows now. Never asks. */
 export async function pushPermission(): Promise<PushPermission> {
+  if (Platform.OS === 'web') return harnessPermission();
   const n = notifications();
   if (!n) return 'unavailable';
   try {
@@ -122,6 +137,42 @@ export async function forgetPushHere(token: string | null): Promise<void> {
   await Promise.race([Promise.all(steps), new Promise((resolve) => setTimeout(resolve, 4_000))]);
 }
 
+const OFF_LINE_KEY = 'qvault.push.offline.dismissed';
+
+/**
+ * Approvals' "Notifications are off" line (§6.3 item 5): whether to show it, and its dismissal,
+ * which keeps it away for 30 days. The permission is read again whenever the app comes to the
+ * front, so turning notifications on in system settings removes the line without a restart.
+ */
+export function useNotificationsOffLine(
+  serverAvailable: boolean,
+  registered: boolean,
+): { show: boolean; dismiss: () => void } {
+  const [permission, setPermission] = useState<PushPermission>('unavailable');
+  const [dismissedAt, setDismissedAt] = useState<number | null | undefined>(undefined);
+  useEffect(() => {
+    const reread = () => void pushPermission().then(setPermission);
+    reread();
+    void SecureStore.getItemAsync(OFF_LINE_KEY)
+      .then((v) => setDismissedAt(v && /^[0-9]{1,15}$/.test(v) ? Number(v) : null))
+      .catch(() => setDismissedAt(null));
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') reread();
+    });
+    return () => sub.remove();
+  }, []);
+  const state = pushState({ serverAvailable, permission, registered });
+  return {
+    // Until the dismissal has been read, nothing: a line that flashes and goes is worse than none.
+    show: dismissedAt !== undefined && showOffLine({ state, dismissedAt, now: Date.now() }),
+    dismiss: () => {
+      const now = Date.now();
+      setDismissedAt(now);
+      void SecureStore.setItemAsync(OFF_LINE_KEY, String(now)).catch(() => {});
+    },
+  };
+}
+
 export async function wasPrimed(): Promise<boolean> {
   try {
     return (await SecureStore.getItemAsync(PRIMED_KEY)) === '1';
@@ -165,8 +216,12 @@ export function usePushWiring(token: string | null, queries: QueryClient): void 
       handled.current.add(id);
       const data = response.notification.request.content.data;
       const read = targetFromPush(data);
-      if (read?.notificationId) void api.markNotificationRead(token, read.notificationId).catch(() => {});
-      refetch();
+      // The inbox refetches once the read has landed, so Activity never shows the tapped item as
+      // new (P4b: push and inbox agree).
+      const marking = read?.notificationId
+        ? api.markNotificationRead(token, read.notificationId).catch(() => {})
+        : Promise.resolve();
+      void marking.then(refetch);
       openPush(data);
     };
 

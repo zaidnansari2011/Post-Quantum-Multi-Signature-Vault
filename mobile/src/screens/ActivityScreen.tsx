@@ -1,13 +1,19 @@
-// Activity (phone-ux §6.12): "is it done?" for your own decisions.
+// Activity (phone-ux §6.12): "what happened while I was away?" and "is it done?".
 //
-// Until R4's inbox reaches the phone (P4b), this tab is one list, "Your decisions": the decisions
-// you raised, are an approver on, or voted on, from the last 90 days (src/logic/activity.ts).
-// Workspace-wide history is audit browsing, which stays on the web (D16), and the list's last row
-// says so. Three chips, All, Open and Decided ("Decided" covers approved, paid, failed, rejected,
-// expired and withdrawn); sections by when it happened; each row says what happened and when, and
-// your part. Search is a header button, never a pull-down that would fight pull to refresh.
+// A segmented control under the headline: For you · Yours. ("All" would promise the workspace,
+// which is on the web.)
+//
+// For you is the inbox (R4's API, src/screens/activity/ForYou.tsx): updates, newest first in day
+// groups, unread security alerts pinned at the top. Needs-you requests are not repeated: they are
+// the Approvals tab.
+//
+// Yours is the person's own decisions from the last 90 days (src/logic/activity.ts): three chips
+// (All, Open, Decided), sections by when it happened, each row saying what happened and when and
+// the person's part ("You approved", from the server's `my_vote`). Workspace-wide history is audit
+// browsing, which stays on the web (D16), and the list's last row says so. Search is a header
+// button, never a pull-down that would fight pull to refresh.
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Linking, SectionList, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
@@ -27,9 +33,11 @@ import {
   RootHeader,
   Screen,
   SectionTitle,
+  Segmented,
   TextLink,
   ThemedRefresh,
   useCollapsingHeader,
+  type NavAction,
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
@@ -45,6 +53,7 @@ import {
   yourPart,
   type ActivityChip,
 } from '../logic/activity.ts';
+import { ForYou } from './activity/ForYou.tsx';
 
 const EMPTY: Record<ActivityChip, string> = {
   all: 'Nothing of yours in the last 90 days.',
@@ -52,13 +61,44 @@ const EMPTY: Record<ActivityChip, string> = {
   decided: 'Nothing of yours was decided in the last 90 days.',
 };
 
+export type ActivitySegment = 'forYou' | 'yours';
+
+const SEGMENTS: Array<{ value: ActivitySegment; label: string }> = [
+  { value: 'forYou', label: 'For you' },
+  { value: 'yours', label: 'Yours' },
+];
+
 export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
+  const [segment, setSegment] = useState<ActivitySegment>('forYou');
+  const header = useCollapsingHeader();
+  const head = (action: NavAction | undefined, extra?: ReactNode) => (
+    <>
+      <RootHeader onLayout={header.onHeaderLayout} title="Activity" action={action} />
+      <Segmented label="Show" options={SEGMENTS} value={segment} onChange={setSegment} />
+      {extra}
+    </>
+  );
+  return segment === 'forYou' ? (
+    <ForYou header={header} head={head} onOpenDecision={onOpen} />
+  ) : (
+    <Yours header={header} head={head} onOpen={onOpen} />
+  );
+}
+
+function Yours({
+  header,
+  head,
+  onOpen,
+}: {
+  header: ReturnType<typeof useCollapsingHeader>;
+  head: (action: NavAction | undefined, extra?: ReactNode) => ReactNode;
+  onOpen: (uuid: string) => void;
+}) {
   const s = useStyles();
   const { token, identity } = useEnrolledSession();
   const [chip, setChip] = useState<ActivityChip>('all');
   const [searching, setSearching] = useState(false);
   const [search, setSearch] = useState('');
-  const header = useCollapsingHeader();
 
   const query = useQuery(allQuery(token));
   useRefreshOnFocus([keys.all]);
@@ -75,8 +115,8 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
   const grouped = sections(rows, now).map((sec) => ({ title: sec.title, data: sec.rows }));
   const failed = query.isError && query.data === undefined;
   const webUrl = `${getApiBaseUrl()}/approvals`;
-  const searchButton = {
-    icon: (searching ? 'x' : 'search') as 'x' | 'search',
+  const searchButton: NavAction = {
+    icon: searching ? 'x' : 'search',
     label: searching ? 'Close search' : 'Search your decisions',
     onPress: () => {
       setSearching((v) => !v);
@@ -88,7 +128,7 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
     <Screen>
       <OfflineNotice at={query.dataUpdatedAt} />
       <View style={s.flex}>
-        <CollapsedBar title="Your decisions" visible={header.collapsed} action={searchButton} />
+        <CollapsedBar title="Activity" visible={header.collapsed} action={searchButton} />
         <SectionList
           style={s.list}
           contentContainerStyle={s.listContent}
@@ -128,29 +168,33 @@ export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => v
           }}
           ListHeaderComponent={
             <View style={s.head}>
-              <RootHeader onLayout={header.onHeaderLayout} title="Your decisions" action={searchButton} />
-              <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
-              {searching ? (
-                <Field
-                  label="Search by title or vault"
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder="deployer"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                  returnKeyType="search"
-                />
-              ) : null}
-              <ChipGroup label="Show" options={ACTIVITY_CHIPS} value={chip} onChange={setChip} />
-              {failed ? (
-                <Banner
-                  tone="warning"
-                  title="Can't load your decisions"
-                  detail="Check your connection. Nothing has changed on your decisions."
-                  actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
-                />
-              ) : null}
+              {head(
+                searchButton,
+                <>
+                  <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
+                  {searching ? (
+                    <Field
+                      label="Search by title or vault"
+                      value={search}
+                      onChangeText={setSearch}
+                      placeholder="deployer"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoFocus
+                      returnKeyType="search"
+                    />
+                  ) : null}
+                  <ChipGroup label="Show" options={ACTIVITY_CHIPS} value={chip} onChange={setChip} />
+                  {failed ? (
+                    <Banner
+                      tone="warning"
+                      title="Can't load your decisions"
+                      detail="Check your connection. Nothing has changed on your decisions."
+                      actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
+                    />
+                  ) : null}
+                </>,
+              )}
             </View>
           }
           ListEmptyComponent={

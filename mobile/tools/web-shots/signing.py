@@ -572,7 +572,9 @@ with sync_playwright() as p:
         extra_routes=[
             (
                 r".*/api/v1/(me|devices|vaults|proposals).*",
-                lambda r: r.fulfill(status=401, json={"ok": False, "code": "token_invalid", "error": "x"}),
+                lambda r: r.fulfill(
+                    status=401, json={"ok": False, "code": "token_invalid", "error": "x"}
+                ),
             )
         ],
     )
@@ -596,11 +598,21 @@ with sync_playwright() as p:
         extra_routes=[
             (
                 r".*/api/v1/(me|devices|vaults|proposals).*",
-                lambda r: r.fulfill(status=401, json={"ok": False, "code": "device_revoked", "error": "x"}),
+                lambda r: r.fulfill(
+                    status=401, json={"ok": False, "code": "device_revoked", "error": "x"}
+                ),
             )
         ],
     )
-    go(browser, ada, "x09_ended_key_missing", general, needs, ended_as("x09_ended_key_missing"), drop_seed=True)
+    go(
+        browser,
+        ada,
+        "x09_ended_key_missing",
+        general,
+        needs,
+        ended_as("x09_ended_key_missing"),
+        drop_seed=True,
+    )
 
     # Remove this phone: a treasury holds this phone's key; then the server can't be reached.
     def me_device(route):
@@ -621,9 +633,10 @@ with sync_playwright() as p:
                 "linked_at": iso(timedelta(days=-3)),
                 "signers": [],
             }
-            t["signers"] = [{"user_id": 1, "custody": "device", "key_active": True}] + [
-                s for s in t["signers"] if s["user_id"] != 1
-            ]
+            # P4b: the seat names its key (A20/A21), and the phone matches it to its own.
+            t["signers"] = [
+                {"user_id": 1, "custody": "device", "key_active": True, "key_fingerprint": fp}
+            ] + [s for s in t["signers"] if s["user_id"] != 1]
             body["treasury"] = t
         else:
             body["treasury"] = None

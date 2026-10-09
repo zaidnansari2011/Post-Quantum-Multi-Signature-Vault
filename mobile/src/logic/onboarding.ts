@@ -27,3 +27,18 @@ export function signInProblems(email: string, password: string): { email?: strin
   if (!password) out.password = 'Enter your password.';
   return out;
 }
+
+/** The longest device name the server accepts (enrolment and rename alike). */
+export const DEVICE_NAME_MAX = 64;
+
+/**
+ * What the phone can say about a device name before asking (§6.18 rename, A21): empty, or too
+ * long. Hidden characters are the server's to refuse, in its own words: the phone does not guess
+ * at Unicode categories.
+ */
+export function deviceNameProblem(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return 'Enter a name.';
+  if (trimmed.length > DEVICE_NAME_MAX) return `Use ${DEVICE_NAME_MAX} characters or fewer.`;
+  return null;
+}
