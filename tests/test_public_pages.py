@@ -336,10 +336,10 @@ def test_the_verifier_checks_the_signed_head_and_its_pins(client, witnessed, reg
     log_fp = doc["latest"]["checkpoint_signature"]["key_fingerprint"]
     w_fp = doc["witnessed"]["witnesses"][0]["key_fingerprint"]
     report = verify_checkpoint_document(
-        doc, registry=registry, expect_log=log_fp[:8], expect_witness=w_fp[:8]
+        doc, registry=registry, expect_log=log_fp, expect_witness=w_fp
     )
     assert report.ok, report.as_dict()
-    wrong = verify_checkpoint_document(doc, registry=registry, expect_log="00000000")
+    wrong = verify_checkpoint_document(doc, registry=registry, expect_log="0" * 16)
     assert not wrong.ok and [c.key for c in wrong.failures] == ["pinned_log"]
 
 
@@ -359,8 +359,8 @@ def test_the_command_line_checks_a_saved_head(client, tmp_path):
     doc = _head(client)
     path.write_text(json.dumps(doc), encoding="utf-8")
     fp = doc["latest"]["checkpoint_signature"]["key_fingerprint"]
-    assert main([str(path), "--expect-log", fp, "--no-colour"]) == 0
-    assert main([str(path), "--expect-log", "ffffffff", "--no-colour"]) == 1
+    assert main([str(path), "--checkpoint", "--expect-log", fp, "--no-colour"]) == 0
+    assert main([str(path), "--checkpoint", "--expect-log", "f" * 16, "--no-colour"]) == 1
     doc["format"] = "qvault.checkpoint/9"
     path.write_text(json.dumps(doc), encoding="utf-8")
-    assert main([str(path), "--no-colour"]) == 1
+    assert main([str(path), "--checkpoint", "--no-colour"]) == 1

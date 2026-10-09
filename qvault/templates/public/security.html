@@ -72,7 +72,7 @@
   <li>Download <a href="{{ url_for('static', filename='verifier.html') }}" download>the offline verifier</a>. It's one HTML file with the post-quantum library inside; open it with the network off and drop the file on it.</li>
   <li>Or run <code>python -m qvault.verify decision.qvault.json --expect-log &lt;fingerprint&gt; --expect-witness &lt;fingerprint&gt;</code> from the source. Exit code 0 means verified.</li>
 </ol>
-<p>The fingerprints pin the log's and the witness's keys; get them from somewhere other than the file. This server publishes them, with its newest signed head and the newest head a witness co-signed, at <a href="{{ url_for('public.checkpoint') }}">the public signed head</a> (no sign-in). Save it and run <code>python -m qvault.verify checkpoint.json</code> to check its signatures; the <code>key_fingerprint</code> values in it are the ones to pin. <a href="{{ url_for('docs.page', slug='verifying') }}">What each check proves</a>.</p>
+<p>The fingerprints pin the log's and the witness's keys; get them from somewhere other than the file. This server publishes them, with its newest signed head and the newest head a witness co-signed, at <a href="{{ url_for('public.checkpoint') }}">the public signed head</a> (no sign-in). Save it and run <code>python -m qvault.verify --checkpoint checkpoint.json</code> to check its signatures; the <code>key_fingerprint</code> values in it are the ones to pin. Those values come from this server, so they protect you against a file someone hands you, not against us; the witness prints its own fingerprint when it starts. <a href="{{ url_for('docs.page', slug='verifying') }}">What each check proves</a>.</p>
 
 <h2 id="audit">Audit status</h2>
 <p>{{ badge('Not independently audited', 'warning') }}</p>
