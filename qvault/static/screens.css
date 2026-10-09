@@ -145,6 +145,7 @@ p.q-panel__bd { margin: 0; }
 .q-logstrip a strong { color: inherit; }
 .q-logstrip strong { color: var(--text); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
 .q-logstrip time { font-variant-numeric: tabular-nums; }
+.q-logstrip__fp { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
 /* On a phone the facts would wrap mid-line, so the pill becomes a card with one fact per line. */
 @media (max-width: 560px) {
   .q-logstrip { border-radius: var(--radius-card); }
