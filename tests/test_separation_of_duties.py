@@ -68,6 +68,7 @@ def test_a_vault_from_before_r5_lets_the_requester_approve_as_before(app):
     assert approval_service.tally(proposal) == (1, 0)
 
 
+@pytest.mark.separation_default
 @pytest.mark.parametrize("sod_default, allowed", [(False, True), (True, False)])
 def test_a_new_vault_takes_its_workspaces_default(app, sod_default, allowed):
     ada = auth_service.register_user("default-a@e.com", "Ada", PASSWORD)
@@ -78,6 +79,7 @@ def test_a_new_vault_takes_its_workspaces_default(app, sod_default, allowed):
     assert eligibility.vault_allows_requester(vault) is allowed
 
 
+@pytest.mark.separation_default
 def test_a_new_vault_separates_them_unless_its_workspace_says_otherwise(app):
     """Owner decision 2026-10-08: on by default, for a new workspace and for none at all."""
     ada = auth_service.register_user("fresh-a@e.com", "Ada", PASSWORD)
@@ -91,6 +93,7 @@ def test_a_new_vault_separates_them_unless_its_workspace_says_otherwise(app):
     assert vault_service.new_vault_separates(ada) is True
 
 
+@pytest.mark.separation_default
 @pytest.mark.parametrize("turned_to", [False, True])
 def test_changing_the_workspace_default_never_changes_an_existing_vault(app, turned_to):
     ada = auth_service.register_user("keep-a@e.com", "Ada", PASSWORD)

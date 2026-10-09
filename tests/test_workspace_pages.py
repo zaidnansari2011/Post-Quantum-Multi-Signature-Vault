@@ -197,6 +197,7 @@ def _done(workspace):
     return {i["key"]: i["done"] for i in workspace_service.getting_started(workspace)}
 
 
+@pytest.mark.separation_default
 def test_the_checklist_completes_on_real_events(app):
     ada = _register("ada@e.com", "Ada")
     workspace = workspace_service.current_workspace(ada)
