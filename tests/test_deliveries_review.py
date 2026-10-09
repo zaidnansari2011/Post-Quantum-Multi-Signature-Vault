@@ -253,7 +253,7 @@ def test_removing_the_owners_phone_right_after_enrolling_still_sends_it_the_aler
 # F6: hidden characters
 
 
-HIDDEN = ["‮gnp.exe", "Ada​Lovelace", "﻿Ada", "Ada⁦x⁩", "Ada B"]
+HIDDEN = ["\u202egnp.exe", "Ada\u200bLovelace", "\ufeffAda", "Ada\u2066x\u2069", "Ada B"]
 
 
 @pytest.mark.parametrize("name", HIDDEN)
@@ -271,7 +271,7 @@ def test_a_name_with_hidden_characters_is_refused_where_it_is_typed(team, name):
 
 def test_the_profile_form_says_why_it_refused_a_name(client, team):
     _login(client, team.brij)
-    r = client.post("/account/profile", data={"display_name": "Brij‮evil"})
+    r = client.post("/account/profile", data={"display_name": "Brij\u202eevil"})
     assert "Remove the invisible or text-direction characters from it." in r.get_data(as_text=True)
     db.session.refresh(team.brij)
     assert team.brij.display_name == "Brij Patel"
@@ -279,8 +279,8 @@ def test_the_profile_form_says_why_it_refused_a_name(client, team):
 
 def test_hidden_characters_already_stored_are_dropped_from_emails_and_pushes(team):
     # Stored before the check existed: written directly.
-    team.ada.display_name = "Ada‮ Lovelace​"
-    team.vault.name = "Trea​sury﻿"
+    team.ada.display_name = "Ada\u202e Lovelace\u200b"
+    team.vault.name = "Trea\u200bsury\ufeff"
     db.session.commit()
     _raise(team)
     delivery_service.run()
@@ -291,7 +291,7 @@ def test_hidden_characters_already_stored_are_dropped_from_emails_and_pushes(tea
         assert not text.invisible_in(part.replace("\n", "").replace("\r", "")), part
     assert "Vault: “Treasury”" in email.text
     assert "“Treasury”" in alert.body
-    assert mail.header_value("Treasury ‮gnp.exe ​") == "Treasury gnp.exe"
+    assert mail.header_value("Treasury \u202egnp.exe \u200b") == "Treasury gnp.exe"
 
 
 def test_ordinary_names_in_any_script_are_kept():
