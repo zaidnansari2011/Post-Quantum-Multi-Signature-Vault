@@ -1,0 +1,44 @@
+{% extends "public/_layout.html" %}
+{# The changelog (plan S22), written for the people who use Q-Vault from the plan's progress log
+   and the merged work. Only what this build contains: the phone app's changes reach phones with
+   its next release, so they are listed when that ships. #}
+{% block page_title %}Changelog{% endblock %}
+{% block page_lead %}What changed in Q-Vault, newest first.{% endblock %}
+{% block page %}
+<div class="q-prose q-changes">
+
+<section aria-labelledby="c-2026-10-09">
+  <h2 id="c-2026-10-09"><time datetime="2026-10-09">9 October 2026</time>: sign-up and the public pages</h2>
+  <ul>
+    <li>Signing up creates your own workspace, with you as its owner. The only way into someone else's workspace is their invitation link.</li>
+    <li>Sign-up says plainly that your password also unlocks your signing key and can't be reset, and asks you to confirm you've read that.</li>
+    <li>A <a href="{{ url_for('auth.forgot_password') }}">forgot-password page</a> that says what can and can't be done.</li>
+    <li>Signing up never makes anyone an administrator of the whole system.</li>
+    <li>Repeated attempts to sign in, sign up or pair a phone from one address are refused for a while, and so are repeated wrong passwords when you sign or change your password.</li>
+    <li>New pages: <a href="{{ url_for('public.security') }}">Security</a>, <a href="{{ url_for('public.status') }}">Status</a>, <a href="{{ url_for('public.pricing') }}">Pricing</a> and this changelog. The front page shows the live log head and whether the witness is current.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="c-2026-10-08">
+  <h2 id="c-2026-10-08"><time datetime="2026-10-08">8 October 2026</time>: every screen redesigned</h2>
+  <ul>
+    <li>Every screen uses the new design, in light and dark.</li>
+    <li>New date, file and checkbox controls. A refused form marks the field that needs fixing and moves the focus to it.</li>
+    <li>Every control has a name a screen reader can read, and controls are larger on touch screens.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="c-2026-10-06">
+  <h2 id="c-2026-10-06"><time datetime="2026-10-06">6 October 2026</time>: work first, workspaces and notifications</h2>
+  <ul>
+    <li>Home shows what needs your signature, what's due soon and what's waiting on others.</li>
+    <li>Approvals has tabs: Needs your signature, Waiting on others, Expiring soon and Done.</li>
+    <li>A decision's page has three layers: Overview, Evidence and Technical. Each decision has a short code, such as 9E89-97A2, to compare across screens.</li>
+    <li>Workspaces: members with roles (owner, admin, member, auditor), invitations by link, suspending and reinstating, and a getting-started checklist.</li>
+    <li>Notifications in the app: the bell, an inbox, reminders while a decision waits on you, a warning a day before it's due, and preferences. Email and push aren't built yet.</li>
+    <li>Choose a light, dark or system theme; it's remembered for your account.</li>
+  </ul>
+</section>
+
+</div>
+{% endblock %}

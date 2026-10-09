@@ -78,7 +78,7 @@ def test_the_help_menu_offers_only_destinations_that_exist(app, client):
         r'<summary class="q-ib" aria-label="Help".*?</details>', page, re.S
     ).group(0)
     hrefs = re.findall(r'href="([^"]+)"', help_menu)
-    assert hrefs == ["/docs/", "/verify/"]
+    assert hrefs == ["/docs/", "/verify/", "/changelog", "/status"]
     for href in hrefs:
         assert client.get(href).status_code == 200
 

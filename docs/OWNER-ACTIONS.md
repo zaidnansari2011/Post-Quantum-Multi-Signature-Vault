@@ -712,6 +712,51 @@ with the rework APK you build at the end (§2.3).
 
 *Your effort:* ~15 minutes.
 
+### 2.13 Rework switch: the administrator and rate limiting — `TODO` (added 2026-10-09)
+
+For the rework image (R10 staging and the switch), settings the deployment needs:
+
+1. **Who administers the system.** Signing up never makes anyone a system administrator any more
+   (before R6, the first stranger to sign up on an empty database did). The operator's scripts
+   (`seed_demo.py`, `reset_to_team.py`) still make their first account the administrator. To make
+   or remove one on an existing database, run the one-off job with:
+
+   ```bash
+   python scripts/grant_admin.py --env production --email zaidnansari2011@gmail.com
+   # read what it prints: the account's own name, when it was created, its workspaces, and
+   # whether it signed itself up. Only if that is really the person:
+   python scripts/grant_admin.py --env production --email zaidnansari2011@gmail.com --yes
+   python scripts/grant_admin.py --env production --email <address> --remove
+   ```
+
+   Look before you add `--yes`: sign-up does not verify an address yet (R8), and the team's
+   addresses are in the public repository, so an account under one may be a stranger's. The
+   change is recorded in that person's own audit history.
+
+   `scripts/seed_team.py` follows the same rule: it never promotes, or puts in the team vault, an
+   account it did not create in that run. For an existing account it prints the account's name,
+   date and workspace and refuses; if it is really that team member, re-run with
+   `--adopt-existing <email>` (their own workspace must be empty, and they are moved out of it).
+2. **Rate limiting behind Azure's proxy: `RATE_LIMIT_PROXY_HOPS` is required.** Sign-in, sign-up
+   and phone pairing are limited per client address. The production config now refuses to start
+   until `RATE_LIMIT_PROXY_HOPS` is set explicitly, because both wrong guesses are security
+   faults: too low and every visitor shares one bucket (one attacker locks everyone out of
+   signing in), too high and a client can choose its own address. Set it on the app **and** on
+   the one-off job (and in any `.env` a production-config script reads locally, such as
+   `link_treasury.py`):
+   - `1` when browsers reach Azure Container Apps' ingress directly;
+   - `2` when Cloudflare proxies in front of it (the orange cloud on the DNS record);
+   - `0` only with no proxy at all.
+
+   The integrator confirms which applies at R10 staging (does the custom domain go through
+   Cloudflare's proxy?). The counts are per process, which is right for one replica; if the app is
+   ever scaled out, the limits multiply by the replica count.
+3. **Sign-ups during a live demo.** Sign-up (both forms together) allows
+   `RATE_LIMIT_SIGNUP_PER_HOUR` per address per hour, 10 by default. An audience on one campus
+   Wi-Fi shares one address, so the 11th person would be told to wait an hour. **Raise it for a
+   live demo on one network** (for example `RATE_LIMIT_SIGNUP_PER_HOUR=200` for the day), and put
+   it back afterwards. Don't turn the limiter off.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
