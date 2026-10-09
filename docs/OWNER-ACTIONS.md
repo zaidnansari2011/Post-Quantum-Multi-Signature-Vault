@@ -665,7 +665,7 @@ the same time; nothing re-pins it automatically, by design.
 
 *Your effort:* two or three commands and one look at a page.
 
-### 2.11 Rework R8: an email account with Resend — `PARTLY DONE` (added 2026-10-09; key saved in `.env.rework`; domain verification to confirm)
+### 2.11 Rework R8: an email account with Resend — `DONE` 2026-10-09 (domain `mail.zaidansari.tech` verified; key in `q-vault-rework/.env.rework`)
 
 *Why it's yours:* a third-party account in your name, and DNS records on your domain.
 
