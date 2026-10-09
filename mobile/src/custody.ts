@@ -29,10 +29,17 @@ export interface NewKeyPair {
   sign(message: Uint8Array): Uint8Array;
 }
 
+/** The prompt's strings (src/logic/prompt.ts): iOS shows `message`; Android all three. */
+export interface PromptStrings {
+  message: string;
+  subtitle?: string;
+  description?: string;
+}
+
 export interface Custody {
   detectProtection(): Promise<ProtectionLevel>;
   /** Confirm a human is present. Throws if they decline; resolves 'none' if nothing can be asked. */
-  confirmPresence(promptMessage: string): Promise<ProtectionLevel>;
+  confirmPresence(prompt: PromptStrings): Promise<ProtectionLevel>;
   createKeyPair(algId: string): Promise<NewKeyPair>;
   deriveKeyPair(algId: string): Promise<{ publicKey: Uint8Array; secretKey: Uint8Array } | null>;
   saveIdentity(identity: StoredIdentity): Promise<void>;

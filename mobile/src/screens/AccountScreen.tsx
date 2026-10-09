@@ -1,21 +1,24 @@
-// The person, their device, and the two ways to end it.
+// The person, their device, and the one way to end it here: Remove this phone (phone-ux §6.19).
 //
 // The fingerprint keeps its prominence because it is the one value here a person is expected to
 // compare character by character against another screen: the same 16 characters appear in the web
 // client's device list, and comparing them is how someone confirms that the key approving decisions
 // in their name is the key in their pocket. So it is set in mono, grouped in fours.
 //
-// The destructive controls keep their explanatory sentence: a control that permanently destroys a
-// signing key has to say so before it is pressed. (Phone-ux §6.18 to §6.20 reshape this page in P3:
-// a profile, This phone, Other devices, and one "Remove this phone".)
+// "Remove this phone" replaces Sign out and Revoke this device. Both used to delete the key, and
+// Sign out did it without telling the server, leaving a key the server still counted as active. Now
+// the server is asked first, and the key is deleted only once it no longer counts this phone
+// (src/logic/session.ts). If a treasury holds this phone's key, the sheet says what that costs and
+// asks for "I understand" first. (The rest of this page is reshaped in P3, §6.18.)
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   Banner,
   Button,
+  CheckboxRow,
   GroupedValue,
   InlineMessage,
   KeyValue,
@@ -34,7 +37,10 @@ import { exactly, whenAfter } from '../time.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import type { ProtectionLevel } from '../custody.ts';
+import { OfflineNotice, useRefreshOnFocus } from '../freshness.tsx';
+import { devicesQuery, keys, meQuery, vaultsQuery } from '../queries.ts';
 import type { Device } from '../api/schemas.ts';
+import { andList } from '../logic/words.ts';
 
 const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
   biometric: 'Biometric',
@@ -42,45 +48,21 @@ const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
   none: 'No device lock set',
 };
 
-type Ending = 'signout' | 'revoke';
-
 export default function AccountScreen() {
   const s = useStyles();
-  const { token, identity, signOut, revokeThisDevice } = useEnrolledSession();
-  const [ending, setEnding] = useState<Ending | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { token, identity } = useEnrolledSession();
+  const [removing, setRemoving] = useState(false);
 
-  const query = useQuery({
-    queryKey: ['devices'],
-    queryFn: ({ signal }) => api.fetchDevices(token, signal),
-  });
+  const query = useQuery(devicesQuery(token));
+  useRefreshOnFocus([keys.devices, keys.me]);
 
   const others = (query.data?.devices ?? []).filter((d) => !d.is_current);
 
-  async function confirmEnding() {
-    if (!ending) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await (ending === 'revoke' ? revokeThisDevice() : signOut());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'That did not work.');
-      setBusy(false);
-      setEnding(null);
-    }
-  }
-
   return (
     <Screen>
+      <OfflineNotice at={query.dataUpdatedAt} />
       <Scroll refreshing={query.isRefetching} onRefresh={() => void query.refetch()}>
         <RootHeader lead={identity.email} title={identity.displayName} />
-
-        {error ? (
-          <View style={s.gap}>
-            <Banner tone="critical" title={error} />
-          </View>
-        ) : null}
 
         {/* The fingerprint, given the room a value someone has to compare needs. */}
         <View style={s.card}>
@@ -123,43 +105,164 @@ export default function AccountScreen() {
           )}
         </Section>
 
-        <Section title="End this session">
-          <View style={s.endings}>
-            <Button label="Sign out" variant="secondary" onPress={() => setEnding('signout')} full />
-            <Button label="Revoke this device" variant="danger" onPress={() => setEnding('revoke')} full />
-            <Text role="caption" tone="muted">
-              Both discard the signing key on this device. Revoking also retires it server-side, so
-              past signatures stay verifiable and no new ones can be made.
-            </Text>
-          </View>
+        <Section title="This phone">
+          <Button label="Remove this phone" variant="danger" onPress={() => setRemoving(true)} full />
         </Section>
       </Scroll>
 
-      <Sheet
-        visible={ending !== null}
-        onClose={() => !busy && setEnding(null)}
-        dismissible={!busy}
-        title={ending === 'revoke' ? 'Revoke this device' : 'Sign out'}
-        footer={
-          <>
+      <RemoveSheet visible={removing} onClose={() => setRemoving(false)} />
+    </Screen>
+  );
+}
+
+/**
+ * "Remove this phone?" (§6.19). Nothing is deleted until the server confirms; on a failure the
+ * sheet stays open and says so, and only then offers "Remove from this phone only".
+ */
+function RemoveSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { token, identity, removeThisPhone, removeFromThisPhoneOnly } = useEnrolledSession();
+  const [busy, setBusy] = useState(false);
+  const [understood, setUnderstood] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [offerLocal, setOfferLocal] = useState(false);
+  const [localOnly, setLocalOnly] = useState(false);
+  // Pressed without "I understand" ticked: said under it, and nothing is removed (§1.4 rule 6: the
+  // button stays live and says why, rather than greying out).
+  const [unticked, setUnticked] = useState(false);
+  // One removal at a time: a second tap in the same frame does nothing.
+  const inFlight = useRef(false);
+
+  // Which treasuries hold this phone's key for this person (§6.19): from /me's key choice and each
+  // vault's treasury, read only while the sheet is open.
+  const me = useQuery({ ...meQuery(token), enabled: visible });
+  const onPhone = me.data?.my_key?.custody === 'device';
+  const vaults = useQuery({ ...vaultsQuery(token), enabled: visible && onPhone });
+  const treasuries = useQueries({
+    queries: (vaults.data?.vaults ?? []).map((v) => ({
+      queryKey: ['treasury', v.vault_id],
+      queryFn: ({ signal }: { signal: AbortSignal }) => api.fetchTreasury(token, v.vault_id, signal),
+      enabled: visible && onPhone,
+    })),
+  });
+  const holding = onPhone
+    ? (vaults.data?.vaults ?? []).filter((_v, i) =>
+        treasuries[i]?.data?.treasury?.signers.some(
+          (x) => x.user_id === identity.userId && x.custody === 'device' && x.key_active,
+        ),
+      )
+    : [];
+  // Not known (still loading, or unreadable): ask for "I understand" as well, rather than assume
+  // that no treasury holds it. A person whose treasuries register the password key needs neither.
+  const unknown =
+    !me.data ||
+    (onPhone && (!vaults.data || treasuries.some((q) => !q.data)));
+  const needsConsent = holding.length > 0 || (unknown && me.data?.my_key?.custody !== 'password');
+  const names = holding.map((v) => v.name);
+
+  const close = () => {
+    if (busy) return;
+    setUnderstood(false);
+    setUnticked(false);
+    setFailure(null);
+    setOfferLocal(false);
+    setLocalOnly(false);
+    onClose();
+  };
+
+  const remove = async () => {
+    if (inFlight.current || busy) return;
+    if (needsConsent && !understood) {
+      setUnticked(true);
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setFailure(null);
+    try {
+      if (localOnly) {
+        await removeFromThisPhoneOnly();
+        return;
+      }
+      const plan = await removeThisPhone();
+      if (!plan.deletes.seed) {
+        setFailure(plan.message);
+        setOfferLocal(plan.offerLocalOnly);
+      }
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet
+      visible={visible}
+      onClose={close}
+      dismissible={!busy}
+      title="Remove this phone?"
+      footer={
+        <>
+          {failure ? <InlineMessage tone="warning" text={failure} /> : null}
+          <Button
+            label={localOnly ? 'Remove from this phone only' : 'Remove this phone'}
+            variant="danger"
+            onPress={() => void remove()}
+            busy={busy}
+            full
+          />
+          {offerLocal && !localOnly ? (
             <Button
-              label={ending === 'revoke' ? 'Revoke device' : 'Sign out'}
-              variant="danger"
-              onPress={() => void confirmEnding()}
-              busy={busy}
+              label="Remove from this phone only"
+              variant="quiet"
+              onPress={() => setLocalOnly(true)}
+              disabled={busy}
               full
             />
-            <Button label="Cancel" variant="quiet" onPress={() => setEnding(null)} disabled={busy} full />
-          </>
-        }
-      >
-        <Text role="body" tone="muted">
-          {ending === 'revoke'
-            ? 'The signing key on this phone is destroyed and retired server-side. Decisions you have already signed stay verifiable. To approve anything again you will need to enrol this device from scratch.'
-            : 'The signing key on this phone is destroyed. To approve anything again you will need to enrol this device from scratch.'}
+          ) : null}
+          <Button label="Cancel" variant="quiet" onPress={close} disabled={busy} full />
+        </>
+      }
+    >
+      <Text role="body">
+        {"This phone's key is deleted and can't sign again. Decisions it already signed stay valid. To approve from this phone later, set it up again."}
+      </Text>
+      {holding.length > 0 ? (
+        <Text role="body">
+          {names.length === 1
+            ? `The treasury of the ${names[0]} vault holds this phone's key for you. After removing it, you can't approve that vault's payments until an owner updates its treasury.`
+            : `The treasuries of the ${andList(names)} vaults hold this phone's key for you. After removing it, you can't approve their payments until an owner updates them.`}
         </Text>
-      </Sheet>
-    </Screen>
+      ) : needsConsent ? (
+        <Text role="body">
+          {"Q-Vault hasn't confirmed whether a vault's treasury holds this phone's key for you. If one does, you can't approve its payments after removing it until an owner updates the treasury."}
+        </Text>
+      ) : null}
+      {needsConsent ? (
+        <View>
+          <CheckboxRow
+            flush
+            label="I understand"
+            checked={understood}
+            onToggle={() => {
+              setUnderstood((v) => !v);
+              setUnticked(false);
+            }}
+          />
+          {unticked && !understood ? (
+            <InlineMessage tone="warning" text="Tick 'I understand' to remove this phone." />
+          ) : null}
+        </View>
+      ) : null}
+      {localOnly ? (
+        <InlineMessage
+          tone="warning"
+          text="This deletes the key from this phone only. The web will still list this phone as active until you remove it there."
+        />
+      ) : null}
+      <Text role="body" tone="muted">
+        You can still approve on the web with your password.
+      </Text>
+    </Sheet>
   );
 }
 
@@ -185,7 +288,7 @@ function TreasuryKey() {
   const s = useStyles();
   const { token } = useEnrolledSession();
   const queryClient = useQueryClient();
-  const me = useQuery({ queryKey: ['me'], queryFn: ({ signal }) => api.fetchMe(token, signal) });
+  const me = useQuery(meQuery(token));
   const choose = useMutation({
     mutationFn: (custody: 'device' | 'password') => api.setSigningChoice({ token, custody }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['me'] }),
@@ -214,7 +317,6 @@ function TreasuryKey() {
 }
 
 const useStyles = makeStyles((t) => ({
-  gap: { marginBottom: t.space[16] },
   card: {
     backgroundColor: t.color.surface,
     borderWidth: 1,
@@ -223,5 +325,4 @@ const useStyles = makeStyles((t) => ({
     padding: t.space[16],
     gap: t.space[8],
   },
-  endings: { gap: t.space[12] },
 }));

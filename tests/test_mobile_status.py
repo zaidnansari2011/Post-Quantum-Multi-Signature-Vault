@@ -128,6 +128,25 @@ CASES = {
         None,
         "sign",
     ),
+    # Row 2a: the payment's signed "valid until" has passed. Approving still counts, but the
+    # treasury won't pay it, and the page says so rather than reading as if it would.
+    "2a_payment_past_its_limit": (
+        _case({**PAYMENT, "valid_until": int((NOW - timedelta(days=1)).timestamp())}),
+        2,
+        "Needs your signature",
+        "warning",
+        "The time the treasury allows for this payment ran out on 5 Oct, so approving it won't"
+        " pay it.",
+        "sign",
+    ),
+    "2a_payment_within_its_limit": (
+        _case({**PAYMENT, "valid_until": int((NOW + timedelta(hours=1)).timestamp())}),
+        2,
+        "Needs your signature",
+        "warning",
+        None,
+        "sign",
+    ),
     # Row 3: separation of duties.
     "3_raised_it": (
         _case({"raised_by": {"id": ME, "name": "Zaid"}, "separation_of_duties": True}),
@@ -137,7 +156,8 @@ CASES = {
         "You raised this, so you can't approve it.",
         "remind",
     ),
-    # Row 4: approved, still open.
+    # Row 4: approved, still open. The time is on the person's own line in "Who decided", just
+    # below, so the personal line does not repeat it.
     "4_approved_names_known": (
         _case(
             {
@@ -150,7 +170,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved 10:24. Waiting on Brij or Chen.",
+        "You approved this. Waiting on Brij or Chen.",
         "none",
     ),
     "4_approved_names_unknown": (
@@ -158,7 +178,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved 10:24.",
+        "You approved this.",
         "none",
     ),
     "4_approved_in_this_session": (
@@ -174,7 +194,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved 10:24.",
+        "You approved this.",
         "none",
     ),
     "4_approved_yesterday": (
@@ -188,7 +208,7 @@ CASES = {
         4,
         "Waiting on 1",
         "neutral",
-        "You approved yesterday.",
+        "You approved this.",
         "none",
     ),
     "4_signed_but_vote_not_listed": (
@@ -205,7 +225,7 @@ CASES = {
         5,
         "Waiting on 2",
         "neutral",
-        "You rejected this 10:24. It's rejected only if one more reject.",
+        "You rejected this. It's rejected only if one more rejects.",
         "none",
     ),
     "5_rejected_wide_policy": (
@@ -220,7 +240,7 @@ CASES = {
         5,
         "Waiting on 2",
         "neutral",
-        "You rejected this 10:24. It's rejected only if three more reject.",
+        "You rejected this. It's rejected only if three more reject.",
         "none",
     ),
     # Row 6: not an approver.
@@ -314,6 +334,15 @@ CASES = {
         "Needs your signature",
         "warning",
         "This vault's treasury holds the key of Zaid's Pixel 8. Approve this payment there.",
+        "web",
+    ),
+    "7_no_key_on_the_treasury": (
+        _case(PAYMENT, seat={"kind": "none"}),
+        7,
+        "Needs your signature",
+        "warning",
+        "This vault's treasury doesn't hold a key of yours, so an approval from this phone "
+        "wouldn't be paid.",
         "web",
     ),
     # Row 8: the signed set and the server disagree (I-10).
@@ -587,6 +616,45 @@ CASES = {
         "Rejected by Brij and Chen before your signature arrived.",
         "none",
     ),
+    "16_a_failed_payout_still_says_nothing_was_sent": (
+        _case(
+            {
+                **APPROVED_BY_TWO,
+                **PAYMENT,
+                "votes": [_vote(HASSAN, "approve"), _vote(GRACIAN, "approve")],
+                "payout": {
+                    "state": "failed",
+                    "reason": "insufficient balance",
+                    "finished_at": None,
+                },
+            },
+            closed_before="opened",
+        ),
+        16,
+        "Failed",
+        "critical",
+        "Approved by Hassan and Gracian before you opened this. The treasury didn't hold enough "
+        "to pay. Nothing was sent. Top it up, then raise it again.",
+        "none",
+    ),
+    # Someone who voted on it is not told it closed "before you opened this".
+    "16_not_for_someone_who_voted_on_it": (
+        _case(APPROVED_BY_TWO, closed_before="opened"),
+        9,
+        "Approved",
+        "success",
+        "Approved 5 Oct by Hassan and you.",
+        "none",
+    ),
+    # An unknown status is never put into a sentence, even when it closed while you were away.
+    "16_unknown_status_opened_from_the_queue": (
+        _case({"status": "frozen"}, closed_before="opened"),
+        0,
+        "Unknown",
+        "neutral",
+        None,
+        "none",
+    ),
     # Row 17: an unknown decision type still signs, on its signed text alone.
     "17_unknown_type": (
         _case({"known_type": False}),
@@ -667,6 +735,12 @@ def test_the_password_key_case_offers_the_one_time_fix(results):
         "fix": True,
     }
     assert results["7_other_device"]["actions"]["fix"] is False
+    # No key of theirs on the treasury: no claim that the web, or anywhere, can approve it.
+    assert results["7_no_key_on_the_treasury"]["actions"] == {
+        "kind": "web",
+        "line": "This phone can't approve this payment.",
+        "fix": False,
+    }
 
 
 def test_raise_again_sits_in_the_bar_only_for_expired_and_withdrawn(results):

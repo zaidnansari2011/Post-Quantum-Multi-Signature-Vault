@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Banner,
   Button,
+  ColdStartHint,
   CollapsedBar,
   EmptyState,
   GroupedItem,
@@ -28,9 +29,10 @@ import {
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
-import * as api from '../api/endpoints.ts';
 import { ApiError } from '../api/client.ts';
 import type { ProposalSummary, VaultSummary } from '../api/schemas.ts';
+import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
+import { awaitingQuery, fetchedThisRun, keys, vaultsQuery } from '../queries.ts';
 import { stillOpen } from '../status.ts';
 
 export default function VaultsScreen({
@@ -41,24 +43,18 @@ export default function VaultsScreen({
   onCreate: () => void;
 }) {
   const s = useStyles();
-  const { token, handleUnauthorized } = useEnrolledSession();
+  const { token } = useEnrolledSession();
   const header = useCollapsingHeader();
 
-  const query = useQuery({
-    queryKey: ['vaults'],
-    queryFn: ({ signal }) => api.fetchVaults(token, signal),
-    retry: (count, err) => !(err instanceof ApiError) && count < 2,
-  });
+  const query = useQuery(vaultsQuery(token));
+  useRefreshOnFocus([keys.vaults, keys.awaiting]);
+  // Reading `dataUpdatedAt` here also re-renders on an answer equal to the copy from disk.
+  const confirmed = query.dataUpdatedAt > 0 && fetchedThisRun(keys.vaults);
+  const coldStart = useColdStart(!confirmed && query.isFetching);
 
-  if (query.error instanceof ApiError && query.error.status === 401) {
-    void handleUnauthorized();
-  }
+  // A 401 is handled once, by the session (the API client reports it): Session ended (§6.20).
 
-  const awaiting = useQuery({
-    queryKey: ['proposals', 'awaiting'],
-    queryFn: ({ signal }) => api.fetchProposals(token, 'awaiting', signal),
-    retry: (count, err) => !(err instanceof ApiError) && count < 2,
-  });
+  const awaiting = useQuery(awaitingQuery(token));
   const needsYou = awaiting.data ? countByVault(stillOpen(awaiting.data.proposals)) : null;
 
   const vaults = query.data?.vaults ?? [];
@@ -70,6 +66,7 @@ export default function VaultsScreen({
 
   return (
     <Screen>
+      <OfflineNotice at={query.dataUpdatedAt} />
       <View style={s.flex}>
         <CollapsedBar title="Vaults" visible={header.collapsed} action={create} />
         <FlatList
@@ -99,6 +96,7 @@ export default function VaultsScreen({
             <View>
               <RootHeader
                 onLayout={header.onHeaderLayout} title="Vaults" action={{ ...create, filled: true }} />
+              <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
               {transportFailure ? (
                 <View style={s.banner}>
                   <Banner

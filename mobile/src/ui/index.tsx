@@ -8,6 +8,7 @@ export { ActionBar } from './ActionBar.tsx';
 export { Assurance } from './Assurance.tsx';
 export { Button, IconButton, TextLink, type ButtonProps, type ButtonVariant } from './Button.tsx';
 export { CodeBlock, CodeLine, CODE_ABOUT } from './Code.tsx';
+export { ColdStartHint } from './ColdStartHint.tsx';
 export { DecisionRow, DecisionRowSkeleton, type DecisionRowProps } from './DecisionRow.tsx';
 export { feedback } from './feedback.ts';
 export { Icon, type IconName } from './Icon.tsx';

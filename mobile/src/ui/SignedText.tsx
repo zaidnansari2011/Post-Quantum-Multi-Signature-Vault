@@ -17,17 +17,20 @@ export function SignedText({
   text,
   size = 'auto',
   tone = 'text',
+  numberOfLines,
 }: {
   text: string;
   /** 'auto' picks hero or reading size by length and font scale; sheets always use 'decision'. */
   size?: 'auto' | 'decision';
   tone?: 'text' | 'muted';
+  /** Collapsed to this many lines (the reject sheet's "Show all"); the whole text otherwise. */
+  numberOfLines?: number;
 }) {
   const t = useTheme();
   const hero = size === 'auto' && text.length <= LONG && t.fontScale < t.breakpoints.decisionStepDown;
   const parts = text.split(ADDRESS);
   return (
-    <Text role={hero ? 'decisionHero' : 'decision'} tone={tone} selectable>
+    <Text role={hero ? 'decisionHero' : 'decision'} tone={tone} selectable numberOfLines={numberOfLines}>
       {parts.map((part, i) =>
         i % 2 === 1 ? (
           <GroupedValue key={i} value={part} emphasiseEnds={false} />

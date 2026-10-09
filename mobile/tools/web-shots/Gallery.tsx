@@ -19,6 +19,7 @@ import {
   Banner,
   Button,
   CheckboxRow,
+  ColdStartHint,
   CollapsedBar,
   ChipGroup,
   CodeBlock,
@@ -450,6 +451,10 @@ function Structure() {
       <Story title="OfflineBar" pad={false}>
         <OfflineBar since="09:40" />
       </Story>
+      <Story title="ColdStartHint: the caption at 4 s, and Try again at 20 s">
+        <ColdStartHint stage="hint" />
+        <ColdStartHint stage="retry" onRetry={noop} />
+      </Story>
       <Story title="Tab bar: filled when active, badge and unread dot" pad={false}>
         <View style={s.tabbar}>
           <Tab label="Approvals" icons={['inbox', 'inbox-fill']} focused badge={3} onPress={noop} />
@@ -507,7 +512,17 @@ function OverlayPage() {
       <Story title="Behind the acknowledgement">
         <SignedText text="Commit to the Q4 reserved-capacity plan." />
       </Story>
-      <SignedOverlay visible approved filled={2} required={2} onDone={noop} />
+      <SignedOverlay
+        visible
+        mark="tick"
+        sealed
+        headline="Decision approved"
+        line="Yours was the approval that met the rule."
+        filled={2}
+        required={2}
+        next={{ caption: '2 more need your signature', onPress: noop }}
+        onDone={noop}
+      />
     </>
   );
 }

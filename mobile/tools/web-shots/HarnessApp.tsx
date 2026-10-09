@@ -8,7 +8,11 @@
 //                       dark mode to react-native-web in the harness)
 //   ?fontScale=2        emulated system text size: ui/Text multiplies each role, capped per role
 //   ?gallery=<page>     the component gallery instead of the app (`?gallery=index` lists pages)
+//   ?link=<url>         a deep link handed to the app as it starts, as the system would (§2.4):
+//                       e.g. qvault://decision/<uuid>?via=web, the web handoff
+import { useEffect } from 'react';
 import { QVaultApp } from '../../App';
+import { openUrl } from '../../src/links.ts';
 import { setApiBaseUrl } from '../../src/config.ts';
 import Gallery from './Gallery.tsx';
 
@@ -20,8 +24,12 @@ const scheme = theme === 'dark' || theme === 'light' ? theme : undefined;
 const scale = Number(params.get('fontScale'));
 const fontScale = Number.isFinite(scale) && scale > 0 ? scale : undefined;
 const gallery = params.get('gallery');
+const link = params.get('link');
 
 export default function Harness() {
+  useEffect(() => {
+    if (link && !gallery) openUrl(link);
+  }, []);
   if (gallery) return <Gallery name={gallery} scheme={scheme} fontScale={fontScale} />;
   return <QVaultApp scheme={scheme} fontScale={fontScale} />;
 }

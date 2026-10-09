@@ -28,8 +28,9 @@ const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
 
 export default function EnrolScreen() {
   const s = useStyles();
-  const { enrol } = useSession();
-  const [email, setEmail] = useState('');
+  const { enrol, lastEmail } = useSession();
+  // Set up again after a session ended: the address it was set up with, so only the password is new.
+  const [email, setEmail] = useState(lastEmail ?? '');
   const [password, setPassword] = useState('');
   const [deviceName, setDeviceName] = useState(Platform.OS === 'ios' ? 'My iPhone' : 'My Android phone');
   const [protection, setProtection] = useState<ProtectionLevel | null>(null);
