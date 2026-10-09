@@ -39,7 +39,7 @@ import {
 } from '../src/logic/treasuryChange.ts';
 import { waitingOnOthers, whoCanAct } from '../src/logic/queue.ts';
 import { defaultDeviceName, rateLimitMessage, signInProblems } from '../src/logic/onboarding.ts';
-import { LOCK_AFTER_MS, onLeave, onReturn } from '../src/logic/appLock.ts';
+import { LOCK_AFTER_MS, awayTime, onLeave, onReturn, type PromptSpan } from '../src/logic/appLock.ts';
 import {
   canRaiseIn,
   newVaultRule,
@@ -233,16 +233,27 @@ out.onboarding = {
 };
 
 {
-  // App lock: a minute away locks; time in the OS prompt is not time away; off never locks.
+  // App lock: a minute away locks; only the time an OS prompt was actually up is not time away;
+  // leaving during a prompt, or a moment after one, still arms it; off never locks.
   const t0 = 1_000_000;
-  const away = (ms: number, enabled: boolean, promptUp = false) =>
-    onReturn(onLeave({ leftAt: null }, t0, promptUp), t0 + ms, enabled).lock;
-  const twice = onReturn(onLeave(onLeave({ leftAt: null }, t0, false), t0 + 50_000, false), t0 + LOCK_AFTER_MS, true).lock;
+  const away = (ms: number, enabled: boolean, spans: PromptSpan[] = []) =>
+    onReturn(onLeave({ leftAt: null }, t0), t0 + ms, enabled, spans).lock;
+  const twice = onReturn(onLeave(onLeave({ leftAt: null }, t0), t0 + 50_000), t0 + LOCK_AFTER_MS, true).lock;
   out.appLock = {
     minute: away(LOCK_AFTER_MS, true),
     justUnder: away(LOCK_AFTER_MS - 1, true),
     off: away(10 * LOCK_AFTER_MS, false),
-    inPrompt: away(10 * LOCK_AFTER_MS, true, true),
+    // Left while a PIN prompt was up, which then took 90 s: back a second after it ended.
+    longPinThenBack: away(91_000, true, [{ start: t0 - 5_000, end: t0 + 90_000 }]),
+    // Left while the prompt was up (it ended 30 s later), back an hour later: locks (review A2).
+    leftDuringPromptHourAway: away(30_000 + 3_600_000, true, [{ start: t0 - 5_000, end: t0 + 30_000 }]),
+    leftDuringPrompt59sAfter: away(30_000 + 59_000, true, [{ start: t0 - 5_000, end: t0 + 30_000 }]),
+    leftDuringPrompt61sAfter: away(30_000 + 61_000, true, [{ start: t0 - 5_000, end: t0 + 30_000 }]),
+    // Left half a second after a prompt closed, back an hour later: locks (review A2).
+    leftHalfSecondAfterPrompt: away(3_600_000, true, [{ start: t0 - 10_000, end: t0 - 500 }]),
+    // A prompt still up when the app returns counts as prompt time to the end.
+    promptStillUp: away(10 * LOCK_AFTER_MS, true, [{ start: t0, end: null }]),
+    awayLessPrompt: awayTime(t0, t0 + 100_000, [{ start: t0 + 10_000, end: t0 + 40_000 }]),
     firstLeaveCounts: twice,
     noLeave: onReturn({ leftAt: null }, t0, true).lock,
   };

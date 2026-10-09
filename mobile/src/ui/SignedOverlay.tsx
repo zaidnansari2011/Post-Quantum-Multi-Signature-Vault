@@ -34,6 +34,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useCloseOnLock } from './lock.ts';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { Button } from './Button.tsx';
 import { feedback } from './feedback.ts';
@@ -70,6 +71,8 @@ export function SignedOverlay({
   next?: { caption: string; onPress: () => void } | null;
   onDone: () => void;
 }) {
+  // App lock closes the acknowledgement, as it closes sheets (§6.1).
+  useCloseOnLock(visible, onDone);
   const t = useTheme();
   const s = useStyles();
   const reduced = useReducedMotion();
