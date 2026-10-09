@@ -154,11 +154,36 @@ def test_production_refuses_to_start_without_an_explicit_proxy_hop_count(monkeyp
             monkeypatch.delenv("RATE_LIMIT_PROXY_HOPS", raising=False)
         else:
             monkeypatch.setenv("RATE_LIMIT_PROXY_HOPS", unset)
+        prod = config.ProdConfig()
+        assert prod.RATE_LIMIT_PROXY_HOPS is None
         with pytest.raises(RuntimeError, match="RATE_LIMIT_PROXY_HOPS"):
-            config.ProdConfig()
+            config.require_serving_settings(_FakeApp(prod))
     for value, hops in (("0", 0), ("1", 1), (" 2 ", 2)):
         monkeypatch.setenv("RATE_LIMIT_PROXY_HOPS", value)
-        assert config.ProdConfig().RATE_LIMIT_PROXY_HOPS == hops
+        prod = config.ProdConfig()
+        assert prod.RATE_LIMIT_PROXY_HOPS == hops
+        config.require_serving_settings(_FakeApp(prod))  # serves
+
+
+class _FakeApp:
+    """Just the config a Flask app would load from ``prod``."""
+
+    def __init__(self, prod):
+        self.config = {k: getattr(prod, k) for k in dir(prod) if k.isupper()}
+
+
+def test_an_operator_script_runs_without_the_serving_setting(monkeypatch):
+    """Scripts (linking a treasury, exporting its record) serve no one: they load the production
+    config and must not need a web-only setting. Only ``wsgi.py`` refuses to serve without it."""
+    import config
+
+    monkeypatch.setattr(config.BaseConfig, "SECRET_KEY", "s" * 32)
+    monkeypatch.setattr(config.BaseConfig, "SERVER_MASTER_KEY", "0" * 64)
+    monkeypatch.delenv("RATE_LIMIT_PROXY_HOPS", raising=False)
+    assert config.get_config("production").RATE_LIMIT_PROXY_HOPS is None
+    wsgi = config.__file__.rsplit("config.py", 1)[0] + "wsgi.py"
+    with open(wsgi, encoding="utf-8") as f:
+        assert "require_serving_settings(app)" in f.read()
 
 
 def test_the_sign_up_limit_is_a_setting(limited, client):

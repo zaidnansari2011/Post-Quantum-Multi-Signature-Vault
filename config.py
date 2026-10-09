@@ -205,18 +205,28 @@ class ProdConfig(BaseConfig):
                 + ", ".join(missing)
                 + ". Set them in the environment."
             )
-        # Read now, not from the class: a wrong guess either way is a security fault (one bucket
-        # for every visitor, or a bucket each client chooses), so there is no default to fall
-        # back on. 0 is accepted when it is said explicitly.
-        hops = _proxy_hops(os.environ.get("RATE_LIMIT_PROXY_HOPS"))
-        if hops is None:
-            raise RuntimeError(
-                "Refusing to start: set RATE_LIMIT_PROXY_HOPS to the number of reverse proxies in "
-                "front of the app (1 behind Azure Container Apps' ingress, 2 with Cloudflare "
-                "proxying in front of it, 0 with none). Without it the rate limiter either counts "
-                "every visitor as one or lets each client choose its own address."
-            )
-        self.RATE_LIMIT_PROXY_HOPS = hops
+        # Read now, not from the class. None (unset or not a count) is kept as None: the web
+        # entry point refuses to serve with it (``require_serving_settings``), while an operator's
+        # script, which serves no one, still runs.
+        self.RATE_LIMIT_PROXY_HOPS = _proxy_hops(os.environ.get("RATE_LIMIT_PROXY_HOPS"))
+
+
+def require_serving_settings(app) -> None:
+    """Refuse to serve production traffic without the settings that have no safe default.
+
+    RATE_LIMIT_PROXY_HOPS: a wrong guess either way is a security fault (one bucket for every
+    visitor, or a bucket each client chooses), so production has no default. 0 is accepted when it
+    is said explicitly. Called by ``wsgi.py``, the only way the app is served.
+    """
+    if app.config.get("DEBUG") or app.config.get("TESTING"):
+        return
+    if app.config.get("RATE_LIMIT_ENABLED") and app.config.get("RATE_LIMIT_PROXY_HOPS") is None:
+        raise RuntimeError(
+            "Refusing to start: set RATE_LIMIT_PROXY_HOPS to the number of reverse proxies in "
+            "front of the app (1 behind Azure Container Apps' ingress, 2 with Cloudflare "
+            "proxying in front of it, 0 with none). Without it the rate limiter either counts "
+            "every visitor as one or lets each client choose its own address."
+        )
 
 
 _CONFIGS = {"development": DevConfig, "testing": TestConfig, "production": ProdConfig}

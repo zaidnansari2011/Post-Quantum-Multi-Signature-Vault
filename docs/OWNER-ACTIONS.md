@@ -738,12 +738,11 @@ For the rework image (R10 staging and the switch), settings the deployment needs
    date and workspace and refuses; if it is really that team member, re-run with
    `--adopt-existing <email>` (their own workspace must be empty, and they are moved out of it).
 2. **Rate limiting behind Azure's proxy: `RATE_LIMIT_PROXY_HOPS` is required.** Sign-in, sign-up
-   and phone pairing are limited per client address. The production config now refuses to start
-   until `RATE_LIMIT_PROXY_HOPS` is set explicitly, because both wrong guesses are security
+   and phone pairing are limited per client address. The served app (`wsgi.py`) now refuses to
+   start until `RATE_LIMIT_PROXY_HOPS` is set explicitly, because both wrong guesses are security
    faults: too low and every visitor shares one bucket (one attacker locks everyone out of
-   signing in), too high and a client can choose its own address. Set it on the app **and** on
-   the one-off job (and in any `.env` a production-config script reads locally, such as
-   `link_treasury.py`):
+   signing in), too high and a client can choose its own address. Set it on the app (scripts and
+   one-off jobs, which serve no one, don't need it):
    - `1` when browsers reach Azure Container Apps' ingress directly;
    - `2` when Cloudflare proxies in front of it (the orange cloud on the DNS record);
    - `0` only with no proxy at all.
