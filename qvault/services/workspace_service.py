@@ -582,9 +582,18 @@ def create_invitation(
             "expires_at": invitation.expires_at.isoformat(),
         },
     )
+    _email_link(invitation, token)
     if commit:
         db.session.commit()
     return invitation, token
+
+
+def _email_link(invitation: Invitation, token: str) -> None:
+    """Queue the invitation email with the link (plan R8), in this transaction. Sent by the
+    scheduler; when email is not set up, nothing is queued and the link is only shown."""
+    from qvault.services import delivery_service
+
+    delivery_service.enqueue_invitation(invitation, token)
 
 
 def invitation_for_token(token: str) -> Invitation | None:
@@ -807,6 +816,7 @@ def resend_invitation(
             "expires_at": invitation.expires_at.isoformat(),
         },
     )
+    _email_link(invitation, token)
     if commit:
         db.session.commit()
     return invitation, token

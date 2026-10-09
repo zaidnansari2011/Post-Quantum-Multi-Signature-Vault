@@ -303,10 +303,12 @@ def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
     assert check_baseline.differences(newer) == [
         "table decision_comments is not in the baseline",
         "table decision_fields is not in the baseline",
+        "table deliveries is not in the baseline",
         "table invitations is not in the baseline",
         "table notification_preferences is not in the baseline",
         "table notifications is not in the baseline",
         "table proposal_lifecycle is not in the baseline",
+        "table push_tokens is not in the baseline",
         "table user_settings is not in the baseline",
         "table vault_rules is not in the baseline",
         "table witness_key_refusals is not in the baseline",
