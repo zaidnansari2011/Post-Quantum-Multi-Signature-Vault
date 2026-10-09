@@ -60,12 +60,6 @@ VAGUE_LINKS = {
 #: vaults/proposal_detail.html), reported but not fixed by this stream. Each entry is
 #: (page, problem). Fix the template at integration, then delete its line here.
 R5_KNOWN: set[tuple[str, str]] = {
-    # proposal_detail.html, the public link panel: name the link "Open the public page".
-    (
-        "decision, approved",
-        'link text "Open" does not say where it goes: '
-        '<a class="q-btn q-btn--ghost q-btn--sm" href="/d/<uuid>">',
-    ),
     # detail.html, Treasury tab, "Your key: ... — change": name it "Change your key" (or link
     # the whole phrase).
     ("vault treasury", 'link text "change" does not say where it goes: <a href="/account/">'),
