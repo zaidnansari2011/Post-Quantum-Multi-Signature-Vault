@@ -140,16 +140,85 @@ def test_a_log_with_a_gap_is_unreadable_and_shows_no_number(client, app):
     assert "The log can't be read" in _text(client.get("/status"))
 
 
-def test_the_front_door_never_recomputes_the_root_of_the_whole_log(client, monkeypatch):
+def test_the_front_door_checks_the_whole_log_at_most_every_five_minutes(client, monkeypatch):
+    """Changed in the R6 review (item 12): the front door used to never look at the whole log, so
+    a deleted middle entry went unnoticed. It now runs the full check at most every five minutes,
+    on one request, and still never the per-screen summaries."""
+
     def boom(*a, **k):
         raise AssertionError("recomputed the whole log")
 
     monkeypatch.setattr(checkpoint_service, "current_root", boom)
     monkeypatch.setattr(evidence_service, "witness_check", boom)
     monkeypatch.setattr(checkpoint_service, "log_summary", boom)
-    assert client.get("/").status_code == 200
-    assert client.get("/status").status_code == 200
-    assert client.get("/transparency/checkpoint.json").status_code == 200
+    runs = []
+    real = public_status._run_full_check
+    monkeypatch.setattr(public_status, "_run_full_check", lambda: runs.append(1) or real())
+    now = _frozen(monkeypatch)
+    for _ in range(3):
+        assert client.get("/").status_code == 200
+        assert client.get("/status").status_code == 200
+        assert client.get("/transparency/checkpoint.json").status_code == 200
+    assert len(runs) == 1
+    now[0] += public_status.FULL_CHECK_EVERY + timedelta(seconds=1)
+    client.get("/")
+    client.get("/status")
+    assert len(runs) == 2
+
+
+def _frozen(monkeypatch):
+    now = [datetime.now(UTC)]
+    monkeypatch.setattr(public_status, "_now", lambda: now[0])
+    return now
+
+
+def test_a_deleted_middle_entry_is_reported_once_the_full_check_runs_again(
+    client, app, monkeypatch
+):
+    """The R6 review's probe: delete an entry while the leaf cache is warm, then append. The leaf
+    cache only checks its newest entry, so only the full check can see it; Status says how old
+    that check is in the meantime."""
+    now = _frozen(monkeypatch)
+    _append(5)
+    client.get("/")
+    assert public_status.log_facts().log == "readable"
+    db.session.delete(LedgerEntry.query.filter_by(seq=2).one())
+    db.session.commit()
+    ledger_service.append("after", {})
+
+    now[0] += timedelta(minutes=2)
+    assert public_status.log_facts().log == "readable", "the last full check is 2 minutes old"
+    assert "was last checked 2 minutes ago" in _text(client.get("/status"))
+
+    now[0] += public_status.FULL_CHECK_EVERY
+    facts = public_status.log_facts()
+    assert facts.log == "unreadable" and "missing from the sequence" in facts.checked.problem
+    assert "can't be read" in _strip(client)
+    page = _text(client.get("/status"))
+    assert "Something isn't working." in page and "The log can't be read" in page
+
+
+def test_an_edited_entry_fails_the_full_check_and_says_what_failed(client, app, monkeypatch):
+    now = _frozen(monkeypatch)
+    _append(4)
+    client.get("/")
+    entry = LedgerEntry.query.filter_by(seq=2).one()
+    entry.payload_json = entry.payload_json.replace("}", ',"x":1}')
+    db.session.commit()
+    now[0] += public_status.FULL_CHECK_EVERY + timedelta(seconds=1)
+    assert public_status.log_facts().log == "failed"
+    strip = _strip(client)
+    assert "The log failed its full check: entry #2 doesn't match the chain" in strip
+    assert "Log head" not in strip
+    page = _text(client.get("/status"))
+    assert "The log failed its full check" in page and "Entry #2 doesn't match" in page
+
+
+def test_status_and_the_strip_name_the_witness_key(client, witnessed):
+    checkpoint_service.sync_witness()
+    fingerprint = WitnessCosignature.query.one().key_fingerprint()
+    assert f"key {fingerprint}" in re.sub(r"<[^>]+>", "", _strip(client))
+    assert f"Witness key {fingerprint}." in _text(client.get("/status"))
 
 
 def test_ago_rounds_down_and_never_reads_older_than_it_is():

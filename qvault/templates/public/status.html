@@ -4,7 +4,7 @@
    (public_status.checks), by this server about itself. Green, amber and red each say what they
    mean below the rows. #}
 {% block page_title %}Status{% endblock %}
-{% block page_lead %}Checked when this page loaded, by this server: there's no outside monitor.{% endblock %}
+{% block page_lead %}Checked by this server when this page loaded, except the full check of the audit log, which runs at most every five minutes and says when it last ran. There's no outside monitor.{% endblock %}
 {% block page %}
 {% set words = {'ok': ('Working', 'success'), 'degraded': ('Degraded', 'warning'), 'down': ('Not working', 'critical')} %}
 <div class="q-status">
