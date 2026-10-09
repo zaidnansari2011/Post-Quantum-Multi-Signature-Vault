@@ -642,6 +642,7 @@ def results(tmp_path_factory):
             "  " + TO + " ",
             "8ba1f109551bD432803012645Ac136ddd64DBA72",
         ],
+        "retryAfter": [60, 61, 600, 1, None, 0],
         "deadlines": [
             {"name": "morning", "now": _ms(datetime(2026, 10, 9, 9, 30, tzinfo=UTC))},
             {"name": "late", "now": _ms(datetime(2026, 10, 9, 16, 5, tzinfo=UTC))},
@@ -1099,3 +1100,38 @@ def test_deadline_chips_resolve_to_the_times_they_show(results):
         "2026-10-16 17:00",
         "2026-11-08 17:00",
     ]
+
+
+# -- §6.2, §6.1 --------------------------------------------------------------------------------
+
+
+def test_a_rate_limited_sign_in_says_how_long_to_wait(results):
+    assert results["onboarding"]["rateLimit"] == [
+        "Too many attempts. Try again in 1 minute.",
+        "Too many attempts. Try again in 2 minutes.",
+        "Too many attempts. Try again in 10 minutes.",
+        "Too many attempts. Try again in 1 minute.",
+        "Too many attempts. Try again in a few minutes.",
+        "Too many attempts. Try again in a few minutes.",
+    ]
+
+
+def test_sign_in_says_whats_missing_and_names_the_phone_plainly(results):
+    onboarding = results["onboarding"]
+    assert onboarding["names"] == ["iPhone", "Android phone", "Phone"]
+    assert onboarding["signIn"] == [
+        {"email": "Enter your email.", "password": "Enter your password."},
+        {},
+        {"password": "Enter your password."},
+    ]
+
+
+def test_app_lock_locks_after_a_minute_away_and_never_for_the_os_prompt(results):
+    assert results["appLock"] == {
+        "minute": True,
+        "justUnder": False,
+        "off": False,
+        "inPrompt": False,
+        "firstLeaveCounts": True,
+        "noLeave": False,
+    }

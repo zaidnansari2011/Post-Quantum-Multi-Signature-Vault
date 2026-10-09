@@ -38,6 +38,8 @@ import {
   type ChangeStatusInput,
 } from '../src/logic/treasuryChange.ts';
 import { waitingOnOthers, whoCanAct } from '../src/logic/queue.ts';
+import { defaultDeviceName, rateLimitMessage, signInProblems } from '../src/logic/onboarding.ts';
+import { LOCK_AFTER_MS, onLeave, onReturn } from '../src/logic/appLock.ts';
 import {
   canRaiseIn,
   newVaultRule,
@@ -86,6 +88,7 @@ type Input = {
   };
   address: string[];
   deadlines: Array<{ name: string; now: number }>;
+  retryAfter: Array<number | null>;
 };
 
 const input: Input = JSON.parse(readFileSync(process.argv[2]!, 'utf8'));
@@ -220,5 +223,29 @@ out.deadlines = Object.fromEntries(
     },
   ]),
 );
+
+// -- §6.2 and §6.1 ------------------------------------------------------------------------------
+
+out.onboarding = {
+  rateLimit: input.retryAfter.map((s) => rateLimitMessage(s)),
+  names: ['ios', 'android', 'web'].map((p) => defaultDeviceName(p)),
+  signIn: [signInProblems('', ''), signInProblems(' a@b.c ', 'x'), signInProblems('a@b.c', '')],
+};
+
+{
+  // App lock: a minute away locks; time in the OS prompt is not time away; off never locks.
+  const t0 = 1_000_000;
+  const away = (ms: number, enabled: boolean, promptUp = false) =>
+    onReturn(onLeave({ leftAt: null }, t0, promptUp), t0 + ms, enabled).lock;
+  const twice = onReturn(onLeave(onLeave({ leftAt: null }, t0, false), t0 + 50_000, false), t0 + LOCK_AFTER_MS, true).lock;
+  out.appLock = {
+    minute: away(LOCK_AFTER_MS, true),
+    justUnder: away(LOCK_AFTER_MS - 1, true),
+    off: away(10 * LOCK_AFTER_MS, false),
+    inPrompt: away(10 * LOCK_AFTER_MS, true, true),
+    firstLeaveCounts: twice,
+    noLeave: onReturn({ leftAt: null }, t0, true).lock,
+  };
+}
 
 writeFileSync(process.argv[3]!, JSON.stringify(out));

@@ -19,6 +19,7 @@
 // that does hold decisions is shown as itself: its headline is worked out from it, as for any list
 // shown with the offline bar, and the offline bar (with the copy's time) is the one offline signal.
 
+import { useEffect } from 'react';
 import { View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useIsFocused } from '@react-navigation/native';
@@ -35,12 +36,16 @@ import {
   Screen,
   Scroll,
   Section,
+  Text,
   useCollapsingHeader,
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import type { ProposalSummary } from '../api/schemas.ts';
-import { useApprovals } from '../approvals.ts';
+import { useApprovals, useTreasuryChanges } from '../approvals.ts';
+import { parseInstant } from '../time.ts';
+import { changeSummary, type ChangeEntry } from '../logic/treasuryChange.ts';
+import { permissions } from '../logic/workspace.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { keys, meQuery, vaultsQuery } from '../queries.ts';
 import { approvalsHeadline, elsewhereSections } from '../logic/queue.ts';
@@ -48,18 +53,22 @@ import { offersRaise } from '../proposing.ts';
 
 export default function HomeScreen({
   onOpen,
+  onOpenChange,
   onRaise,
   onOpenWaiting,
   onOpenTreasuryApprovals,
 }: {
   onOpen: (uuid: string) => void;
+  /** A treasury change waiting on you: its own route (§6.15). */
+  onOpenChange: (vaultId: number, changeId: number) => void;
   onRaise: () => void;
   onOpenWaiting: () => void;
   /** Account's treasury approvals: the one-time move to this phone's key (§6.18). */
   onOpenTreasuryApprovals: () => void;
 }) {
   const s = useStyles();
-  const { token } = useEnrolledSession();
+  const { token, identity, justEnrolled, clearJustEnrolled } = useEnrolledSession();
+  const changes = useTreasuryChanges();
   const header = useCollapsingHeader();
   const focused = useIsFocused();
   const q = useApprovals({ poll: focused });
@@ -69,7 +78,8 @@ export default function HomeScreen({
   // on is not offered a form the server will refuse (a viewer cannot raise a decision).
   const vaults = useQuery(vaultsQuery(token));
   const me = useQuery(meQuery(token));
-  const canRaise = offersRaise(vaults.data?.vaults);
+  // An auditor raises nothing (S10), and nor does someone who only views every vault they're on.
+  const canRaise = offersRaise(vaults.data?.vaults) && !permissions(me.data?.workspace).auditor;
 
   const { needsYou, web, offerFix } = q.groups;
   // Split by where each can be approved, so no group's title claims more than its rows (§6.3).
@@ -88,12 +98,31 @@ export default function HomeScreen({
   const removed = me.data?.workspace === null;
   const coldStart = useColdStart(!confirmed && q.awaiting.isFetching);
 
+  // Treasury changes this phone can sign join the decisions, by when each runs out (§6.15).
+  type Item = { kind: 'decision'; p: ProposalSummary } | { kind: 'change'; e: ChangeEntry };
+  const sortable = [
+    ...needsYou.map((p) => ({ item: { kind: 'decision', p } as Item, expires_at: p.expires_at, title: p.title })),
+    ...changes.here.map((e) => ({
+      item: { kind: 'change', e } as Item,
+      expires_at: e.change.valid_until,
+      title: `Treasury change in ${e.vaultName}`,
+    })),
+  ];
+  const at = (iso: string | null) => {
+    const v = parseInstant(iso);
+    return Number.isNaN(v) ? Number.POSITIVE_INFINITY : v;
+  };
+  // Soonest first; no deadline last, by title (as `byDeadline` orders decisions alone).
+  const queue = sortable
+    .sort((a, b) => at(a.expires_at) - at(b.expires_at) || a.title.localeCompare(b.title))
+    .map((x) => x.item);
+
   const headline = approvalsHeadline({
     loading,
     failed,
     removed,
-    needsYou: needsYou.length,
-    web: onWeb,
+    needsYou: needsYou.length + changes.here.length,
+    web: onWeb + changes.web.length,
     elsewhere: web.length - onWeb,
     waiting: q.waiting.length,
     dueToday: q.dueToday,
@@ -105,12 +134,35 @@ export default function HomeScreen({
     void q.all.refetch();
   };
 
+  // One line on the first visit after setting up: which workspace this is (§6.2, §6.22).
+  const welcome =
+    justEnrolled && me.data?.workspace && showList && !removed ? `You're in ${me.data.workspace.name}.` : null;
+  useEffect(() => () => clearJustEnrolled(), [clearJustEnrolled]);
+
+  const from = (p: ProposalSummary) =>
+    p.raised_by?.name ? (p.raised_by.id === identity.userId ? 'raised by you' : `from ${p.raised_by.name}`) : null;
+
+  const changeRow = (e: ChangeEntry, variant: 'queue' | 'web') => (
+    <DecisionRow
+      key={`change-${e.change.id}`}
+      title={`Treasury change in ${e.vaultName}`}
+      vault={changeSummary(e.change, e.signerCount)}
+      approvals={e.change.approvals}
+      required={e.change.needed}
+      expiresAt={e.change.valid_until}
+      variant={variant}
+      now={q.now}
+      onPress={() => onOpenChange(e.vaultId, e.change.id)}
+    />
+  );
+
   const row = (p: ProposalSummary, variant: 'queue' | 'web', note?: string) => (
     <DecisionRow
       key={p.proposal_uuid}
       title={p.title}
       vault={p.vault_name ?? `Vault ${p.vault_id}`}
-      amount={q.amounts[p.proposal_uuid] ?? null}
+      from={from(p)}
+      amount={p.amount ?? q.amounts[p.proposal_uuid] ?? null}
       approvals={p.approvals}
       required={p.required_m}
       expiresAt={p.expires_at}
@@ -138,6 +190,11 @@ export default function HomeScreen({
             supporting={headline.supporting ?? undefined}
             action={raise ? { ...raise, filled: true } : undefined}
           />
+          {welcome ? (
+            <Text role="body" tone="muted" style={s.welcome}>
+              {welcome}
+            </Text>
+          ) : null}
 
           {removed ? null : <ColdStartHint stage={coldStart} onRetry={refresh} />}
 
@@ -155,18 +212,22 @@ export default function HomeScreen({
             </List>
           ) : !showList ? null : (
             <>
-              {needsYou.length > 0 ? <List>{needsYou.map((p) => row(p, 'queue'))}</List> : null}
+              {queue.length > 0 ? (
+                <List>{queue.map((x) => (x.kind === 'decision' ? row(x.p, 'queue') : changeRow(x.e, 'queue')))}</List>
+              ) : null}
 
               {sections.map((section, i) => (
                 <Section
                   key={section.kind}
                   title={section.title}
                   count={section.rows.length}
-                  first={needsYou.length === 0 && i === 0}
+                  first={queue.length === 0 && i === 0}
                 >
                   <List>
                     {[
                       ...section.rows.map(({ item, note }) => row(item, 'web', note)),
+                      // Treasury changes whose seat is the password key sit with these payments.
+                      ...(section.kind === 'web' ? changes.web.map((e) => changeRow(e, 'web')) : []),
                       // The one-time move to this phone's key, only where the password key is the seat.
                       ...(section.kind === 'web' && offerFix
                         ? [
@@ -184,8 +245,14 @@ export default function HomeScreen({
                 </Section>
               ))}
 
+              {changes.web.length > 0 && !sections.some((x) => x.kind === 'web') ? (
+                <Section title="Approve on the web" count={changes.web.length} first={queue.length === 0}>
+                  <List>{changes.web.map((e) => changeRow(e, 'web'))}</List>
+                </Section>
+              ) : null}
+
               {q.waiting.length > 0 ? (
-                <View style={needsYou.length + web.length > 0 ? s.after : null}>
+                <View style={queue.length + web.length + changes.web.length > 0 ? s.after : null}>
                   <List>
                     <ListRow
                       title="Waiting on others"
@@ -212,4 +279,5 @@ const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   retry: { alignItems: 'flex-start' },
   after: { marginTop: t.space[24] },
+  welcome: { marginTop: -t.space[8], marginBottom: t.space[16] },
 }));
