@@ -19,7 +19,7 @@ from qvault.forms import LoginForm, RegisterForm, ReissueKeyForm
 from qvault.security.redirects import safe_next
 from qvault.services import auth_service, key_service, workspace_service
 from qvault.services.auth_service import EmailTakenError
-from qvault.services.key_service import KeyUnlockError
+from qvault.services.key_service import KeyUnlockError, PasswordLockedError
 from qvault.services.workspace_service import WorkspaceError
 
 bp = Blueprint("auth", __name__)
@@ -109,6 +109,8 @@ def reissue_key():
         return redirect(url_for("account.security"))
     try:
         key = key_service.reissue_signing_key(current_user, form.password.data)
+    except PasswordLockedError as exc:
+        flash(str(exc), "danger")
     except KeyUnlockError:
         flash("Incorrect password — your signing key was not re-issued.", "danger")
     else:
