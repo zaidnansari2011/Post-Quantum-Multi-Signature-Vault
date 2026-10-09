@@ -482,7 +482,15 @@ const useStyles = makeStyles((t) => ({
   // One field-to-field rhythm everywhere: 16 below each field, whatever it carries.
   field: { gap: t.space[8], paddingBottom: t.space[16] },
   labelRowWithLink: { minHeight: 44, marginVertical: -t.space[8] },
-  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 18 },
+  // Wraps at large text: "Password" and "Forgot password?" don't fit one line at 2.0 (review B1).
+  labelRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: t.space[12],
+    minHeight: 18,
+  },
   inputBox: {
     minHeight: 48,
     borderRadius: t.radius.control,
@@ -490,7 +498,9 @@ const useStyles = makeStyles((t) => ({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  input: { flex: 1, paddingVertical: t.space[12], minHeight: 46 },
+  // minWidth 0: a web <input> has an intrinsic width that grows with the text size and would push
+  // the whole form past the screen at 2.0 text (P3 review B1); flex alone does not shrink it.
+  input: { flex: 1, minWidth: 0, paddingVertical: t.space[12], minHeight: 46 },
   under: { minHeight: 18 },
   underRow: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
   underStacked: { gap: t.space[4] },
@@ -498,6 +508,7 @@ const useStyles = makeStyles((t) => ({
   errorRow: { flexDirection: 'row', gap: t.space[4], alignItems: 'flex-start' },
   errorIcon: { marginTop: 1 },
   textarea: {
+    minWidth: 0,
     borderRadius: t.radius.control,
     backgroundColor: t.color.surface,
     paddingVertical: t.space[12],

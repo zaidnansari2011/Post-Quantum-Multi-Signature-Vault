@@ -55,7 +55,15 @@ export const meResponse = z.object({
   // R3: the workspace this person works in. Null when an admin has removed them (Approvals says
   // so, §6.3); absent from an older server. A shape this app does not know is dropped, not fatal.
   workspace: z
-    .object({ id: z.number().int(), name: z.string(), role: z.string() })
+    .object({
+      id: z.number().int(),
+      name: z.string(),
+      role: z.string(),
+      // P3, additive: the role as the interface writes it, and whether a vault created now stops
+      // whoever raises a decision from approving it (plan S15).
+      role_name: z.string().optional().catch(undefined),
+      separation_of_duties_default: z.boolean().optional().catch(undefined),
+    })
     .nullable()
     .optional()
     .catch(undefined),
@@ -106,6 +114,8 @@ export const vaultMember = z.object({
   email: z.string().nullable(),
   role: z.string(),
   is_me: z.boolean(),
+  // P3, additive: whether they hold a key that can sign (phone-ux §6.14).
+  has_key: z.boolean().optional().catch(undefined),
 });
 export type VaultMember = z.infer<typeof vaultMember>;
 
@@ -144,6 +154,43 @@ export const proposalSummary = z.object({
   // Display only, never signed: lets the queue find the payments whose treasury seat it must look
   // up (phone-ux §6.3). Absent from an older server; a wrong shape is dropped, never fatal.
   is_payment: z.boolean().optional().catch(undefined),
+  // P3 and P4 (phone-ux §10.3: A1 to A4, A11, A17; R5), all unsigned display, each dropped rather
+  // than refused when its shape is not the one this app knows.
+  display_status: z
+    .object({ key: z.string(), word: z.string(), tone: z.string() })
+    .optional()
+    .catch(undefined),
+  can_still_approve: z.array(z.number().int()).optional().catch(undefined),
+  can_still_pass: z.boolean().optional().catch(undefined),
+  cannot_pass_why: z.array(z.string()).optional().catch(undefined),
+  raised_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
+  separation_of_duties: z.boolean().optional().catch(undefined),
+  can_withdraw: z.boolean().optional().catch(undefined),
+  raised_again_from: z
+    .object({ proposal_uuid: z.string(), title: z.string() })
+    .nullable()
+    .optional()
+    .catch(undefined),
+  raised_again_as: z
+    .array(z.object({ proposal_uuid: z.string(), title: z.string() }))
+    .optional()
+    .catch(undefined),
+  withdrawn_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
+  withdrawn_at: z.string().nullable().optional().catch(undefined),
+  decision_type: z.string().nullable().optional().catch(undefined),
+  signers: z
+    .array(
+      z.object({
+        user_id: z.number().int(),
+        name: z.string().nullable(),
+        has_key: z.boolean().optional().catch(undefined),
+      }),
+    )
+    .optional()
+    .catch(undefined),
+  decided_at: z.string().nullable().optional().catch(undefined),
+  amount: z.string().nullable().optional().catch(undefined),
+  seat: z.enum(['this_device', 'password', 'other_device']).nullable().optional().catch(undefined),
 });
 export type ProposalSummary = z.infer<typeof proposalSummary>;
 
@@ -153,9 +200,23 @@ export const proposalsResponse = z.object({
   state: z.string(),
 });
 
+/** A change to a vault's rule, as before and after (R5; phone-ux §6.14, §6.21). Unsigned. */
+export const ruleChange = z.object({
+  event: z.string(),
+  who: z.string(),
+  when: z.string().nullable(),
+  label: z.string(),
+  before: z.string(),
+  after: z.string(),
+});
+export type RuleChange = z.infer<typeof ruleChange>;
+
 export const vaultDetail = vaultSummary.extend({
   members: z.array(vaultMember),
   proposals: z.array(proposalSummary),
+  // P3, additive: separation of duties as it stands, and the latest rule changes.
+  separation_of_duties: z.boolean().optional().catch(undefined),
+  rule_changes: z.array(ruleChange).optional().catch(undefined),
 });
 export type VaultDetail = z.infer<typeof vaultDetail>;
 
@@ -265,6 +326,12 @@ export const proposalDetail = proposalSummary.extend({
   decided_at: z.string().nullable().optional().catch(undefined),
   withdrawn_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
   withdrawn_at: z.string().nullable().optional().catch(undefined),
+  // R5 (S13, A13): a typed decision's stored type, its fields and the template version that wrote
+  // its text. Unsigned: the phone writes the text again from them (src/logic/decisionTypes.ts) and
+  // trusts them only when that is the signed text, byte for byte. Lenient on purpose: a shape this
+  // app does not know means no typed card, never a refusal of the decision itself.
+  fields: z.record(z.string(), z.unknown()).nullable().optional().catch(undefined),
+  template_version: z.number().int().nullable().optional().catch(undefined),
 });
 export type ProposalDetail = z.infer<typeof proposalDetail>;
 
@@ -319,6 +386,8 @@ export const reconfigurationView = z.object({
   state: z.string(),
   reason: z.string().nullable(),
   requested_at: z.string(),
+  // P3 review B2, additive: who asked for it (unsigned display).
+  requested_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
   valid_until: z.string(),
   threshold: z.number().int(),
   approvals: z.number().int(),
@@ -502,6 +571,39 @@ export const readAllResponse = z.object({
 export const remindResponse = z.object({
   ok: z.literal(true),
   reminded: z.number().int(),
+});
+
+// --- P3 and P4 (phone-ux §6.21): withdraw, the discussion thread ------------------------------
+
+export const withdrawResponse = z.object({
+  ok: z.literal(true),
+  proposal: proposalSummary,
+});
+
+/** One run of a comment: plain text, or a mention the server resolved (never one the app guessed). */
+export const commentSegment = z.object({
+  text: z.string(),
+  mention: z.unknown().optional(),
+});
+
+export const commentSchema = z.object({
+  id: z.number().int(),
+  author: z.object({ id: z.number().int(), name: z.string().nullable() }),
+  created_at: z.string().nullable(),
+  deleted: z.boolean(),
+  mine: z.boolean(),
+  body: z.string(),
+  segments: z.array(commentSegment).optional().catch(undefined),
+});
+export type Comment = z.infer<typeof commentSchema>;
+
+export const commentsResponse = z.object({
+  ok: z.literal(true),
+  signed: z.boolean().optional(),
+  note: z.string().optional(),
+  can_post: z.boolean().optional(),
+  comments: z.array(commentSchema),
+  next_after: z.number().int().nullable().optional(),
 });
 
 // --- Phone push (plan R8). ----------------------------------------------------------------------

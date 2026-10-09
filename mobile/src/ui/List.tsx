@@ -84,6 +84,10 @@ export type ListRowProps = {
   disabled?: boolean;
   /** A key, fingerprint or hash under the title, in mono: 0/O and 1/l must never be ambiguous. */
   code?: string | null;
+  /** Decoration inside the row, before its value: Members' avatar stack (§6.14). Not tappable. */
+  accessory?: ReactNode;
+  /** False for a row whose tap reveals more in place rather than opening something. */
+  chevron?: boolean;
 };
 
 export function ListRow({
@@ -101,6 +105,8 @@ export function ListRow({
   trailing,
   disabled,
   code,
+  accessory,
+  chevron = true,
 }: ListRowProps) {
   const t = useTheme();
   const s = useStyles();
@@ -127,12 +133,13 @@ export function ListRow({
           </Text>
         ) : null}
       </View>
+      {accessory ?? null}
       {value && !stacked ? (
         <Text role="body" tone={valueTone} tabular style={s.value}>
           {value}
         </Text>
       ) : null}
-      {onPress ? <Icon name="chevron-right" size={16} color={t.color.textMuted} /> : null}
+      {onPress && chevron ? <Icon name="chevron-right" size={16} color={t.color.textMuted} /> : null}
     </>
   );
   const label = accessibilityLabel ?? [title, caption, value].filter(Boolean).join('. ');

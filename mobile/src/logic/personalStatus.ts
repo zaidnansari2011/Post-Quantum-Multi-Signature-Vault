@@ -30,7 +30,9 @@ export type MismatchReason =
   | 'type_text'
   | 'changed'
   /** The answer for the decision opened was another decision (its uuid is not the route's). */
-  | 'other_decision';
+  | 'other_decision'
+  /** I-5: what the server stored is not what this phone just raised (phone-ux §6.16). */
+  | 'raised';
 
 export type Integrity = { ok: true } | { ok: false; reason: MismatchReason };
 
@@ -95,7 +97,7 @@ export type SessionVote = {
 export type Actions =
   /** Row 2: Reject and Approve, side by side. */
   | { kind: 'sign' }
-  /** Row 1: no signing at all; "Copy a report" and "Open on the web". */
+  /** Row 1: no signing at all; "Share a report" and "Open on the web". */
   | { kind: 'report' }
   /** Row 7: a line in place of Approve, Reject kept; `fix` offers the one-time switch. */
   | { kind: 'web'; line: string; fix: boolean }

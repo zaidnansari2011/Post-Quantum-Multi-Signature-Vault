@@ -28,6 +28,7 @@ export const TAMPER_REASON: Record<MismatchReason, string> = {
   type_text: "The fields shown don't produce the text that would be signed.",
   changed: 'The text changed while you were reading it.',
   other_decision: 'Q-Vault sent a different decision from the one you opened.',
+  raised: 'The server stored something different from what you entered.',
 };
 
 /**
@@ -38,6 +39,7 @@ export const TAMPER_REASON: Record<MismatchReason, string> = {
 export function tamperedTextLabel(reason: string): string {
   if (reason === 'display_policy') return "This text checks out. The approval rule shown with it doesn't.";
   if (reason === 'type_text') return "This is the text that would be signed. The fields shown don't produce it.";
+  if (reason === 'raised') return "This is the text the server stored. It isn't what you entered.";
   return "This is the text the server sent. It doesn't match what would be signed.";
 }
 
@@ -166,7 +168,7 @@ export type ReportInput = {
   at: string;
 };
 
-/** "Copy a report": what an admin needs, plain text, nothing secret (§6.6). */
+/** "Share a report": what an admin needs, plain text, nothing secret (§6.6). */
 export function problemReport(r: ReportInput): string {
   return [
     'Q-Vault decision report',

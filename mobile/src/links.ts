@@ -36,6 +36,7 @@ type SigningState = {
 let signing: SigningState = { sheet: 'none', acknowledging: false, closeSheet: null };
 let pending: LinkTarget | null = null;
 let enrolled = false;
+let locked = false;
 let queries: QueryClient | null = null;
 
 export function configureLinks(client: QueryClient): void {
@@ -46,6 +47,12 @@ export function configureLinks(client: QueryClient): void {
 export function setLinksEnrolled(value: boolean): void {
   enrolled = value;
   if (value) flushLinks();
+}
+
+/** App lock (§6.1): while locked, a link is kept (rule 6) and opened once unlocked. */
+export function setLinksLocked(value: boolean): void {
+  locked = value;
+  if (!value) flushLinks();
 }
 
 /** The decision screen's signing state. Back to none, a held link applies. */
@@ -70,37 +77,50 @@ function situation(): Situation {
       ? (params.uuid as string | undefined)
       : route?.name === 'Vault'
         ? (params.vaultId as number | undefined)
-        : null;
+        : route?.name === 'TreasuryChange'
+          ? (params.changeId as number | undefined)
+          : null;
   return {
     enrolled: enrolled && route !== undefined,
-    locked: false, // App lock arrives with §6.1 (P3); rule 6 then stores the link until unlock.
-    top: route ? { name: route.name, id: id ?? null } : null,
+    locked,
+    top: route
+      ? { name: route.name, id: id ?? null, vaultId: (params.vaultId as number | undefined) ?? null }
+      : null,
     sheet: signing.sheet,
     acknowledging: signing.acknowledging,
     formOpen: route?.name === 'NewDecision' || route?.name === 'NewVault',
   };
 }
 
-const tabs = (tab: string, inner?: string) => ({
+/** The tabs, on `tab`, with its own stack holding `inner` (root first, then any pushed screens). */
+const tabs = (tab: string, inner: Array<{ name: string; params?: object }> = []) => ({
   name: 'Tabs',
-  state: { routes: [{ name: tab, ...(inner ? { state: { routes: [{ name: inner }] } } : {}) }] },
+  state: {
+    routes: [{ name: tab, ...(inner.length ? { state: { index: inner.length - 1, routes: inner } } : {}) }],
+  },
 });
 
 /** Rule 5's stack for a target: the tab, its root, and the target on top. */
 function routesFor(target: LinkTarget): object[] {
   switch (target.kind) {
     case 'decision':
-      return [tabs('Home', 'Approvals'), { name: 'Decision', params: { uuid: target.uuid, via: target.via } }];
+      return [tabs('Home', [{ name: 'Approvals' }]), { name: 'Decision', params: { uuid: target.uuid, via: target.via } }];
     case 'treasuryChange':
-      // The treasury change's own route (§6.15) comes with P3; until then its vault, where it shows.
-      return [tabs('Home', 'Approvals'), { name: 'Vault', params: { vaultId: target.vaultId } }];
+      // Its own route over the queue, like a decision (§6.15).
+      return [
+        tabs('Home', [{ name: 'Approvals' }]),
+        { name: 'TreasuryChange', params: { vaultId: target.vaultId, changeId: target.changeId } },
+      ];
     case 'vault':
-      return [tabs('Vaults'), { name: 'Vault', params: { vaultId: target.vaultId } }];
+      // Inside the Vaults tab, with the list under it (§2.1): Back lands on the vaults.
+      return [tabs('Vaults', [{ name: 'VaultList' }, { name: 'Vault', params: { vaultId: target.vaultId } }])];
     case 'activity':
       return [tabs('Activity')];
     case 'security':
-      // Account; the remove sheet for that device opens with §6.18 (P3).
-      return [tabs('Account')];
+      // Account, Other devices, with the remove sheet for that device open (§6.18).
+      return [
+        tabs('Account', [{ name: 'AccountHome' }, { name: 'OtherDevices', params: { removeDeviceId: target.deviceId } }]),
+      ];
   }
 }
 
@@ -127,6 +147,7 @@ function refetchInPlace(target: LinkTarget): void {
     void queries?.invalidateQueries({ queryKey: ['proposal', target.uuid] });
   }
   if (target.kind === 'vault') void queries?.invalidateQueries({ queryKey: ['vault', target.vaultId] });
+  if (target.kind === 'treasuryChange') void queries?.invalidateQueries({ queryKey: ['treasury', target.vaultId] });
 }
 
 export function openLink(target: LinkTarget): void {
@@ -149,13 +170,15 @@ export function openLink(target: LinkTarget): void {
       else refetchInPlace(target);
       return;
     case 'pushOver':
-      // Rule 4: over the form, which stays intact underneath. A screen target is pushed (a treasury
-      // change as its vault, the screen it opens on until P3); a tab target (Activity, Account) is
-      // kept and applied once the form is left.
+      // Rule 4: over the form, which stays intact underneath. A decision or a treasury change is
+      // pushed; a target inside a tab (a vault, Activity, Account) is kept and applied once the form
+      // is left, because reaching a tab would close the form under it.
       if (target.kind === 'decision') {
         navigationRef.dispatch(StackActions.push('Decision', { uuid: target.uuid, via: target.via }));
-      } else if (target.kind === 'vault' || target.kind === 'treasuryChange') {
-        navigationRef.dispatch(StackActions.push('Vault', { vaultId: target.vaultId }));
+      } else if (target.kind === 'treasuryChange') {
+        navigationRef.dispatch(
+          StackActions.push('TreasuryChange', { vaultId: target.vaultId, changeId: target.changeId }),
+        );
       } else {
         pending = target;
       }

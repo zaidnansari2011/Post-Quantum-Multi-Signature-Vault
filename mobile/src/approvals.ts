@@ -12,6 +12,10 @@
 
 import { useQueries, useQuery } from '@tanstack/react-query';
 
+import type { ReconfigurationView } from './api/schemas.ts';
+import { mayPropose } from './proposing.ts';
+import { pendingChanges, type ChangeEntry } from './logic/treasuryChange.ts';
+
 import type { ProposalSummary } from './api/schemas.ts';
 import { checkInRun } from './checks.ts';
 import { formatEth } from './crypto/signing.ts';
@@ -20,7 +24,16 @@ import { classifySeat, dueToday, groupApprovals, waitingOnOthers } from './logic
 import { stillOpen } from './status.ts';
 import { useEnrolledSession } from './session.tsx';
 import { POLL_MS, STALE_MS } from './logic/freshness.ts';
-import { allQuery, awaitingQuery, devicesQuery, fetchedThisRun, keys, proposalQuery } from './queries.ts';
+import {
+  allQuery,
+  awaitingQuery,
+  devicesQuery,
+  fetchedThisRun,
+  keys,
+  proposalQuery,
+  treasuryQuery,
+  vaultsQuery,
+} from './queries.ts';
 
 /**
  * The queue's data. `poll`: refetch the awaiting list every 60 s, which only Approvals asks for, and
@@ -37,7 +50,12 @@ export function useApprovals({ poll = false }: { poll?: boolean } = {}) {
 
   const now = Date.now();
   const list = awaiting.data?.proposals ?? [];
-  const payments = stillOpen(list, now).filter((p) => p.is_payment === true);
+  // A17: the summary says which key of this person's the treasury holds. Only "another device"
+  // still needs the detail, for that device's name (and whether it was removed); a summary from a
+  // server without A17 (no `seat` at all) is looked up as before.
+  const payments = stillOpen(list, now).filter(
+    (p) => p.is_payment === true && (p.seat === undefined || p.seat === 'other_device'),
+  );
   const details = useQueries({
     // The decision screen's own query (it records each fetch for the signing gate), fresh here for
     // as long as the list it was looked up for.
@@ -52,6 +70,13 @@ export function useApprovals({ poll = false }: { poll?: boolean } = {}) {
 
   const seats: Record<string, Seat | undefined> = {};
   const amounts: Record<string, string> = {};
+  for (const p of list) {
+    if (p.is_payment !== true) continue;
+    if (p.amount) amounts[p.proposal_uuid] = p.amount;
+    if (p.seat === 'this_device') seats[p.proposal_uuid] = { kind: 'this_device' };
+    else if (p.seat === 'password') seats[p.proposal_uuid] = { kind: 'password' };
+    else if (p.seat === null) seats[p.proposal_uuid] = { kind: 'none' };
+  }
   details.forEach((q, i) => {
     const detail = q.data?.proposal;
     const uuid = payments[i]?.proposal_uuid;
@@ -65,7 +90,7 @@ export function useApprovals({ poll = false }: { poll?: boolean } = {}) {
   });
 
   const groups = groupApprovals<ProposalSummary>(list, seats, now);
-  const waiting = waitingOnOthers<ProposalSummary>(all.data?.proposals ?? [], now);
+  const waiting = waitingOnOthers<ProposalSummary>(all.data?.proposals ?? [], now, identity.userId);
 
   return {
     awaiting,
@@ -82,4 +107,33 @@ export function useApprovals({ poll = false }: { poll?: boolean } = {}) {
     waitingDueToday: dueToday(waiting, now),
     now,
   };
+}
+
+/**
+ * Treasury changes waiting on this person (phone-ux §6.15, "Row in Approvals"). Until the awaiting
+ * list carries them (A17), the phone reads the treasury of each vault where this person approves:
+ * few, and kept fresh for a minute. `here`: the treasury holds this phone's key for them, so the
+ * change is in the headline and the badge; `web`: it holds their password key.
+ */
+export function useTreasuryChanges(): { here: ChangeEntry[]; web: ChangeEntry[]; loading: boolean } {
+  const { token, identity } = useEnrolledSession();
+  const vaults = useQuery(vaultsQuery(token));
+  const mine = (vaults.data?.vaults ?? []).filter((v) => mayPropose(v.role));
+  const treasuries = useQueries({ queries: mine.map((v) => treasuryQuery(token, v.vault_id)) });
+  const entries: ChangeEntry[] = [];
+  treasuries.forEach((q, i) => {
+    const v = mine[i];
+    const treasury = q.data?.treasury;
+    const change: ReconfigurationView | null | undefined = q.data?.change?.reconfiguration;
+    if (!v || !treasury || !change) return;
+    entries.push({
+      vaultId: v.vault_id,
+      vaultName: v.name,
+      treasuryAddress: treasury.address,
+      signerCount: treasury.signer_count,
+      change,
+    });
+  });
+  const split = pendingChanges(entries, identity.fingerprint, Date.now());
+  return { ...split, loading: vaults.isLoading || treasuries.some((q) => q.isLoading) };
 }

@@ -18,7 +18,8 @@ import { askForPush, openSystemSettings, pushPermission } from '../push.ts';
 
 export const SETTINGS_KEY = ['notification-settings'] as const;
 
-export function NotificationsSection() {
+/** `titled`: false on its own page (Account, Notifications), where the nav bar already says it. */
+export function NotificationsSection({ titled = true }: { titled?: boolean } = {}) {
   const s = useStyles();
   const { token } = useEnrolledSession();
   const queryClient = useQueryClient();
@@ -61,7 +62,7 @@ export function NotificationsSection() {
   const line = accountLine(state);
 
   return (
-    <Section title="Notifications">
+    <Section title={titled ? 'Notifications' : undefined} first={!titled}>
       <List>
         <ListRow title="On this phone" value={settings.isLoading ? null : line.value} caption={line.caption} />
         {(state === 'on' || state === 'registering') && push

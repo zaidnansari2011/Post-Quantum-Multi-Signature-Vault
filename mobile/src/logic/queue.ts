@@ -25,6 +25,8 @@ export type QueueFacts = StatusFacts & {
   signed_by_me: boolean;
   can_sign: boolean;
   is_payment?: boolean;
+  /** A1: who raised it. */
+  raised_by?: { id: number; name: string | null } | null;
 };
 
 /**
@@ -147,9 +149,36 @@ export function elsewhereSections<T extends QueueFacts>(
   return [sections.web, sections.device, sections.removed, sections.nowhere].filter((x) => x.rows.length > 0);
 }
 
-/** Open, not waiting on this person, and this person has signed it (§6.4). Soonest first. */
-export function waitingOnOthers<T extends QueueFacts>(all: T[], now: number): T[] {
-  return byDeadline(stillOpen(all, now).filter((p) => p.signed_by_me));
+/**
+ * Open, not waiting on this person, and this person signed it or raised it (§6.4; raising joins
+ * once the summary says who raised it, A1). Soonest first.
+ */
+export function waitingOnOthers<T extends QueueFacts>(all: T[], now: number, viewerId?: number): T[] {
+  return byDeadline(
+    stillOpen(all, now).filter((p) => {
+      if (p.signed_by_me) return true;
+      const waitingOnMe = p.can_sign && !p.signed_by_me;
+      return viewerId !== undefined && p.raised_by?.id === viewerId && !waitingOnMe;
+    }),
+  );
+}
+
+/**
+ * "Gracian or Atharv can approve": who can still act on a decision waiting on others, by the
+ * summary's names (A3) for the ids the server says can still approve. Null when either is missing,
+ * or a name is unknown: the caption is then left out rather than guessed.
+ */
+export function whoCanAct(
+  p: { can_still_approve?: number[]; signers?: Array<{ user_id: number; name: string | null }> },
+  viewerId: number,
+): string | null {
+  if (!p.can_still_approve || !p.signers) return null;
+  const names = p.can_still_approve
+    .filter((id) => id !== viewerId)
+    .map((id) => p.signers!.find((s) => s.user_id === id)?.name ?? null);
+  if (names.length === 0 || names.some((n) => n === null)) return null;
+  const list = names as string[];
+  return `${list.length <= 1 ? list[0] : `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}`} can approve`;
 }
 
 /** How many have a deadline later today (local time), still ahead of now. */
@@ -181,6 +210,8 @@ export type HeadlineInput = {
   elsewhere?: number;
   waiting: number;
   dueToday: number;
+  /** Treasury changes this phone can sign (§6.15), counted with the decisions but not called one. */
+  changes?: number;
 };
 
 export type Headline = {
@@ -212,6 +243,22 @@ export function approvalsHeadline(h: HeadlineInput): Headline {
     };
   }
   const elsewhere = h.elsewhere ?? 0;
+  const changes = h.changes ?? 0;
+  if (changes > 0) {
+    // A treasury change is not a decision: the headline names what is there, never more.
+    const n = h.needsYou + changes;
+    const decisions = h.needsYou === 1 ? 'One decision' : `${capitalise(countWord(h.needsYou))} decisions`;
+    const changed = changes === 1 ? 'a treasury change' : `${countWord(changes)} treasury changes`;
+    const what =
+      h.needsYou === 0
+        ? changes === 1
+          ? 'One treasury change needs'
+          : `${capitalise(countWord(changes))} treasury changes need`
+        : `${decisions} and ${changed} need`;
+    const supporting =
+      h.dueToday === 0 ? null : h.dueToday === 1 ? 'One is due today.' : `${capitalise(countWord(h.dueToday))} are due today.`;
+    return { title: `${what} your signature`, supporting, short: `${n} need your signature` };
+  }
   if (h.needsYou === 0 && h.web + elsewhere > 0) {
     // "On the web" only when every one of them is; otherwise only what is true of all of them.
     const n = h.web + elsewhere;

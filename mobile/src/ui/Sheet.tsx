@@ -39,6 +39,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useCloseOnLock } from './lock.ts';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { IconButton } from './Button.tsx';
 import { Text } from './Text.tsx';
@@ -107,6 +108,8 @@ export function Sheet({
   const window = useWindowDimensions();
   const keyboard = useKeyboardHeight();
 
+  // App lock closes an open sheet: it is its own window, which the lock could not cover (§6.1).
+  useCloseOnLock(visible && dismissible, onClose);
   const [mounted, setMounted] = useState(visible);
   const [panelHeight, setPanelHeight] = useState(window.height * 0.6);
   const [room, setRoom] = useState(0);

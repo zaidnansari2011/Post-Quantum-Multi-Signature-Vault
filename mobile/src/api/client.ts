@@ -12,12 +12,23 @@ import { errorBody } from './schemas.ts';
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(code: string, message: string, status: number) {
+  /** A 429's wait, in seconds (`retry_after`, or the Retry-After header); null otherwise. */
+  readonly retryAfter: number | null;
+  constructor(code: string, message: string, status: number, retryAfter: number | null = null) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
+    this.retryAfter = retryAfter;
   }
+}
+
+/** Seconds to wait, from the body's `retry_after` or the Retry-After header, when either is one. */
+function retryAfterOf(payload: unknown, header: string | null): number | null {
+  const fromBody = (payload as { retry_after?: unknown } | null)?.retry_after;
+  if (typeof fromBody === 'number' && Number.isFinite(fromBody) && fromBody >= 0) return fromBody;
+  const fromHeader = header !== null && /^[0-9]{1,7}$/.test(header.trim()) ? Number(header.trim()) : null;
+  return fromHeader;
 }
 
 /**
@@ -149,7 +160,8 @@ export async function request<T>(
     const parsed = errorBody.safeParse(payload);
     if (reportsUnauthorized) unauthorized(parsed.success ? parsed.data.code : null);
     if (parsed.success) {
-      throw new ApiError(parsed.data.code, parsed.data.error, response.status);
+      const wait = response.status === 429 ? retryAfterOf(payload, response.headers.get('Retry-After')) : null;
+      throw new ApiError(parsed.data.code, parsed.data.error, response.status, wait);
     }
     throw new ApiError('unexpected', `The server returned ${response.status}.`, response.status);
   }
