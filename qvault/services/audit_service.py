@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from sqlalchemy import distinct, or_, select
+from sqlalchemy import and_, distinct, or_, select
 
 from qvault.extensions import db
 from qvault.models.ledger import LedgerEntry
@@ -153,7 +153,10 @@ def _scope(user: User):
     return or_(
         LedgerEntry.vault_id.in_(member_vaults),
         LedgerEntry.actor == f"user:{user.id}",
-        LedgerEntry.actor == "SYSTEM",
+        # The system's own events (genesis, key rotations), but not those it records against a
+        # vault (an expiry, a scheduler's approval, a payout, a treasury change): those belong to
+        # the vault's members, matched above.
+        and_(LedgerEntry.actor == "SYSTEM", LedgerEntry.vault_id.is_(None)),
     )
 
 
