@@ -18,7 +18,7 @@
 
 {% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
 {% block crumbs %}{{ breadcrumbs([('Vaults', url_for('vaults.list_vaults')), (vault.name, url_for('vaults.vault_detail', vid=vault.id)), (proposal.title, None)]) }}{% endblock %}
-{% block bodyclass %}body q-dpage{% endblock %}
+{% block bodyclass %}q-body q-dpage{% endblock %}
 
 {% set names = ev.names %}
 {% set is_payment = ev.payment is not none %}
@@ -105,7 +105,7 @@
 
 {% if not binding.ok %}
 <div class="q-dbanner">
-{{ banner('critical', ev.outcome[0][:-1], binding.detail ~ ' ' ~ ev.outcome[1] ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else '')) }}
+{{ banner('critical', ev.outcome[0][:-1], binding.detail ~ ' ' ~ ev.outcome[1] ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else ''), announce=True) }}
 </div>
 {% endif %}
 
@@ -236,7 +236,7 @@
       {% endif %}
       {% if others %}
       <li class="q-tl__i">
-        <span class="q-tl__who">{% set other_names = [] %}{% for uid in others %}{% set _ = other_names.append(names.get(uid, 'Someone')) %}{% endfor %}{{ avatar_stack(other_names, max=2, size=24) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
+        <span class="q-tl__who">{% set other_names = [] %}{% for uid in others %}{% set _ = other_names.append(names.get(uid, 'Someone')) %}{% endfor %}{{ avatar_stack(other_names, max=(2 if other_names|length == 2 else 1), size=24) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
         <div class="q-tl__b"><p>{% for uid in others %}<b>{{ names.get(uid, 'Someone') }}</b>{% if not loop.last %}{{ ' or ' if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %} can {{ 'also ' if can_vote or approvals else '' }}approve</p></div>
       </li>
       {% endif %}
@@ -556,7 +556,7 @@
         Shared
         <input class="q-input q-input--mono q-pubinput" value="{{ public_url }}" readonly data-select-on-focus aria-label="Public link">
         <span class="q-line q-line--gap">
-          {{ button('Open', 'ghost', href=public_url, size='sm', attrs={'target': '_blank', 'rel': 'noopener'}) }}
+          {{ button('Open the public page', 'ghost', href=public_url, size='sm', attrs={'target': '_blank', 'rel': 'noopener'}) }}
           <form method="post" action="{{ url_for('vaults.unpublish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
             {{ unpublish_form.hidden_tag() }}
             {{ button('Revoke link', 'ghost', type='submit', size='sm', name='submit', value='Revoke link') }}
