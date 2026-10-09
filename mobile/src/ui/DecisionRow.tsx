@@ -10,8 +10,10 @@
 //
 // One accessibility element with a composed label, so a screen reader hears the decision once.
 
+import type { ReactNode } from 'react';
 import { View } from 'react-native';
 
+import { waitingBadge } from '../logic/personalStatus.ts';
 import { dueWhen } from '../logic/words.ts';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { parseInstant } from '../time.ts';
@@ -39,6 +41,15 @@ export type DecisionRowProps = {
   note?: string;
   /** The outcome variant's line 3: "Approved", with its date. */
   outcome?: { word: string; tone: TextTone; when?: string | null };
+  /** The outcome variant's right side: this person's part ("You approved"). */
+  part?: string | null;
+  /** Waiting: whether it can still pass (R5); false reads "Can't pass" in place of "Waiting on N". */
+  canStillPass?: boolean;
+  /** One caption under line 3: who can still act, or why it can't pass. */
+  note2?: string | null;
+  note2Tone?: TextTone;
+  /** A sibling control on the right, never inside the row's own target (§4.6): Remind. */
+  trailing?: ReactNode;
   onPress: () => void;
   now?: number;
 };
@@ -54,6 +65,11 @@ export function DecisionRow({
   variant = 'queue',
   note = 'Approve on the web',
   outcome,
+  part,
+  canStillPass,
+  note2,
+  note2Tone = 'muted',
+  trailing,
   onPress,
   now = Date.now(),
 }: DecisionRowProps) {
@@ -66,7 +82,11 @@ export function DecisionRow({
   const stacked = t.stacked;
 
   const right =
-    variant === 'outcome' && outcome ? (
+    variant === 'outcome' && part ? (
+      <Text role="caption" tone="muted" numberOfLines={1} style={s.note}>
+        {part}
+      </Text>
+    ) : variant === 'outcome' && outcome ? (
       <Text role="caption" tone={outcome.tone} tabular>
         {outcome.when ? `${outcome.word} ${outcome.when}` : outcome.word}
       </Text>
@@ -83,14 +103,21 @@ export function DecisionRow({
       </View>
     ) : null;
 
+  // "Waiting on N", or "Can't pass" when the server says too few can still approve it (R5): the
+  // same derived word as the decision's own status line (`waitingBadge`).
+  const waitingWord = waitingBadge(approvals, required, canStillPass);
   const left =
     variant === 'waiting' ? (
       <View style={s.marks}>
         <Seal filled={approvals} required={required} size={10} showCount={false} />
-        <Text role="caption" tone="muted" tabular>
-          {`Waiting on ${Math.max(1, required - approvals)}`}
+        <Text role="caption" tone={waitingWord.tone === 'warning' ? 'warning' : 'muted'} tabular>
+          {waitingWord.word}
         </Text>
       </View>
+    ) : variant === 'outcome' && part && outcome ? (
+      <Text role="caption" tone={outcome.tone} tabular>
+        {outcome.when ? `${outcome.word} ${outcome.when}` : outcome.word}
+      </Text>
     ) : (
       <Seal filled={approvals} required={required} size={10} />
     );
@@ -99,19 +126,20 @@ export function DecisionRow({
     title,
     amount ? `Payment of ${amount.replace(/ETH$/, 'ether')}` : null,
     line2,
-    `${approvals} of ${required} approvals`,
+    variant === 'waiting' ? waitingWord.word : variant === 'outcome' && part ? null : `${approvals} of ${required} approvals`,
     variant === 'outcome' && outcome
-      ? `${outcome.word}${outcome.when ? ` ${outcome.when}` : ''}`
+      ? `${outcome.word}${outcome.when ? ` ${outcome.when}` : ''}${part ? `. ${part}` : ''}`
       : variant === 'web'
         ? `${note}${due ? `. Due ${due}` : ''}`
         : due
           ? `Due ${due}`
           : null,
+    note2 ?? null,
   ]
     .filter(Boolean)
     .join('. ');
 
-  return (
+  const row = (
     <Touchable
       onPress={onPress}
       accessibilityRole="button"
@@ -153,7 +181,22 @@ export function DecisionRow({
         {left}
         {right}
       </View>
+      {note2 ? (
+        <Text role="caption" tone={note2Tone} numberOfLines={stacked ? 4 : 2}>
+          {note2}
+        </Text>
+      ) : null}
     </Touchable>
+  );
+  if (!trailing) return row;
+  // The row and its second action are siblings, so a screen reader reaches both (§6.4). The action
+  // sits under the row, aligned with its text, at every text size, so the row's own lines keep their
+  // width and its due time stays right-aligned with the rows around it (review B6).
+  return (
+    <View style={s.withTrailing}>
+      {row}
+      <View style={s.trailing}>{trailing}</View>
+    </View>
   );
 }
 
@@ -187,5 +230,8 @@ const useStyles = makeStyles((t) => ({
   amount: { flexShrink: 0 },
   note: { flexShrink: 1, textAlign: 'right' },
   marks: { flexDirection: 'row', alignItems: 'center', gap: t.space[8] },
+  withTrailing: { backgroundColor: t.color.surface },
+  flex: { flex: 1 },
+  trailing: { paddingLeft: t.layout.gutter, paddingBottom: t.space[4], marginTop: -t.space[8], alignItems: 'flex-start' },
   due: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
 }));

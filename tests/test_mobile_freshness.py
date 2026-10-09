@@ -297,7 +297,7 @@ FLOWS_USERS = {
     "src/screens/EnrolScreen.tsx",  # NoScreenLockError, to explain a refused enrolment
     "src/session.tsx",  # enrolThisDevice
     "src/signingSheet.ts",  # the guards and errors the sheet checks before any prompt
-    "src/ui/TreasuryCard.tsx",  # approveTreasuryChange (P3 moves it to §6.15's route)
+    "src/screens/TreasuryChangeScreen.tsx",  # approveTreasuryChange, on §6.15's own route
 }
 
 
@@ -339,8 +339,8 @@ def _sneaks_into_flows(text: str) -> list[str]:
     [
         # The decision screen is the only place a vote is signed (I-12, §1.4 rule 5).
         ("voteOnProposal", {"src/screens/DecisionScreen.tsx"}),
-        # A treasury change is signed on its own approval view (P3 moves it to §6.15's route).
-        ("approveTreasuryChange", {"src/ui/TreasuryCard.tsx"}),
+        # A treasury change is signed on its own route, after its own sheet (§6.15).
+        ("approveTreasuryChange", {"src/screens/TreasuryChangeScreen.tsx"}),
         # The enrolment's proof of possession.
         ("enrolThisDevice", {"src/session.tsx"}),
     ],

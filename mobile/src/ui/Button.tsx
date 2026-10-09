@@ -245,7 +245,8 @@ const useStyles = makeStyles((t) => ({
     justifyContent: 'center',
   },
   iconButtonCompact: { width: 32, height: 32, borderRadius: 16 },
-  link: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', borderRadius: 6 },
+  // Never wider than its container: at large text a long link wraps instead (review B1).
+  link: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', borderRadius: 6, maxWidth: '100%', flexShrink: 1 },
   linkCompact: { minHeight: 32, paddingHorizontal: t.space[4] },
   linkPressed: { backgroundColor: t.color.fill },
 }));

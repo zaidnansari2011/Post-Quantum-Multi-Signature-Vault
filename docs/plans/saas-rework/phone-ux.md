@@ -1480,7 +1480,7 @@ from A3 (unsigned display); "you" replaces the viewer everywhere.
 
 | # | Condition | Badge | Personal line | Action bar |
 | --- | --- | --- | --- | --- |
-| 1 | Integrity check failed, or the signed content changed between fetches (I-16) | — (critical panel instead) | — | **No signing at all:** "Copy a report" and "Open on the web" in place of the buttons (see Tampered below; departure D7) |
+| 1 | Integrity check failed, or the signed content changed between fetches (I-16) | — (critical panel instead) | — | **No signing at all:** "Share a report" and "Open on the web" in place of the buttons (see Tampered below; departure D7) |
 | 2 | Open; you can sign; not voted | Needs your signature | (none; the quorum sentence covers it) | Reject, Approve |
 | 2a | As row 2, a payment whose signed `valid_until` has passed | Needs your signature | "The time the treasury allows for this payment ran out on 7 Oct, so approving it won't pay it." The status line's right reads "Treasury limit passed 7 Oct" (warning, alert icon); the quorum sentence says "approves this", never "pays this"; the reject sheet drops "if {n} more approve, it passes"; the approve sheet and the acknowledgement say it won't be paid | Reject, Approve |
 | 3 | Open; you raised it; separation of duties on (S15) | Waiting on N | "You raised this, so you can't approve it." | "Remind" (R4) and the overflow Withdraw. Until R4, no bar (the line is not repeated there) |
@@ -1531,7 +1531,7 @@ contradictory (`app_28`).
     | `other_decision` (I-16) | "Q-Vault sent a different decision from the one you opened." (the answer's uuid, or the uuid signed into it, is not the route's) |
 
   - **Then:** "Nothing has been signed, and this phone won't sign it."
-  - **Actions:** "Copy a report" (Share: decision ID, the reason, the derived and stated hashes, the
+  - **Actions:** "Share a report" (Share: decision ID, the reason, the derived and stated hashes, the
     app version and the time) and "Contact your admin" (a `mailto:` to the workspace owner when R3
     gives one; otherwise hidden).
 - **The signed text is labelled, not hidden:** a `caption` above it in `status.critical.fg`, chosen by
@@ -1547,7 +1547,7 @@ contradictory (`app_28`).
 - **The quorum and due time are hidden.** The badge is not shown.
 - **The evidence sheet's Hashes tab** shows only the differing values, marked, with the derived value
   first.
-- **The action bar holds no signing at all** (departure D7): "Copy a report" (secondary) and "Open on
+- **The action bar holds no signing at all** (departure D7): "Share a report" (secondary) and "Open on
   the web" (quiet). Neither Approve nor Reject is offered.
   - **Why not Reject, as the web does:** `voteOnProposal` (`flows.ts`) calls
     `verifyProposalIntegrity` first and throws `PayloadMismatchError` for approve **and** reject, and
@@ -1865,8 +1865,8 @@ the open decisions is one row.
 4. **Rows:**
    - **"Members"**, with a trailing avatar stack and "4". It opens the members sheet: each person's
      name, role ("Approver", "Owner", "Viewer", neutral text, not chips), and "Last signed 2 Oct".
-     Email is shown on tap of a person. When a member has no key yet (R3/S11): "No key yet, can't
-     approve yet", which explains why a quorum can't be met. The footer reads "Change members on the
+     Email is shown on tap of a person. When a member has no key yet (R3/S11): "No key yet, so can't
+     approve", which explains why a quorum can't be met. The footer reads "Change members on the
      web."
    - **"Treasury"** (when one exists), with the trailing "0.0009 ETH on Sepolia". It opens the
      treasury sheet (§6.15).
@@ -1930,7 +1930,7 @@ raiser, no signed text and no reject path on the server.
 - **"Checked on this phone"** row (the identity and digest checks of `treasuryChangeApproval`).
 - **Action bar:** one primary button, "Approve change". There is **no Reject**: the server has no
   decline for a reconfiguration (it ends as done, failed, expired or voided). If it looks wrong, the
-  overflow holds "Copy a report" and "Open on the web", and the evidence sheet says "Don't approve a
+  overflow holds "Share a report" and "Open on the web", and the evidence sheet says "Don't approve a
   change you don't recognise; ask the person who requested it." Whether a decline should exist is an
   owner question (§12, Q8).
 - **"Approve change"** opens the approve sheet (§6.8) with the summary restated, the consequence
@@ -1944,7 +1944,7 @@ raiser, no signed text and no reject path on the server.
 
 | # | Condition | Badge | Personal line | Action bar |
 | --- | --- | --- | --- | --- |
-| 1 | Integrity check failed (identities or digest don't match) | — (critical panel) | "Don't approve this change. The keys shown aren't the ones that would be signed." | "Copy a report", "Open on the web"; no signing |
+| 1 | Integrity check failed (identities or digest don't match) | — (critical panel) | "Don't approve this change. The keys shown aren't the ones that would be signed." | "Share a report", "Open on the web"; no signing |
 | 2 | Collecting approvals; you hold a seat with this phone's key; not approved | Needs your signature | — | "Approve change" |
 | 3 | Collecting; your seat is your password key | Needs your signature | "This treasury holds your password key, so approve this change on the web." | Line in place of the button, plus "Approve treasury payments on this phone" (§6.18) |
 | 4 | Collecting; you already approved | Waiting on N | "You approved {time}. Waiting on {names}." | None |
@@ -2575,6 +2575,84 @@ on the `rework` channel, and the owner tests on a handset throughout.
   - on a handset: dirty-form discard with iOS swipe, Android back and predictive back; app lock with
     the PIN fallback not tripping the 1-minute lock; the reject sheet's footer above the keyboard.
 
+**P3 status (2026-10-09, stream `rework/p3-phone-depth`).** Built: every screen in the list above,
+with the R3 and R5 parts of P4 (below). Shots: `docs/plans/saas-rework/shots/p3/`
+(`tools/web-shots/p3.py`). Probes: `tools/p3_probe.ts` through `tests/test_mobile_p3.py` (I-5's
+`checkRaisedPayment` and text check, `treasuryChangeStatus` for every row of §6.15, the change's
+own digest check, a tampered typed field refused as `type_text`, Activity, the workspace rules,
+EIP-55, honest deadlines, the 429 copy and app lock's timing); a grep test refuses native `Alert`.
+Where P3 departs from the text above, and why:
+
+- **Navigation.** Vault and its full lists live inside the Vaults tab (tab bar kept), as §2.1 says.
+  A link to a vault that arrives over a dirty New decision is kept and applied when the form
+  closes, rather than pushed over it (reaching a tab would close the form underneath; §2.4 rule 4
+  still pushes a decision or a treasury change).
+- **Splash (§6.1).** `expo-splash-screen` is not installed (N5), so until the rework APK the first
+  frame is the mark on `bg` (a glyph of the icon font, `mark`), never "Unlocking" and a spinner.
+- **App lock (§6.1).** Built, off by default (owner Q7), timing rules in `src/logic/appLock.ts`,
+  the iOS privacy cover drawn while `inactive`. Android's cover needs `expo-screen-capture` (N10):
+  until the APK, Android's app switcher can still show Q-Vault, and the switch's caption says
+  nothing about screenshots, because it would not be true yet.
+- **Onboarding (§6.2).** Step 1 checks the password with `POST /devices/challenge` before step 2
+  makes a key, so a wrong password (or a 429, "Too many attempts. Try again in N minutes.") is said
+  under the password field. The device name is "Android phone" / "iPhone" until `expo-device` (N8).
+  "Forgot password?" opens §6.2's sheet (without the Recovery Kit line until R9), whose button goes
+  to `https://<server>/forgot-password` (R6). Step 3 (notifications) is R8's.
+- **New decision (§6.16).** "Pick a day..." waits for the date picker (N16); "Paste" and "Scan" wait
+  for N11 and N15. Access's "person" is a text field (the template's field is free text), not a
+  picker. The vault last raised in is remembered for the run, not across restarts.
+- **New vault (§6.17).** `/people` sends names and ids only (by design), so the people sheet cannot
+  show an email to tell two people with the same name apart.
+- **Vault (§6.14).** "Last signed 2 Oct" per member needs an API field that does not exist; members
+  without an active key say "No key yet, so can't approve" (`has_key`, added to the vault detail).
+- **Account (§6.18).** Renaming the device needs an API route that does not exist, so This phone
+  shows the name without "Change". The remove-another-device sheet cannot yet name which treasury
+  holds that device's key (the treasury view does not send seat fingerprints), so it says the
+  consequence conditionally. Notifications is the pre-R8 page.
+- **Activity (§6.12).** The list says that you voted, not which way, so "You approved" / "You
+  rejected" appear only where the counts settle it; otherwise "You voted" (API gap: `my_vote` on
+  summaries). Open decisions sort first (they have no `created_at` on the summary).
+- **Discussion (§6.21).** Read only: `GET /proposals/<uuid>/comments` has no POST yet, so the
+  thread says comments are added on the web and links there. Mentions are drawn where the server
+  resolved them; nothing in a comment is a link.
+- **Remind.** The route returns how many were reminded, not `next_allowed_at`; a refusal shows the
+  server's own sentence, which says when the next is allowed.
+- **Server additions (additive, P3):** the vault detail's `separation_of_duties`, `rule_changes`
+  (latest five, before and after) and members' `has_key`; `/me.workspace.separation_of_duties_default`;
+  the reconfiguration view's `requested_by`.
+
+**P3 review fix pass (2026-10-09).** After an adversarial review of the stream:
+
+- **App lock covers every top (§6.1).** The lock screen is a full-screen RN `<Modal>` mounted last;
+  every dismissible sheet and the acknowledgement close the moment the app locks
+  (`src/lockState.ts`); New decision and New vault, which iOS presents above the root, keep their
+  draft but draw the lock over themselves (`LockGate`), and screen readers reach nothing under the
+  lock. A sheet with a signature in flight stays (it cannot be dismissed) and the lock draws over it.
+- **App lock's minute (§6.1).** The time the app leaves is always recorded; on return exactly the
+  time an OS prompt was up is subtracted (`src/logic/appLock.ts`, `authPrompt.ts` keeps the spans),
+  so leaving during a prompt or a moment after one still locks, and a long PIN entry never does.
+- **Treasury change (§6.15) says only what the phone verified.** What an approval signs is written
+  from the signed inputs ("Adds 1 key and removes 1. Afterwards the treasury needs 2 approvals.");
+  whose keys they are is labelled "Q-Vault says", because the phone cannot yet tie a signed identity
+  to a person or a key (API gap below); the evidence lists the signed identities with Q-Vault's
+  description of each; a tampered change shows none of its claim, and "What failed" names the
+  check. One quorum: "Once 2 of you approve this change, it takes effect." The requester is named.
+- **I-5** also compares the payment's chain id, against the treasury captured when the payment
+  went to review; what the phone raised is remembered for the run, so I-5 runs on every open of that
+  decision (not across a restart: the record is memory only, like every signed fact the phone holds).
+- **Vault (§6.14):** one line for your part and separation of duties; a threshold change, short,
+  only for 30 days; no "Open 0"; at large text the Members, Treasury and History rows come before the
+  open decisions. Vault rows say only the exception ("You can view.").
+- **Copy:** "Share a report" (it opens the share sheet); "No key yet, so can't approve";
+  "Approves here until" for the device token's expiry; the headline names decisions and treasury
+  changes apart ("Four decisions and a treasury change need your signature").
+- **Other devices** show each key's first eight characters, and say when the list failed to load.
+- **2.0 text:** no input, label row or text link runs past the gutter (inputs may shrink, a field's
+  label row and a long link wrap); the screenshot run now fails on any overflow.
+- **API gaps found (§10.3):** an identity-to-key mapping a phone can check (so "removes this phone's
+  key" could be said, and names bound to identities); `my_vote` on summaries; `next_allowed_at` on
+  Remind; "Last signed" per member; a device rename route; seat fingerprints on the treasury view.
+
 **P4: Features as their APIs land** (over the air, except where marked)
 
 - **R3:** the workspace line and states, scoped people, permission flags (A5).
@@ -2608,15 +2686,15 @@ profile, `rework`:
 | N5 | `expo-splash-screen`: **a new native dependency** (not installed today), with its config plugin and light and dark images | §6.1 |
 | N6 | `@react-native-community/netinfo` | Offline (§2.6) |
 | N7 | `@react-native-async-storage/async-storage` | Persisted cache (§2.6) |
-| N8 | `expo-device` | Real device names (§6.2) |
+| N8 | `expo-device` | Real device names (§6.2). Until then P3 names the phone "Android phone" or "iPhone" |
 | N9 | `predictiveBackGestureEnabled: true` | §2.3 |
-| N10 | `expo-screen-capture` | App lock privacy (§6.1) |
+| N10 | `expo-screen-capture` | App lock privacy (§6.1). P3 built app lock without it: Android's switcher is not covered until this lands |
 | N11 | `expo-clipboard` | Copy and Paste (Share covers copy until then) |
 | N12 | `expo-notifications`, FCM `google-services.json`, `POST_NOTIFICATIONS`, channels | Push (R8). **Only if the owner's Firebase project exists by then** (§12, Q3) |
 | N13 | Android App Links intent filters (`autoVerify`) plus `/.well-known/assetlinks.json` served by Flask | https decision and invitation links |
 | N14 | `expo-file-system` and `expo-sharing` (or a PDF view) | Attachments (§6.5; §12, Q2) |
 | N15 | `expo-camera` | QR pairing and address scan (P4; can wait for a later APK) |
-| N16 | `@react-native-community/datetimepicker` | The platform date picker for "Pick a day…" (§6.16) |
+| N16 | `@react-native-community/datetimepicker` | The platform date picker for "Pick a day…" (§6.16). P3 ships the four honest chips without it |
 | N17 | `react-native-svg`, **only if** the icon font from the tile's sprite proves lossy | Icons (§2.2) |
 | N18 | `android.allowBackup: false` in `app.json` (or a backup rule excluding the AsyncStorage database) | The persisted cache never leaves the phone in a Google backup (§2.6, I-14) |
 
@@ -2652,13 +2730,15 @@ or a try/import) and fall back: Share for copy, TransportError for offline, an i
 | A10 | Short-lived (≤ 2 min), single-use enrolment token shown as a QR on the web, confirmed on the web before the key is registered, raising a security notification (§6.2a) | Pair with the web | R6–R7 (**adversarial review**: a new way to bind a signing key without a password) |
 | A11 | `POST /proposals/<uuid>/withdraw`, `can_withdraw`, `raised_again_from` | Withdraw, raise again | R5 |
 | A12 | `POST /proposals/<uuid>/remind` returning `reminded_at` and `next_allowed_at` | Remind | R4 |
-| A13 | `create_proposal {type, fields, raised_again_from}`; detail `decision_type`, `type_fields`, `template_version` | Decision types | R5 |
+| A13 | `create_proposal {decision_type, fields, raised_again_from}`; detail `decision_type`, `fields`, `template_version` (the API names them `fields`, not `type_fields`) | Decision types | R5 (done; phone wired in P3) |
 | A14 | Comments routes | Discussion | R5 |
 | A15 | Push token register and revoke; notification preferences | Push | R8 |
 | A16 | `reason_required` on reject, behind capability `reject-reason-1` | Reject with reason | R5 |
 | A17 | `seat` (`this_device`, `password`, `other_device`, null) on awaiting payment summaries; the reconfigurations waiting on you listed with the awaiting decisions; **on the web,** the treasury-change view shows the same 8-character code from the digest | "Approve on the web" grouping and the badge (§6.3); treasury changes in Approvals (§6.15); a code on treasury changes | R2 (code: R7 web) |
 | A18 | Security events for device added, device removed and device re-authenticated, delivered to the account's other devices | Security items and pushes (§6.12, §6.18, §6.23) | R4 |
 | A19 | *(Optional, owner's call, §12 Q8)* a decline for a treasury reconfiguration | Rejecting a treasury change | — |
+| A20 | A treasury identity the phone can check against a key it can fingerprint (or the key itself in the reconfiguration view) | Naming whose key a change adds or removes as fact, and "Removes this phone's key" (§6.15; P3 review A3) | R7 or later (adversarial review: it changes what an approval can be shown to mean) |
+| A21 | `my_vote` on summaries; `next_allowed_at` on Remind; `last_signed_at` per vault member; a device rename route; seat fingerprints in the treasury view | "You approved" in Activity; "You can remind again tomorrow"; "Last signed 2 Oct"; This phone's "Change"; which treasury a removed device leaves | Any (additive) |
 
 ---
 
@@ -2741,7 +2821,7 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
    its caption, and turn it off before recording.
 8. **Should a treasury change be declinable?** The server has no decline today: a reconfiguration
    ends as done, failed, expired or voided. The phone therefore offers only "Approve change" plus
-   "Copy a report" (§6.15). **Recommendation:** not now; revisit if a change has to be stopped
+   "Share a report" (§6.15). **Recommendation:** not now; revisit if a change has to be stopped
    before it expires (API A19).
 9. **The departures from research 06** (§0.1, D1–D17). Each is reasoned there; the ones most worth
    your eye are D2 (Approve and Reject side by side), D6 (the code as a quiet line unless you came
@@ -2831,7 +2911,7 @@ Use the method name from §5.13 wherever "Face ID" appears.
 | `app_20`, `app_21` | Sheets | Kept to four blocks: title, what you sign (a payment's card with the full address), one consequence sentence, the method-named button; the code as one quiet line; the reason with type-specific chips; inline errors (§6.8, §6.9) |
 | `app_22`–`app_25` | Closed | Outcome badge at top; personal line; "Who decided"; Raise again (§6.6) |
 | `app_26`–`app_29` | Payment | Amount and recipient lead; the signed sentence one tap away; no balance line unless short; block and gas behind a tap; failure sentences; Etherscan link (§6.5, §6.6, §5.12) |
-| `app_30`, `app_31` | Tampered | Said once, reason first, text labelled, no signing at all (not even Reject), Copy a report (§6.6) |
+| `app_30`, `app_31` | Tampered | Said once, reason first, text labelled, no signing at all (not even Reject), Share a report (§6.6) |
 | `app_32`–`app_36` | Activity | For you / Yours, your decisions over 90 days, three chips, rows by date, outcome dates, your part, no "Declined" (§6.12) |
 | `app_37`, `app_38` | Account | Profile first; This phone page; other devices removable from the phone; removed devices collapsed; version only (§6.18) |
 | `app_39`, `app_40` | Sign out / Revoke | One "Remove this phone" with the treasury consequence (§6.19) |

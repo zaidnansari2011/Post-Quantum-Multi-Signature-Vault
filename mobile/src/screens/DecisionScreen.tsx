@@ -53,6 +53,7 @@ import {
   ListRow,
   NavBar,
   PaymentCard,
+  Sheet,
   Screen,
   Scroll,
   Seal,
@@ -63,6 +64,7 @@ import {
   Text,
   TextLink,
   feedback,
+  useToast,
 } from '../ui/index.tsx';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { decisionStatus } from '../status.ts';
@@ -75,7 +77,7 @@ import { useApprovals } from '../approvals.ts';
 import { OfflineNotice, useColdStart, useOffline, useRefreshOnFocus } from '../freshness.tsx';
 import { devicesQuery, holdDecision, keys, networkFetches, proposalQuery } from '../queries.ts';
 import { fetchKey, OFFLINE_DECISION, OFFLINE_SIGNING, POLL_MS } from '../logic/freshness.ts';
-import { checkInRun, type Checked } from '../checks.ts';
+import { checkInRun, raisedThisRun, type Checked } from '../checks.ts';
 import { voteOnProposal, type VoteOutcome } from '../flows.ts';
 import { type Decision } from '../crypto/signing.ts';
 import type { ProposalDetail, ProposalSummary, VaultDetail } from '../api/schemas.ts';
@@ -100,7 +102,11 @@ import { classifySeat } from '../logic/queue.ts';
 import { quorumSentence } from '../logic/quorum.ts';
 import { dayMonth, dueWhen } from '../logic/words.ts';
 import { EvidenceSheet, type EvidenceTab } from './decision/EvidenceSheet.tsx';
-import { DetailsSheet, MoreSheet, TamperPanel, WhoDecided, type MoreItem } from './decision/parts.tsx';
+import { DetailsSheet, MoreSheet, TamperPanel, TypedCard, WhoDecided, type MoreItem } from './decision/parts.tsx';
+import { checkRaised, type RaisedFields } from '../logic/raised.ts';
+import { andList } from '../logic/words.ts';
+import type { AgainFrom } from './NewDecisionScreen.tsx';
+import { commentsQuery } from '../queries.ts';
 import { SigningSheet } from './decision/SigningSheet.tsx';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -141,10 +147,12 @@ export default function DecisionScreen({
   uuid,
   via,
   opened,
+  raised,
   onBack,
   onNext,
   onOpenTreasuryApprovals,
-  onRaiseIn,
+  onRaiseAgain,
+  onOpenDiscussion,
 }: {
   uuid: string;
   /** 'web': opened from the web's "Approve on your phone" handoff; the approve sheet (the signing
@@ -155,8 +163,13 @@ export default function DecisionScreen({
   onBack: () => void;
   /** "Next decision" from the acknowledgement: replaces this route (§6.11, §2.3). */
   onNext: (uuid: string) => void;
+  /** What this phone just raised (I-5): the server must have stored exactly this. Memory only. */
+  raised?: RaisedFields;
   onOpenTreasuryApprovals: () => void;
-  onRaiseIn: (vaultId: number, vaultName: string) => void;
+  /** "Raise again" (S16): New decision, prefilled from this one. */
+  onRaiseAgain: (again: AgainFrom) => void;
+  /** The discussion thread (R5), pushed over this decision. */
+  onOpenDiscussion: (title: string) => void;
 }) {
   const s = useStyles();
   const t = useTheme();
@@ -219,7 +232,27 @@ export default function DecisionScreen({
   // fetches in this run fails as `changed` (I-16).
   // Remembered under this route's uuid (I-16): an answer for another decision is refused, never
   // shown under this one.
-  const checked = useMemo<Checked | null>(() => (detail ? checkInRun(detail, uuid) : null), [detail, uuid]);
+  // What this phone raised: from the raise itself, or remembered from it earlier in this run.
+  const raisedHere = raised ?? raisedThisRun.get(uuid);
+  useEffect(() => {
+    if (raised) raisedThisRun.remember(uuid, raised);
+  }, [raised, uuid]);
+  const checked = useMemo<Checked | null>(() => {
+    if (!detail) return null;
+    const run = checkInRun(detail, uuid);
+    // I-5: just raised here, the stored decision must be what was entered, or it opens as tampered
+    // and nothing is offered to sign (§6.16, §6.6 row 1).
+    if (run.ok && raisedHere && !checkRaised(raisedHere, detail).ok) {
+      return { ok: false, reason: 'raised', expected: detail.payload_hash, actual: run.hash };
+    }
+    return run;
+  }, [detail, uuid, raisedHere]);
+  const toast = useToast();
+  const comments = useQuery({ ...commentsQuery(token, uuid), enabled: !!detail });
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawProblem, setWithdrawProblem] = useState<string | null>(null);
+  const [reminding, setReminding] = useState(false);
 
   /** Close the sheet as Cancel does. False, and nothing changes, while a signature is in flight. */
   const closeSigning = useCallback((): boolean => {
@@ -414,6 +447,7 @@ export default function DecisionScreen({
     withdrawn_at: detail.withdrawn_at ?? null,
     decided_at: decidedAt,
     signers: detail.signers,
+    can_still_pass: detail.can_still_pass,
   };
   const personal = personalStatus({
     decision: facts,
@@ -464,13 +498,17 @@ export default function DecisionScreen({
 
   // Who can still approve, by A3's names, for the quorum sentence and the acknowledgement.
   const voted = new Set(detail.votes.map((v) => v.signer_id));
+  // Only those who can still approve now (R5), when the server says who they are.
+  const able = detail.can_still_approve ? new Set(detail.can_still_approve) : null;
   const remaining = detail.signers
     ? policy.signers
-        .filter((id) => !voted.has(id) && id !== identity.userId)
+        .filter((id) => !voted.has(id) && id !== identity.userId && (able === null || able.has(id)))
         .map((id) => detail.signers!.find((p) => p.user_id === id)?.name ?? null)
     : null;
   const stillToApprove = remaining && remaining.every((n): n is string => n !== null) ? remaining : null;
-  const quorum = open
+  // A decision that can't pass gets the server's reasons instead (under the status line): a
+  // sentence about how many more approvals would approve it would say what can't happen.
+  const quorum = open && detail.can_still_pass !== false
     ? quorumSentence({
         M: policy.M,
         N: policy.N,
@@ -668,15 +706,90 @@ export default function DecisionScreen({
   // same number as the badge (§2.5), and never an "Approve on the web" item.
   const nextUp = queue.groups.needsYou.filter((p) => p.proposal_uuid !== uuid);
 
+  // "Raise again" (S16, S20): New decision prefilled from this one, from what the phone's own check
+  // read of what was signed: the signed text, the verified fields, the signed payment.
+  const raiseAgain = () => {
+    const kind = action ? 'payment' : checked.ok && checked.type === 'access' ? 'access' : 'general';
+    onRaiseAgain({
+      // Linked back only from a decision the server lets a new one replace (withdrawn, rejected,
+      // expired); a failed payout starts afresh.
+      uuid: ['withdrawn', 'rejected', 'expired'].includes(effective) ? uuid : '',
+      title: detail.title,
+      vaultId: detail.vault_id,
+      vaultName: detail.vault_name ?? '',
+      kind,
+      text: kind === 'general' ? detail.signing_inputs.action_text : undefined,
+      fields:
+        kind === 'access' && detail.fields
+          ? Object.fromEntries(
+              Object.entries(detail.fields).filter((e): e is [string, string] => typeof e[1] === 'string'),
+            )
+          : undefined,
+      payment: action ? { to: action.to, valueWei: action.value_wei } : undefined,
+    });
+  };
+  const canWithdraw = open && detail.can_withdraw === true && !tampered;
+
+  const withdraw = async () => {
+    if (withdrawBusy) return;
+    setWithdrawBusy(true);
+    setWithdrawProblem(null);
+    try {
+      await api.withdrawProposal(token, uuid);
+      setWithdrawing(false);
+      toast.show('Decision withdrawn');
+      void queryClient.invalidateQueries({ queryKey: ['proposals'] });
+      void query.refetch();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'proposal_closed') {
+        setWithdrawing(false);
+        setBarMessage({ tone: 'neutral', text: 'It was decided before your withdrawal arrived, so nothing changed.' });
+        void query.refetch();
+      } else {
+        setWithdrawProblem("Couldn't withdraw it. Nothing changed. Try again.");
+      }
+    } finally {
+      setWithdrawBusy(false);
+    }
+  };
+
+  const remind = async () => {
+    if (reminding) return;
+    setReminding(true);
+    setBarMessage(null);
+    try {
+      const result = await api.remindApprovers(token, uuid);
+      toast.show(
+        stillToApprove && stillToApprove.length > 0
+          ? `Reminder sent to ${andList(stillToApprove)}`
+          : result.reminded === 1
+            ? 'Reminder sent to 1 approver'
+            : `Reminder sent to ${result.reminded} approvers`,
+      );
+    } catch (err) {
+      // The server's own sentence for a reminder it won't send says when the next is allowed.
+      setBarMessage({
+        tone: 'neutral',
+        text: err instanceof ApiError && err.code === 'remind_refused' ? err.message : "Couldn't send a reminder. Try again.",
+      });
+    } finally {
+      setReminding(false);
+    }
+  };
+
   const more: MoreItem[] = [
     { key: 'share', title: 'Share link', icon: 'share', onPress: () => webUrl && void Share.share({ message: webUrl }).catch(() => {}) },
     { key: 'web', title: 'Open on the web', icon: 'external', onPress: openWeb },
     { key: 'technical', title: 'Technical details', icon: 'shield', onPress: () => openEvidence('hashes') },
+    ...(canWithdraw
+      ? [{ key: 'withdraw', title: 'Withdraw decision', icon: 'minus-circle' as const, onPress: () => setWithdrawing(true) }]
+      : []),
     ...(actions.kind === 'raiseAgain' && actions.placement === 'overflow'
-      ? [{ key: 'again', title: 'Raise again', icon: 'plus' as const, onPress: () => onRaiseIn(detail.vault_id, detail.vault_name ?? '') }]
+      ? [{ key: 'again', title: 'Raise again', icon: 'plus' as const, onPress: raiseAgain }]
       : []),
     { key: 'report', title: 'Report a problem', icon: 'alert', onPress: report },
   ];
+  const latest = comments.data?.comments.filter((c) => !c.deleted).at(-1);
 
   const onScroll = (e: { nativeEvent: { contentOffset: { y: number } } }) => {
     if (titleBottom === null) return;
@@ -718,6 +831,12 @@ export default function DecisionScreen({
           ) : (
             <View style={s.labelled}>
               <StatusLine badge={personal.badge} when={whenText} soon={soon} passed={passed && open} line={personalLine} />
+              {open && detail.can_still_pass === false && detail.cannot_pass_why?.length ? (
+                // Why it can't pass, in the web's words (R5): one sentence per cause that holds now.
+                <Text role="body" tone="warning">
+                  {detail.cannot_pass_why.join(' ')}
+                </Text>
+              ) : null}
               {actions.kind === 'web' && actions.fix ? (
                 // Row 7's one-time switch, right under the line that explains it (the bar keeps
                 // only buttons, so it never repeats that line).
@@ -777,6 +896,10 @@ export default function DecisionScreen({
               balanceWei={open ? (treasury.data?.status?.balance_wei ?? null) : null}
               balanceText={open ? (treasury.data?.status?.balance ?? null) : null}
             />
+          ) : checked.ok && checked.type && checked.rows ? (
+            // A typed decision whose fields write the signed text exactly (S13): the card leads, the
+            // signed text one tap away.
+            <TypedCard type={checked.type} rows={checked.rows} text={detail.signing_inputs.action_text} />
           ) : (
             <SignedText text={detail.signing_inputs.action_text} />
           )}
@@ -831,6 +954,18 @@ export default function DecisionScreen({
               />
             )}
             <DisclosureRow title="Details" onPress={() => setSheet('details')} />
+            {tampered ? null : (
+              <ListRow
+                title={(() => {
+                  const n = comments.data?.comments.filter((c) => !c.deleted).length ?? 0;
+                  return n > 0 ? `Discussion, ${n}` : 'Discussion';
+                })()}
+                caption={latest ? `${latest.author.name ?? 'Someone'}: ${latest.body}` : "No comments yet. Not part of what's signed."}
+                captionLines={1}
+                onPress={() => onOpenDiscussion(detail.title)}
+                accessibilityHint="Opens the discussion. It isn't part of what's signed."
+              />
+            )}
             {etherscan ? (
               <ListRow
                 icon="external"
@@ -853,7 +988,9 @@ export default function DecisionScreen({
         onReject={() => requestSigning('reject')}
         onReport={report}
         onOpenWeb={openWeb}
-        onRaiseAgain={() => onRaiseIn(detail.vault_id, detail.vault_name ?? '')}
+        onRaiseAgain={raiseAgain}
+        onRemind={() => void remind()}
+        reminding={reminding}
       />
 
       <SigningSheet
@@ -883,7 +1020,27 @@ export default function DecisionScreen({
         open={open}
         onReport={report}
       />
-      <DetailsSheet visible={sheet === 'details'} onClose={() => setSheet(null)} detail={detail} />
+      <DetailsSheet
+        visible={sheet === 'details'}
+        onClose={() => setSheet(null)}
+        detail={detail}
+        type={checked.ok ? checked.type : null}
+      />
+      <Sheet
+        visible={withdrawing}
+        onClose={() => !withdrawBusy && setWithdrawing(false)}
+        dismissible={!withdrawBusy}
+        title="Withdraw this decision?"
+        footer={
+          <>
+            {withdrawProblem ? <InlineMessage tone="warning" text={withdrawProblem} /> : null}
+            <Button label="Withdraw" variant="danger" onPress={() => void withdraw()} busy={withdrawBusy} full />
+            <Button label="Cancel" variant="quiet" onPress={() => setWithdrawing(false)} disabled={withdrawBusy} full />
+          </>
+        }
+      >
+        <Text role="body">Withdrawing ends it for everyone. Approvals already given stop counting.</Text>
+      </Sheet>
       <MoreSheet visible={sheet === 'more'} onClose={() => setSheet(null)} items={more} />
 
       {/* The acknowledgement. Stays until dismissed: someone who signed and put the phone down
@@ -931,6 +1088,8 @@ function Bar({
   onReport,
   onOpenWeb,
   onRaiseAgain,
+  onRemind,
+  reminding,
 }: {
   actions: ReturnType<typeof personalStatus>['actions'];
   busy: boolean;
@@ -945,6 +1104,9 @@ function Bar({
   onReport: () => void;
   onOpenWeb: () => void;
   onRaiseAgain: () => void;
+  /** Row 3: remind the approvers who haven't voted (R4), once a day. */
+  onRemind: () => void;
+  reminding: boolean;
 }) {
   if (offline && (actions.kind === 'sign' || actions.kind === 'web')) {
     // The phone checks a decision against the network before any sheet (I-7): none offline.
@@ -993,14 +1155,18 @@ function Bar({
         <ActionBar
           stack
           message={message}
-          primary={{ label: 'Copy a report', variant: 'secondary', onPress: onReport }}
+          primary={{ label: 'Share a report', variant: 'secondary', onPress: onReport }}
           secondary={{ label: 'Open on the web', variant: 'quiet', onPress: onOpenWeb }}
         />
       );
     case 'remind':
-      // Remind arrives with R4 (§6.21); until then nothing to do here, and the personal line says
-      // why this person can't approve.
-      return message ? <ActionBar message={message} /> : null;
+      // Row 3: the personal line says why this person can't approve; the bar offers Remind (§6.21).
+      return (
+        <ActionBar
+          message={message}
+          primary={{ label: reminding ? 'Sending…' : 'Remind', variant: 'secondary', onPress: onRemind, busy: reminding }}
+        />
+      );
     case 'raiseAgain':
       return actions.placement === 'bar' ? (
         <ActionBar message={message} primary={{ label: 'Raise again', variant: 'secondary', onPress: onRaiseAgain }} />

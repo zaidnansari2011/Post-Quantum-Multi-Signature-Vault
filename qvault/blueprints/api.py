@@ -42,6 +42,7 @@ from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
     approval_service,
+    audit_service,
     auth_service,
     decision_types,
     delivery_copy,
@@ -231,6 +232,9 @@ def _workspace_json(user) -> dict | None:
         "name": member.workspace.name,
         "role": member.role,
         "role_name": workspace_service.role_name(member.role),
+        # Plan S15: whether a vault created now stops whoever raises a decision from approving it,
+        # so the phone's New vault can say what a single-approver vault will be unable to do.
+        "separation_of_duties_default": bool(member.workspace.sod_default),
     }
 
 
@@ -665,6 +669,8 @@ def vault_detail(vid: int):
         return _error("unknown_vault", "No such vault.", 404)
 
     detail = _vault_summary(vault, user)
+    member_ids = [m.user_id for m in vault.members]
+    keyed = _keyed(member_ids)
     detail["members"] = [
         {
             "user_id": m.user_id,
@@ -672,12 +678,45 @@ def vault_detail(vid: int):
             "email": m.user.email if m.user else None,
             "role": m.member_role,
             "is_me": m.user_id == user.id,
+            # Additive (phone-ux §6.14): an approver without an active key can't sign yet, which
+            # is why a quorum can be out of reach.
+            "has_key": m.user_id in keyed,
         }
         for m in vault.members
     ]
     recent = sorted(vault.proposals, key=lambda p: p.id, reverse=True)[:50]
     detail["proposals"] = [_proposal_summary(p, user) for p in recent]
+    # Additive (plan S15, R5; phone-ux §6.14, §6.16): the vault's rule as it stands, and its latest
+    # changes as before and after, for the rule line and the New decision preview.
+    detail["separation_of_duties"] = not eligibility.vault_allows_requester(vault)
+    detail["rule_changes"] = [
+        {
+            "event": change["event"],
+            "who": change["who"],
+            "when": change["when"].isoformat() if change["when"] else None,
+            "label": change["diff"]["label"],
+            "before": change["diff"]["before"],
+            "after": change["diff"]["after"],
+        }
+        for change in audit_service.rule_changes(vault, limit=5)
+    ]
     return jsonify(ok=True, vault=detail)
+
+
+def _keyed(user_ids: list[int]) -> set[int]:
+    """Which of ``user_ids`` hold an active signing key, password-held or on a phone."""
+    if not user_ids:
+        return set()
+    return set(
+        db.session.scalars(
+            db.select(Key.owner_id).where(
+                Key.owner_id.in_(user_ids),
+                Key.role == "sig",
+                Key.status == "active",
+                Key.can_sign.is_(True),
+            )
+        )
+    )
 
 
 @bp.post("/vaults/<int:vid>/proposals")

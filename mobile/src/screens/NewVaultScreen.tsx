@@ -1,20 +1,25 @@
-// Creating a vault.
+// New vault (phone-ux §6.17): the short path, name, people and rule. The rest is on the web.
 //
 // A vault is a governance arrangement, not a folder, so the screen is built around the one choice
-// that matters: how many signatures it takes. The threshold is chosen AFTER the signers and in
-// their terms ("any one of 3", "2 of 3", "all 3"), so the choice reads as the policy it becomes.
+// that matters: how many approvals it takes. The rule is chosen after the people and in their terms
+// ("Any one", "2 of 3", "All 3"), with the sentence it becomes under it.
 //
-// Members go in the create call: creating the vault and then adding people would leave a window in
-// which it exists and cannot approve anything, and a dropped connection there leaves it so.
-// (Phone-ux §6.17 trims this further in P3: rule chips, a review sheet, the rest on the web.)
+// Before the vault exists, the page says when nothing raised in it could pass: with separation of
+// duties on by default (owner, 2026-10-08), whoever raises a decision can't approve it, so a rule
+// that needs every approver passes nothing.
+//
+// "Check and create" opens a review that restates the rule, and only then is the vault created, with
+// its approvers in the same call (a dropped connection must not leave a half-built vault). Creating a
+// vault is not signing: no haptic.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigation, usePreventRemove } from '@react-navigation/native';
 
 import {
   ActionBar,
-  Banner,
+  Avatar,
   Button,
   CheckboxRow,
   ChipGroup,
@@ -29,7 +34,6 @@ import {
   Sheet,
   Skeleton,
   Text,
-  feedback,
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import type { Person } from '../api/schemas.ts';
@@ -37,42 +41,54 @@ import { OfflineNotice } from '../freshness.tsx';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
+import { meQuery, peopleQuery } from '../queries.ts';
+import { newVaultRule, newVaultWarning, ruleChips } from '../logic/workspace.ts';
 
 export default function NewVaultScreen({
-  onBack,
+  onClose,
   onCreated,
 }: {
-  onBack: () => void;
+  onClose: () => void;
   onCreated: (vaultId: number) => void;
 }) {
   const s = useStyles();
   const { token, identity } = useEnrolledSession();
   const queryClient = useQueryClient();
+  const navigation = useNavigation();
 
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [purpose, setPurpose] = useState('');
   const [picked, setPicked] = useState<Person[]>([]);
   const [picking, setPicking] = useState(false);
-  const [thresholdM, setThresholdM] = useState(1);
-  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
+  const [search, setSearch] = useState('');
+  const [m, setM] = useState(1);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [discard, setDiscard] = useState<{ action: unknown } | null>(null);
+  const [leaving, setLeaving] = useState<{ vaultId: number } | { action: unknown } | null>(null);
 
-  // The owner signs too, so N is the invited signers plus you.
-  const signerCount = picked.length + 1;
-  const ready = name.trim().length > 0;
+  const me = useQuery(meQuery(token));
+  const workspace = me.data?.workspace;
+  // Only fetched once the sheet is open: a list of colleagues is not needed to name a vault.
+  const people = useQuery({ ...peopleQuery(token), enabled: picking });
+  const n = picked.length + 1;
+  const warning = newVaultWarning(m, n, workspace?.separation_of_duties_default);
 
-  // Only fetched when the sheet is open: a list of colleagues is not needed to name a vault.
-  const peopleQuery = useQuery({
-    queryKey: ['people'],
-    queryFn: ({ signal }) => api.fetchPeople(token, signal),
-    enabled: picking,
-  });
+  const dirty = leaving === null && (name.trim() !== '' || purpose.trim() !== '' || picked.length > 0);
+  usePreventRemove(dirty, ({ data }) => setDiscard({ action: data.action }));
+  useEffect(() => {
+    if (!leaving || dirty) return;
+    if ('vaultId' in leaving) onCreated(leaving.vaultId);
+    else navigation.dispatch(leaving.action as never);
+  }, [leaving, dirty, navigation, onCreated]);
 
   function toggle(person: Person) {
     const already = picked.some((p) => p.user_id === person.user_id);
     const next = already ? picked.filter((p) => p.user_id !== person.user_id) : [...picked, person];
     setPicked(next);
-    // Keep the policy meetable: dropping a signer can strand a threshold above the new N.
-    if (thresholdM > next.length + 1) setThresholdM(next.length + 1);
+    // Keep the rule meetable: dropping an approver can strand a rule above the new count.
+    if (m > next.length + 1) setM(next.length + 1);
   }
 
   const create = useMutation({
@@ -80,24 +96,26 @@ export default function NewVaultScreen({
       api.createVault({
         token,
         name: name.trim(),
-        description: description.trim(),
-        thresholdM,
+        description: purpose.trim(),
+        thresholdM: m,
         memberIds: picked.map((p) => p.user_id),
       }),
     onSuccess: (result) => {
-      feedback.signed();
       void queryClient.invalidateQueries({ queryKey: ['vaults'] });
-      onCreated(result.vault.vault_id);
+      setReviewing(false);
+      setLeaving({ vaultId: result.vault.vault_id });
     },
-    onError: (err) => {
-      setError(describe(err));
-      feedback.refused();
-    },
+    onError: (err) => setFailure(describe(err)),
   });
+
+  const names = ['you', ...picked.map((p) => p.name)];
+  const q = search.trim().toLowerCase();
+  const everyone = people.data?.people ?? [];
+  const shown = q ? everyone.filter((p) => p.name.toLowerCase().includes(q)) : everyone;
 
   return (
     <Screen>
-      <NavBar onBack={onBack} title="New vault" />
+      <NavBar onBack={onClose} backIcon="x" backLabel="Close" title="New vault" />
       <OfflineNotice at={undefined} />
 
       <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -108,131 +126,125 @@ export default function NewVaultScreen({
           showsVerticalScrollIndicator={false}
         >
           <ContentWidth style={s.stack}>
-            {error ? <Banner tone="critical" title={error.title} detail={error.detail} /> : null}
-
             <View>
               <Field
                 label="Name"
                 value={name}
-                onChangeText={setName}
-                placeholder="Treasury"
+                onChangeText={(v) => {
+                  setName(v);
+                  setNameError(null);
+                }}
+                placeholder="Board approvals"
                 autoCapitalize="sentences"
                 maxLength={120}
-                editable={!create.isPending}
+                error={nameError}
               />
               <Field
-                label="What it is for"
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Payments above the delegated limit"
+                label="What it's for (optional)"
+                value={purpose}
+                onChangeText={setPurpose}
+                placeholder="Resolutions that need the board's sign-off"
                 autoCapitalize="sentences"
-                editable={!create.isPending}
+                multiline
+                numberOfLines={2}
               />
             </View>
 
             <View style={s.group}>
               <Text role="caption" tone="muted">
-                Signers
+                Approvers
               </Text>
               <List>
-                <ListRow title={identity.displayName} value="you, owner" />
+                <ListRow leading={<Avatar name={identity.displayName} size={32} />} title={identity.displayName} value="You, owner" />
                 {picked.map((person) => (
                   <ListRow
                     key={person.user_id}
+                    leading={<Avatar name={person.name} size={32} />}
                     title={person.name}
                     trailing={
-                      <View style={s.remove}>
-                        <IconButton
-                          icon="x-circle"
-                          label={`Remove ${person.name}`}
-                          onPress={() => toggle(person)}
-                          disabled={create.isPending}
-                          size={20}
-                        />
-                      </View>
+                      <IconButton icon="x-circle" label={`Remove ${person.name}`} onPress={() => toggle(person)} size={20} />
                     }
                   />
                 ))}
+                <ListRow icon="user-plus" title="Add approvers" onPress={() => setPicking(true)} />
               </List>
-              {/* Chosen, not typed: the server only accepts people who already have an account,
-                  so a typed address is right by luck or wrong by one character. */}
-              <Button
-                label="Choose signers"
-                variant="secondary"
-                onPress={() => setPicking(true)}
-                disabled={create.isPending}
-                full
-              />
             </View>
 
             <View style={s.group}>
               <Text role="caption" tone="muted">
-                How many signatures approve a decision
+                Rule
               </Text>
-              <ChipGroup
-                label="How many signatures approve a decision"
-                value={thresholdM}
-                onChange={setThresholdM}
-                disabled={create.isPending}
-                options={Array.from({ length: signerCount }, (_, i) => i + 1).map((m) => ({
-                  value: m,
-                  label: policyWord(m, signerCount),
-                }))}
-              />
-              <Text role="caption" tone="subtle">
-                {policySentence(thresholdM, signerCount)}
+              <ChipGroup label="Rule" value={m} onChange={setM} options={ruleChips(n)} />
+              <Text role="body" tone="muted">
+                {newVaultRule(m, n)}
               </Text>
+              {warning ? (
+                <Text role="body" tone="warning">
+                  {warning}
+                </Text>
+              ) : null}
             </View>
+
+            <Text role="caption" tone="muted">
+              Viewers, roles and separation of duties are set on the web.
+            </Text>
           </ContentWidth>
         </ScrollView>
 
         <ActionBar
           primary={{
-            label: 'Create vault',
+            label: 'Check and create',
             onPress: () => {
-              setError(null);
-              create.mutate();
+              if (!name.trim()) {
+                setNameError('Give the vault a name.');
+                return;
+              }
+              setFailure(null);
+              setReviewing(true);
             },
-            disabled: !ready,
-            busy: create.isPending,
           }}
         />
       </KeyboardAvoidingView>
 
-      {/* Multi-select and stays open: adding four people is four taps, not four trips through a
-          sheet that closes itself each time. */}
+      {/* Multi-select, and it stays open: adding four people is four taps. */}
       <Sheet
         visible={picking}
         onClose={() => setPicking(false)}
-        title="Choose signers"
+        title="Add approvers"
         footer={
           <Button
-            label={
-              picked.length === 0
-                ? 'Done'
-                : picked.length === 1
-                  ? 'Done, 1 signer added'
-                  : `Done, ${picked.length} signers added`
-            }
+            label={picked.length === 0 ? 'Done' : `Done, ${picked.length} added`}
             onPress={() => setPicking(false)}
             full
           />
         }
       >
-        {peopleQuery.isLoading ? (
+        {everyone.length > 6 ? (
+          <Field
+            label="Find someone"
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Name"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        ) : null}
+        {people.isLoading ? (
           <View style={s.skeleton}>
             <Skeleton width="60%" height={16} />
             <Skeleton width="45%" height={16} />
             <Skeleton width="55%" height={16} />
           </View>
-        ) : (peopleQuery.data?.people.length ?? 0) === 0 ? (
+        ) : everyone.length === 0 ? (
           <EmptyState
-            title="Nobody else has an account yet."
-            detail="Signers must already be registered on this Q-Vault."
+            title={`Everyone in ${workspace?.name ?? 'your workspace'} is already here.`}
+            detail="Invite more people on the web."
           />
+        ) : shown.length === 0 ? (
+          <EmptyState title={`No one matches "${search.trim()}"`} />
         ) : (
           <List>
-            {(peopleQuery.data?.people ?? []).map((person) => (
+            {shown.map((person) => (
               <CheckboxRow
                 key={person.user_id}
                 label={person.name}
@@ -243,42 +255,80 @@ export default function NewVaultScreen({
           </List>
         )}
       </Sheet>
+
+      <Sheet
+        visible={reviewing}
+        onClose={() => !create.isPending && setReviewing(false)}
+        dismissible={!create.isPending}
+        title="Create this vault?"
+        footer={
+          <>
+            {failure ? <Text role="caption" tone="critical">{failure}</Text> : null}
+            <Button label="Create vault" onPress={() => create.mutate()} busy={create.isPending} full />
+            <Button label="Edit" variant="quiet" onPress={() => setReviewing(false)} disabled={create.isPending} full />
+          </>
+        }
+      >
+        <View style={s.stack}>
+          <Text role="body">
+            {`${m >= n ? (n === 1 ? 'You approve' : `All of ${names.join(', ')} approve`) : m === 1 ? `Any one of ${names.join(', ')} approves` : `Any ${m} of ${names.join(', ')} approve`} every decision in ${name.trim() || 'this vault'}.`}
+          </Text>
+          {warning ? (
+            <Text role="body" tone="warning">
+              {warning}
+            </Text>
+          ) : null}
+          <Text role="body" tone="muted">
+            Changing this later needs the web.
+          </Text>
+        </View>
+      </Sheet>
+
+      <Sheet
+        visible={discard !== null}
+        onClose={() => setDiscard(null)}
+        title="Discard this vault?"
+        footer={
+          <>
+            <Button
+              label="Discard"
+              variant="danger"
+              onPress={() => {
+                const action = discard?.action;
+                setDiscard(null);
+                if (action) setLeaving({ action });
+              }}
+              full
+            />
+            <Button label="Keep editing" variant="secondary" onPress={() => setDiscard(null)} full />
+          </>
+        }
+      >
+        <Text role="body">{"What you've entered here is lost. Nothing has been created."}</Text>
+      </Sheet>
     </Screen>
   );
 }
 
-/** The chip label: the arrangement, not the bare number. */
-function policyWord(m: number, n: number): string {
-  if (m === 1) return n === 1 ? 'Just me' : 'Any one';
-  if (m === n) return `All ${n}`;
-  return `${m} of ${n}`;
-}
-
-function policySentence(m: number, n: number): string {
-  if (n === 1) return 'You are the only signer, so your signature alone approves a decision.';
-  if (m === 1) return `Any one of the ${n} signers can approve a decision on their own.`;
-  if (m === n) return `Every one of the ${n} signers must approve before a decision passes.`;
-  return `${m} of the ${n} signers must approve before a decision passes.`;
-}
-
-function describe(err: unknown): { title: string; detail?: string } {
+function describe(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
       case 'name_required':
-        return { title: 'Give the vault a name.' };
+        return 'Give the vault a name.';
       case 'name_too_long':
-        return { title: 'That name is too long.', detail: 'Limited to 120 characters.' };
+        return 'Vault names are limited to 120 characters.';
+      case 'not_allowed':
+        return "Auditors can't create vaults. Ask a workspace owner or admin to change your role.";
       case 'threshold_too_high':
-        return { title: 'That policy cannot be met.', detail: err.message };
+      case 'unknown_member':
       case 'vault_error':
-        // Commonest cause is an email with no account behind it. The server's sentence names it.
-        return { title: 'Could not create the vault.', detail: err.message };
+        return 'Q-Vault refused this vault. Check the people and the rule, then try again.';
       default:
-        return { title: err.message };
+        return 'Something went wrong, so nothing was created. Try again.';
     }
   }
-  if (err instanceof TransportError) return { title: err.message };
-  return { title: err instanceof Error ? err.message : 'Something went wrong.' };
+  if (err instanceof TransportError) return "Can't reach Q-Vault. Check your connection and try again.";
+  return 'Something went wrong, so nothing was created. Try again.';
 }
 
 const useStyles = makeStyles((t) => ({
@@ -286,6 +336,5 @@ const useStyles = makeStyles((t) => ({
   content: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32], paddingTop: t.space[8] },
   stack: { gap: t.space[16] },
   group: { gap: t.space[8] },
-  remove: { paddingRight: t.space[4] },
   skeleton: { gap: t.space[12], paddingVertical: t.space[8] },
 }));

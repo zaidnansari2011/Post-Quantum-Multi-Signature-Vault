@@ -175,6 +175,11 @@ def test_a_phone_holding_the_seat_sees_the_digest_and_approves(rw):
     assert shown["id"] == reconfiguration.id and shown["state"] == "collecting_approvals"
     assert shown["my_custody"] == "device" and shown["approval_problem"] is None
     assert shown["seat_fingerprint"] == device.key.public_fingerprint()
+    # Who asked for it, for the phone's "Requested by" (additive, P3 review B2).
+    assert shown["requested_by"] == {
+        "id": reconfiguration.requested_by_id,
+        "name": reconfiguration.requested_by.display_name,
+    }
     digest = reconfiguration_service.digest_for(reconfiguration)
     assert shown["digest"] == digest.hex()
     inputs = shown["signing_inputs"]

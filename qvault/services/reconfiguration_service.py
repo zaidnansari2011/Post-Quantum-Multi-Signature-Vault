@@ -964,6 +964,15 @@ def _reconfiguration_view(reconfiguration: Reconfiguration, user: User) -> dict:
         "state": reconfiguration.state,
         "reason": reconfiguration.reason,
         "requested_at": reconfiguration.created_at.isoformat(),
+        # Who asked for it (phone-ux §6.15's "Requested by Ada"), unsigned display. Additive.
+        "requested_by": (
+            {
+                "id": reconfiguration.requested_by_id,
+                "name": reconfiguration.requested_by.display_name,
+            }
+            if reconfiguration.requested_by is not None
+            else None
+        ),
         "valid_until": datetime.fromtimestamp(reconfiguration.valid_until, UTC).isoformat(),
         "threshold": reconfiguration.threshold,
         "approvals": len(reconfiguration.signatures),

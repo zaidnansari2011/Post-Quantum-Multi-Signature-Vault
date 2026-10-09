@@ -156,3 +156,11 @@ def test_every_screen_and_component_styles_through_make_styles():
         if THEME in path.parents:
             continue
         assert "StyleSheet.create(" not in text, path
+
+
+def test_no_native_alert_anywhere():
+    """Every confirmation is a sheet (phone-ux §2.3, §6.15): no `Alert.alert`, no `Alert` import."""
+    for path in _sources():
+        text = path.read_text(encoding="utf-8")
+        assert "Alert.alert" not in text, path
+        assert "Alert" not in _imported(text), path

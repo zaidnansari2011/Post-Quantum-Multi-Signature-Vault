@@ -60,4 +60,3 @@ export { Tab, TabBar } from './TabBar.tsx';
 export { Text, type TextProps, type TextTone } from './Text.tsx';
 export { ToastProvider, ToastView, useToast } from './Toast.tsx';
 export { Touchable } from './Touchable.tsx';
-export { TreasuryCard } from './TreasuryCard.tsx';

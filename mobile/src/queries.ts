@@ -69,6 +69,9 @@ export const keys = {
   vault: (vaultId: number) => ['vault', vaultId] as const,
   me: ['me'] as const,
   devices: ['devices'] as const,
+  treasury: (vaultId: number) => ['treasury', vaultId] as const,
+  comments: (uuid: string) => ['comments', uuid] as const,
+  people: ['people'] as const,
 };
 
 /** Awaiting (Approvals, the badge). */
@@ -142,6 +145,41 @@ export function devicesQuery(token: string) {
   return {
     queryKey: keys.devices,
     queryFn: recorded(keys.devices, (signal) => api.fetchDevices(token, signal)),
+    staleTime: STALE_MS.account,
+    ...RETRY,
+  };
+}
+
+/** A vault's treasury, its balance and any change to its signers (§6.15). Never persisted. */
+export function treasuryQuery(token: string, vaultId: number) {
+  const queryKey = keys.treasury(vaultId);
+  return {
+    queryKey,
+    queryFn: recorded(queryKey, (signal) => api.fetchTreasury(token, vaultId, signal)),
+    staleTime: STALE_MS.vaults,
+    // The object a fetch returned stays the object on the page, which the approval's freshness gate
+    // compares (I-7), as for a decision.
+    structuralSharing: false,
+    ...RETRY,
+  };
+}
+
+/** A decision's discussion (R5). Unsigned; never persisted. */
+export function commentsQuery(token: string, uuid: string) {
+  const queryKey = keys.comments(uuid);
+  return {
+    queryKey,
+    queryFn: recorded(queryKey, (signal) => api.fetchComments(token, uuid, signal)),
+    staleTime: STALE_MS.activity,
+    ...RETRY,
+  };
+}
+
+/** The workspace's people a vault can be built from (names and ids only). */
+export function peopleQuery(token: string) {
+  return {
+    queryKey: keys.people,
+    queryFn: recorded(keys.people, (signal) => api.fetchPeople(token, signal)),
     staleTime: STALE_MS.account,
     ...RETRY,
   };

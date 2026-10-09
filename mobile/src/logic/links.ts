@@ -97,7 +97,7 @@ export type Situation = {
   /** App lock (§6.1, P3): locked until the person unlocks. */
   locked: boolean;
   /** The top screen, with its id (a decision's uuid, a vault's id). */
-  top: { name: string; id?: string | number | null } | null;
+  top: { name: string; id?: string | number | null; vaultId?: number | null } | null;
   /** An approve or reject sheet: open and idle, or with a signature in flight. */
   sheet: 'none' | 'idle' | 'busy';
   /** The acknowledgement after a signature is still showing. */
@@ -129,6 +129,8 @@ function sameTarget(target: LinkTarget, top: Situation['top']): boolean {
       return top.name === 'Decision' && top.id === target.uuid;
     case 'vault':
       return top.name === 'Vault' && top.id === target.vaultId;
+    case 'treasuryChange':
+      return top.name === 'TreasuryChange' && top.id === target.changeId && top.vaultId === target.vaultId;
     default:
       return false;
   }
