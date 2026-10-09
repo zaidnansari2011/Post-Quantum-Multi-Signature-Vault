@@ -90,6 +90,12 @@ class Delivery(db.Model):
     #: then erased. Only its hash is kept anywhere else.
     secret_nonce = db.Column(db.LargeBinary, nullable=True)
     secret = db.Column(db.LargeBinary, nullable=True)
+    #: SHA-256 (hex) of the push token a push was sent to, so a later receipt for it can only clear
+    #: that token, never a newer one the same phone registered since.
+    token_hash = db.Column(db.String(64), nullable=True)
+    #: A security push queued before its phone was removed: the token it is still owed to, kept
+    #: until it is sent or given up (then erased), because removing the phone clears the token.
+    push_to = db.Column(db.String(255), nullable=True)
 
     status = db.Column(db.String(12), nullable=False, default="pending")
     attempts = db.Column(db.Integer, nullable=False, default=0)

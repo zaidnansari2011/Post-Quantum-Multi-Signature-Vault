@@ -82,8 +82,9 @@
           recipient or a button that approves: they link to the page where you decide.{% else %} Email
           isn't set up on this Q-Vault, so none is sent.{% endif %}
           {%- if push_ready %}
-            {%- if has_phone %} Phones get at most two pushes per decision: when it needs you, and once
-            before it closes.{% else %} No phone has notifications on yet: turn them on in the Q-Vault
+            {%- if has_phone %} When a decision needs you, a phone gets at most two pushes about it:
+            when it's raised, and once before it closes. Outcomes reach the phone of whoever raised
+            it, and a payment that fails reaches the vault's owner too.{% else %} No phone has notifications on yet: turn them on in the Q-Vault
             app, under Account.{% endif %}
           {%- else %} Phone push isn't set up on this Q-Vault.{% endif %}</p>
         {{ button('Save preferences', 'primary', type='submit') }}

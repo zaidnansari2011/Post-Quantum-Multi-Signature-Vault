@@ -131,6 +131,8 @@ def members():
     names = _vault_names(open_invitations)
     # The last active owner's role is shown, not offered: the service would refuse any change.
     sole_owner = sum(1 for m in active if m.role == "owner") == 1
+    # What became of each invitation's email (R8 review, F7), in one query.
+    email_states = delivery_service.invitation_email_states(i.id for i in open_invitations)
     return render_template(
         "workspace/members.html",
         workspace=workspace,
@@ -152,6 +154,7 @@ def members():
                 "invitation": i,
                 "state": _invitation_state(i, by_user),
                 "grants": _grant_rows(i, names),
+                "email": email_states.get(i.id),
             }
             for i in open_invitations
         ],
@@ -258,6 +261,7 @@ _INVITE_FIELD_ERRORS = {
     "bad_email": "email",
     "already_member": "email",
     "already_invited": "email",
+    "email_limit": "email",
     "bad_role": "role",
     "not_allowed": "role",
     "auditor_approver": "role",
@@ -297,6 +301,9 @@ def _render_link(invitation: Invitation, token: str, *, resent: bool):
         grants=_grant_rows(invitation),
         role_name=ws.role_name,
         resent=resent,
+        # Whether an email was queued for this link (R8 review, F7): the page says so only then.
+        emailing=delivery_service.invitation_email_states([invitation.id]).get(invitation.id)
+        == "queued",
     )
     return response, 200, {"Cache-Control": "no-store"}
 

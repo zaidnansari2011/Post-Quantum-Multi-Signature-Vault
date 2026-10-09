@@ -14,6 +14,13 @@ whom, and when it is due, and never:
 Each points at the page where the rest is, behind sign-in. That also makes a Q-Vault email easy to
 tell from a phishing one: ours never carries an amount, and never a button that approves.
 
+**A name someone chose is a label, never a sentence** (R8 review, F1 and F6). A display name, a
+vault's name or a workspace's name is free text: "Q-Vault Security: approve at evil.example" is a
+valid one. So no subject carries one; in a body or on a lock screen each is shown quoted, as the
+value of a labelled fact (Vault: “Operations”) or as an object in quotes, never as the subject of a
+sentence the reader would take as Q-Vault speaking. Characters that are not seen (bidi overrides,
+zero-width characters) are dropped (``qvault.security.text.visible``).
+
 **Nothing here acts** (S12). An email has one link, to the page that shows the thing; a push opens
 the decision on the phone, where signing happens after reading it. There is no approve or reject
 link, and no push action button, anywhere.
@@ -26,6 +33,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
+from qvault.security.text import visible
 from qvault.services.notification_copy import _path, when
 
 #: Names and vault names in a push, cut short for a lock screen.
@@ -71,14 +79,18 @@ def facts(data: str | None) -> dict:
 
 
 def _plain(text: object, limit: int) -> str:
-    """A name for a subject, a body or a lock screen: one line, no control characters, short."""
-    cleaned = "".join(" " if ord(ch) < 32 or 127 <= ord(ch) < 160 else ch for ch in str(text))
-    cleaned = " ".join(cleaned.split())
+    """A name as shown: one line, nothing hidden, at most ``limit`` characters."""
+    cleaned = visible(text)
     return cleaned if len(cleaned) <= limit else cleaned[: limit - 1].rstrip() + "…"
 
 
-def _name(user, limit: int) -> str:
-    return _plain(user.display_name, limit) if user is not None and user.display_name else "Someone"
+def quoted(text: object, limit: int) -> str:
+    """A name someone chose, as a label: in curly quotes, so it reads as quoted text."""
+    return f"“{_plain(text, limit) or '?'}”"
+
+
+def _who(user, limit: int) -> str | None:
+    return quoted(user.display_name, limit) if user is not None and user.display_name else None
 
 
 # -- push --------------------------------------------------------------------------------------
@@ -122,21 +134,20 @@ def push_for(
     """The lock-screen title and body, and the data that opens the right screen on a tap."""
     stored = facts(data)
     vault = vault or (proposal.vault if proposal is not None else None)
-    place = _plain(vault.name, _PUSH_NAME) if vault is not None else "Q-Vault"
+    place = quoted(vault.name, _PUSH_NAME) if vault is not None else "Q-Vault"
     extra = {"notification_id": notification_id} if notification_id else {}
     channel = _CHANNEL.get(kind, "updates")
     priority = "high" if channel in ("needs_you", "security") else "default"
+
+    def copy(title: str, body: str, opens: dict) -> PushCopy:
+        return PushCopy(title, body, opens, channel, priority)
 
     if proposal is not None:
         opens = {"type": "decision", "uuid": proposal.proposal_uuid, **extra}
         if kind == "decision_raised":
             due = f" Due {when(proposal.expires_at, now=now)}." if proposal.expires_at else ""
-            return PushCopy(
-                "Needs your signature",
-                f"{place}: a decision is waiting for you.{due}",
-                opens,
-                channel,
-                priority,
+            return copy(
+                "Needs your signature", f"A decision in {place} is waiting for you.{due}", opens
             )
         if kind == "decision_due_soon":
             closes = (
@@ -144,27 +155,17 @@ def push_for(
                 if proposal.expires_at
                 else " closes soon"
             )
-            return PushCopy("Due soon", f"A decision in {place}{closes}.", opens, channel, priority)
+            return copy("Due soon", f"A decision in {place}{closes}.", opens)
         if kind == "decision_approved":
-            return PushCopy(
-                "Approved", f"Your decision in {place} has its approvals.", opens, channel, priority
-            )
+            return copy("Approved", f"Your decision in {place} has its approvals.", opens)
         if kind == "decision_rejected":
             by = stored.get("by_name") or (actor.display_name if actor is not None else None)
-            who = _plain(by, _PUSH_NAME) if by else "An approver"
-            gave = " and gave a reason" if stored.get("reason") else ""
-            return PushCopy(
-                "Rejected",
-                f"{who} rejected your decision in {place}{gave}.",
-                opens,
-                channel,
-                priority,
-            )
+            who = f" by {quoted(by, _PUSH_NAME)}" if by else ""
+            gave = ", with a reason" if stored.get("has_reason") else ""
+            return copy("Rejected", f"Your decision in {place} was rejected{who}{gave}.", opens)
         if kind in ("payout_paid", "payout_failed"):
             title = "Paid" if kind == "payout_paid" else "Payment failed"
-            return PushCopy(
-                title, f"{place} treasury: open the decision for details.", opens, channel, priority
-            )
+            return copy(title, f"A payment from {place}: open the decision for details.", opens)
         return None
 
     if kind == "device_enrolled":
@@ -174,20 +175,16 @@ def push_for(
             if match
             else {"type": "activity", **extra}
         )
-        return PushCopy(
+        return copy(
             "New device added",
             "A phone was added to your account. If this wasn't you, tap to review your devices.",
             opens,
-            channel,
-            priority,
         )
     if kind == "password_changed":
-        return PushCopy(
+        return copy(
             "Password changed",
             "Your Q-Vault password was changed. If this wasn't you, tell your workspace owner now.",
             {"type": "activity", **extra},
-            channel,
-            priority,
         )
     return None
 
@@ -200,7 +197,7 @@ class EmailCopy:
     subject: str
     #: The first line of the email, in bold.
     heading: str
-    #: Plain sentences, each a paragraph. Never HTML: the template escapes them.
+    #: Plain sentences, each a paragraph. Never HTML: the template escapes them. Never a name.
     lines: tuple[str, ...]
     action: str
     #: A path on this site; the delivery service puts the configured base address in front.
@@ -211,6 +208,9 @@ class EmailCopy:
     #: invitation, whose recipient has no account, nor for a security event, which can't be
     #: switched off.
     preferences: bool = True
+    #: Labelled facts under the sentences: (label, value). Names someone chose appear only here,
+    #: quoted.
+    facts: tuple[tuple[str, str], ...] = ()
 
 
 def email_for(
@@ -219,52 +219,59 @@ def email_for(
     """The email for a notification event, or None for a kind this version has no email for."""
     stored = facts(data)
     vault = vault or (proposal.vault if proposal is not None else None)
-    place = _plain(vault.name, _EMAIL_NAME) if vault is not None else "Q-Vault"
-    who = _name(actor, _EMAIL_NAME)
+    in_vault = (("Vault", quoted(vault.name, _EMAIL_NAME)),) if vault is not None else ()
+
+    def by(label: str, user) -> tuple[tuple[str, str], ...]:
+        who = _who(user, _EMAIL_NAME)
+        return ((label, who),) if who else ()
+
     asked = "You are an approver in this vault."
     outcome = "You raised this decision or voted on it."
 
     if proposal is not None:
         path = _path("vaults.proposal_detail", vid=proposal.vault_id, pid=proposal.proposal_uuid)
         mine = proposal.creator_id == recipient_id
-        due = f" It is due {when(proposal.expires_at, now=now)}." if proposal.expires_at else ""
+        due = (("Due", when(proposal.expires_at, now=now)),) if proposal.expires_at else ()
         sign = "Open it in Q-Vault to read what it asks, and sign it there if you agree."
         if kind == "decision_raised":
             return EmailCopy(
-                f"A decision in {place} needs your approval",
-                f"{who} asked for your approval",
-                (f"{who} raised a decision in {place} that needs your approval.{due}", sign),
+                "A decision needs your approval",
+                "A decision needs your approval",
+                ("A decision in one of your vaults is waiting for your approval.", sign),
                 "Open the decision",
                 path,
                 asked,
+                facts=in_vault + by("Raised by", actor) + due,
             )
         if kind == "decision_reminder":
             first = (
-                f"{who} sent a reminder: a decision in {place} is still waiting for your approval."
+                "The person who raised it sent a reminder: it is still waiting for your approval."
                 if stored.get("asked")
-                else f"A decision in {place} is still waiting for your approval."
+                else "A decision is still waiting for your approval."
             )
             return EmailCopy(
-                f"Reminder: a decision in {place} is waiting for you",
+                "Reminder: a decision is waiting for your approval",
                 "Still waiting on your approval",
-                (first + due, sign),
+                (first, sign),
                 "Open the decision",
                 path,
                 asked,
+                facts=in_vault + by("Raised by", proposal.creator) + due,
             )
         if kind == "decision_due_soon":
             deadline = when(proposal.expires_at, now=now) if proposal.expires_at else "its deadline"
             return EmailCopy(
-                f"A decision in {place} closes within 24 hours",
+                "A decision you can approve closes within 24 hours",
                 "Due within 24 hours",
                 (
-                    f"A decision in {place} is still waiting for your approval. If it is not "
-                    f"decided by {deadline}, it expires.",
+                    "A decision is still waiting for your approval. If it is not decided by "
+                    f"{deadline}, it expires.",
                     sign,
                 ),
                 "Open the decision",
                 path,
                 asked,
+                facts=in_vault + due,
             )
         yours = "Your decision" if mine else "A decision you voted on"
         if kind == "decision_approved":
@@ -272,73 +279,80 @@ def email_for(
                 " Q-Vault will now send the payment from the treasury." if proposal.action else ""
             )
             return EmailCopy(
-                f"{yours} in {place} was approved",
                 f"{yours} was approved",
-                (f"{yours} in {place} has the approvals it needs.{then}",),
+                f"{yours} was approved",
+                (f"{yours} has the approvals it needs.{then}",),
                 "Open the decision",
                 path,
                 outcome,
+                facts=in_vault,
             )
         if kind == "decision_rejected":
-            by = stored.get("by_name")
+            rejecter = stored.get("by_name")
             gave = (
-                f" {_plain(by, _EMAIL_NAME)} gave a reason, which you can read in Q-Vault."
-                if by and stored.get("reason")
+                " A reason was given, which you can read in Q-Vault."
+                if stored.get("has_reason")
                 else ""
             )
             return EmailCopy(
-                f"{yours} in {place} was rejected",
                 f"{yours} was rejected",
-                (f"{yours} in {place} was rejected.{gave}",),
+                f"{yours} was rejected",
+                (f"{yours} was rejected.{gave}",),
                 "Open the decision",
                 path,
                 outcome,
+                facts=in_vault
+                + ((("Rejected by", quoted(rejecter, _EMAIL_NAME)),) if rejecter else ()),
             )
         if kind == "decision_expired":
             return EmailCopy(
-                f"{yours} in {place} expired",
                 f"{yours} expired",
-                (f"{yours} in {place} was not decided in time, so it can no longer be approved.",),
+                f"{yours} expired",
+                (f"{yours} was not decided in time, so it can no longer be approved.",),
                 "Open the decision",
                 path,
                 outcome,
+                facts=in_vault,
             )
         if kind == "decision_withdrawn":
             return EmailCopy(
-                f"{who} withdrew a decision in {place}",
-                f"{who} withdrew a decision",
+                "A decision was withdrawn",
+                "A decision was withdrawn",
                 (
-                    f"{who} withdrew a decision in {place}. It has ended, so there is nothing to "
-                    "sign, and approvals already given no longer count.",
+                    "A decision was withdrawn by the person who raised it. It has ended, so there "
+                    "is nothing to sign, and approvals already given no longer count.",
                 ),
                 "Open the decision",
                 path,
                 "You could approve this decision or voted on it.",
+                facts=in_vault + by("Withdrawn by", actor),
             )
         if kind == "decision_mentioned":
             return EmailCopy(
-                f"{who} mentioned you in {place}",
-                f"{who} mentioned you",
+                "You were mentioned in a decision's discussion",
+                "You were mentioned",
                 (
-                    f"{who} mentioned you in the discussion of a decision in {place}. The "
-                    "discussion isn't part of what is signed.",
+                    "Someone mentioned you in the discussion of a decision. The discussion isn't "
+                    "part of what is signed.",
                 ),
                 "Read the discussion",
                 path + "#discussion",
                 "Someone mentioned you.",
+                facts=in_vault + by("Mentioned by", actor),
             )
         if kind in ("payout_paid", "payout_failed"):
             made = "made" if kind == "payout_paid" else "not made"
             return EmailCopy(
-                f"A payment from the {place} treasury was {made}",
+                f"A payment from a treasury was {made}",
                 f"Payment {made}",
                 (
-                    f"A payment from the {place} treasury was {made}. Open the decision for the "
+                    f"A payment from a vault's treasury was {made}. Open the decision for the "
                     "amount, the recipient and the transaction.",
                 ),
                 "Open the decision",
                 path,
                 "You raised, approved or look after this payment.",
+                facts=in_vault,
             )
         return None
 
@@ -351,25 +365,29 @@ def email_for(
                 else "You can approve decisions raised in it from now on."
             )
             return EmailCopy(
-                f"{who} added you to {place}",
-                f"You were added to {place}",
-                (f"{who} added you to the vault {place}. {can}",),
+                "You were added to a vault",
+                "You were added to a vault",
+                (f"You were added to a vault. {can}",),
                 "Open the vault",
                 vault_path,
                 "You were added to a vault.",
+                facts=in_vault + by("Added by", actor),
             )
         if kind == "vault_rule_changed":
             if stored.get("change") == "treasury":
-                what = f"The treasury for {place} was updated to match the vault's approval rule."
+                what = "A vault's treasury was updated to match its approval rule."
+                who = ()
             else:
-                what = f"{who} changed the approval rule of {place}."
+                what = "A vault's approval rule was changed."
+                who = by("Changed by", actor)
             return EmailCopy(
-                f"The approval rule of {place} changed",
-                f"{place} changed",
+                "A vault's approval rule changed",
+                "A vault's rule changed",
                 (what + " Open the vault to see the rule as it is now.",),
                 "Open the vault",
                 vault_path,
                 "You are in this vault.",
+                facts=in_vault + who,
             )
         return None
 
@@ -380,8 +398,8 @@ def email_for(
             "A new device can sign for you",
             (
                 "A phone was enrolled on your Q-Vault account and can now sign for you.",
-                "If this wasn't you, change your password now and remove the device: someone else "
-                "knows your password.",
+                "If this wasn't you, change your password now and remove the device: someone "
+                "else knows your password.",
             ),
             "Review your devices",
             account,
@@ -393,8 +411,8 @@ def email_for(
             "Your Q-Vault password was changed",
             "Your password was changed",
             (
-                "The password of your Q-Vault account was changed. Your signing keys now open with "
-                "the new password only.",
+                "The password of your Q-Vault account was changed. Your signing keys now open "
+                "with the new password only.",
                 "If this wasn't you, tell your workspace owner now.",
             ),
             "Open your account",
@@ -403,6 +421,9 @@ def email_for(
             preferences=False,
         )
     return None
+
+
+INVITATION_SUBJECT = "You're invited to a workspace on Q-Vault"
 
 
 def invitation_email(
@@ -414,23 +435,24 @@ def invitation_email(
     expires_at: datetime,
     now: datetime,
 ) -> EmailCopy:
-    """The invitation (S11, S12): who invited them, to what, until when. Its link is the
-    acceptance page, which shows the rest and asks them to sign in or create an account."""
-    who = _name(inviter, _EMAIL_NAME)
-    place = _plain(workspace_name, _EMAIL_NAME)
+    """The invitation (S11, S12). The subject and the sentences name nobody: the workspace's name
+    and the inviter's are chosen by the inviter, so they appear only as quoted facts (F1)."""
     role = _plain(role, 30).lower()
     role = f"{'an' if role[:1] in 'aeiou' else 'a'} {role}"
+    who = _who(inviter, _EMAIL_NAME)
+    sender = f"{who}, {inviter_email}" if who else inviter_email
     return EmailCopy(
-        f"{who} invited you to {place} on Q-Vault",
-        f"Join {place} on Q-Vault",
+        INVITATION_SUBJECT,
+        INVITATION_SUBJECT,
         (
-            f"{who} ({inviter_email}) invited you to join {place} on Q-Vault as {role}. Q-Vault is "
-            "where your team approves decisions and payments together.",
+            f"You're invited to join a workspace on Q-Vault as {role}. Q-Vault is where a team "
+            "approves decisions and payments together.",
             f"The link works once and expires on {when(expires_at, now=now)}.",
         ),
         "Accept the invitation",
         "",
-        f"{who} invited this address. If you weren't expecting it, ignore this email: nothing "
+        "Someone invited this address. If you weren't expecting it, ignore this email: nothing "
         "happens unless the link is used.",
         preferences=False,
+        facts=(("Workspace", quoted(workspace_name, _EMAIL_NAME)), ("Invited by", sender)),
     )

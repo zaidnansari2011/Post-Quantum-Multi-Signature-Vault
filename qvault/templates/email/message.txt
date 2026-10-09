@@ -2,7 +2,9 @@
 
 {% for line in copy.lines %}{{ line }}
 
-{% endfor %}{{ copy.action }}:
+{% endfor %}{% for label, value in copy.facts %}{{ label }}: {{ value }}
+{% endfor %}{% if copy.facts %}
+{% endif %}{{ copy.action }}:
 {{ url }}
 
 --

@@ -79,16 +79,15 @@ def init_scheduler(app):
         replace_existing=True,
     )
     # Email and phone push (plan R8): the outbox, sent here and never in the request that queued
-    # it. Each row is claimed before it is sent, so a second scheduler sends nothing twice.
-    if delivery_service.channel_ready("email", app.config) or delivery_service.channel_ready(
-        "push", app.config
-    ):
-        scheduler.add_job(
-            _in_context(delivery_service.run),
-            IntervalTrigger(seconds=int(app.config.get("DELIVERY_TICK_SECONDS", 20))),
-            id="deliveries",
-            replace_existing=True,
-        )
+    # it. Each row is claimed before it is sent, so a second scheduler sends nothing twice. Always
+    # scheduled, even with both channels off (R8 review, F9): rows queued before they were turned
+    # off then run out their tries, and an invitation's held link is erased once it can't be used.
+    scheduler.add_job(
+        _in_context(delivery_service.run),
+        IntervalTrigger(seconds=int(app.config.get("DELIVERY_TICK_SECONDS", 20))),
+        id="deliveries",
+        replace_existing=True,
+    )
     if app.extensions.get("relayer") is not None:
         # Treasury jobs (plan D36) and payouts (Phase 7): one chain action each per tick, and only
         # while the feature is on. One job, run in order, so the shared relayer is never used from

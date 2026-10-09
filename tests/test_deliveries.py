@@ -128,7 +128,9 @@ def test_raising_a_decision_emails_each_approver_once_with_one_link_and_no_title
 
     for approver in (team.brij, team.chen):
         (message,) = _emails_to(approver)
-        assert message.subject == "A decision in Treasury needs your approval"
+        # No name anyone chose in a subject (R8 review, F1, F6); in the body, only as quoted facts.
+        assert message.subject == "A decision needs your approval"
+        assert "Vault: “Treasury”" in message.text and "Raised by: “Ada Lovelace”" in message.text
         decision = f"{BASE}/vaults/{team.vault.id}/proposals/{proposal.proposal_uuid}"
         # One call to action, the raw address below it, and the preference link.
         assert _hrefs(message.html) == [decision, decision, f"{BASE}/account/notifications"]
@@ -151,8 +153,8 @@ def test_no_email_link_ever_approves_or_signs(team):
     delivery_service.run()
 
     assert {m.subject for m in mail.outbox} >= {
-        "A decision in Treasury needs your approval",
-        "Your decision in Treasury was rejected",
+        "A decision needs your approval",
+        "Your decision was rejected",
     }
     for message in mail.outbox:
         for href in _hrefs(message.html):
@@ -237,7 +239,8 @@ def test_a_typed_name_cannot_split_a_header_or_inject_markup(team):
 
     (message,) = _emails_to(team.brij)
     assert "\r" not in message.subject and "\n" not in message.subject
-    assert "Bcc: victim@evil.example" in message.subject  # kept as words, on the one line
+    assert "victim" not in message.subject and "Ops" not in message.subject  # never a name there
+    assert "Vault: “Ops Bcc: victim@evil.example" in message.text  # a quoted label, on one line
     assert "<script>" not in message.html and "&lt;script&gt;" in message.html
     assert "<b>bold</b>" not in message.html
     for value in message.headers.values():
@@ -282,7 +285,7 @@ def test_the_invitation_email_links_to_the_configured_address_whatever_host_was_
     delivery_service.run()
 
     (message,) = [m for m in mail.outbox if m.to == "sam@deliver-e.com"]
-    assert message.subject == "Ada Lovelace invited you to Q-Vault on Q-Vault"
+    assert message.subject == "You're invited to a workspace on Q-Vault"
     links = _hrefs(message.html)
     assert links and all(link.startswith(f"{BASE}/invite/") for link in links)
     assert "evil.example" not in message.html + message.text
@@ -343,7 +346,8 @@ def test_an_invitation_link_is_held_only_wrapped_and_erased_once_sent(app, team)
     assert row.status == "sent" and row.secret is None and row.secret_nonce is None
     (message,) = [m for m in mail.outbox if m.to == "sam@deliver-e.com"]
     assert f"{BASE}/invite/{token}" in message.text
-    assert "Ada Lovelace (ada@deliver-e.com) invited you" in message.text
+    assert "Workspace: “Q-Vault”" in message.text
+    assert "Invited by: “Ada Lovelace”, ada@deliver-e.com" in message.text
 
 
 def test_a_resent_invitation_sends_only_the_new_link(app, team):
@@ -545,7 +549,7 @@ def test_a_raised_decision_pushes_each_approver_phone_without_title_amount_or_ad
 
     (message,) = _pushes_to(TOKEN_B)
     assert message.title == "Needs your signature"
-    assert message.body.startswith("Treasury: a decision is waiting for you. Due ")
+    assert message.body.startswith("A decision in “Treasury” is waiting for you. Due ")
     for part in (message.title, message.body):
         assert "Acme" not in part and "ETH" not in part and "0x" not in part and "Pay" not in part
     notification = Notification.query.filter_by(
@@ -587,7 +591,7 @@ def test_outcomes_push_only_the_person_who_raised_the_decision(team):
     (message,) = _pushes_to(TOKEN_A)
     assert (message.title, message.body) == (
         "Approved",
-        "Your decision in Treasury has its approvals.",
+        "Your decision in “Treasury” has its approvals.",
     )
     assert message.channel_id == "updates" and message.priority == "default"
     assert _pushes_to(TOKEN_B) == []
@@ -631,7 +635,7 @@ def test_a_rejection_push_says_a_reason_was_given_but_not_the_reason(team):
     delivery_service.run()
 
     (message,) = [m for m in _pushes_to(TOKEN_A) if m.title == "Rejected"]
-    assert message.body == "Chen Wu rejected your decision in Treasury and gave a reason."
+    assert message.body == "Your decision in “Treasury” was rejected by “Chen Wu”, with a reason."
 
 
 def test_a_new_device_pushes_a_security_alert_that_opens_the_device(app, client, team):
@@ -696,14 +700,45 @@ def test_a_token_is_registered_for_the_calling_phone_and_its_owner_only(client, 
     assert PushToken.query.filter_by(token=TOKEN_A).one().user_id == team.ada.id
 
 
-def test_a_token_taken_over_by_another_enrolment_on_the_same_phone_moves(client, team):
-    client.put("/api/v1/me/push-token", json={"token": TOKEN_B}, headers=team.ada_phone)
-    assert PushToken.query.filter_by(token=TOKEN_B).one().user_id == team.ada.id
-    brij_row = PushToken.query.filter_by(user_id=team.brij.id).one()
-    assert brij_row.token is None and brij_row.revoked_reason == "moved"
+def test_another_accounts_live_token_cannot_be_taken(client, team):
+    """F2: someone who learns a stranger's push token cannot move it to their own phone, to stop
+    that phone's alerts or to show their own on its lock screen. Nothing changes."""
+    r = client.put("/api/v1/me/push-token", json={"token": TOKEN_B}, headers=team.ada_phone)
+    assert r.status_code == 409 and r.get_json()["code"] == "token_in_use"
+    assert PushToken.query.filter_by(token=TOKEN_B).one().user_id == team.brij.id
+    assert PushToken.query.filter_by(token=TOKEN_A).one().user_id == team.ada.id
     _raise(team)
     delivery_service.run()
-    assert _pushes_to(TOKEN_B) == []  # Brij's alerts no longer reach the phone Ada now holds
+    assert len(_pushes_to(TOKEN_B)) == 1  # Brij's phone still hears about the decision
+
+
+def test_a_token_moves_from_a_removed_enrolment_or_the_same_persons_other_one(client, team):
+    # Brij's first enrolment on this phone was removed; he enrols it again with the same token.
+    old = Device.query.filter_by(owner_id=team.brij.id).one()
+    db.session.execute(db.update(PushToken).where(PushToken.device_id == old.id).values(token=None))
+    db.session.commit()
+    body, _secret, again = _enrol_over_http(client, team.brij, name="Brij's phone again")
+    assert (
+        client.put("/api/v1/me/push-token", json={"token": TOKEN_B}, headers=again).status_code
+        == 200
+    )
+    # The same person's other enrolment hands its token over.
+    body, _secret, third = _enrol_over_http(client, team.brij, name="Brij's third")
+    assert (
+        client.put("/api/v1/me/push-token", json={"token": TOKEN_B}, headers=third).status_code
+        == 200
+    )
+    held = PushToken.query.filter_by(token=TOKEN_B).one()
+    assert held.device_id == body["device"]["id"]
+    # A removed (or expired) enrolment of someone else gives it up too.
+    device_service.revoke(db.session.get(Device, held.device_id), actor_id=team.brij.id)
+    db.session.execute(
+        db.update(PushToken).where(PushToken.device_id == held.device_id).values(token=TOKEN_B)
+    )
+    db.session.commit()
+    r = client.put("/api/v1/me/push-token", json={"token": TOKEN_B}, headers=team.ada_phone)
+    assert r.status_code == 200
+    assert PushToken.query.filter_by(token=TOKEN_B).one().user_id == team.ada.id
 
 
 def test_registering_tokens_is_rate_limited_per_phone(client, team):

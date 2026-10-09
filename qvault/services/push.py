@@ -6,8 +6,10 @@ It answers with a *ticket*: accepted (with an id) or refused (with a reason). Wh
 delivered it is a *receipt*, fetched later by ticket id. ``DeviceNotRegistered`` in either means
 the app is gone from that phone, and its token is dropped (``delivery_service``).
 
-Two transports: ``expo`` (HTTPS, over ``urllib`` like the mail and chain clients) and ``memory``
-(tests: keeps each message and answers with what the test scripted). The suite never reaches Expo.
+Three transports: ``expo`` (HTTPS, over ``urllib`` like the mail and chain clients), ``log``
+(development's default: writes the title to the log, so a copy of production data with real
+tokens never reaches a real phone from a laptop) and ``memory`` (tests: keeps each message and
+answers with what the test scripted). The suite never reaches Expo.
 
 A push carries no amount, no address and no decision title (S12, phone-ux §6.23): those are written
 by ``delivery_copy``, and what is sent here is only what it wrote.
@@ -64,7 +66,7 @@ class PushMessage:
 
 def transport_name(config) -> str:
     chosen = (config.get("PUSH_TRANSPORT") or "").strip().lower()
-    return chosen if chosen in ("expo", "memory", "off") else "off"
+    return chosen if chosen in ("expo", "log", "memory", "off") else "off"
 
 
 def ready(config) -> bool:
@@ -109,6 +111,9 @@ def send(message: PushMessage) -> str:
     name = transport_name(config)
     if name == "off":
         raise PushUnavailable("push is not set up")
+    if name == "log":
+        current_app.logger.info("push (not sent: PUSH_TRANSPORT=log): %s", message.title)
+        return "logged"
     if name == "memory":
         if memory.down:
             raise PushUnavailable("Expo unreachable: memory transport is down")
@@ -148,6 +153,8 @@ def receipts(ticket_ids: list[str]) -> dict[str, str]:
     name = transport_name(config)
     if name == "off":
         raise PushUnavailable("push is not set up")
+    if name == "log":
+        return {}  # nothing was sent, so there is nothing to hear back
     if name == "memory":
         if memory.down:
             raise PushUnavailable("Expo unreachable: memory transport is down")
