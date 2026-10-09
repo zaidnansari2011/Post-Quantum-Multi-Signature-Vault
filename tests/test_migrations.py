@@ -224,6 +224,19 @@ def test_upgrade_renders_as_postgresql_sql():
         )
         if name != "alembic_version"
     }
+    # A later revision may change a column's default (0008 did); the table is what both leave.
+    for statement in rendered:
+        altered = re.fullmatch(r"ALTER TABLE (\w+) ALTER COLUMN (\w+) SET DEFAULT (\S+)", statement)
+        if altered:
+            table, column, default = altered.groups()
+            tables[table] = frozenset(
+                (
+                    re.sub(r" DEFAULT \S+", f" DEFAULT {default}", line)
+                    if line.split()[0] == column
+                    else line
+                )
+                for line in tables[table]
+            )
     indexes = {s for s in rendered if re.match(r"CREATE (UNIQUE )?INDEX ", s)}
 
     assert tables == expected_tables

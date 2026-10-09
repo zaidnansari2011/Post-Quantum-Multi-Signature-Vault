@@ -46,6 +46,14 @@ class MembershipError(ValueError):
     """Raised for invalid membership operations."""
 
 
+def new_vault_separates(owner: User) -> bool:
+    """Plan S15: whether a vault ``owner`` creates now stops whoever raises a decision in it from
+    approving it. Its workspace's default (``sod_default`` is separation of duties); with no
+    workspace to ask, yes, the default since 2026-10-08."""
+    home = workspace_service.current_workspace(owner)
+    return True if home is None else bool(home.sod_default)
+
+
 def create_vault(
     owner: User, name: str, description: str, threshold_m: int, *, commit: bool = True
 ) -> Vault:
@@ -99,14 +107,8 @@ def create_vault(
 
     db.session.add(VaultMember(vault_id=vault.id, user_id=owner.id, member_role="owner"))
     db.session.add(VaultPolicy(vault_id=vault.id, threshold_m=threshold_m))
-    # Plan S15: a new vault takes its workspace's default (stored by R3). The workspace's
-    # ``sod_default`` is separation of duties, so it is the opposite of this rule.
-    home = workspace_service.current_workspace(owner)
     db.session.add(
-        VaultRule(
-            vault_id=vault.id,
-            requester_can_approve=not (home is not None and home.sod_default),
-        )
+        VaultRule(vault_id=vault.id, requester_can_approve=not new_vault_separates(owner))
     )
 
     ledger_service.append(

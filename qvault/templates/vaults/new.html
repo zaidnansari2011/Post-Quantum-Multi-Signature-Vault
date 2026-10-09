@@ -6,6 +6,10 @@
 
 {% block content %}
 {{ page_header('New vault') }}
+{#- Plan S15: under separation of duties a vault whose approvers are just you can pass nothing, so
+    say so before the vault exists rather than on its first decision. -#}
+{% set threshold_caption = 'How many approvals a decision in this vault needs. You are the first approver; add more members afterwards.'
+   ~ (' Whoever raises a decision here can’t approve it, so add other approvers before its first decision. Its owner can change that in the vault’s settings.' if separated else '') %}
 
 <div class="q-acct">
   <section class="q-panel" aria-label="The new vault">
@@ -15,7 +19,7 @@
         {{ wtf_field(form.name) }}
         {{ wtf_field(form.description, attrs={'rows': 2}) }}
         {{ number('threshold_m', form.threshold_m.label.text, form.threshold_m._value(), min=1, max=50, required=True,
-                  id=form.threshold_m.id, caption='How many approvals a decision in this vault needs. You are the first approver; add more members afterwards.',
+                  id=form.threshold_m.id, caption=threshold_caption,
                   error=form.threshold_m.errors) }}
         <div class="q-btnrow">
           {{ button(form.submit.label.text, 'primary', type='submit', name='submit', value=form.submit.label.text) }}

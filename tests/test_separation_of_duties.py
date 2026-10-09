@@ -22,7 +22,7 @@ from test_payment_decisions import _payment, _vault
 from test_vote_eligibility import PASSWORD, WRONG, payments_on  # noqa: F401 (a fixture)
 
 from qvault.extensions import db
-from qvault.models import ExecutionSignature, LedgerEntry, Signature, VaultRule
+from qvault.models import ExecutionSignature, LedgerEntry, Signature, VaultRule, WorkspaceMember
 from qvault.services import (
     approval_service,
     auth_service,
@@ -78,13 +78,30 @@ def test_a_new_vault_takes_its_workspaces_default(app, sod_default, allowed):
     assert eligibility.vault_allows_requester(vault) is allowed
 
 
-def test_changing_the_workspace_default_never_changes_an_existing_vault(app):
-    ada = auth_service.register_user("keep-a@e.com", "Ada", PASSWORD)
-    vault = vault_service.create_vault(ada, "Ops", "", 1)
-    workspace_service.set_vault_defaults(
-        workspace_service.current_workspace(ada), sod_default=True, actor=ada
+def test_a_new_vault_separates_them_unless_its_workspace_says_otherwise(app):
+    """Owner decision 2026-10-08: on by default, for a new workspace and for none at all."""
+    ada = auth_service.register_user("fresh-a@e.com", "Ada", PASSWORD)
+    assert workspace_service.current_workspace(ada).sod_default is True
+    assert (
+        eligibility.vault_allows_requester(vault_service.create_vault(ada, "Ops", "", 1)) is False
     )
-    assert eligibility.vault_allows_requester(vault) is True
+
+    WorkspaceMember.query.filter_by(user_id=ada.id).delete()  # in no workspace at all
+    db.session.commit()
+    assert vault_service.new_vault_separates(ada) is True
+
+
+@pytest.mark.parametrize("turned_to", [False, True])
+def test_changing_the_workspace_default_never_changes_an_existing_vault(app, turned_to):
+    ada = auth_service.register_user("keep-a@e.com", "Ada", PASSWORD)
+    workspace = workspace_service.current_workspace(ada)
+    workspace_service.set_vault_defaults(workspace, sod_default=not turned_to, actor=ada)
+    vault = vault_service.create_vault(ada, "Ops", "", 1)
+    before = eligibility.vault_allows_requester(vault)
+
+    workspace_service.set_vault_defaults(workspace, sod_default=turned_to, actor=ada)
+
+    assert eligibility.vault_allows_requester(vault) is before
 
 
 # --- the gate, on every path -------------------------------------------------------------------
@@ -192,9 +209,10 @@ def test_turning_it_back_on_never_reopens_a_decision_raised_while_it_was_off(app
 
 def test_changing_the_rule_is_recorded_in_the_log(app):
     ada, _brij, _chen, vault = _team("logged", separation=False)
+    already = LedgerEntry.query.filter_by(event_type="vault_rule_changed").count()
     assert vault_service.set_requester_can_approve(vault, False, actor_id=ada.id) is True
     assert vault_service.set_requester_can_approve(vault, False, actor_id=ada.id) is False
-    entries = LedgerEntry.query.filter_by(event_type="vault_rule_changed").all()
+    entries = LedgerEntry.query.filter_by(event_type="vault_rule_changed").all()[already:]
     assert len(entries) == 1
     assert '"from":true' in entries[0].payload_json and '"to":false' in entries[0].payload_json
 

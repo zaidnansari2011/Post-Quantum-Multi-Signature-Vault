@@ -139,10 +139,16 @@ def new_vault():
             )
         except PolicyError as exc:
             flash(str(exc), "danger")
-            return render_template("vaults/new.html", form=form)
+            return render_template(
+                "vaults/new.html",
+                form=form,
+                separated=vault_service.new_vault_separates(current_user),
+            )
         flash("Vault created — its ML-KEM keypair was generated.", "success")
         return redirect(url_for("vaults.vault_detail", vid=vault.id))
-    return render_template("vaults/new.html", form=form)
+    return render_template(
+        "vaults/new.html", form=form, separated=vault_service.new_vault_separates(current_user)
+    )
 
 
 class TreasuryForm(FlaskForm):
