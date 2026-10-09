@@ -10,6 +10,9 @@ import {
   devicesResponse,
   enrolResponse,
   meResponse,
+  notificationResponse,
+  notificationSettingsResponse,
+  pushTokenResponse,
   peopleResponse,
   proposalDetailResponse,
   proposalsResponse,
@@ -257,5 +260,43 @@ export function setSigningChoice(args: { token: string; custody: 'device' | 'pas
     path: '/api/v1/me/signing-choice',
     token: args.token,
     body: { custody: args.custody },
+  });
+}
+
+// -- Phone push (plan R8) ---------------------------------------------------------------------------
+
+/** This phone's Expo push token. The server takes it for the calling device only. */
+export function registerPushToken(token: string, pushToken: string) {
+  return request(pushTokenResponse, {
+    method: 'PUT',
+    path: '/api/v1/me/push-token',
+    token,
+    body: { token: pushToken },
+  });
+}
+
+export function clearPushToken(token: string) {
+  return request(pushTokenResponse, { method: 'DELETE', path: '/api/v1/me/push-token', token });
+}
+
+export function fetchNotificationSettings(token: string, signal?: AbortSignal) {
+  return request(notificationSettingsResponse, { path: '/api/v1/me/notification-settings', token, signal });
+}
+
+export function setPushGroup(token: string, group: string, enabled: boolean) {
+  return request(notificationSettingsResponse, {
+    method: 'PUT',
+    path: '/api/v1/me/notification-settings',
+    token,
+    body: { group, enabled },
+  });
+}
+
+/** A tapped push's notification, marked read (fire and forget, phone-ux §2.4). */
+export function markNotificationRead(token: string, notificationId: number) {
+  return request(notificationResponse, {
+    method: 'POST',
+    path: `/api/v1/notifications/${notificationId}/read`,
+    token,
   });
 }
