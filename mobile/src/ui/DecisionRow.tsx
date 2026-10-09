@@ -182,18 +182,19 @@ export function DecisionRow({
         {right}
       </View>
       {note2 ? (
-        <Text role="caption" tone={note2Tone} numberOfLines={2}>
+        <Text role="caption" tone={note2Tone} numberOfLines={stacked ? 4 : 2}>
           {note2}
         </Text>
       ) : null}
     </Touchable>
   );
   if (!trailing) return row;
-  // The row and its second action are siblings, so a screen reader reaches both (§6.4).
+  // The row and its second action are siblings, so a screen reader reaches both (§6.4). At large
+  // text the action moves under the row, so the row keeps its width.
   return (
-    <View style={s.withTrailing}>
-      <View style={s.flex}>{row}</View>
-      <View style={s.trailing}>{trailing}</View>
+    <View style={[s.withTrailing, stacked && s.withTrailingStacked]}>
+      <View style={stacked ? null : s.flex}>{row}</View>
+      <View style={[s.trailing, stacked && s.trailingStacked]}>{trailing}</View>
     </View>
   );
 }
@@ -231,5 +232,7 @@ const useStyles = makeStyles((t) => ({
   withTrailing: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: t.color.surface },
   flex: { flex: 1 },
   trailing: { justifyContent: 'center', paddingRight: t.space[8] },
+  withTrailingStacked: { flexDirection: 'column' },
+  trailingStacked: { paddingLeft: t.layout.gutter - t.space[8], paddingBottom: t.space[8], alignItems: 'flex-start' },
   due: { flexDirection: 'row', alignItems: 'center', gap: t.space[4] },
 }));
