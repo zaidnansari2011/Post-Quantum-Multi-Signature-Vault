@@ -168,7 +168,7 @@ export type ReportInput = {
   at: string;
 };
 
-/** "Copy a report": what an admin needs, plain text, nothing secret (§6.6). */
+/** "Share a report": what an admin needs, plain text, nothing secret (§6.6). */
 export function problemReport(r: ReportInput): string {
   return [
     'Q-Vault decision report',

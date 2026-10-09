@@ -16,6 +16,7 @@ import type { ProposalDetail } from './api/schemas.ts';
 import { verifyTypedDecision, type DecisionType, type FieldRow } from './logic/decisionTypes.ts';
 import type { MismatchReason } from './logic/personalStatus.ts';
 import { SignedContentMemory, signedContentKey } from './logic/signedContent.ts';
+import { RaisedMemory } from './logic/raised.ts';
 
 export type Checked =
   | {
@@ -52,6 +53,9 @@ export function checkDecision(detail: ProposalDetail): Checked {
  * cleared when the phone is set up again or removed.
  */
 export const signedContent = new SignedContentMemory();
+
+/** What this phone raised in this run, by decision (I-5 on every open, not just the first). */
+export const raisedThisRun = new RaisedMemory();
 
 /**
  * `checkDecision`, plus I-16: a decision whose signed content differs from what an earlier fetch in

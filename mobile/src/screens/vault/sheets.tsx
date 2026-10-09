@@ -21,7 +21,7 @@ import {
 } from '../../ui/index.tsx';
 import { makeStyles } from '../../theme/index.ts';
 import type { TreasuryResponse, VaultMember } from '../../api/schemas.ts';
-import { changeSummary, treasuryChangeStatus } from '../../logic/treasuryChange.ts';
+import { changeSummary, checkTreasuryChange, treasuryChangeStatus } from '../../logic/treasuryChange.ts';
 import { ruleSentence } from '../../logic/workspace.ts';
 
 const ROLE_WORDS: Record<string, string> = { owner: 'Owner', signer: 'Approver', viewer: 'Viewer' };
@@ -54,7 +54,7 @@ export function MembersSheet({
           const role = ROLE_WORDS[m.role] ?? 'Member';
           const noKey = m.role !== 'viewer' && m.has_key === false;
           const caption = [
-            noKey ? "No key yet, can't approve yet" : null,
+            noKey ? "No key yet, so can't approve" : null,
             shown === m.user_id ? m.email : null,
           ]
             .filter(Boolean)
@@ -108,17 +108,28 @@ export function TreasurySheet({
   const seat = treasury.signers.find((x) => x.user_id === viewerId);
   const sameRule = vaultRule.m === treasury.threshold_m && vaultRule.n === treasury.signer_count;
   const rule = ruleSentence(treasury.threshold_m, treasury.signer_count).replace(/\.$/, '');
+  // The real check (review A6): a change that doesn't match what would be signed is never shown
+  // here as needing a signature.
+  const integrity = change ? checkTreasuryChange(change, treasury.address) : { ok: true as const };
   const changeStatus = change
     ? treasuryChangeStatus({
         change,
         fingerprint,
-        integrity: { ok: true },
+        integrity,
         linked: true,
         vaultName,
         now: Date.now(),
       })
     : null;
-  const changeOpen = changeStatus !== null && [2, 3, 4, 5, 6, 7, 8].includes(changeStatus.row) && change!.state !== 'done';
+  const changeOpen =
+    changeStatus !== null && (changeStatus.row === 1 || [2, 3, 4, 5, 6, 7].includes(changeStatus.row) || (changeStatus.row === 8 && change!.state !== 'done'));
+  const changeCaption = !changeStatus
+    ? null
+    : changeStatus.row === 1
+      ? "Doesn't match what an approval would sign. Open it to see why."
+      : changeStatus.action.kind === 'web'
+        ? `Needs your approval on the web. ${changeSummary(change!)}`
+        : `${changeStatus.badge?.word ?? ''}. ${changeSummary(change!)}`;
   const etherscan = treasury.chain_id === 11155111 ? `https://sepolia.etherscan.io/address/${treasury.address}` : null;
 
   return (
@@ -129,7 +140,8 @@ export function TreasurySheet({
             <ListRow
               icon="key"
               title="Treasury change"
-              caption={`${changeStatus!.badge?.word ?? ''}. ${changeSummary(change, treasury.signer_count)}`}
+              caption={changeCaption}
+              captionTone={changeStatus?.row === 1 ? 'critical' : 'muted'}
               captionLines={3}
               onPress={() => {
                 onClose();
@@ -140,20 +152,21 @@ export function TreasurySheet({
           </List>
         ) : null}
 
-        {status?.balance ? (
-          <View style={s.lead} accessible accessibilityLabel={`Balance, ${status.balance.replace(/ETH$/, 'ether')}`}>
-            <Text role="figure" tabular>
-              {status.balance}
-            </Text>
-            <Text role="caption" tone="muted">
-              {`In the treasury of ${vaultName}, on Sepolia`}
-            </Text>
-          </View>
-        ) : (
-          <Text role="body" tone="muted">
-            {`The treasury of ${vaultName} is on Sepolia. Sepolia didn't answer, so its balance isn't known right now.`}
+        {/* The balance leads (§6.15 item 1); unknown, it says so in one line. */}
+        <View
+          style={s.lead}
+          accessible
+          accessibilityLabel={status?.balance ? `Balance, ${status.balance.replace(/ETH$/, 'ether')}` : 'Balance unavailable'}
+        >
+          <Text role={status?.balance ? 'figure' : 'titleSm'} tabular>
+            {status?.balance ?? 'Balance unavailable'}
           </Text>
-        )}
+          <Text role="caption" tone="muted">
+            {status?.balance
+              ? `In the treasury of ${vaultName}, on Sepolia`
+              : `Sepolia didn't answer. The treasury of ${vaultName} is on Sepolia.`}
+          </Text>
+        </View>
 
         <View>
           <Identifier label="Address" value={treasury.address} />

@@ -68,49 +68,53 @@ export function checkTreasuryChange(change: ChangeFacts, treasuryAddress: string
 const possessive = (name: string) => `${name}'s`;
 
 /**
- * "Adds Brij's new key, removes Brij's old key. Then any 2 of 3 approve." Counts come from the
- * signed lists; names from the server's description of them. `signerCount` is the treasury's
- * count of signers now, so the count after the change can be said; without it, only the threshold.
+ * What an approval signs, in words, from the signed inputs alone: how many keys join and leave, and
+ * the approvals the treasury needs afterwards. "Adds 1 key and removes 1. Afterwards the treasury
+ * needs 2 approvals." Nothing here is the server's description.
  */
-export function changeSummary(change: Pick<ChangeFacts, 'signing_inputs' | 'people' | 'threshold'>, signerCount?: number | null): string {
-  const inputs = change.signing_inputs;
-  const threshold = inputs?.threshold ?? change.threshold;
-  const adds = inputs?.add.length ?? change.people?.add.length ?? 0;
-  const removes = inputs?.remove.length ?? change.people?.remove.length ?? 0;
-  const addOwners = change.people?.add ?? [];
-  const removeOwners = change.people?.remove ?? [];
-  const removedIds = new Set(removeOwners.map((o) => o.user_id).filter((id) => id !== null));
-  const addedIds = new Set(addOwners.map((o) => o.user_id).filter((id) => id !== null));
+export function signedChangeLine(inputs: ReconfigureInputs | null): string {
+  if (inputs === null) return 'The new keys are still being registered, so there is nothing to sign yet.';
+  const keys = (n: number) => `${n} ${n === 1 ? 'key' : 'keys'}`;
+  const parts: string[] = [];
+  if (inputs.add.length) parts.push(`adds ${keys(inputs.add.length)}`);
+  if (inputs.remove.length) parts.push(`removes ${inputs.add.length ? inputs.remove.length : keys(inputs.remove.length)}`);
+  const what = parts.length ? `${capitalise(parts.join(' and '))}.` : 'Changes no keys.';
+  const t = inputs.threshold;
+  return `${what} Afterwards the treasury needs ${t === 1 ? 'one approval' : `${t} approvals`}.`;
+}
 
-  const added = Array.from({ length: adds }, (_, i) => {
-    const o = addOwners[i];
-    if (!o?.name) return 'a new key';
-    return o.user_id !== null && removedIds.has(o.user_id) ? `${possessive(o.name)} new key` : `a key for ${o.name}`;
-  });
-  const removed = Array.from({ length: removes }, (_, i) => {
-    const o = removeOwners[i];
-    if (!o?.name) return 'a key';
-    return o.user_id !== null && addedIds.has(o.user_id) ? `${possessive(o.name)} old key` : `${possessive(o.name)} key`;
-  });
-
+/**
+ * Whose keys they are, as Q-Vault describes them (unsigned: the phone cannot yet tie a signed
+ * identity to a person). "Adds Brij's new key, removes Brij's old key." Null without a description.
+ */
+export function describedChange(people: ChangeFacts['people']): string | null {
+  if (!people || (people.add.length === 0 && people.remove.length === 0)) return null;
+  const removedIds = new Set(people.remove.map((o) => o.user_id).filter((id) => id !== null));
+  const addedIds = new Set(people.add.map((o) => o.user_id).filter((id) => id !== null));
+  const added = people.add.map((o) =>
+    !o.name ? 'a new key' : o.user_id !== null && removedIds.has(o.user_id) ? `${possessive(o.name)} new key` : `a key for ${o.name}`,
+  );
+  const removed = people.remove.map((o) =>
+    !o.name ? 'a key' : o.user_id !== null && addedIds.has(o.user_id) ? `${possessive(o.name)} old key` : `${possessive(o.name)} key`,
+  );
   const parts: string[] = [];
   if (added.length) parts.push(`adds ${andList(added)}`);
   if (removed.length) parts.push(`removes ${andList(removed)}`);
-  const what = parts.length ? `${capitalise(parts.join(', '))}.` : 'Changes the approvals the treasury needs.';
-  const after = typeof signerCount === 'number' ? signerCount + adds - removes : null;
-  const rule =
-    after !== null && after > 0
-      ? threshold >= after
-        ? `Then all ${after} approve.`
-        : `Then any ${threshold} of ${after} approve.`
-      : `Then ${threshold} ${threshold === 1 ? 'approval is' : 'approvals are'} needed.`;
-  return `${what} ${rule}`;
+  return `${capitalise(parts.join(', '))}.`;
+}
+
+/**
+ * A list row's line 2: Q-Vault's description when it sent one, otherwise the signed counts. Rows
+ * are unsigned display (like a decision's title); the change's own page says which is which.
+ */
+export function changeSummary(change: Pick<ChangeFacts, 'signing_inputs' | 'people'>): string {
+  return describedChange(change.people) ?? signedChangeLine(change.signing_inputs);
 }
 
 export type ChangeAction =
   /** "Approve change": the treasury holds this phone's key for this person. */
   | { kind: 'approve' }
-  /** No signing at all: "Copy a report" and "Open on the web" (row 1). */
+  /** No signing at all: "Share a report" and "Open on the web" (row 1). */
   | { kind: 'report' }
   /** Row 3: a line in place of the button, and the one-time switch when it is the password key. */
   | { kind: 'web'; fix: boolean }
@@ -304,14 +308,31 @@ export function pendingChanges(entries: ChangeEntry[], fingerprint: string, now:
   return { here: here.sort(soonest), web: web.sort(soonest) };
 }
 
-/** "Requested 2 Oct": the title block's caption (unsigned display). */
-export function requestedLine(change: Pick<ChangeFacts, 'requested_at'>, now: number): string {
+/**
+ * "Requested by Ada Okafor on 9 Oct": the title block's caption (unsigned display). The person is
+ * Q-Vault's record of who asked; "you" when it was this person.
+ */
+export function requestedLine(
+  change: Pick<ChangeFacts, 'requested_at'> & { requested_by?: { id: number; name: string | null } | null },
+  viewerId: number,
+  now: number,
+): string {
   const day = dayMonth(change.requested_at, now);
+  const by = change.requested_by;
+  const who = by ? (by.id === viewerId ? 'you' : by.name) : null;
+  if (who) return day ? `Requested by ${who} on ${day}` : `Requested by ${who}`;
   return day ? `Requested ${day}` : 'Requested';
 }
 
-/** The consequence in the approve sheet and the quorum sentence: what the change does once met. */
+/** The change's own quorum, from the frozen copy: "Once 2 of you approve this change, it takes effect." */
 export function changeConsequence(change: Pick<ChangeFacts, 'needed' | 'approvals'>): string {
   const n = change.needed;
-  return `Once ${n === 1 ? 'one approves' : `${countWord(n)} approve`}, the treasury only accepts these keys.`;
+  return n === 1 ? 'Once one of you approves this change, it takes effect.' : `Once ${n} of you approve this change, it takes effect.`;
 }
+
+/** What failed, in words (the evidence sheet and its row), by the check that failed. */
+export const CHANGE_FAILURE: Record<'people' | 'treasury' | 'digest', string> = {
+  people: "Q-Vault's description lists a different number of keys from the ones an approval would sign.",
+  treasury: "It names a different treasury from this vault's.",
+  digest: "The digest this phone worked out from the keys and rule doesn't match the one Q-Vault sent.",
+};

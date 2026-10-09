@@ -148,7 +148,7 @@ RAISED = [
     ),
 ]
 
-PAY = {"to": TO.lower(), "valueWei": "2500000000000000", "treasury": TREASURY}
+PAY = {"to": TO.lower(), "valueWei": "2500000000000000", "treasury": TREASURY, "chainId": 11155111}
 PAYMENTS = [
     # checkRaisedPayment, field by field (the probe's paymentText is the phone's own).
     ("payment_same", PAY, ACTION, None),
@@ -165,6 +165,13 @@ PAYMENTS = [
     ),
     ("payment_wording_mismatch", PAY, ACTION, "Pay 1 ETH to someone nice."),
     ("payment_no_action", PAY, None, None),
+    # Review A4: the same payment on another network is another payment.
+    (
+        "payment_other_chain",
+        PAY,
+        {**ACTION, "chain_id": 1},
+        payment_text({**ACTION, "chain_id": 1}),
+    ),
 ]
 
 
@@ -545,6 +552,16 @@ WORKSPACE = {
                 "after": "No",
             }
         ],
+        "old_threshold": [
+            {
+                "event": "vault_threshold_changed",
+                "who": "Ada",
+                "when": _iso(timedelta(days=-40)),
+                "label": "Approvals needed",
+                "before": "1",
+                "after": "2",
+            }
+        ],
         "members_only": [
             {
                 "event": "member_removed",
@@ -693,6 +710,7 @@ def test_the_payment_wording_used_here_is_the_phones_own(results):
         ("payment_treasury_not_seen", {"ok": True}),
         ("payment_wording_mismatch", {"ok": False, "field": "action_text"}),
         ("payment_no_action", {"ok": False, "field": "action"}),
+        ("payment_other_chain", {"ok": False, "field": "chain_id"}),
     ],
 )
 def test_i5_the_phone_checks_what_it_raised(results, name, expected):
@@ -882,18 +900,42 @@ def test_a_treasury_change_is_shown_as_genuine_only_when_its_digest_is_derived_h
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
-        ("rotate", "Adds Brij's new key, removes Brij's old key. Then any 2 of 3 approve."),
-        (
-            "rotate_no_count",
-            "Adds Brij's new key, removes Brij's old key. Then 2 approvals are needed.",
-        ),
-        ("add_one", "Adds a key for Dara. Then any 2 of 4 approve."),
-        ("remove_one_all_needed", "Removes Chen's key. Then all 2 approve."),
-        ("no_names", "Adds a new key, removes a key. Then any 2 of 3 approve."),
+        ("rotate", "Adds Brij's new key, removes Brij's old key."),
+        ("rotate_no_count", "Adds Brij's new key, removes Brij's old key."),
+        ("add_one", "Adds a key for Dara."),
+        ("remove_one_all_needed", "Removes Chen's key."),
+        # No description from Q-Vault: the signed counts and threshold only.
+        ("no_names", "Adds 1 key and removes 1. Afterwards the treasury needs 2 approvals."),
     ],
 )
 def test_a_change_is_summed_up_in_peoples_words(results, name, expected):
     assert results["changes"]["summary"][name] == expected
+
+
+def test_what_an_approval_signs_comes_from_the_signed_inputs_alone(results):
+    signed = results["changes"]["signed"]
+    assert (
+        signed["rotate"] == "Adds 1 key and removes 1. Afterwards the treasury needs 2 approvals."
+    )
+    assert signed["add_one"] == "Adds 1 key. Afterwards the treasury needs 2 approvals."
+    # Review A5: never "Then all 1 approve" from an unsigned count.
+    assert (
+        signed["remove_one_all_needed"]
+        == "Removes 1 key. Afterwards the treasury needs 2 approvals."
+    )
+    assert all("all 1" not in line for line in signed.values())
+
+
+def test_the_change_names_who_requested_it_and_one_quorum(results):
+    assert results["changes"]["requested"] == [
+        "Requested by Brij on 9 Oct",
+        "Requested by you on 9 Oct",
+        "Requested 9 Oct",
+    ]
+    assert results["changes"]["consequence"] == [
+        "Once 2 of you approve this change, it takes effect.",
+        "Once one of you approves this change, it takes effect.",
+    ]
 
 
 def test_only_changes_this_phone_can_sign_count_in_the_badge(results):
@@ -1004,31 +1046,42 @@ def test_rule_role_and_caption_lines(results):
         "Any 2 of 4 approve.",
         "Any one of 3 approves.",
         "All 3 approve.",
-        "Its one approver approves.",
+        "One approver.",
         "2 approvers.",
     ]
     assert w["roles"] == [
-        "You own this vault and approve in it.",
+        "You own this vault.",
         "You're an approver.",
         "You can view.",
         None,
         None,
     ]
     assert w["captions"] == [
-        "Any 2 of 4 approve. You're an approver.",
+        # Only the exception is said (review B4).
+        "Any 2 of 4 approve.",
         "Any 2 of 4 approve. You can view.",
-        "Its one approver approves. You're an approver.",
+        "One approver.",
     ]
 
 
 def test_the_rule_line_names_the_latest_change_to_the_rule_not_to_members(results):
     changes = results["workspace"]["changes"]
-    assert changes["threshold"] == (
-        "Ada changed the approvals needed from 2 to 3 on 2 Oct. "
-        "Decisions raised before keep their rule."
-    )
-    assert changes["sod_on"] == "Ada stopped whoever raises a decision from approving it on 7 Oct."
+    # Short, and only the approvals needed (review B3).
+    assert changes["threshold"] == "Rule changed from 2 to 3 approvals on 2 Oct."
+    # The separation-of-duties line already says how that stands now; it is not repeated.
+    assert changes["sod_on"] is None
     assert changes["members_only"] is None
+    # Older than 30 days: history, not the first screen.
+    assert changes["old_threshold"] is None
+
+
+def test_your_part_and_separation_of_duties_are_one_line(results):
+    assert results["workspace"]["parts"] == [
+        "You own this vault. Whoever raises a decision can't approve it.",
+        "You're an approver.",
+        "You can view. Whoever raises a decision can't approve it.",
+        None,
+    ]
 
 
 def test_the_who_approves_preview_says_separation_of_duties_and_when_nothing_can_pass(results):
@@ -1141,3 +1194,14 @@ def test_app_lock_locks_after_a_minute_away_and_never_for_the_os_prompt(results)
         "firstLeaveCounts": True,
         "noLeave": False,
     }
+
+
+def test_the_headline_names_decisions_and_treasury_changes_apart(results):
+    # Review B4: "items" said nothing; a treasury change is never called a decision.
+    assert results["headlines"] == [
+        "Four decisions and a treasury change need your signature",
+        "One decision and a treasury change need your signature",
+        "Two decisions and three treasury changes need your signature",
+        "One treasury change needs your signature",
+        "Two treasury changes need your signature",
+    ]

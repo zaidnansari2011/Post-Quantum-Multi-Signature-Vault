@@ -386,6 +386,8 @@ export const reconfigurationView = z.object({
   state: z.string(),
   reason: z.string().nullable(),
   requested_at: z.string(),
+  // P3 review B2, additive: who asked for it (unsigned display).
+  requested_by: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional().catch(undefined),
   valid_until: z.string(),
   threshold: z.number().int(),
   approvals: z.number().int(),

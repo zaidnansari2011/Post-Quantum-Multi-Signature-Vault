@@ -62,17 +62,17 @@ export function workspaceLine(workspace: WorkspaceFacts): string | null {
 /** "Any 2 of 4 approve." The vault's rule as it stands (unsigned display). */
 export function ruleSentence(m: number | null, n: number): string {
   if (m === null) return n === 1 ? 'One approver.' : `${n} approvers.`;
-  if (n <= 1) return 'Its one approver approves.';
+  if (n <= 1) return 'One approver.';
   if (m >= n) return `All ${n} approve.`;
   if (m === 1) return `Any one of ${n} approves.`;
   return `Any ${m} of ${n} approve.`;
 }
 
-/** "You're an approver." / "You can view." Your part in a vault. */
+/** "You own this vault." / "You're an approver." / "You can view." Your part in a vault. */
 export function roleLine(role: string | null | undefined): string | null {
   switch (role) {
     case 'owner':
-      return "You own this vault and approve in it.";
+      return 'You own this vault.';
     case 'signer':
       return "You're an approver.";
     case 'viewer':
@@ -82,30 +82,42 @@ export function roleLine(role: string | null | undefined): string | null {
   }
 }
 
-/** A vault list row's caption: "Any 2 of 4 approve. You're an approver." */
+/**
+ * The vault page's one line under the rule (review B3): your part, and whether whoever raises a
+ * decision can approve it. "You own this vault. Whoever raises a decision can't approve it."
+ */
+export function partLine(role: string | null | undefined, separation: boolean | undefined): string | null {
+  const parts = [roleLine(role), separation ? "Whoever raises a decision can't approve it." : null];
+  const line = parts.filter(Boolean).join(' ');
+  return line || null;
+}
+
+/**
+ * A vault list row's caption: the rule, and your part only when it is the exception ("You can
+ * view."): six rows each saying "You're an approver." say nothing (review B4).
+ */
 export function vaultCaption(m: number | null, signers: number, role: string | null | undefined): string {
-  const you = role === 'viewer' ? 'You can view.' : role === 'owner' || role === 'signer' ? "You're an approver." : null;
-  return [ruleSentence(m, signers), you].filter(Boolean).join(' ');
+  return [ruleSentence(m, signers), role === 'viewer' ? 'You can view.' : null].filter(Boolean).join(' ');
 }
 
 export type RuleChangeFacts = { event: string; who: string; when: string | null; label: string; before: string; after: string };
 
+/** How long a rule change stays on the vault page's first screen; after that it is history. */
+export const RULE_CHANGE_SHOWN_DAYS = 30;
+
 /**
- * The latest change to the vault's own rule, as one line (§6.21 "Rule changes"): "Ada changed the
- * approvals needed from 2 to 3 on 2 Oct. Decisions raised before keep their rule." Membership
- * changes are not the rule line's; they are in the members sheet and on the web.
+ * The latest change to the vault's approvals, short (§6.14): "Rule changed from 1 to 2 approvals on
+ * 2 Oct." Only while recent (30 days). A change to whether the person who raises a decision can
+ * approve it is not repeated: the line above already says how that stands now. Membership changes
+ * are in the members sheet and on the web.
  */
 export function ruleChangeLine(changes: RuleChangeFacts[] | undefined, now: number): string | null {
-  const latest = (changes ?? []).find((c) => c.event === 'vault_threshold_changed' || c.event === 'vault_rule_changed');
+  const latest = (changes ?? []).find((c) => c.event === 'vault_threshold_changed');
   if (!latest) return null;
+  const at = latest.when ? Date.parse(latest.when) : Number.NaN;
+  if (!Number.isNaN(at) && now - at > RULE_CHANGE_SHOWN_DAYS * 24 * 60 * 60 * 1000) return null;
   const on = dayMonth(latest.when, now);
-  const when = on ? ` on ${on}` : '';
-  if (latest.event === 'vault_threshold_changed') {
-    return `${latest.who} changed the approvals needed from ${latest.before} to ${latest.after}${when}. Decisions raised before keep their rule.`;
-  }
-  return latest.after === 'Yes'
-    ? `${latest.who} let whoever raises a decision approve it too${when}.`
-    : `${latest.who} stopped whoever raises a decision from approving it${when}.`;
+  return `Rule changed from ${latest.before} to ${latest.after} approvals${on ? ` on ${on}` : ''}.`;
 }
 
 export type MemberFacts = { user_id: number; name: string | null; role: string; has_key?: boolean; is_me?: boolean };

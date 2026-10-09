@@ -2,7 +2,7 @@
 // when, the optional app lock (§6.1), the key's details one tap away, and, at the end, the one
 // destructive action, "Remove this phone" (§6.19, D14).
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
@@ -25,6 +25,7 @@ import {
 import { makeStyles } from '../../theme/index.ts';
 import { useEnrolledSession } from '../../session.tsx';
 import { useAppLock } from '../../appLock.tsx';
+import * as keystore from '../../keystore.ts';
 import { devicesQuery } from '../../queries.ts';
 import { useSigningMethod } from '../../signingMethod.ts';
 import { dayMonth } from '../../logic/words.ts';
@@ -46,6 +47,11 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
   const [removing, setRemoving] = useState(false);
   const [lockBusy, setLockBusy] = useState(false);
   const [lockProblem, setLockProblem] = useState<string | null>(null);
+  // App lock asks for the phone's own lock: without one it can't ask, so the switch says so.
+  const [noScreenLock, setNoScreenLock] = useState(false);
+  useEffect(() => {
+    void keystore.detectProtection().then((p) => setNoScreenLock(p === 'none')).catch(() => {});
+  }, []);
 
   const now = Date.now();
   const current = devices.data?.devices.find((d) => d.is_current);
@@ -77,7 +83,10 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
               title="Signing confirmed by"
               value={method ? method.name.charAt(0).toUpperCase() + method.name.slice(1) : 'Checking…'}
             />
-            {ends ? <ListRow title="Signing ends" value={ends} /> : null}
+            {ends ? (
+              // The consequence, not the concept (review B4): the device token's expiry.
+              <ListRow title="Approves here until" value={ends} caption="After that, sign in again on this phone." />
+            ) : null}
           </List>
 
           <View style={s.group}>
@@ -95,10 +104,20 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
                   value={lock.enabled}
                   onValueChange={(v) => void toggleLock(v)}
                   label={`Require ${name} to open Q-Vault`}
-                  disabled={lockBusy}
+                  disabled={lockBusy || (noScreenLock && !lock.enabled)}
                 />
               </View>
             </List>
+            {noScreenLock ? (
+              <InlineMessage
+                tone="neutral"
+                text={
+                  lock.enabled
+                    ? "App lock can't ask while this phone has no screen lock, so Q-Vault opens without it. Set a screen lock in Settings."
+                    : 'App lock needs a screen lock on this phone. Set one in Settings to turn it on.'
+                }
+              />
+            ) : null}
             {lockProblem ? <InlineMessage tone="warning" text={lockProblem} /> : null}
           </View>
 

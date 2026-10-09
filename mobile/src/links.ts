@@ -83,7 +83,9 @@ function situation(): Situation {
   return {
     enrolled: enrolled && route !== undefined,
     locked,
-    top: route ? { name: route.name, id: id ?? null } : null,
+    top: route
+      ? { name: route.name, id: id ?? null, vaultId: (params.vaultId as number | undefined) ?? null }
+      : null,
     sheet: signing.sheet,
     acknowledging: signing.acknowledging,
     formOpen: route?.name === 'NewDecision' || route?.name === 'NewVault',

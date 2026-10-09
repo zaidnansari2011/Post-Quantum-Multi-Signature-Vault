@@ -97,7 +97,7 @@ export type SessionVote = {
 export type Actions =
   /** Row 2: Reject and Approve, side by side. */
   | { kind: 'sign' }
-  /** Row 1: no signing at all; "Copy a report" and "Open on the web". */
+  /** Row 1: no signing at all; "Share a report" and "Open on the web". */
   | { kind: 'report' }
   /** Row 7: a line in place of Approve, Reject kept; `fix` offers the one-time switch. */
   | { kind: 'web'; line: string; fix: boolean }

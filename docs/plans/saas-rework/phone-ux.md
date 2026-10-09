@@ -1480,7 +1480,7 @@ from A3 (unsigned display); "you" replaces the viewer everywhere.
 
 | # | Condition | Badge | Personal line | Action bar |
 | --- | --- | --- | --- | --- |
-| 1 | Integrity check failed, or the signed content changed between fetches (I-16) | — (critical panel instead) | — | **No signing at all:** "Copy a report" and "Open on the web" in place of the buttons (see Tampered below; departure D7) |
+| 1 | Integrity check failed, or the signed content changed between fetches (I-16) | — (critical panel instead) | — | **No signing at all:** "Share a report" and "Open on the web" in place of the buttons (see Tampered below; departure D7) |
 | 2 | Open; you can sign; not voted | Needs your signature | (none; the quorum sentence covers it) | Reject, Approve |
 | 2a | As row 2, a payment whose signed `valid_until` has passed | Needs your signature | "The time the treasury allows for this payment ran out on 7 Oct, so approving it won't pay it." The status line's right reads "Treasury limit passed 7 Oct" (warning, alert icon); the quorum sentence says "approves this", never "pays this"; the reject sheet drops "if {n} more approve, it passes"; the approve sheet and the acknowledgement say it won't be paid | Reject, Approve |
 | 3 | Open; you raised it; separation of duties on (S15) | Waiting on N | "You raised this, so you can't approve it." | "Remind" (R4) and the overflow Withdraw. Until R4, no bar (the line is not repeated there) |
@@ -1531,7 +1531,7 @@ contradictory (`app_28`).
     | `other_decision` (I-16) | "Q-Vault sent a different decision from the one you opened." (the answer's uuid, or the uuid signed into it, is not the route's) |
 
   - **Then:** "Nothing has been signed, and this phone won't sign it."
-  - **Actions:** "Copy a report" (Share: decision ID, the reason, the derived and stated hashes, the
+  - **Actions:** "Share a report" (Share: decision ID, the reason, the derived and stated hashes, the
     app version and the time) and "Contact your admin" (a `mailto:` to the workspace owner when R3
     gives one; otherwise hidden).
 - **The signed text is labelled, not hidden:** a `caption` above it in `status.critical.fg`, chosen by
@@ -1547,7 +1547,7 @@ contradictory (`app_28`).
 - **The quorum and due time are hidden.** The badge is not shown.
 - **The evidence sheet's Hashes tab** shows only the differing values, marked, with the derived value
   first.
-- **The action bar holds no signing at all** (departure D7): "Copy a report" (secondary) and "Open on
+- **The action bar holds no signing at all** (departure D7): "Share a report" (secondary) and "Open on
   the web" (quiet). Neither Approve nor Reject is offered.
   - **Why not Reject, as the web does:** `voteOnProposal` (`flows.ts`) calls
     `verifyProposalIntegrity` first and throws `PayloadMismatchError` for approve **and** reject, and
@@ -1865,8 +1865,8 @@ the open decisions is one row.
 4. **Rows:**
    - **"Members"**, with a trailing avatar stack and "4". It opens the members sheet: each person's
      name, role ("Approver", "Owner", "Viewer", neutral text, not chips), and "Last signed 2 Oct".
-     Email is shown on tap of a person. When a member has no key yet (R3/S11): "No key yet, can't
-     approve yet", which explains why a quorum can't be met. The footer reads "Change members on the
+     Email is shown on tap of a person. When a member has no key yet (R3/S11): "No key yet, so can't
+     approve", which explains why a quorum can't be met. The footer reads "Change members on the
      web."
    - **"Treasury"** (when one exists), with the trailing "0.0009 ETH on Sepolia". It opens the
      treasury sheet (§6.15).
@@ -1930,7 +1930,7 @@ raiser, no signed text and no reject path on the server.
 - **"Checked on this phone"** row (the identity and digest checks of `treasuryChangeApproval`).
 - **Action bar:** one primary button, "Approve change". There is **no Reject**: the server has no
   decline for a reconfiguration (it ends as done, failed, expired or voided). If it looks wrong, the
-  overflow holds "Copy a report" and "Open on the web", and the evidence sheet says "Don't approve a
+  overflow holds "Share a report" and "Open on the web", and the evidence sheet says "Don't approve a
   change you don't recognise; ask the person who requested it." Whether a decline should exist is an
   owner question (§12, Q8).
 - **"Approve change"** opens the approve sheet (§6.8) with the summary restated, the consequence
@@ -1944,7 +1944,7 @@ raiser, no signed text and no reject path on the server.
 
 | # | Condition | Badge | Personal line | Action bar |
 | --- | --- | --- | --- | --- |
-| 1 | Integrity check failed (identities or digest don't match) | — (critical panel) | "Don't approve this change. The keys shown aren't the ones that would be signed." | "Copy a report", "Open on the web"; no signing |
+| 1 | Integrity check failed (identities or digest don't match) | — (critical panel) | "Don't approve this change. The keys shown aren't the ones that would be signed." | "Share a report", "Open on the web"; no signing |
 | 2 | Collecting approvals; you hold a seat with this phone's key; not approved | Needs your signature | — | "Approve change" |
 | 3 | Collecting; your seat is your password key | Needs your signature | "This treasury holds your password key, so approve this change on the web." | Line in place of the button, plus "Approve treasury payments on this phone" (§6.18) |
 | 4 | Collecting; you already approved | Waiting on N | "You approved {time}. Waiting on {names}." | None |
@@ -2604,7 +2604,7 @@ Where P3 departs from the text above, and why:
 - **New vault (§6.17).** `/people` sends names and ids only (by design), so the people sheet cannot
   show an email to tell two people with the same name apart.
 - **Vault (§6.14).** "Last signed 2 Oct" per member needs an API field that does not exist; members
-  without an active key say "No key yet, can't approve yet" (`has_key`, added to the vault detail).
+  without an active key say "No key yet, so can't approve" (`has_key`, added to the vault detail).
 - **Account (§6.18).** Renaming the device needs an API route that does not exist, so This phone
   shows the name without "Change". The remove-another-device sheet cannot yet name which treasury
   holds that device's key (the treasury view does not send seat fingerprints), so it says the
@@ -2786,7 +2786,7 @@ Q9 the departures D1–D17 stand. The status line at the top now reads according
    its caption, and turn it off before recording.
 8. **Should a treasury change be declinable?** The server has no decline today: a reconfiguration
    ends as done, failed, expired or voided. The phone therefore offers only "Approve change" plus
-   "Copy a report" (§6.15). **Recommendation:** not now; revisit if a change has to be stopped
+   "Share a report" (§6.15). **Recommendation:** not now; revisit if a change has to be stopped
    before it expires (API A19).
 9. **The departures from research 06** (§0.1, D1–D17). Each is reasoned there; the ones most worth
    your eye are D2 (Approve and Reject side by side), D6 (the code as a quiet line unless you came
@@ -2876,7 +2876,7 @@ Use the method name from §5.13 wherever "Face ID" appears.
 | `app_20`, `app_21` | Sheets | Kept to four blocks: title, what you sign (a payment's card with the full address), one consequence sentence, the method-named button; the code as one quiet line; the reason with type-specific chips; inline errors (§6.8, §6.9) |
 | `app_22`–`app_25` | Closed | Outcome badge at top; personal line; "Who decided"; Raise again (§6.6) |
 | `app_26`–`app_29` | Payment | Amount and recipient lead; the signed sentence one tap away; no balance line unless short; block and gas behind a tap; failure sentences; Etherscan link (§6.5, §6.6, §5.12) |
-| `app_30`, `app_31` | Tampered | Said once, reason first, text labelled, no signing at all (not even Reject), Copy a report (§6.6) |
+| `app_30`, `app_31` | Tampered | Said once, reason first, text labelled, no signing at all (not even Reject), Share a report (§6.6) |
 | `app_32`–`app_36` | Activity | For you / Yours, your decisions over 90 days, three chips, rows by date, outcome dates, your part, no "Declined" (§6.12) |
 | `app_37`, `app_38` | Account | Profile first; This phone page; other devices removable from the phone; removed devices collapsed; version only (§6.18) |
 | `app_39`, `app_40` | Sign out / Revoke | One "Remove this phone" with the treasury consequence (§6.19) |

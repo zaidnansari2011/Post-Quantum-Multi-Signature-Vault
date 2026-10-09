@@ -27,7 +27,7 @@ import type { Custody, StoredIdentity } from './custody.ts';
 import { enrolThisDevice } from './flows.ts';
 import * as api from './api/endpoints.ts';
 import { setUnauthorizedHandler } from './api/client.ts';
-import { signedContent } from './checks.ts';
+import { raisedThisRun, signedContent } from './checks.ts';
 import { networkFetches } from './queries.ts';
 import { restoreSummaries, startSavingSummaries, stopSavingSummaries, wipeSummaries } from './persist.ts';
 import { forgetPushHere } from './push.ts';
@@ -119,6 +119,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (deletes.seed) {
         await keystore.forgetEverything();
         signedContent.clear();
+        raisedThisRun.clear();
       } else if (deletes.token || deletes.identity) {
         await keystore.forgetSession();
       }
@@ -206,6 +207,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       queryClient.clear();
       networkFetches.clear();
       signedContent.clear();
+      raisedThisRun.clear();
       await wipeSummaries();
       let finished = false;
       const finish = () => {

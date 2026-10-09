@@ -77,7 +77,7 @@ import { useApprovals } from '../approvals.ts';
 import { OfflineNotice, useColdStart, useOffline, useRefreshOnFocus } from '../freshness.tsx';
 import { devicesQuery, holdDecision, keys, networkFetches, proposalQuery } from '../queries.ts';
 import { fetchKey, OFFLINE_DECISION, OFFLINE_SIGNING, POLL_MS } from '../logic/freshness.ts';
-import { checkInRun, type Checked } from '../checks.ts';
+import { checkInRun, raisedThisRun, type Checked } from '../checks.ts';
 import { voteOnProposal, type VoteOutcome } from '../flows.ts';
 import { type Decision } from '../crypto/signing.ts';
 import type { ProposalDetail, ProposalSummary, VaultDetail } from '../api/schemas.ts';
@@ -232,16 +232,21 @@ export default function DecisionScreen({
   // fetches in this run fails as `changed` (I-16).
   // Remembered under this route's uuid (I-16): an answer for another decision is refused, never
   // shown under this one.
+  // What this phone raised: from the raise itself, or remembered from it earlier in this run.
+  const raisedHere = raised ?? raisedThisRun.get(uuid);
+  useEffect(() => {
+    if (raised) raisedThisRun.remember(uuid, raised);
+  }, [raised, uuid]);
   const checked = useMemo<Checked | null>(() => {
     if (!detail) return null;
     const run = checkInRun(detail, uuid);
     // I-5: just raised here, the stored decision must be what was entered, or it opens as tampered
     // and nothing is offered to sign (§6.16, §6.6 row 1).
-    if (run.ok && raised && !checkRaised(raised, detail).ok) {
+    if (run.ok && raisedHere && !checkRaised(raisedHere, detail).ok) {
       return { ok: false, reason: 'raised', expected: detail.payload_hash, actual: run.hash };
     }
     return run;
-  }, [detail, uuid, raised]);
+  }, [detail, uuid, raisedHere]);
   const toast = useToast();
   const comments = useQuery({ ...commentsQuery(token, uuid), enabled: !!detail });
   const [withdrawing, setWithdrawing] = useState(false);
@@ -1150,7 +1155,7 @@ function Bar({
         <ActionBar
           stack
           message={message}
-          primary={{ label: 'Copy a report', variant: 'secondary', onPress: onReport }}
+          primary={{ label: 'Share a report', variant: 'secondary', onPress: onReport }}
           secondary={{ label: 'Open on the web', variant: 'quiet', onPress: onOpenWeb }}
         />
       );

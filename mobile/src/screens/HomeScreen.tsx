@@ -160,7 +160,7 @@ export default function HomeScreen({
     <DecisionRow
       key={`change-${e.change.id}`}
       title={`Treasury change in ${e.vaultName}`}
-      vault={changeSummary(e.change, e.signerCount)}
+      vault={changeSummary(e.change)}
       approvals={e.change.approvals}
       required={e.change.needed}
       expiresAt={e.change.valid_until}

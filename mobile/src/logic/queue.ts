@@ -247,12 +247,14 @@ export function approvalsHeadline(h: HeadlineInput): Headline {
   if (changes > 0) {
     // A treasury change is not a decision: the headline names what is there, never more.
     const n = h.needsYou + changes;
+    const decisions = h.needsYou === 1 ? 'One decision' : `${capitalise(countWord(h.needsYou))} decisions`;
+    const changed = changes === 1 ? 'a treasury change' : `${countWord(changes)} treasury changes`;
     const what =
       h.needsYou === 0
         ? changes === 1
           ? 'One treasury change needs'
           : `${capitalise(countWord(changes))} treasury changes need`
-        : `${capitalise(countWord(n))} items need`;
+        : `${decisions} and ${changed} need`;
     const supporting =
       h.dueToday === 0 ? null : h.dueToday === 1 ? 'One is due today.' : `${capitalise(countWord(h.dueToday))} are due today.`;
     return { title: `${what} your signature`, supporting, short: `${n} need your signature` };

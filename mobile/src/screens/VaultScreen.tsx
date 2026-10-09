@@ -26,14 +26,14 @@ import {
   Skeleton,
   Text,
 } from '../ui/index.tsx';
-import { makeStyles } from '../theme/index.ts';
+import { makeStyles, useTheme } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import { ApiError } from '../api/client.ts';
 import { getApiBaseUrl } from '../config.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { fetchedThisRun, keys, meQuery, treasuryQuery, vaultQuery } from '../queries.ts';
 import { decisionStatus } from '../status.ts';
-import { canRaiseIn, roleLine, ruleChangeLine, ruleSentence } from '../logic/workspace.ts';
+import { canRaiseIn, partLine, ruleChangeLine, ruleSentence } from '../logic/workspace.ts';
 import { MembersSheet, TreasurySheet } from './vault/sheets.tsx';
 
 const SHOWN = 3;
@@ -55,6 +55,7 @@ export default function VaultScreen({
 }) {
   const s = useStyles();
   const { token, identity } = useEnrolledSession();
+  const stacked = useTheme().stacked;
   const [sheet, setSheet] = useState<'members' | 'treasury' | null>(null);
 
   const query = useQuery(vaultQuery(token, vaultId));
@@ -107,35 +108,44 @@ export default function VaultScreen({
   const decided = vault.proposals.length - open.length;
   const raise = canRaiseIn(vault.role, me.data?.workspace);
   const approvers = vault.members.filter((m) => m.role !== 'viewer');
-  const lines = [
-    roleLine(vault.role),
-    vault.separation_of_duties ? "The person who raises a decision can't approve it." : null,
-    ruleChangeLine(vault.rule_changes, now),
-  ].filter(Boolean) as string[];
+  // One line for your part and separation of duties, then a recent rule change, short (review B3).
+  const lines = [partLine(vault.role, vault.separation_of_duties), ruleChangeLine(vault.rule_changes, now)].filter(
+    Boolean,
+  ) as string[];
   const t = treasury.data;
   const hasTreasury = !!t?.treasury;
 
-  return (
-    <Screen>
-      <NavBar
-        onBack={onBack}
-        title={vault.name}
-        actions={raise ? [{ icon: 'plus', label: 'New decision in this vault', onPress: () => onRaise(vault.vault_id, vault.name) }] : []}
-      />
-      <OfflineNotice at={query.dataUpdatedAt} />
-      <Scroll refreshing={query.isRefetching} onRefresh={() => void Promise.all([query.refetch(), treasury.refetch()])}>
-        <View style={s.top}>
-          <Text role="titleSm" accessibilityRole="header">
-            {ruleSentence(vault.threshold_m, vault.signer_count)}
-          </Text>
-          {lines.map((line) => (
-            <Text key={line} role="body" tone="muted">
-              {line}
-            </Text>
-          ))}
-        </View>
-
-        <Section title="Open" count={open.length}>
+  const rows = (
+        <Section>
+          <List>
+            <ListRow
+              title="Members"
+              accessory={<AvatarStack names={approvers.map((m) => m.name ?? '?')} />}
+              value={String(vault.members.length)}
+              accessibilityLabel={`Members, ${vault.members.length}`}
+              onPress={() => setSheet('members')}
+            />
+            {hasTreasury ? (
+              <ListRow
+                title="Treasury"
+                value={t!.status?.balance ? `${t!.status.balance} on Sepolia` : 'On Sepolia'}
+                onPress={() => setSheet('treasury')}
+              />
+            ) : null}
+            <ListRow
+              title="History"
+              value={decided > 0 ? String(decided) : null}
+              caption={decided === 0 ? 'Nothing decided here yet' : null}
+              onPress={() => onSeeAll('history')}
+            />
+            {!hasTreasury && t && t.may_create ? (
+              <ListRow icon="external" title="Set up a treasury on the web" onPress={() => openWeb('treasury')} />
+            ) : null}
+          </List>
+        </Section>
+  );
+  const openSection = (
+        <Section title="Open" count={open.length > 0 ? open.length : undefined}>
           {open.length === 0 ? (
             <Text role="body" tone="muted">
               Nothing is open in this vault.
@@ -164,34 +174,33 @@ export default function VaultScreen({
             </List>
           )}
         </Section>
+  );
 
-        <Section>
-          <List>
-            <ListRow
-              title="Members"
-              accessory={<AvatarStack names={approvers.map((m) => m.name ?? '?')} />}
-              value={String(vault.members.length)}
-              accessibilityLabel={`Members, ${vault.members.length}`}
-              onPress={() => setSheet('members')}
-            />
-            {hasTreasury ? (
-              <ListRow
-                title="Treasury"
-                value={t!.status?.balance ? `${t!.status.balance} on Sepolia` : 'On Sepolia'}
-                onPress={() => setSheet('treasury')}
-              />
-            ) : null}
-            <ListRow
-              title="History"
-              value={decided > 0 ? String(decided) : null}
-              caption={decided === 0 ? 'Nothing decided here yet' : null}
-              onPress={() => onSeeAll('history')}
-            />
-            {!hasTreasury && t && t.may_create ? (
-              <ListRow icon="external" title="Set up a treasury on the web" onPress={() => openWeb('treasury')} />
-            ) : null}
-          </List>
-        </Section>
+  return (
+    <Screen>
+      <NavBar
+        onBack={onBack}
+        title={vault.name}
+        actions={raise ? [{ icon: 'plus', label: 'New decision in this vault', onPress: () => onRaise(vault.vault_id, vault.name) }] : []}
+      />
+      <OfflineNotice at={query.dataUpdatedAt} />
+      <Scroll refreshing={query.isRefetching} onRefresh={() => void Promise.all([query.refetch(), treasury.refetch()])}>
+        <View style={s.top}>
+          <Text role="titleSm" accessibilityRole="header">
+            {ruleSentence(vault.threshold_m, vault.signer_count)}
+          </Text>
+          {lines.map((line) => (
+            <Text key={line} role="body" tone="muted">
+              {line}
+            </Text>
+          ))}
+        </View>
+
+        {/* At large text the rows come first, so Members, Treasury and History stay within reach
+            rather than under three tall decision rows (review B3). */}
+        {stacked ? rows : null}
+        {openSection}
+        {stacked ? null : rows}
       </Scroll>
 
       <MembersSheet

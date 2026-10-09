@@ -13,6 +13,7 @@ import { View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
+  Banner,
   Button,
   EmptyState,
   GroupedValue,
@@ -95,9 +96,16 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
     }
   };
 
+  // Two phones can share a name (until expo-device, every Android is "Android phone"): the start
+  // of each key's fingerprint tells them apart, and matches the device itself (review B5).
   const added = (d: Device) => {
-    const parts = [d.created_at ? `Added ${dayMonth(d.created_at, now)}` : null, d.last_seen_at ? `last used ${dayMonth(d.last_seen_at, now)}` : null];
-    return parts.filter(Boolean).join(', ');
+    const parts = [
+      d.fingerprint ? `Key ${d.fingerprint.slice(0, 4)} ${d.fingerprint.slice(4, 8)}` : null,
+      d.created_at ? `added ${dayMonth(d.created_at, now)}` : null,
+      d.last_seen_at ? `last used ${dayMonth(d.last_seen_at, now)}` : null,
+    ];
+    const line = parts.filter(Boolean).join(', ');
+    return line.charAt(0).toUpperCase() + line.slice(1);
   };
 
   return (
@@ -105,7 +113,15 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
       <NavBar onBack={onBack} title="Other devices" />
       <Scroll refreshing={devices.isRefetching} onRefresh={() => void devices.refetch()}>
         <View style={s.stack}>
-          {devices.isLoading ? (
+          {devices.isError && !devices.data ? (
+            // Never "no other devices" over a failed load: that would be a false security claim.
+            <Banner
+              tone="warning"
+              title="Can't load your devices"
+              detail="Check your connection and try again."
+              actions={[{ label: 'Try again', onPress: () => void devices.refetch() }]}
+            />
+          ) : devices.isLoading ? (
             <View style={s.skeleton}>
               <Skeleton width="50%" height={16} />
               <Skeleton width="70%" height={12} />
