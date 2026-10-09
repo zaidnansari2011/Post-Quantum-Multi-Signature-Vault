@@ -43,7 +43,14 @@ NATIVE_AT_RUNTIME_2 = {
 # expo-file-system, which every APK already links through `expo` itself (expo 57.0.15 depends on
 # expo-file-system ~57.0.5, the version the rework declares for the encrypted summary cache, §2.6;
 # src/persist.ts also loads it lazily and writes nothing if the module is missing).
-NATIVE_AT_REWORK_1 = NATIVE_AT_RUNTIME_2 | {"react-native-worklets", "expo-file-system"}
+#
+# R8 adds expo-notifications (N12, push through FCM), which brings expo-application with it. No APK
+# has been built at "rework-1" yet, so the rework APK is the first to carry it.
+NATIVE_AT_REWORK_1 = NATIVE_AT_RUNTIME_2 | {
+    "react-native-worklets",
+    "expo-file-system",
+    "expo-notifications",
+}
 PINNED = {RUNTIME_VERSION: NATIVE_AT_RUNTIME_2, "rework-1": NATIVE_AT_REWORK_1}
 
 # react-native-web is the browser renderer: it ships no native code.

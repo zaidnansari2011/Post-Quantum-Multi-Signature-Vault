@@ -41,6 +41,7 @@ import { OfflineNotice, useRefreshOnFocus } from '../freshness.tsx';
 import { devicesQuery, keys, meQuery, vaultsQuery } from '../queries.ts';
 import type { Device } from '../api/schemas.ts';
 import { andList } from '../logic/words.ts';
+import { NotificationsSection } from './NotificationsSection.tsx';
 
 const PROTECTION_LABEL: Record<ProtectionLevel, string> = {
   biometric: 'Biometric',
@@ -104,6 +105,8 @@ export default function AccountScreen() {
             </List>
           )}
         </Section>
+
+        <NotificationsSection />
 
         <Section title="This phone">
           <Button label="Remove this phone" variant="danger" onPress={() => setRemoving(true)} full />

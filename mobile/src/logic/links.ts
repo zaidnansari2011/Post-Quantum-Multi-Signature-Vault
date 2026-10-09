@@ -84,6 +84,9 @@ export function targetFromPush(data: unknown): { target: LinkTarget; notificatio
   } else if (d.type === 'security') {
     const deviceId = asId(d.device_id);
     if (deviceId !== null) target = { kind: 'security', deviceId };
+  } else if (d.type === 'activity') {
+    // A security alert with no device to open (a changed password, R8): the Activity tab.
+    target = { kind: 'activity' };
   }
   return target ? { target, notificationId } : null;
 }
