@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.checkpoint:
         try:
             doc = json.loads(raw)
-        except (ValueError, UnicodeDecodeError) as exc:
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
             print(f"{args.bundle}: that is not valid JSON: {exc}", file=sys.stderr)
             return 2
         if isinstance(doc, dict) and str(doc.get("format", "")).startswith("qvault.decision/"):
