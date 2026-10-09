@@ -1,0 +1,42 @@
+{# The live log strip (plan S22): the log's newest signed head and the witness's state, from
+   public_status.log_facts(). Every state says what is true; there is no figure here that the log
+   did not produce, and none when it could not be read. The head links to the public signed head
+   (/transparency/checkpoint.json, which python -m qvault.verify checks); "Verify offline" goes to
+   the Security page's steps. #}
+{% macro log_strip(facts) -%}
+{%- set tone = {
+  'readable': {'current': 'ok', 'behind': 'warn', 'none': 'warn', 'waiting': 'warn', 'failed': 'bad'}[facts.witness],
+  'empty': 'warn',
+  'unreadable': 'bad',
+}[facts.log] -%}
+<section class="q-logstrip q-logstrip--{{ tone }}" aria-label="The live audit log">
+  <span class="q-logstrip__dot" aria-hidden="true"></span>
+  <ul class="q-logstrip__l">
+    {%- if facts.log == 'unreadable' %}
+    <li>The log can't be read right now: an entry is missing from its sequence</li>
+    {%- elif facts.log == 'empty' %}
+    <li>The log has no entries yet</li>
+    {%- else %}
+    {%- if facts.signed_size %}
+    <li><a href="{{ url_for('public.checkpoint') }}">Log head <strong>#{{ '{:,}'.format(facts.signed_size) }}</strong></a></li>
+    {%- else %}
+    <li>{{ '{:,}'.format(facts.size) }} log entries, no signed head yet</li>
+    {%- endif %}
+    {%- if facts.witness == 'current' %}
+    <li>Witnessed{% if facts.witnessed_size != facts.signed_size %} to #{{ '{:,}'.format(facts.witnessed_size) }},{% endif %}
+      <time datetime="{{ ui_iso(facts.witnessed_at) }}" title="{{ ui_absolute(facts.witnessed_at) }}">{{ ui_ago(facts.witnessed_at) }}</time></li>
+    {%- elif facts.witness == 'behind' %}
+    <li>Witness behind: last co-signed #{{ '{:,}'.format(facts.witnessed_size) }},
+      <time datetime="{{ ui_iso(facts.witnessed_at) }}" title="{{ ui_absolute(facts.witnessed_at) }}">{{ ui_ago(facts.witnessed_at) }}</time></li>
+    {%- elif facts.witness == 'failed' %}
+    <li>The witness's newest co-signature doesn't check</li>
+    {%- elif facts.witness == 'waiting' %}
+    <li>Not witnessed yet</li>
+    {%- else %}
+    <li>No independent witness on this server</li>
+    {%- endif %}
+    {%- endif %}
+    <li><a href="{{ url_for('public.security', _anchor='verify') }}">Verify offline</a></li>
+  </ul>
+</section>
+{%- endmacro %}

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from qvault.crypto import build_registry
 from qvault.verify import BundleFormatError, load_bundle, verify_bundle
+from qvault.verify.checkpoint import is_checkpoint_document, verify_checkpoint_document
 
 TICK, CROSS, DASH = "PASS", "FAIL", "  - "
 
@@ -85,7 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "bundle",
         type=Path,
-        help="an exported decision: the .qvault.html record, the .zip package, or a bare .json",
+        help=(
+            "an exported decision: the .qvault.html record, the .zip package, or a bare .json; "
+            "or the log's signed head, saved from /transparency/checkpoint.json"
+        ),
     )
     parser.add_argument(
         "--expect-log",
@@ -107,6 +111,26 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         print(f"cannot read {args.bundle}: {exc}", file=sys.stderr)
         return 2
+
+    # The log's public signed head (/transparency/checkpoint.json) is checked on its own terms:
+    # its signatures and, when given, the pinned fingerprints (qvault/verify/checkpoint.py).
+    try:
+        doc = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        doc = None
+    if is_checkpoint_document(doc):
+        report = verify_checkpoint_document(
+            doc,
+            registry=build_registry(prefer=args.backend),
+            expect_log=args.expect_log,
+            expect_witness=args.expect_witness,
+        )
+        if args.json:
+            print(json.dumps(report.as_dict(), indent=2))
+        else:
+            colour = not args.no_colour and sys.stdout.isatty()
+            print(_render(report, colour=colour))
+        return 0 if report.ok else 1
 
     # Any artefact the export produces: the self-verifying .html record, the .zip package, or the
     # bare .json. Detected by content, since this argument is a path the user chose. See

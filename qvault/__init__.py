@@ -124,6 +124,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from .blueprints.glassbox import bp as glassbox_bp
     from .blueprints.ledger import bp as ledger_bp
     from .blueprints.notifications import bp as notifications_bp
+    from .blueprints.public import bp as public_bp
     from .blueprints.record import bp as record_bp
     from .blueprints.theme import bp as theme_bp
     from .blueprints.vaults import bp as vaults_bp
@@ -141,6 +142,8 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(docs_bp)
     app.register_blueprint(verify_bp)
     app.register_blueprint(workspace_bp)
+    # Security, Pricing, Changelog and Status: read-only, the same signed in or out (plan S22).
+    app.register_blueprint(public_bp)
     # Every route inside 404s unless GLASSBOX_ENABLED, so registering it unconditionally keeps
     # one gate in one place rather than splitting it between here and the blueprint.
     app.register_blueprint(glassbox_bp)

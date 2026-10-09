@@ -1,0 +1,29 @@
+{% extends "public/_layout.html" %}
+{# Pricing (plan S22): an honest placeholder. Q-Vault is a project, not a business, so there are
+   no tiers and no prices, and the page says so instead of inventing them. #}
+{% block page_title %}Pricing{% endblock %}
+{% block page_lead %}There are no plans or prices. Q-Vault is a university project, not a paid service.{% endblock %}
+{% block page %}
+<div class="q-prose">
+  <h2>Using it</h2>
+  <p>
+    Creating a workspace here costs nothing, and nothing asks for a card. There is no service-level
+    agreement: this deployment is run by the project team, on one server, and may be reset as the
+    project changes.
+  </p>
+  <p><a href="{{ url_for('auth.register') }}">Create your workspace</a></p>
+
+  <h2>Running your own</h2>
+  <p>
+    The <a href="{{ source_url() }}">source is public</a> to read. It has no open-source licence
+    yet, so ask the team before you run your own copy.
+  </p>
+
+  <h2>Single sign-on and provisioning</h2>
+  <p>
+    Single sign-on (SAML, OIDC) and SCIM provisioning aren't built. If your organisation would need
+    them, <a href="{{ source_url() }}/issues">open an issue on the source repository</a> and say what
+    for.
+  </p>
+</div>
+{% endblock %}

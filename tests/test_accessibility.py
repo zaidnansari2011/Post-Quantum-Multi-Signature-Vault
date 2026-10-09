@@ -399,6 +399,11 @@ def signed_out_pages(client, w) -> dict[str, tuple[str, int]]:
         "invitation, unknown": "/invite/not-a-real-invitation",
         "invitation, sign up": f"/invite/{w['token']}",
         "public record": f"/d/{w['approved'].proposal_uuid}",
+        # The public face (R6): the same pages as a visitor and inside the shell.
+        "security": "/security",
+        "pricing": "/pricing",
+        "changelog": "/changelog",
+        "status": "/status",
     }
     for path in _docs(client):
         pages[f"docs {path.rsplit('/', 1)[1]}"] = path
@@ -424,6 +429,10 @@ def signed_in_pages(client, w) -> dict[str, str]:
         "account": "/account/",
         "account security": "/account/security",
         "forgot password": "/forgot-password",
+        "security page": "/security",
+        "pricing": "/pricing",
+        "changelog": "/changelog",
+        "status": "/status",
         "notification preferences": "/account/notifications",
         "notifications": "/notifications/",
         "docs": "/docs/",
