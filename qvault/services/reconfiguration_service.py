@@ -169,6 +169,9 @@ def _seat_can_sign(row: TreasurySigner) -> bool:
     key = row.key
     if key is None or key.alg_id != "ML-DSA-65":
         return False
+    if key.wrap_domain == "lost":
+        # Nobody can open it any more: a recovery could not carry it over (plan R9, §4.3).
+        return False
     if key.wrap_domain == "password":
         return key.secret_key_wrapped is not None
     phone = Device.query.filter_by(key_id=key.id).one_or_none()
@@ -364,8 +367,14 @@ def approval_problem(reconfiguration: Reconfiguration, user: User) -> str | None
             if reconfiguration.state not in ("queued", "registering_keys")
             else "the new keys are still being registered; approve once they are"
         )
-    if seat_of(reconfiguration, user) is None:
+    seat = seat_of(reconfiguration, user)
+    if seat is None:
         return "only the treasury's current signers approve a change to it"
+    if seat.key is not None and seat.key.wrap_domain == "lost":
+        return (
+            "the key the treasury holds for you can't be opened any more (it was replaced by "
+            "account recovery), so the other signers approve this change"
+        )
     if ReconfigurationSignature.query.filter_by(
         reconfiguration_id=reconfiguration.id, signer_id=user.id
     ).first():
@@ -400,6 +409,11 @@ def approve_with_password(
         raise ApprovalRefused(problem)
     seat = seat_of(reconfiguration, user)
     key = seat.key
+    if key.wrap_domain == "lost":
+        raise ApprovalRefused(
+            "the key the treasury holds for you can't be opened any more (it was replaced by "
+            "account recovery)"
+        )
     if key.wrap_domain != "password":
         raise ApprovalRefused("the treasury holds your phone's key: approve this on your phone")
     if key.secret_key_wrapped is None:

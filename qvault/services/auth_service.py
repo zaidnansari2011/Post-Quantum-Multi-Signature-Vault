@@ -6,6 +6,7 @@ import json
 
 from sqlalchemy.exc import IntegrityError
 
+from qvault.crypto import sha256_hex
 from qvault.crypto.kdf import DEFAULT_PARAMS, new_salt
 from qvault.extensions import db
 from qvault.models.user import User
@@ -85,7 +86,14 @@ def register_user(
 
     ledger_service.append(
         "user_registered",
-        {"user_id": user.id, "email": user.email, "key_id": key.id, "alg_id": key.alg_id},
+        {
+            "user_id": user.id,
+            "email": user.email,
+            "key_id": key.id,
+            "alg_id": key.alg_id,
+            # Additive (plan R9, design §4.4): a verifier can follow a person's key lineage.
+            "public_key_sha256": sha256_hex(key.public_key),
+        },
         actor=f"user:{user.id}",
         actor_id=user.id,
         ref_type="user",
@@ -171,12 +179,18 @@ def authenticate(email: str, password: str) -> User | None:
 
     A verification is always performed — against a dummy hash when the email is unknown — so
     the response time does not reveal whether an account exists (no user enumeration).
+
+    A correct password is a proof of it, so any open recovery of the account is cancelled and its
+    kit burned (plan R9, ⚑5): signing in on the web, or on a phone that is pairing.
     """
     user = User.query.filter_by(email=_normalise_email(email)).first()
     if user is None:
         verify_password(_DUMMY_PASSWORD_HASH, password)  # equalise timing; result discarded
         return None
     if verify_password(user.password_hash, password):
+        from qvault.services import recovery_service
+
+        recovery_service.password_proven(user, via="sign_in")
         return user
     return None
 

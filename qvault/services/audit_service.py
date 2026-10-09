@@ -106,6 +106,15 @@ SENTENCES = {
     "workspace_member_left": "{who} left {workspace}.",
     "workspace_renamed": "{who} renamed the workspace to {workspace}.",
     "workspace_settings_changed": "{who} changed the vault defaults for {workspace}.",
+    # Account recovery (plan R9). Recorded against the person; never the kit's code.
+    "recovery_kit_issued": "{who} made a Recovery Kit.",
+    "recovery_kit_revoked": "A Recovery Kit of {who}'s stopped working.",
+    "recovery_kit_stale": "A Recovery Kit of {who}'s could no longer be checked and stopped working.",
+    "recovery_requested": "Someone used {who}'s Recovery Kit to start recovering the account.",
+    "recovery_waiting": "A recovery of {who}'s account started its wait.",
+    "recovery_cancelled": "{who} cancelled a recovery of an account.",
+    "recovery_rejected": "A recovery of {who}'s account was stopped when it was due.",
+    "recovery_completed": "A recovery of {who}'s account took effect.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.

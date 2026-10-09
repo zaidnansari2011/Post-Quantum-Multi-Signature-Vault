@@ -230,8 +230,169 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
             "with the new password only.",
             account,
         )
+    if kind.startswith("recovery_"):
+        return _recovery(notification, stored, now)
     # A kind this version does not know (written by a newer one): say little, link home.
     return Copy("Notification", "", _path("core.index"))
+
+
+def _moment(text: object) -> datetime | None:
+    if not isinstance(text, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+#: Who cancelled a recovery, as the person whose account it was reads it.
+_CANCELLED_BY = {
+    "password": "by someone using your password",
+    "self": "by you",
+    "status_holder": "by whoever started it",
+    "system": "by Q-Vault",
+}
+
+
+def _recovery(notification, stored: dict, now: datetime) -> Copy:
+    """The words for an account-recovery notice (plan R9). ``as`` in the stored facts says whose
+    eyes it is for: the person (``self``) or one of the people watching over them."""
+    from qvault.extensions import db
+    from qvault.models.recovery import RecoveryRequest
+    from qvault.models.user import User
+
+    kind = notification.kind
+    subject_id = stored.get("subject_id")
+    subject = db.session.get(User, subject_id) if isinstance(subject_id, int) else None
+    name = _name(subject)
+    me = stored.get("as") == "self"
+    home = _path("core.index")
+    security = _path("account.security")
+    request = (
+        RecoveryRequest.query.filter_by(request_uuid=stored["request"]).one_or_none()
+        if isinstance(stored.get("request"), str)
+        else None
+    )
+
+    if kind == "recovery_waiting":
+        due = _moment(stored.get("completes_at"))
+        at = when(due, now=now) if due is not None else "in 72 hours"
+        if me:
+            return Copy(
+                "Someone is recovering your account",
+                "Someone used your Recovery Kit and chose a new password. Unless it is "
+                f"cancelled, it takes effect on {at}. If this wasn't you, cancel it on Home, or "
+                "sign in: using your password cancels it.",
+                home,
+            )
+        return Copy(
+            f"{name}'s account is being recovered",
+            f"Someone used {name}'s Recovery Kit. Unless it is cancelled, on {at} they get "
+            f"{name}'s signing key, including any place on a treasury. If {name} didn't start "
+            "it, cancel it on Home.",
+            home,
+        )
+
+    if kind == "recovery_cancelled":
+        if stored.get("failed"):
+            why = _clip(request.end_reason) if request is not None and request.end_reason else ""
+            because = f": {why}" if why else ""
+            title = (
+                "The recovery of your account didn't go through"
+                if me
+                else f"The recovery of {name}'s account didn't go through"
+            )
+            return Copy(
+                title,
+                f"Q-Vault stopped it when it was due{because}. Nothing about the account changed.",
+                security if me else home,
+            )
+        role = stored.get("by_role")
+        if role in ("manager", "cosigner"):
+            what = "an admin" if role == "manager" else "a fellow approver"
+            by = f"by {_name(notification.actor)}, {what}"
+        elif not me and role == "self":
+            by = f"by {name}"
+        elif not me and role == "password":
+            by = f"by someone using {name}'s password"
+        else:
+            by = _CANCELLED_BY.get(role, "")
+        if me:
+            then = (
+                " Your Recovery Kit no longer works, because someone else had it. Make a new one "
+                "on the Security page."
+                if stored.get("kit_burned")
+                else " If you didn't start it, someone else has your Recovery Kit: make a new one "
+                "on the Security page now."
+            )
+            return Copy(
+                "The recovery of your account was cancelled",
+                f"It was cancelled {by}. Nothing about your account changed.{then}",
+                security,
+            )
+        return Copy(
+            f"The recovery of {name}'s account was cancelled",
+            f"It was cancelled {by}. Nothing about the account changed.",
+            home,
+        )
+
+    if kind == "recovery_completed":
+        if me:
+            return Copy(
+                "Your account was recovered",
+                "Your new password works now, and every other sign-in was ended. Your signing "
+                "key is the same. Your Recovery Kit was used up, so make a new one on the "
+                "Security page.",
+                security,
+            )
+        return Copy(
+            f"{name}'s account was recovered",
+            f"{name}'s signing key now opens with a new password. If you don't think {name} did "
+            "this, call them on a number you already have.",
+            home,
+        )
+
+    if kind == "recovery_kit_changed":
+        change = stored.get("change")
+        if change == "paused":
+            until = _moment(stored.get("until"))
+            at = when(until, now=now) if until is not None else "24 hours from then"
+            if me:
+                return Copy(
+                    "Your Recovery Kit is paused for 24 hours",
+                    "Someone typed too many wrong codes for it. Nobody can use it until "
+                    f"{at}. If that wasn't you, someone may have part of your kit: make a new one "
+                    "on the Security page.",
+                    security,
+                )
+            return Copy(
+                f"{name}'s Recovery Kit is paused for 24 hours",
+                f"Someone typed too many wrong codes for it. Nobody can use it until {at}.",
+                home,
+            )
+        if change == "stale":
+            return Copy(
+                "Your Recovery Kit stopped working",
+                "Q-Vault can no longer check your kit, so it can't be used. Make a new one on "
+                "the Security page.",
+                security,
+            )
+        if change == "regenerated":
+            return Copy(
+                "You replaced your Recovery Kit",
+                f"Made on {when(notification.created_at, now=now)}. Your earlier kit no longer "
+                "works. Keep the new one where you keep your passport.",
+                security,
+            )
+        return Copy(
+            "You made a Recovery Kit",
+            f"Made on {when(notification.created_at, now=now)}. Anyone with it and your email "
+            "can recover your account after a 72-hour wait, so keep it where you keep your "
+            "passport.",
+            security,
+        )
+    return Copy("Notification", "", home)
 
 
 def _path(endpoint: str, **values) -> str:
@@ -296,6 +457,13 @@ PREFERENCE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("device_enrolled", "A new device can sign for you"),
             ("password_changed", "Your password is changed"),
+            ("recovery_waiting", "Someone starts recovering your account, or one you watch over"),
+            ("recovery_cancelled", "A recovery is cancelled or stopped"),
+            ("recovery_completed", "A recovery takes effect"),
+            (
+                "recovery_kit_changed",
+                "Your Recovery Kit is made, replaced, paused or stops working",
+            ),
         ),
     ),
 )
