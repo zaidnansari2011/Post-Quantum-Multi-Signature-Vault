@@ -146,12 +146,12 @@ export function TreasurySheet({
               {status.balance}
             </Text>
             <Text role="caption" tone="muted">
-              {`In the ${vaultName} treasury on Sepolia`}
+              {`In the treasury of ${vaultName}, on Sepolia`}
             </Text>
           </View>
         ) : (
           <Text role="body" tone="muted">
-            {`The ${vaultName} treasury on Sepolia. Sepolia didn't answer, so its balance isn't known right now.`}
+            {`The treasury of ${vaultName} is on Sepolia. Sepolia didn't answer, so its balance isn't known right now.`}
           </Text>
         )}
 

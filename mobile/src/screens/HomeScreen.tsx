@@ -148,7 +148,10 @@ export default function HomeScreen({
               }.`
         }`
       : null;
-  useEffect(() => () => clearJustEnrolled(), [clearJustEnrolled]);
+  // Gone once the person leaves the queue for anywhere else, as on its first visit.
+  useEffect(() => {
+    if (!focused && justEnrolled) clearJustEnrolled();
+  }, [focused, justEnrolled, clearJustEnrolled]);
 
   const from = (p: ProposalSummary) =>
     p.raised_by?.name ? (p.raised_by.id === identity.userId ? 'raised by you' : `from ${p.raised_by.name}`) : null;

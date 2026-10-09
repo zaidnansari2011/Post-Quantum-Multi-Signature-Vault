@@ -265,8 +265,8 @@ export default function NewDecisionScreen({
         return;
       }
       if (err instanceof ApiError && err.code === 'fields_invalid') {
-        // The server's own sentence for the field it named (the web form's words).
-        setErrors({ person: err.message });
+        // The server's own sentence for the field it refused, in the web form's words.
+        setBarMessage({ tone: 'warning', text: err.message });
         return;
       }
       const refusal = describeRaiseRefusal(err);
