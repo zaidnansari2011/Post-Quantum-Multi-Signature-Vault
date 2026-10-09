@@ -53,9 +53,15 @@ MAX_PER_DECISION = 500
 MAX_PER_AUTHOR = 100
 
 #: ``@handle``: not preceded by a word character, ``@`` or ``.``, so an email address in the text
-#: (``ada@example.com``) is not read as a mention of ``example``.
-MENTION = re.compile(r"(?<![\w@.])@([A-Za-z0-9][A-Za-z0-9._-]{0,63})")
+#: (``ada@example.com``) is not read as a mention of ``example``. A handle is typed as the name is
+#: spelled (``@Élif``) and read in its plain form (``elif``), so it may hold any letter.
+MENTION = re.compile(r"(?<![\w@.])@([^\W_][\w.-]{0,63})")
 _HANDLE = re.compile(r"[^a-z0-9._-]")
+#: Letters with no plain form to decompose to (NFKD leaves them whole), written the usual way.
+_PLAIN = str.maketrans(
+    {"ł": "l", "ø": "o", "đ": "d", "ħ": "h", "ı": "i", "ŧ": "t", "ß": "ss", "æ": "ae", "œ": "oe",
+     "þ": "th", "ð": "d"}
+)  # fmt: skip
 
 #: Said whenever a comment is shown or written: what it is not.
 UNSIGNED_NOTE = "Comments aren’t signed and aren’t part of the decision."
@@ -115,14 +121,17 @@ def reader_ids(proposal) -> set[int]:
 
 
 def _fold(text: str) -> str:
-    """Lower case, accents dropped (``Élif`` is ``elif``)."""
+    """Lower case, in plain letters: accents dropped (``Élif`` is ``elif``) and a letter with no
+    accent to drop written the usual way (``Łukasz`` is ``lukasz``)."""
     decomposed = unicodedata.normalize("NFKD", (text or "").strip())
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+    plain = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return plain.lower().translate(_PLAIN)
 
 
 def _name_handle(name: str) -> str:
-    """A first name as a handle, or "" when a letter in it has no plain form (``Łukasz``): a
-    handle that drops letters would offer @ukasz, which names nobody the writer knows."""
+    """A first name as a handle, or "" when a letter in it still has no plain form (a name in
+    another script): a handle that drops letters would offer one that names nobody the writer
+    knows, and a look-alike letter could pass for someone else's."""
     first = _fold(name.split(" ", 1)[0]) if name else ""
     return "" if _HANDLE.search(first) else first
 
@@ -165,7 +174,7 @@ def _resolve(body: str, people: list[dict]) -> dict[str, int]:
     table = {h: p["user_id"] for p in people for h in p["handles"]}
     found: dict[str, int] = {}
     for match in MENTION.finditer(body):
-        handle = match.group(1).rstrip("._-").lower()
+        handle = _fold(match.group(1).rstrip("._-"))
         if handle in table:
             found[handle] = table[handle]
     return found
@@ -200,7 +209,7 @@ def segments(comment: DecisionComment, names: dict[int, str]) -> list[dict]:
     for match in MENTION.finditer(comment.body):
         typed = match.group(1)
         handle = typed.rstrip("._-")
-        user_id = mentions.get(handle.lower()) if isinstance(mentions, dict) else None
+        user_id = mentions.get(_fold(handle)) if isinstance(mentions, dict) else None
         if not isinstance(user_id, int):
             continue
         start, end = match.start(), match.start() + 1 + len(handle)

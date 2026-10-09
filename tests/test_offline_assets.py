@@ -97,7 +97,8 @@ def test_the_vendored_assets_are_actually_present():
         STATIC / "vendor" / "fonts" / "PublicSans-var.woff2",
         STATIC / "vendor" / "fonts" / "SourceSerif4-400.woff2",
         STATIC / "vendor" / "fonts" / "JetBrainsMono-var.woff2",
-        STATIC / "qvault.css",
+        STATIC / "tokens.css",
+        STATIC / "components.css",
     ]
     missing = [str(p.relative_to(PROJECT_ROOT)) for p in required if not p.is_file()]
     assert not missing, f"vendored assets missing: {missing}"
@@ -171,7 +172,7 @@ def test_the_vendored_pqc_bundle_is_a_plain_script():
 def test_every_vendored_font_is_reachable_over_http(client):
     """The CSS references these by relative path; prove Flask actually serves them."""
     for name in (
-        "qvault.css",
+        "components.css",
         "vendor/fonts.css",
         "vendor/fonts/PublicSans-var.woff2",
         "vendor/fonts/SourceSerif4-400.woff2",

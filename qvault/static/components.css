@@ -1,10 +1,8 @@
 /* Q-Vault components: the component library (rework S7), built only from tokens.css.
  *
  * Each block here is the style half of a Jinja macro in templates/ui/ (the macro's file is named
- * in the block's heading). Every class carries the q- prefix: qvault.css, the compatibility layer
- * loaded after this file, still owns the old unprefixed names (.btn, .tabs, .panel, .banner ...)
- * for the screens not yet converted, and the two must not restyle each other. When the last screen
- * moves over, qvault.css is deleted and nothing here changes.
+ * in the block's heading). Every class carries the q- prefix. The old unprefixed compatibility
+ * layer (qvault.css) was deleted once the last screen moved over (R5).
  *
  * Rules: colour from tokens only; font sizes from the type scale only; radius by role (4 badges,
  * 6 controls, 8 cards and popovers, 12 dialogs); shadows on overlays only (e2 menus, e3 dialogs).
