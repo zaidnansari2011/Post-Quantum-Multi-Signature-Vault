@@ -106,6 +106,15 @@ class VaultRuleForm(FlaskForm):
     submit = SubmitField("Save")
 
 
+class VaultRulesForm(FlaskForm):
+    """The vault's Approval rule card: the threshold and plan S15 together, under one Save."""
+
+    threshold_m = IntegerField(
+        "Approvals required", validators=[DataRequired(), NumberRange(min=1, max=50)]
+    )
+    requester_can_approve = BooleanField("The person who raises a decision can also approve it")
+
+
 class ProfileForm(FlaskForm):
     display_name = StringField("Display name", validators=[DataRequired(), Length(max=255)])
     submit = SubmitField("Save")
