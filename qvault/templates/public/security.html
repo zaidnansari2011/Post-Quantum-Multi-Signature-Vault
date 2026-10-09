@@ -1,0 +1,82 @@
+{% extends "public/_layout.html" %}
+{% from "ui/status.html" import badge %}
+{# The Security page (plan S22), on Apple PQ3's idea of a levels ladder: each level says what it
+   protects against, so a reader can see where Q-Vault sits and what it leaves open. Every claim
+   links to the design record that argues it rather than restating it; the audit status is the
+   honest one. #}
+{% block page_title %}Security{% endblock %}
+{% block page_lead %}What Q-Vault protects against, what it doesn't, and how to check a decision without trusting us.{% endblock %}
+{% block page %}
+<div class="q-prose q-sec">
+
+<h2 id="levels">Levels of approval security</h2>
+<p>Each level closes a gap the one before it leaves open.</p>
+<ol class="q-ladder">
+  <li>
+    <div class="q-ladder__n" aria-hidden="true">0</div>
+    <div>
+      <h3>One person decides</h3>
+      <p>A single login can approve. Protects against nothing once that person is wrong, careless or impersonated.</p>
+    </div>
+  </li>
+  <li>
+    <div class="q-ladder__n" aria-hidden="true">1</div>
+    <div>
+      <h3>Several people click approve</h3>
+      <p>The rule needs more than one person, but the approvals are rows in the provider's database. Protects against one careless person; not against whoever can edit that database.</p>
+    </div>
+  </li>
+  <li>
+    <div class="q-ladder__n" aria-hidden="true">2</div>
+    <div>
+      <h3>Each approval is a signature</h3>
+      <p>Approvers sign the exact text with their own keys, so anyone can check who agreed to what. With classical signatures (RSA, ECDSA) a future quantum computer could forge them, and an approval record has to stay believable for years.</p>
+    </div>
+  </li>
+  <li class="is-here">
+    <div class="q-ladder__n" aria-hidden="true">3</div>
+    <div>
+      <h3>Post-quantum signatures in a witnessed log {{ badge('Q-Vault is here', 'info') }}</h3>
+      <p>Approvals are post-quantum signatures ({{ default_sig }} by default). Every signature and outcome goes into an append-only log whose signed heads an independent witness co-signs, so the record can't be quietly rewritten, and any decision can be checked offline. The <a href="{{ url_for('public.status') }}">status page</a> shows whether the witness is current.</p>
+    </div>
+  </li>
+</ol>
+
+<h2 id="limits">What Q-Vault doesn't do</h2>
+<ul>
+  <li><strong>It doesn't stop collusion.</strong> If enough approvers agree to something wrong, it passes. Choose the rule and the people with that in mind.</li>
+  <li><strong>The password key is held by this server.</strong> If you sign on the web, your signing key is stored here encrypted under your password, and the server unlocks it when you sign. Someone who controls the server and captures your password could sign as you. A key on the phone app is made on the phone and never leaves it.</li>
+  <li><strong>We can't reset your password.</strong> It also unlocks your signing key. <a href="{{ url_for('auth.forgot_password') }}">What you can do instead</a>.</li>
+  <li><strong>The witness is only as independent as whoever runs it.</strong> Today the Q-Vault team runs the one witness, as a separate service with its own key. It catches a rewritten database; it can't protect you from us.</li>
+  <li><strong>Files are encrypted for the vault, not for each person.</strong> The server can decrypt a vault's files to give them to its members.</li>
+  <li><strong>The connection isn't post-quantum.</strong> HTTPS to this site is whatever the hosting provider offers. The post-quantum claims cover signatures and the log.</li>
+  {% if onchain %}<li><strong>Payments run on a test network.</strong> Treasury payments use Ethereum's Sepolia test network, not real money.</li>{% endif %}
+</ul>
+
+<h2 id="threats">Threat model, in short</h2>
+<div class="q-table-wrap"><table class="q-table">
+  <caption class="visually-hidden">Threats and what Q-Vault does about each</caption>
+  <thead><tr><th scope="col">Threat</th><th scope="col">What happens</th><th scope="col">Design record</th></tr></thead>
+  <tbody>
+    <tr><td>One approver acting alone</td><td>Refused: a decision needs the vault's rule, any M of N distinct approvers.</td><td><a href="{{ doc('docs/adr/0002-application-level-m-of-n.md') }}">ADR-0002, M of N</a></td></tr>
+    <tr><td>Changing a decision after people signed</td><td>Every signature stops verifying, and the page says the content was altered.</td><td><a href="{{ doc('docs/adr/0009-proposal-binding-verification.md') }}">ADR-0009, binding</a></td></tr>
+    <tr><td>Editing or deleting the log</td><td>The chain and the Merkle checkpoints stop matching; the witness refuses to co-sign a history that isn't an extension of the one it saw.</td><td><a href="{{ doc('docs/adr/0015-transparency-log-and-witness.md') }}">ADR-0015, log and witness</a></td></tr>
+    <tr><td>Swapping in a weaker algorithm</td><td>A switch to a weaker algorithm needs an administrator's explicit confirmation, which is logged; existing signatures keep their own algorithm.</td><td><a href="{{ doc('docs/adr/0012-downgrade-resistance.md') }}">ADR-0012, downgrades</a></td></tr>
+    <tr><td>A server that signs for you</td><td>Possible with a password key (above). A phone key never reaches the server.</td><td><a href="{{ doc('docs/adr/0004-two-tier-key-custody.md') }}">ADR-0004, custody</a>, <a href="{{ doc('docs/adr/0016-device-held-signing-keys.md') }}">ADR-0016, phone keys</a></td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="verify">Check a decision offline</h2>
+<ol>
+  <li>Get the decision's file: an approver uses <strong>Export for verification</strong> on the decision page, or shares its public link.</li>
+  <li>Download <a href="{{ url_for('static', filename='verifier.html') }}" download>the offline verifier</a>. It's one HTML file with the post-quantum library inside; open it with the network off and drop the file on it.</li>
+  <li>Or run <code>python -m qvault.verify decision.qvault.json --expect-log &lt;fingerprint&gt; --expect-witness &lt;fingerprint&gt;</code> from the source. Exit code 0 means verified.</li>
+</ol>
+<p>The fingerprints pin the log's and the witness's keys; get them from somewhere other than the file. This server publishes them, with its newest signed head and the newest head a witness co-signed, at <a href="{{ url_for('public.checkpoint') }}">the public signed head</a> (no sign-in). Save it and run <code>python -m qvault.verify checkpoint.json</code> to check its signatures; the <code>key_fingerprint</code> values in it are the ones to pin. <a href="{{ url_for('docs.page', slug='verifying') }}">What each check proves</a>.</p>
+
+<h2 id="audit">Audit status</h2>
+<p>{{ badge('Not independently audited', 'warning') }}</p>
+<p>No outside firm has reviewed Q-Vault. It is a university project. Its parts were reviewed internally for correctness and security as they were built, and an <a href="{{ doc('docs/attack-lab/latest.md') }}">adversary lab report</a> records the attacks run against it and what they found. Neither is a substitute for an audit.</p>
+
+</div>
+{% endblock %}

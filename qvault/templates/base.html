@@ -53,12 +53,13 @@
 </form>
 {%- endmacro %}
 
-{# Help: only destinations that exist. Keyboard shortcuts, What's new, Status and Contact join
-   when they are built. #}
+{# Help: only destinations that exist. Keyboard shortcuts and Contact join when they are built. #}
 {% macro help_menu() -%}
 {% call menu('Help', 'help', trigger='icon') %}
   {{ menu_item('Docs', url_for('docs.index'), 'docs') }}
   {{ menu_item('Verify a decision', url_for('verify.index'), 'verify') }}
+  {{ menu_item("What's new", url_for('public.changelog'), 'audit') }}
+  {{ menu_item('Status', url_for('public.status'), 'security') }}
 {% endcall %}
 {%- endmacro %}
 
@@ -175,6 +176,7 @@
     <a class="q-pub__brand" href="{{ url_for('core.index') }}">{{ mark(20) }}<span>Q-Vault</span></a>
     <nav class="q-pub__nav" aria-label="Public">
       <a href="{{ url_for('verify.index') }}"{% if request.blueprint == 'verify' %} aria-current="page"{% endif %}>Verify a decision</a>
+      <a class="q-pub__opt" href="{{ url_for('public.security') }}"{% if request.endpoint == 'public.security' %} aria-current="page"{% endif %}>Security</a>
       <a class="q-pub__opt" href="{{ url_for('docs.index') }}"{% if request.blueprint == 'docs' %} aria-current="page"{% endif %}>Docs</a>
       {% if request.endpoint != 'auth.login' %}<a href="{{ url_for('auth.login') }}">Sign in</a>{% endif %}
       {% call menu('Theme', 'theme', trigger='icon') %}{{ theme_choice() }}{% endcall %}
@@ -189,6 +191,37 @@
     </div>
   </div>
   </main>
+  {# The public footer: every page a visitor can reach without an account, and the source. #}
+  <footer class="q-foot">
+    <div class="q-foot__in">
+      <nav class="q-foot__cols" aria-label="Footer">
+        <div>
+          <h2 class="q-foot__h">Product</h2>
+          <ul>
+            <li><a href="{{ url_for('core.index') }}">Overview</a></li>
+            <li><a href="{{ url_for('public.pricing') }}">Pricing</a></li>
+            <li><a href="{{ url_for('public.changelog') }}">Changelog</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="q-foot__h">Trust</h2>
+          <ul>
+            <li><a href="{{ url_for('public.security') }}">Security</a></li>
+            <li><a href="{{ url_for('public.status') }}">Status</a></li>
+            <li><a href="{{ url_for('verify.index') }}">Verify a decision</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="q-foot__h">Learn</h2>
+          <ul>
+            <li><a href="{{ url_for('docs.index') }}">Docs</a></li>
+            <li><a href="{{ source_url() }}">Source code</a></li>
+          </ul>
+        </div>
+      </nav>
+      <p class="q-foot__note">Q-Vault is a university project. It hasn't been independently audited.</p>
+    </div>
+  </footer>
 </div>
 {% endif %}
 </body>

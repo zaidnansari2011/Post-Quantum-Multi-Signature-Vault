@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% from "ui/navigation.html" import page_header %}
+{% block title %}{{ self.page_title() }} — Q-Vault{% endblock %}
+
+{# The public pages (Security, Pricing, Changelog, Status) read the same signed in or out, like
+   the documentation. Signed out they sit in the public frame with its footer; signed in, inside
+   the shell. Each page fills page_title, page_lead and page. #}
+{% block anon_bodyclass %}q-body q-body--public{% endblock %}
+{% block anon_content %}{{ self.content() }}{% endblock %}
+
+{% block content %}
+<div class="q-public">
+  {{ page_header(self.page_title(), self.page_lead() | trim or None) }}
+  {% block page %}{% endblock %}
+</div>
+{% endblock %}
+{% block page_lead %}{% endblock %}

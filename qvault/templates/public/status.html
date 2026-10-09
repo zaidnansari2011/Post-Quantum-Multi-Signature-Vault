@@ -1,0 +1,38 @@
+{% extends "public/_layout.html" %}
+{% from "ui/status.html" import badge %}
+{# Status (plan S22): drawn from what /healthz reports and from the log and the witness
+   (public_status.checks), by this server about itself. Green, amber and red each say what they
+   mean below the rows. #}
+{% block page_title %}Status{% endblock %}
+{% block page_lead %}Checked when this page loaded, by this server: there's no outside monitor.{% endblock %}
+{% block page %}
+{% set words = {'ok': ('Working', 'success'), 'degraded': ('Degraded', 'warning'), 'down': ('Not working', 'critical')} %}
+<div class="q-status">
+  <p class="q-status__all q-status__all--{{ overall }}">
+    <span class="q-status__dot" aria-hidden="true"></span>
+    {% if overall == 'ok' %}Everything is working.{% elif overall == 'degraded' %}Working, with something to know.{% else %}Something isn't working.{% endif %}
+  </p>
+
+  <ul class="q-status__rows" aria-label="Checks">
+    {% for row in rows %}
+    {% set word, tone = words[row.level] %}
+    <li class="q-status__row">
+      <div class="q-status__h">
+        <h2 class="q-status__n">{{ row.name }}</h2>
+        {{ badge(word, tone) }}
+      </div>
+      <p class="q-status__s">{{ row.summary }}</p>
+      <p class="q-status__d">{{ row.detail }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <h2 class="q-section__t">What the colours mean</h2>
+  <dl class="q-status__key">
+    <div><dt>{{ badge('Working', 'success') }}</dt><dd>Doing what it should.</dd></div>
+    <div><dt>{{ badge('Degraded', 'warning') }}</dt><dd>Approvals still work, but a guarantee is weaker than it should be: the log isn't signed or witnessed as promptly as it should be, or there's no witness.</dd></div>
+    <div><dt>{{ badge('Not working', 'critical') }}</dt><dd>Something people rely on isn't working or can't be trusted right now.</dd></div>
+  </dl>
+  <p class="q-cap">If this page doesn't load at all, the server is down. The machine-readable check is at <a href="{{ url_for('core.healthz') }}">/healthz</a>.</p>
+</div>
+{% endblock %}

@@ -70,6 +70,22 @@
     --expect-log 4f2a9c1e77b30d85 \
     --expect-witness 8c1d05fa2b6e4470</code></pre>
 
+<h2>The log's public signed head</h2>
+<p>
+  Anyone can fetch <a href="{{ url_for('public.checkpoint') }}">the log's signed head</a> without
+  an account. It holds the newest head the log signed and the newest one a witness co-signed, each
+  with its signatures and key fingerprints, and nothing about any person, vault or decision. The
+  two differ while the witness hasn't yet seen the newest entries.
+</p>
+<pre><code>python -m qvault.verify checkpoint.json --expect-log 4f2a9c1e77b30d85</code></pre>
+<p>
+  This checks the log's signature on each head and every witness co-signature in the file. It
+  can't prove the newer head extends the witnessed one; the witness checks that before it
+  co-signs. Its main use is the fingerprints: read from this server's public address, they are
+  the values to pass as <code>--expect-log</code> and <code>--expect-witness</code> when you check
+  a decision.
+</p>
+
 <h2>Algorithms the browser cannot check</h2>
 <p>
   The offline verifier checks ML-DSA-65 and ML-DSA-87. It does not check SLH-DSA, because the

@@ -10,12 +10,11 @@ from __future__ import annotations
 from flask import Blueprint, current_app, jsonify, render_template
 from flask_login import current_user
 
-from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     audit_service,
-    checkpoint_service,
     inbox_service,
     proposal_service,
+    public_status,
     treasury_service,
     workspace_service,
 )
@@ -26,18 +25,10 @@ bp = Blueprint("core", __name__)
 @bp.get("/")
 def index():
     if not current_user.is_authenticated:
-        registry = current_app.extensions["crypto"]
-        return render_template(
-            "landing.html",
-            backend=registry.backend,
-            version=current_app.config.get("VERSION", "0.1.0"),
-            algorithms=len(registry.list_signature_algs()) + len(registry.list_kem_algs()),
-            # The front door states live, checkable facts rather than four algorithm names. Every
-            # figure on it can be confirmed by a stranger through /verify without an account,
-            # which is the product's whole claim and was previously nowhere on this page.
-            log=checkpoint_service.log_summary(),
-            demo_enabled=demo_enabled(),
-        )
+        # The live log strip (plan S22) replaces the four statistics: the log's size and the
+        # witness's state, read cheaply (no Merkle root over the whole log on the front door),
+        # each state worded honestly, including "no witness" and "can't be read".
+        return render_template("landing.html", facts=public_status.log_facts())
 
     # Work first (rework R2): what needs this person, what is due, what waits on others, then what
     # happened. The log's figures that used to lead this page live on Audit.
