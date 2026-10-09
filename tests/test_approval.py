@@ -56,10 +56,10 @@ def test_rejections_make_threshold_unreachable(app):
     owner, vault, signers = _vault_with_signers(2, 3, "reject")
     p = proposal_service.create_proposal(vault, owner, "Release", "release funds")
 
-    approval_service.cast_vote(p, signers[0], PASSWORD, "reject")
+    approval_service.cast_vote(p, signers[0], PASSWORD, "reject", reason="Not convinced.")
     assert p.status == "open"  # 1 rejection, 2 signers could still approve
 
-    approval_service.cast_vote(p, signers[1], PASSWORD, "reject")
+    approval_service.cast_vote(p, signers[1], PASSWORD, "reject", reason="Not convinced.")
     # Only 1 signer left; max approvals (1) < M (2) → decided as rejected.
     assert p.status == "rejected"
     assert p.rejected_at is not None

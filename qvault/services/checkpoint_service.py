@@ -18,18 +18,21 @@ the entire reason the witness exists as a separate process with its own key.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from base64 import b64decode, b64encode
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from flask import current_app
 from sqlalchemy import select
 
 from qvault import glassbox
+from qvault.crypto import sha256_hex
 from qvault.extensions import db
-from qvault.models.checkpoint import LogCheckpoint, WitnessCosignature
+from qvault.models.checkpoint import LogCheckpoint, WitnessCosignature, WitnessKeyRefusal
 from qvault.models.key import Key
 from qvault.models.ledger import LedgerEntry
 from qvault.security import master_key
@@ -131,19 +134,21 @@ def checkpoint_covering(seq: int) -> LogCheckpoint | None:
     already co-signed is worth strictly more than one against a checkpoint only this server has
     ever seen, so a witnessed checkpoint wins even if it is larger.
 
+    "Witnessed" means co-signed by a key the pin accepts (:func:`witness_pin`): a checkpoint only
+    some other key co-signed is no better than an unwitnessed one, and is exported as one.
+
     Failing that, the *newest*. The obvious alternative — oldest covering — is wrong, and was a bug
     here: the witness only ever moves forward, so once it has passed an old unwitnessed checkpoint
     that checkpoint can never acquire a co-signature, and exports pinned to it are permanently
     unwitnessed. The newest is the only one still eligible.
     """
-    witnessed = (
-        LogCheckpoint.query.join(WitnessCosignature)
+    witnessed = _first_trusted(
+        WitnessCosignature.query.join(LogCheckpoint)
         .filter(LogCheckpoint.tree_size > seq)
         .order_by(LogCheckpoint.tree_size.asc(), LogCheckpoint.id.asc())
-        .first()
     )
     if witnessed is not None:
-        return witnessed
+        return witnessed.checkpoint
     return (
         LogCheckpoint.query.filter(LogCheckpoint.tree_size > seq)
         .order_by(LogCheckpoint.tree_size.desc(), LogCheckpoint.id.desc())
@@ -359,6 +364,132 @@ def witness_url() -> str | None:
     return current_app.config.get("WITNESS_URL") or None
 
 
+#: A witness key's fingerprint: SHA-256 of its public key, the first 16 hex characters. The rule of
+#: ``WitnessCosignature.key_fingerprint``, of the line the witness prints when it starts, and of the
+#: offline verifier's ``--expect-witness``, so one value pins all three.
+_FINGERPRINT = re.compile(r"[0-9a-f]{16}")
+
+
+def witness_key_fingerprint(public_key: bytes) -> str:
+    return sha256_hex(public_key)[:16]
+
+
+@dataclass(frozen=True)
+class WitnessPin:
+    """``WITNESS_KEY_FINGERPRINT``, read: which witness key this log trusts.
+
+    ``unset``: any key is accepted, as before pinning existed. ``pinned``: only the key with
+    ``value`` as its fingerprint. ``invalid``: the setting is not a fingerprint, and **no** key is
+    accepted. Failing closed is the point: a typo must not quietly turn pinning off.
+    """
+
+    state: str
+    value: str | None = None
+
+    def accepts(self, fingerprint: str) -> bool:
+        if self.state == "unset":
+            return True
+        return self.state == "pinned" and fingerprint == self.value
+
+
+def witness_pin() -> WitnessPin:
+    """The pin as configured. Exactly 16 hex characters; case and surrounding spaces don't matter.
+
+    Only ever read from the configuration. Nothing here learns a key from the witness, so a
+    witness whose key changes is refused until the operator changes the setting, never re-pinned.
+    """
+    raw = current_app.config.get("WITNESS_KEY_FINGERPRINT")
+    text = str(raw).strip().lower() if raw is not None else ""
+    if not text:
+        return WitnessPin("unset")
+    if _FINGERPRINT.fullmatch(text):
+        return WitnessPin("pinned", text)
+    return WitnessPin("invalid", text[:64])
+
+
+def accepted(cosignature: WitnessCosignature) -> bool:
+    """Whether a stored co-signature's key is one the pin accepts. Rows stored before pinning, or
+    written straight into the database, can carry another key: those are never the witness's."""
+    return witness_pin().accepts(cosignature.key_fingerprint())
+
+
+def trusted_cosignatures(checkpoint: LogCheckpoint) -> list[WitnessCosignature]:
+    """The co-signatures on ``checkpoint`` whose key the pin accepts: what is exported and shown
+    as the witness's."""
+    pin = witness_pin()
+    return [c for c in checkpoint.cosignatures if pin.accepts(c.key_fingerprint())]
+
+
+def _first_trusted(query) -> WitnessCosignature | None:
+    """The first co-signature in ``query``'s order whose key the pin accepts.
+
+    The key is not a column, so the fingerprint is computed per row; rows are read in batches and
+    the walk stops at the first accepted one, which with a pin that matches the live witness is
+    the first row.
+    """
+    pin = witness_pin()
+    if pin.state == "unset":
+        return query.first()
+    if pin.state == "invalid":
+        return None
+    for cosignature in query.yield_per(100):
+        if pin.accepts(cosignature.key_fingerprint()):
+            return cosignature
+    return None
+
+
+def newest_trusted_cosignature() -> WitnessCosignature | None:
+    """The co-signature over the largest checkpoint, from a key the pin accepts."""
+    return _first_trusted(
+        WitnessCosignature.query.join(LogCheckpoint).order_by(
+            LogCheckpoint.tree_size.desc(), WitnessCosignature.id.desc()
+        )
+    )
+
+
+#: Refusal rows kept per expected key (``_refuse_key``).
+MAX_REFUSALS = 20
+
+
+def _refuse_key(*, name: str, alg_id: str, fingerprint: str, pin: WitnessPin, tree_size: int):
+    """Record a co-signature refused for its key: one row per (key presented, key expected).
+
+    Whoever answers at ``WITNESS_URL`` chooses the key, and a fresh key costs them nothing, so
+    the rows per expected key are capped: past the cap the oldest row is reused for the new key.
+    """
+    expected = pin.value or ""
+    now = datetime.now(UTC)
+    row = WitnessKeyRefusal.query.filter_by(fingerprint=fingerprint, expected=expected).first()
+    if row is None and WitnessKeyRefusal.query.filter_by(expected=expected).count() >= (
+        MAX_REFUSALS
+    ):
+        row = (
+            WitnessKeyRefusal.query.filter_by(expected=expected)
+            .order_by(WitnessKeyRefusal.last_seen.asc(), WitnessKeyRefusal.id.asc())
+            .first()
+        )
+        row.fingerprint, row.attempts, row.first_seen = fingerprint, 0, now
+    if row is None:
+        db.session.add(
+            WitnessKeyRefusal(
+                witness_name=name[:64],
+                alg_id=alg_id[:64],
+                fingerprint=fingerprint,
+                expected=expected,
+                tree_size=tree_size,
+                attempts=1,
+                first_seen=now,
+                last_seen=now,
+            )
+        )
+    else:
+        row.witness_name = name[:64]
+        row.alg_id = alg_id[:64]
+        row.tree_size = tree_size
+        row.attempts = (row.attempts or 0) + 1
+        row.last_seen = now
+
+
 def _read_error(exc: urllib.error.HTTPError) -> dict:
     """Turn a 4xx into the witness's own words.
 
@@ -487,6 +618,43 @@ def sync_witness(checkpoint: LogCheckpoint | None = None, *, commit: bool = True
             "reason": "witness signature did not verify",
         }
 
+    # The pin (WITNESS_KEY_FINGERPRINT). A valid co-signature from another key is somebody else's
+    # witness, or ours with a new key: either way not one this log was told to trust. Refused,
+    # not stored, logged and recorded for the transparency page. Never re-pinned to the new key.
+    fingerprint = witness_key_fingerprint(public_key)
+    pin = witness_pin()
+    if not pin.accepts(fingerprint):
+        _refuse_key(
+            name=str(name),
+            alg_id=str(alg_id),
+            fingerprint=fingerprint,
+            pin=pin,
+            tree_size=checkpoint.tree_size,
+        )
+        if commit:
+            db.session.commit()
+        current_app.logger.warning(
+            "witness co-signature refused: key %s is not the pinned witness key %s",
+            fingerprint,
+            (
+                pin.value
+                if pin.state == "pinned"
+                else f"(the setting is not a fingerprint: {pin.value!r})"
+            ),
+        )
+        return {
+            "configured": True,
+            "witnessed": False,
+            "reason": (
+                f"witness key {fingerprint} is not the pinned key {pin.value}"
+                if pin.state == "pinned"
+                else "WITNESS_KEY_FINGERPRINT is not a 16-character fingerprint, so no witness "
+                "key is accepted"
+            ),
+            "pin_mismatch": True,
+            "fingerprint": fingerprint,
+        }
+
     # Deliberately NOT appended to the ledger. Recording "checkpoint N was witnessed" as a ledger
     # event would grow the very tree that was just co-signed, so the witness would sit permanently
     # one entry behind and "witnessed and current" would be an unreachable state — turning the
@@ -507,6 +675,17 @@ def sync_witness(checkpoint: LogCheckpoint | None = None, *, commit: bool = True
                 signature=signature,
             )
         )
+        if commit:
+            db.session.commit()
+    elif not pin.accepts(existing.key_fingerprint()):
+        # Stored before the pin, under a key it doesn't accept, with the same witness name: the
+        # one row this checkpoint may hold for that name takes the pinned key's co-signature, or
+        # the checkpoint would stay unwitnessed although the pinned witness co-signed it.
+        existing.alg_id = alg_id
+        existing.backend = response.get("backend", "unknown")
+        existing.public_key = public_key
+        existing.signature = signature
+        existing.created_at = datetime.now(UTC)
         if commit:
             db.session.commit()
 
@@ -534,11 +713,7 @@ def log_summary() -> dict:
         return {"entries": None, "root": None, "witnessed": None, "lag": None, "witness": None}
 
     latest = latest_checkpoint()
-    cosigned = (
-        WitnessCosignature.query.join(LogCheckpoint)
-        .order_by(LogCheckpoint.tree_size.desc())
-        .first()
-    )
+    cosigned = newest_trusted_cosignature()
     return {
         "entries": entries,
         "root": root,
@@ -552,25 +727,54 @@ def log_summary() -> dict:
 
 
 def witness_state() -> dict:
-    """A summary for the transparency page: is there a witness, and how current is it?"""
+    """A summary for the transparency page: is there a witness, and how current is it?
+
+    Counted from co-signatures the pin accepts. ``witnesses`` names every key that has co-signed,
+    each with whether the pin accepts it, so a stored row from another key is listed as such and
+    never as the witness. ``mismatch`` is the newest refusal under the current pin, while no
+    accepted co-signature has arrived since: the witness presents a key this log doesn't trust.
+    """
     latest = latest_checkpoint()
-    witnessed = (
-        WitnessCosignature.query.join(LogCheckpoint)
-        .order_by(LogCheckpoint.tree_size.desc())
-        .first()
-    )
+    witnessed = newest_trusted_cosignature()
+    pin = witness_pin()
+    keys: set[tuple[str, str, str]] = set()
+    for name, alg_id, public_key in db.session.execute(
+        select(
+            WitnessCosignature.witness_name,
+            WitnessCosignature.alg_id,
+            WitnessCosignature.public_key,
+        ).distinct()
+    ):
+        keys.add((name, witness_key_fingerprint(public_key), alg_id))
+    mismatch = None
+    if pin.state != "unset":
+        refusal = (
+            WitnessKeyRefusal.query.filter_by(expected=pin.value or "")
+            .order_by(WitnessKeyRefusal.last_seen.desc(), WitnessKeyRefusal.id.desc())
+            .first()
+        )
+        since = _aware(witnessed.created_at) if witnessed is not None else None
+        if refusal is not None and (since is None or refusal.last_seen >= since):
+            mismatch = refusal
     return {
         "configured": bool(witness_url()),
         "url": witness_url(),
         "latest_size": latest.tree_size if latest else None,
         "latest_witnessed_size": witnessed.checkpoint.tree_size if witnessed else None,
-        "witnesses": sorted(
-            {
-                (c.witness_name, c.key_fingerprint(), c.alg_id)
-                for c in WitnessCosignature.query.all()
-            }
-        ),
+        "witnesses": [
+            {"name": name, "fingerprint": fp, "alg_id": alg, "accepted": pin.accepts(fp)}
+            for name, fp, alg in sorted(keys)
+        ],
+        "pin": pin,
+        "mismatch": mismatch,
         "lag": (
             latest.tree_size - witnessed.checkpoint.tree_size if latest and witnessed else None
         ),
     }
+
+
+def _aware(moment: datetime | None) -> datetime | None:
+    """``created_at`` reads back naive on SQLite; it was written in UTC."""
+    if moment is None or moment.tzinfo is not None:
+        return moment
+    return moment.replace(tzinfo=UTC)

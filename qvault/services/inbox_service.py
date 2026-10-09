@@ -36,11 +36,12 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from qvault.extensions import db
 from qvault.models.execution import Execution
-from qvault.models.proposal import Proposal
+from qvault.models.proposal import DecisionFields, Proposal
 from qvault.models.signature import Signature
 from qvault.models.treasury import ProposalAction
 from qvault.models.user import User
-from qvault.models.vault import SIGNER_ROLES, Vault, VaultMember
+from qvault.models.vault import Vault, VaultMember
+from qvault.services import decision_types, eligibility
 from qvault.services.signing import format_wei
 from qvault.ui import decision_code, first_name
 
@@ -52,8 +53,8 @@ SHOWN_TABS = ("needs_you", "waiting", "expiring", "done")
 SORTS = ("recent", "oldest", "title", "deadline")
 #: A tab whose natural order is not "newest first": what expires soonest leads Expiring soon.
 DEFAULT_SORT = {"expiring": "deadline"}
-#: The decision types a list can be narrowed to. Production access and Contract arrive in R5.
-KINDS = ("general", "payment")
+#: The decision types a list can be narrowed to (plan S13).
+KINDS = ("general", "payment", "access", "contract")
 PER_PAGE = 25
 MAX_PER_PAGE = 100
 #: "Expiring soon" in the inbox and "Due soon" on Home: open, with a deadline inside this window.
@@ -153,10 +154,10 @@ def _member_vault_ids(user: User):
     return select(VaultMember.vault_id).where(VaultMember.user_id == user.id)
 
 
-def _signer_vault_ids(user: User):
-    return select(VaultMember.vault_id).where(
-        VaultMember.user_id == user.id, VaultMember.member_role.in_(SIGNER_ROLES)
-    )
+def _signer_vault_ids(user: User) -> list[int]:
+    """The vaults where this user may sign now: an approver there and in good standing in its
+    workspace (``eligibility``, the vote gate's rule). A list, worked out once per call."""
+    return sorted(eligibility.signing_vault_ids(user.id))
 
 
 def _live_open(now: datetime):
@@ -170,7 +171,7 @@ def _live_open(now: datetime):
 def _settled(now: datetime):
     """Decided one way or another — including deadline-expired rows the sweep has not reached."""
     return or_(
-        Proposal.status.in_(("approved", "rejected", "expired")),
+        Proposal.status.in_(("approved", "rejected", "expired", "withdrawn")),
         and_(
             Proposal.status == "open", Proposal.expires_at.is_not(None), Proposal.expires_at <= now
         ),
@@ -204,13 +205,22 @@ def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
     because the result is an id list the outer query filters on.
     """
     candidates = db.session.execute(
-        select(Proposal.id, Proposal.authorized_signers_snapshot).where(
+        select(Proposal.id, Proposal.authorized_signers_snapshot, Proposal.creator_id).where(
             Proposal.vault_id.in_(_signer_vault_ids(user)),
             _live_open(now),
             _unsigned_by(user),
         )
     ).all()
-    return [pid for pid, snapshot in candidates if user.id in set(json.loads(snapshot))]
+    return [
+        pid
+        for pid, snapshot, creator_id in candidates
+        if user.id in set(json.loads(snapshot))
+        # Their own decision, under separation of duties (S15): not theirs to sign.
+        and not (
+            creator_id == user.id
+            and eligibility.own_decision_blocked(db.session.get(Proposal, pid), user.id)
+        )
+    ]
 
 
 def _tab_condition(user: User, tab: str, now: datetime, needs_ids: list[int] | None = None):
@@ -250,8 +260,45 @@ def _base(user: User, filters: Filters, now: datetime):
         stmt = stmt.where(Proposal.vault_id == filters.vault_id)
     if filters.kind:
         payment = select(ProposalAction.id).where(ProposalAction.proposal_id == Proposal.id)
-        stmt = stmt.where(payment.exists() if filters.kind == "payment" else ~payment.exists())
+        if filters.kind == "payment":
+            stmt = stmt.where(payment.exists())
+        else:
+            # By the type every row shows (``decision_types.typed_view``), never the stored one:
+            # a row whose stored fields no longer write its signed text is General here too.
+            typed = _verified_types(user)
+            if filters.kind == "general":
+                stmt = stmt.where(~payment.exists(), Proposal.id.not_in(list(typed)))
+            else:
+                ids = [pid for pid, kind in typed.items() if kind == filters.kind]
+                stmt = stmt.where(~payment.exists(), Proposal.id.in_(ids))
     return stmt
+
+
+def _verified_types(user: User) -> dict[int, str]:
+    """The decisions in ``user``'s vaults whose stored fields write their signed text, by id, with
+    that type. Read in one query; the text is written again in Python, as every screen does."""
+    rows = db.session.execute(
+        select(Proposal.id, Proposal.action_text, DecisionFields)
+        .join(DecisionFields, DecisionFields.proposal_id == Proposal.id)
+        .where(
+            Proposal.vault_id.in_(_member_vault_ids(user)),
+            ~select(ProposalAction.id).where(ProposalAction.proposal_id == Proposal.id).exists(),
+        )
+    ).all()
+    verified = {}
+    for pid, action_text, stored in rows:
+        view = decision_types.typed_view(_Unpaid(action_text), stored)
+        if view.type in decision_types.STORED_TYPES:
+            verified[pid] = view.type
+    return verified
+
+
+@dataclass(frozen=True)
+class _Unpaid:
+    """As much of a decision without a payment as ``typed_view`` reads."""
+
+    action_text: str
+    action: None = None
 
 
 _ORDER = {
@@ -288,7 +335,7 @@ def search(user: User, filters: Filters, *, now: datetime | None = None):
 
 def signer_vault_ids(user: User) -> set[int]:
     """Vaults where this user may sign — used to decide whether a row is actionable by them."""
-    return set(db.session.scalars(_signer_vault_ids(user)).all())
+    return set(_signer_vault_ids(user))
 
 
 def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | None = None):
@@ -297,12 +344,10 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     Kept out of the template because "does this need me?" is four conditions, and a template that
     computes it inline will drift from the SQL in ``_tab_condition`` that produced the counts.
 
-    ``needs_me``: open, this reader is in the proposal's frozen signer set (``cast_vote``
-    requires it), they are an approver of the vault today, and they have not voted. The current
-    role is the same test the notifications use (``notification_service._eligible_approvers``);
-    the vote path itself checks only the frozen set and membership, so someone demoted to viewer
-    after a decision was raised is not asked for it here but could still sign it (recorded for
-    the owner in the R2 report).
+    ``needs_me``: open, this reader is in the proposal's frozen signer set, ``signer_vaults``
+    says they may sign in its vault now, and they have not voted: the vote gate's rule
+    (``eligibility``), which the notifications use too, so a row never asks for a signature the
+    server would refuse.
 
     The rest is what a row shows since rework R2: approvals and rejections as stored votes (a list
     does not re-verify every signature; the decision page does), the status as a key of the closed
@@ -312,10 +357,15 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     now = now or datetime.now(UTC)
     proposals = list(proposals)
     snapshots = {p.id: json.loads(p.authorized_signers_snapshot) for p in proposals}
+    # Who may sign in each vault now, once per vault on the page rather than once per row.
+    signing_now = {
+        p.vault_id: eligibility.current_signer_ids(p.vault) for p in proposals if p.status == "open"
+    }
     people = _people(
         {uid for ids in snapshots.values() for uid in ids} | {p.creator_id for p in proposals}
     )
     payouts = _payout_states([p.id for p in proposals if p.action is not None])
+    typed = _typed_rows([p.id for p in proposals if p.action is None])
     treasuries_on = bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED"))
     rows = []
     for p in proposals:
@@ -323,7 +373,15 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
         status = effective_status(p, now=now)
         signed_ids = {s.signer_id for s in p.signatures}
         signed_by_me = user.id in signed_ids
-        authorised = user.id in set(snapshots[p.id])
+        authorised = user.id in set(snapshots[p.id]) and not eligibility.own_decision_blocked(
+            p, user.id
+        )
+        outlook = eligibility.outlook(
+            p,
+            approvals=len(approvers),
+            voted=signed_ids,
+            eligible=eligibility.eligible_ids(p, current=signing_now.get(p.vault_id, ())),
+        )
         needs_me = (
             status == "open" and authorised and p.vault_id in signer_vaults and not signed_by_me
         )
@@ -335,7 +393,9 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
             payment=p.action is not None,
             payout_state=payouts.get(p.id),
             treasuries_on=treasuries_on,
+            can_still_pass=outlook.reachable,
         )
+        view = decision_types.typed_view(p, typed.get(p.id))
         rows.append(
             {
                 "proposal": p,
@@ -351,19 +411,30 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
                 "can_sign": authorised and p.vault_id in signer_vaults,
                 "needs_me": needs_me,
                 "is_payment": p.action is not None,
+                # Plan S13: the type its signed text bears out (``decision_types.typed_view``).
+                "decision_type": view.type,
+                "type_label": view.label,
                 "amount": _amount(p),
                 "code": decision_code(p.payload_hash),
                 "raised_by": _name(people, p.creator_id, user),
                 "approved_by": [_name(people, s.signer_id, user) for s in approvers],
                 # Their full names, for avatars: "You" is a word, not an initial.
                 "approved_by_full": [_full_name(people, s.signer_id, user) for s in approvers],
-                # Who can still give an approval: in the frozen set, and not yet voted either way.
-                "can_still_approve": [
-                    _name(people, uid, user) for uid in snapshots[p.id] if uid not in signed_ids
-                ],
+                # Who can still give an approval: who may sign it now, not yet voted either way.
+                "can_still_approve": [_name(people, uid, user) for uid in outlook.still],
+                # False when too few of them are left to reach its threshold (``eligibility``).
+                "can_still_pass": status != "open" or outlook.reachable,
             }
         )
     return rows
+
+
+def _typed_rows(ids: list[int]) -> dict[int, DecisionFields]:
+    """The stored type and fields of each of ``ids`` that has them, in one query."""
+    if not ids:
+        return {}
+    rows = DecisionFields.query.filter(DecisionFields.proposal_id.in_(ids)).all()
+    return {row.proposal_id: row for row in rows}
 
 
 def status_key(
@@ -375,6 +446,7 @@ def status_key(
     payment: bool = False,
     payout_state: str | None = None,
     treasuries_on: bool = False,
+    can_still_pass: bool = True,
 ) -> tuple[str, int | None]:
     """A decision's state as a key of the closed status vocabulary (plan S6), with its count.
 
@@ -384,17 +456,24 @@ def status_key(
     still needed, not people. An approved payment reads as its payout: Queued until the treasury
     pays, then Paid, or Failed when it cannot be paid; with treasuries switched off and no payout
     it stays Approved. ``ui.status_of`` turns the key into its word and tone.
+
+    ``can_still_pass`` is False when too few people can still approve an open decision to reach
+    its threshold (``eligibility.outlook``): it then reads Can’t pass instead of Waiting on N.
+    A derived word, not a status: the decision is still open, and Needs your signature still wins
+    for someone who can sign it, since their vote is still taken.
     """
     if status == "open":
         if needs_me:
             return "needs_you", None
+        if not can_still_pass:
+            return "cannot_pass", None
         return "waiting", max(required_m - approvals, 1)
     if status == "approved" and payment:
         if payout_state is not None:
             return PAYOUT_STATUS.get(payout_state, "queued"), None
         if treasuries_on:
             return "queued", None
-    if status in ("approved", "rejected", "expired"):
+    if status in ("approved", "rejected", "expired", "withdrawn"):
         return status, None
     raise ValueError(f"{status!r} has no word in the status vocabulary")
 

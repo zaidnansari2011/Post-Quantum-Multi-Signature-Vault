@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "ui/navigation.html" import breadcrumbs, page_header %}
-{% from "ui/forms.html" import field, due_field, file_drop %}
+{% from "ui/forms.html" import field, due_field, file_drop, radio_group %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/icons.html" import icon %}
 {% from "ui/avatars.html" import avatar %}
@@ -11,15 +11,23 @@
 
 {#- New decision (rework R2, plan S14): the type, its fields, and beside them who will approve it,
     from the same signer set raising it freezes. The form posts the fields it always has
-    (title, action_text, deadline, file; or title, to, amount, deadline). -#}
+    (title, action_text, deadline, file; or title, to, amount, deadline). Production access and
+    Contract (R5, plan S13) post their own fields, and the server writes the text from them, as it
+    does a payment's; `errors` holds their refusals, by field. -#}
 {% block content %}
 {% set is_payment = kind == 'payment' %}
+{% set is_typed = kind in ('access', 'contract') %}
+{#- A file a little under the whole request's limit (MAX_CONTENT_LENGTH, 16 MiB), leaving room for
+    the fields beside it: qvault.js refuses a larger one before it uploads, rather than the server
+    answering 413 after the wait. -#}
+{% set max_file = config.MAX_CONTENT_LENGTH - 32768 if config.MAX_CONTENT_LENGTH else None %}
+{% set file_cap = 'Optional. ' ~ ('Up to ' ~ config.MAX_CONTENT_LENGTH // 1048576 ~ ' MB. ' if max_file else '') ~ 'Encrypted at rest; its fingerprint is part of what’s signed.' %}
 {% set deadline_value = form.deadline.data.strftime('%Y-%m-%d %H:%M') if form.deadline.data else (form.deadline.raw_data[0] if form.deadline.raw_data else None) %}
 {{ page_header('New payment' if is_payment else 'New decision',
                'In ' ~ vault.name ~ '. Once it’s raised its text can’t be edited: approvers sign these exact words.') }}
 
 <nav class="q-typepick" aria-label="Type of decision">
-  <a class="q-typecard" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}"{% if not is_payment %} aria-current="page"{% endif %}>
+  <a class="q-typecard" href="{{ url_for('vaults.new_proposal', vid=vault.id) }}"{% if kind == 'general' %} aria-current="page"{% endif %}>
     {{ icon('decision') }}<span class="q-typecard__t">General</span>
     <span class="q-typecard__c">Any decision, in words you write</span>
   </a>
@@ -34,11 +42,23 @@
     <span class="q-typecard__c">Needs a treasury linked to this vault</span>
   </span>
   {%- endif %}
+  <a class="q-typecard" href="{{ url_for('vaults.new_proposal', vid=vault.id, kind='access') }}"{% if kind == 'access' %} aria-current="page"{% endif %}>
+    {{ icon('security') }}<span class="q-typecard__t">Production access</span>
+    <span class="q-typecard__c">Who gets which access, and until when</span>
+  </a>
+  <a class="q-typecard" href="{{ url_for('vaults.new_proposal', vid=vault.id, kind='contract') }}"{% if kind == 'contract' %} aria-current="page"{% endif %}>
+    {{ icon('docs') }}<span class="q-typecard__t">Contract</span>
+    <span class="q-typecard__c">Who it’s with, what for, and its value</span>
+  </a>
 </nav>
 
 <form class="q-compose" method="post" novalidate
-      {%- if is_payment %} action="{{ url_for('vaults.new_proposal', vid=vault.id, kind='payment') }}"{% else %} enctype="multipart/form-data"{% endif %}>
+      {%- if is_payment or is_typed %} action="{{ url_for('vaults.new_proposal', vid=vault.id, kind=kind) }}"{% endif %}
+      {%- if not is_payment and kind != 'access' %} enctype="multipart/form-data"{% endif %}>
   {{ form.hidden_tag() }}
+  {%- if again %}
+  <p class="q-preview__cap">Replaces <a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=again.proposal_uuid) }}">{{ again.title }}</a>. Signatures don’t carry over: everyone signs this one afresh{% if again.file %}, and the attachment needs adding again{% endif %}.</p>
+  {%- endif %}
   <div class="q-compose__fields">
     {{ field('title', 'Title', value=form.title.data, error=form.title.errors, required=True,
              caption='A label for lists. It isn’t part of what’s signed.', attrs={'maxlength': 255, 'autocomplete': 'off'}) }}
@@ -53,6 +73,52 @@
                  empty='7 days after you raise it.',
                  caption='Type it as 2026-10-13 17:00, in UTC, or pick it from the calendar. At most 30 days away.') }}
     <p class="q-compose__note">The decision text is written from the payment, so it says exactly what the treasury will pay.</p>
+    {%- elif kind == 'access' %}
+    {{ field('person', 'Who gets access', value=form.person.data, error=errors.get('person') or form.person.errors, required=True,
+             caption='Their name as the approvers know them.', attrs={'maxlength': 80, 'autocomplete': 'off'}) }}
+    {{ field('system', 'System', value=form.system.data, error=errors.get('system') or form.system.errors, required=True,
+             caption='The system or environment, like prod-db or payments-api (eu-west-1).', attrs={'maxlength': 80, 'autocomplete': 'off', 'spellcheck': 'false'}) }}
+    {{ radio_group('level', 'Access', [
+         ('read', access_levels.read[0], 'Can see data. Can’t change anything.'),
+         ('write', access_levels.write[0], 'Can change data.'),
+         ('admin', access_levels.admin[0], 'Can change data, settings and who else has access.')],
+       form.level.data or 'read', error=errors.get('level')) }}
+    {#- One caption: the read-back, which says the moment in words once it is chosen. -#}
+    {{ due_field('until', 'Until', form.until.data, error=errors.get('until') or form.until.errors, min=due_min,
+                 empty='When access ends. Type it as 2026-11-04 17:00, in UTC, or pick it from the calendar.') }}
+    {{ field('reason', 'Reason', value=form.reason.data, error=errors.get('reason') or form.reason.errors, required=True,
+             caption='Why it’s needed, in one line.', attrs={'maxlength': 280, 'autocomplete': 'off'}) }}
+    {{ field('reference', 'Ticket or reference', value=form.reference.data, error=errors.get('reference') or form.reference.errors,
+             caption='Optional. An incident or change ticket, like INC-2041.', attrs={'maxlength': 80, 'autocomplete': 'off', 'spellcheck': 'false'}) }}
+    {{ due_field('deadline', 'Due', deadline_value, error=form.deadline.errors, min=due_min,
+                 empty='No due date: it stays open until it’s decided.',
+                 caption='Optional. When the approvers should decide by, in UTC.') }}
+    <p class="q-compose__note">The decision text is written from these fields, so every approver reads the same words, and a phone checks them before it signs.</p>
+    {%- elif kind == 'contract' %}
+    {{ field('counterparty', 'Counterparty', value=form.counterparty.data, error=errors.get('counterparty') or form.counterparty.errors, required=True,
+             caption='Who the contract is with, as the contract names them.', attrs={'maxlength': 120, 'autocomplete': 'off'}) }}
+    {{ field('subject', 'What it’s for', value=form.subject.data, error=errors.get('subject') or form.subject.errors, required=True,
+             caption='One line, like Commercial liability cover for 2027.', attrs={'maxlength': 280, 'autocomplete': 'off'}) }}
+    <div class="q-pair">
+      {{ field('amount', 'Value', value=form.amount.data, error=errors.get('amount') or form.amount.errors,
+               caption='Optional. Like 48200.50.', attrs={'inputmode': 'decimal', 'autocomplete': 'off'}) }}
+      {{ field('currency', 'Currency', value=form.currency.data, error=errors.get('currency') or form.currency.errors,
+               caption='Like GBP.', attrs={'maxlength': 3, 'autocomplete': 'off', 'autocapitalize': 'characters', 'spellcheck': 'false'}) }}
+    </div>
+    <div class="q-pair q-pair--even">
+      {{ field('starts', 'Starts', value=form.starts.data, error=errors.get('starts') or form.starts.errors,
+               caption='Optional. Like 2027-01-01.', attrs={'inputmode': 'numeric', 'autocomplete': 'off', 'maxlength': 10}) }}
+      {{ field('ends', 'Ends', value=form.ends.data, error=errors.get('ends') or form.ends.errors,
+               caption='Optional. Like 2027-12-31.', attrs={'inputmode': 'numeric', 'autocomplete': 'off', 'maxlength': 10}) }}
+    </div>
+    {{ field('reference', 'Contract reference', value=form.reference.data, error=errors.get('reference') or form.reference.errors,
+             caption='Optional. The contract’s own number, like CW-2027-118.', attrs={'maxlength': 80, 'autocomplete': 'off', 'spellcheck': 'false'}) }}
+    {{ due_field('deadline', 'Due', deadline_value, error=form.deadline.errors, min=due_min,
+                 empty='No due date: it stays open until it’s decided.',
+                 caption='Optional. When the approvers should decide by, in UTC.') }}
+    {{ file_drop('file', 'The contract', error=form.file.errors, max_bytes=max_file,
+                 caption=file_cap) }}
+    <p class="q-compose__note">The decision text is written from these fields, so every approver reads the same words, and a phone checks them before it signs.</p>
     {%- else %}
     {{ field('action_text', 'Decision text', type='textarea', value=form.action_text.data, error=form.action_text.errors, required=True,
              caption='The exact words every approver signs. Include amounts, names and references.',
@@ -60,8 +126,8 @@
     {{ due_field('deadline', 'Due', deadline_value, error=form.deadline.errors, min=due_min,
                  empty='No due date: it stays open until it’s decided.',
                  caption='Optional. Type it as 2026-10-13 17:00, in UTC, or pick it from the calendar.') }}
-    {{ file_drop('file', 'Attachment', error=form.file.errors,
-                 caption='Optional. Encrypted at rest; its fingerprint is part of what’s signed.') }}
+    {{ file_drop('file', 'Attachment', error=form.file.errors, max_bytes=max_file,
+                 caption=file_cap) }}
     {%- endif %}
   </div>
 
@@ -69,7 +135,12 @@
     <h2 class="q-preview__t" id="preview-t">Who approves</h2>
     <p class="q-preview__rule">
       {{ quorum(0, preview.m, 'md', show_count=False) }}
+      {%- if preview.impossible %}
+      {#- Too few could approve it: "Any 2 of Brij" would read as a rule it can meet. -#}
+      <span>Needs {{ preview.m }} approval{{ '' if preview.m == 1 else 's' }}; {% if preview.names %}only {{ ui_names(preview.names) }} can give one{% else %}nobody can give one{% endif %}</span>
+      {%- else %}
       <span>Any {{ preview.m }} of {{ ui_names(preview.names) }}</span>
+      {%- endif %}
     </p>
     <ul class="q-preview__people">
       {%- for person in preview.people %}
@@ -78,7 +149,9 @@
     </ul>
     <dl class="q-preview__facts">
       <div><dt>Due</dt><dd data-due-echo="f-deadline">{{ '7 days after you raise it.' if is_payment else 'No due date: it stays open until it’s decided.' }}</dd></div>
-      {%- if preview.includes_you %}
+      {%- if preview.includes_you and preview.separation %}
+      <div><dt>You</dt><dd>You can’t approve your own decision. In {{ vault.name }}, the {{ preview.m }} approval{{ '' if preview.m == 1 else 's' }} must come from other people.</dd></div>
+      {%- elif preview.includes_you %}
       <div><dt>You</dt><dd>You’re one of the approvers, so your own approval counts towards the {{ preview.m }}.</dd></div>
       {%- endif %}
       {%- if preview.asked %}
@@ -88,11 +161,14 @@
       <div><dt>Then</dt><dd>Once {{ preview.m }} approve, the vault’s treasury pays it on Sepolia.</dd></div>
       {%- endif %}
     </dl>
+    {%- if preview.impossible %}
+    <p class="q-preview__warn" role="alert">{{ icon('warning') }}It can’t pass: {{ preview.why }}</p>
+    {%- endif %}
     <p class="q-preview__cap">Approvers are fixed when you raise it. People added to {{ vault.name }} later can’t approve it.</p>
   </aside>
 
   <div class="q-compose__act">
-    <button class="q-btn q-btn--primary" type="submit" name="submit" value="{{ form.submit.label.text }}" data-busy-on-submit>
+    <button class="q-btn q-btn--primary" type="submit" name="submit" value="{{ form.submit.label.text }}" data-busy-on-submit{% if preview.impossible %} disabled{% endif %}>
       <span>{{ 'Raise payment' if is_payment else 'Raise decision' }}</span><span class="q-btn__busy" aria-hidden="true"><i></i><i></i><i></i></span>
     </button>
     {{ button('Cancel', 'ghost', href=url_for('vaults.vault_detail', vid=vault.id)) }}

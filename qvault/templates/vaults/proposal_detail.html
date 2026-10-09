@@ -10,7 +10,7 @@
 {% from "ui/status.html" import status, quorum, badge %}
 {% from "ui/avatars.html" import avatar, avatar_stack %}
 {% from "ui/buttons.html" import button %}
-{% from "ui/data.html" import hash, reltime %}
+{% from "ui/data.html" import hash, reltime, rule_diff %}
 {% from "ui/feedback.html" import banner, dialog %}
 {% from "ui/forms.html" import field %}
 {% from "ui/menus.html" import menu, menu_item, menu_sep %}
@@ -18,7 +18,7 @@
 
 {% block title %}{{ proposal.title }} — Q-Vault{% endblock %}
 {% block crumbs %}{{ breadcrumbs([('Vaults', url_for('vaults.list_vaults')), (vault.name, url_for('vaults.vault_detail', vid=vault.id)), (proposal.title, None)]) }}{% endblock %}
-{% block bodyclass %}body q-dpage{% endblock %}
+{% block bodyclass %}q-body q-dpage{% endblock %}
 
 {% set names = ev.names %}
 {% set is_payment = ev.payment is not none %}
@@ -63,6 +63,7 @@
 {% set raised %}{{ avatar(names.get(proposal.creator_id, 'Someone'), 20, decorative=True) }}<span>{{ names.get(proposal.creator_id, 'Someone') }}, {{ reltime(proposal.created_at) }}</span>{% endset %}
 {% set code %}<code class="q-code">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches the start of the payload hash on your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button>{% endset %}
 {% set facts = [('Raised by', raised)] %}
+{% if typed.type in ('access', 'contract') %}{% set _ = facts.append(('Type', typed.label)) %}{% endif %}
 {% if proposal.status == 'open' and proposal.expires_at %}
   {% set due %}<span class="{{ 'q-due q-due--soon' if due_soon else 'q-due' }}">{% if due_soon %}{{ icon('warning') }}{% endif %}{{ ui_absolute(proposal.expires_at) }}</span>{% endset %}
   {% set _ = facts.append(('Due', due)) %}
@@ -72,6 +73,8 @@
   {% set _ = facts.append(('Rejected', ui_absolute(proposal.rejected_at))) %}
 {% elif proposal.status == 'expired' and proposal.expires_at %}
   {% set _ = facts.append(('Expired', ui_absolute(proposal.expires_at))) %}
+{% elif proposal.status == 'withdrawn' and proposal.lifecycle and proposal.lifecycle.withdrawn_at %}
+  {% set _ = facts.append(('Withdrawn', ui_absolute(proposal.lifecycle.withdrawn_at))) %}
 {% endif %}
 {% set _ = facts.append(('Decision code', code)) %}
 
@@ -82,6 +85,8 @@
     {% if can_approve %}{{ button('Approve', 'primary', attrs={'data-dialog-open': 'dlg-approve'}) }}{% endif %}
   </span>
   {% endif %}
+  {% if can_withdraw %}{{ button('Withdraw', 'ghost', attrs={'data-dialog-open': 'dlg-withdraw'}) }}{% endif %}
+  {% if can_raise_again %}{{ button('Raise again', 'secondary', href=url_for('vaults.new_proposal', vid=vault.id, again=proposal.proposal_uuid)) }}{% endif %}
   {% call menu('More actions', 'more', trigger='icon') %}
     {{ menu_item('Export for verification', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
     {{ menu_item('Download as JSON', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='json')) }}
@@ -100,7 +105,21 @@
 
 {% if not binding.ok %}
 <div class="q-dbanner">
-{{ banner('critical', ev.outcome[0][:-1], binding.detail ~ ' ' ~ ev.outcome[1] ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else '')) }}
+{{ banner('critical', ev.outcome[0][:-1], binding.detail ~ ' ' ~ ev.outcome[1] ~ (' Approve is unavailable: approving could authorise a different payment.' if is_payment else ''), announce=True) }}
+</div>
+{% endif %}
+
+{% if cannot_pass %}
+{#- Too few people who can still approve it are left: it is not rejected early, since its signed
+    rule says when it is, so it says why it can't pass, from the people and what stops each now
+    (eligibility.shortfall, never a list of what might have happened), and how it ends. -#}
+{% set k = still_ids | length %}
+<div class="q-dbanner">
+{% set who_ends = 'you withdraw it' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') ~ ' withdraws it' %}
+{{ banner('warning', 'This ' ~ noun ~ ' can no longer pass',
+  'It needs ' ~ needed ~ ' more approval' ~ ('' if needed == 1 else 's') ~ ', and ' ~ ('nobody' if k == 0 else 'only ' ~ k ~ (' person' if k == 1 else ' people')) ~ ' who can still approve it ' ~ ('is' if k <= 1 else 'are') ~ ' left. '
+  ~ (shortfall | join(' ')) ~ (' ' if shortfall else '') ~ 'Votes already cast still count. '
+  ~ ('It stays open until it expires ' ~ ui_absolute(proposal.expires_at) ~ ', or until ' ~ who_ends ~ '.' if proposal.expires_at else 'It stays open until ' ~ who_ends ~ '.')) }}
 </div>
 {% endif %}
 
@@ -129,11 +148,24 @@
 
 {#- ------------------------------------------------------------------ 1. the decision text -#}
 <section class="q-dblk" aria-label="Decision text">
+  {%- if typed.fields %}
+  {#- A typed decision's signed text, every character of it: its sentence as the subject, then its
+      field lines a size down. Split only when its fields write exactly this text (typed_view). -#}
+  {%- set lines = proposal.action_text.splitlines() %}
+  <p class="q-dtext">{{ lines[0]|decision_text }}</p>
+  <p class="q-dtext q-dtext--lines">{% for line in lines[1:] %}<span>{{ line|decision_text }}</span>{% endfor %}</p>
+  {%- else %}
   <p class="q-dtext">{{ proposal.action_text|decision_text }}</p>
+  {%- endif %}
   <p class="q-dcap">
-    {%- if binding.ok %}<span class="q-dcap__ok">{{ icon('success') }}Content verified.</span> {% if is_payment %}Generated from the payment below. {% endif %}This is the text every approver signs.
+    {%- if binding.ok %}<span class="q-dcap__ok">{{ icon('success') }}Content verified.</span> {% if is_payment %}Generated from the payment below. {% elif typed.fields %}Written from its {{ typed.label|lower }} fields, which a phone writes again and checks before it signs. {% endif %}This is the text every approver signs.
     {%- else %}<span class="q-dcap__bad">{{ icon('critical') }}Content altered.</span> This isn’t the text the approvers signed.{% endif -%}
   </p>
+  {% if typed.mismatch %}
+  {#- Fields are stored beside the text, unsigned. These don't write the text, so they are not
+      shown at all, and the decision reads as General: only the signed words count. -#}
+  <p class="q-dcap"><span class="q-dcap__bad">{{ icon('warning') }}Its type can’t be shown.</span> The fields stored with it don’t write this text, so it’s shown as a general decision. Only the text above was signed.</p>
+  {% endif %}
   {% if proposal.file %}
   <div class="q-attach">
     {{ icon('docs') }}
@@ -151,11 +183,16 @@
   <div class="q-seal">{{ quorum(approvals, proposal.required_m, size='lg', show_count=False) }}<span class="q-seal__n">{{ approvals }} of {{ proposal.required_m }} approval{{ '' if proposal.required_m == 1 else 's' }}</span></div>
   <p class="q-seal__s">
     {%- if proposal.status == 'open' %}
-      {{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(approver_ids) }} can approve.
+      {#- Who can approve by the vote gate's rule (eligibility), not the frozen set: a demoted
+          approver, or under S15 whoever raised it, is not offered as one. -#}
+      {%- if cannot_pass %}It needs {{ left }} more approval{{ '' if left == 1 else 's' }}.
+      {%- else %}{{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(can_approve_ids) }} can approve.{% endif %}
     {%- elif proposal.status == 'approved' %}
       Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.
     {%- elif proposal.status == 'rejected' %}
       Rejected by {{ rejections }} of the {{ proposal.required_n }} approvers, so it could no longer reach {{ proposal.required_m }} approvals.
+    {%- elif proposal.status == 'withdrawn' %}
+      Withdrawn by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }} with {{ approvals }} of the {{ proposal.required_m }} approvals it needed. Approvals already given no longer count.
     {%- else %}
       Expired with {{ approvals }} of the {{ proposal.required_m }} approvals it needed.
     {%- endif %}
@@ -188,7 +225,8 @@
     {% endfor %}
 
     {% if proposal.status == 'open' %}
-      {% set others = approver_ids | reject('in', voted_ids) | reject('equalto', current_user.id) | list %}
+      {#- Who can still approve, by the vote gate's rule: not merely the frozen set. -#}
+      {% set others = still_ids | reject('equalto', current_user.id) | list %}
       {% if can_vote %}
       <li class="q-tl__i q-tl__i--you">
         <span class="q-tl__who">{{ avatar(current_user.display_name or current_user.email, 24, decorative=True) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
@@ -198,7 +236,7 @@
       {% endif %}
       {% if others %}
       <li class="q-tl__i">
-        <span class="q-tl__who">{% set other_names = [] %}{% for uid in others %}{% set _ = other_names.append(names.get(uid, 'Someone')) %}{% endfor %}{{ avatar_stack(other_names, max=2, size=24) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
+        <span class="q-tl__who">{% set other_names = [] %}{% for uid in others %}{% set _ = other_names.append(names.get(uid, 'Someone')) %}{% endfor %}{{ avatar_stack(other_names, max=(2 if other_names|length == 2 else 1), size=24) }}<span class="q-tl__g q-tl__g--wait" aria-hidden="true"></span></span>
         <div class="q-tl__b"><p>{% for uid in others %}<b>{{ names.get(uid, 'Someone') }}</b>{% if not loop.last %}{{ ' or ' if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %} can {{ 'also ' if can_vote or approvals else '' }}approve</p></div>
       </li>
       {% endif %}
@@ -216,11 +254,14 @@
           <p><b>Approved</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% elif proposal.status == 'rejected' %}
           <p><b>Rejected</b>. It can no longer be approved</p>
+          {% elif proposal.status == 'withdrawn' %}
+          <p><b>Withdrawn</b> by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }}. It can no longer be approved</p>
           {% else %}
           <p><b>Expired</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% endif %}
         </div>
-        <span class="q-tl__time">{{ ui_absolute(proposal.approved_at or proposal.rejected_at or proposal.expires_at) if (proposal.approved_at or proposal.rejected_at or proposal.expires_at) }}</span>
+        {% set ended = proposal.approved_at or proposal.rejected_at or (proposal.lifecycle.withdrawn_at if proposal.status == 'withdrawn' and proposal.lifecycle else none) or proposal.expires_at %}
+        <span class="q-tl__time">{{ ui_absolute(ended) if ended }}</span>
       </li>
       {% if payout and payout.state == 'confirmed' %}
       <li class="q-tl__i q-tl__i--end">
@@ -280,6 +321,56 @@
     </div>
     <a class="q-brief__a" href="{{ here }}?tab=evidence">See the evidence</a>
   </div>
+</section>
+
+{#- ------------------------------------------------------------------ 5. discussion (R5)
+    Unsigned, and drawn so it can't pass for the decision: the interface face in plain rows, each
+    labelled as a comment, never the serif of the text people sign. Bodies are escaped by Jinja;
+    a mention is drawn only where the server resolved one (discussion_service.segments). -#}
+<section class="q-dblk q-disc" id="discussion" aria-labelledby="disc-t">
+  <h2 class="q-dblk__t" id="disc-t">Discussion</h2>
+  <p class="q-disc__note">{{ icon('info') }}<span>Comments aren’t signed and aren’t part of the {{ noun }}. Everyone in {{ vault.name }} can read them.</span></p>
+  {% if comments %}
+  <ol class="q-disc__l">
+    {% for c in comments %}
+    <li class="q-cmt" id="comment-{{ c.id }}">
+      <span class="q-cmt__who">{{ avatar(c.author, 24, decorative=True) }}</span>
+      <div class="q-cmt__b">
+        <p class="q-cmt__hd"><b>{{ 'You' if c.mine else c.author }}</b><span class="q-cmt__tag">Comment</span><time class="q-cmt__time" datetime="{{ c.created_at.isoformat() if c.created_at }}">{{ ui_absolute(c.created_at) }}</time></p>
+        {% if c.deleted %}
+        <p class="q-cmt__gone">Comment deleted by {{ 'you' if c.mine else 'its author' }}.</p>
+        {% else %}
+        <p class="q-cmt__t">{% for part in c.segments %}{% if part.mention %}<span class="q-mention"{% if part.name %} title="{{ part.name }}"{% endif %}>{{ part.text }}</span>{% else %}{{ part.text }}{% endif %}{% endfor %}</p>
+        {% if c.mine %}
+        <details class="q-cmt__del">
+          <summary>Delete</summary>
+          <form method="post" action="{{ url_for('vaults.delete_comment', vid=vault.id, pid=proposal.proposal_uuid, cid=c.id) }}">
+            {{ delete_comment_form.hidden_tag() }}
+            <span class="q-cap">Deleting removes what it says for everyone. The audit log records that you deleted a comment.</span>
+            {{ button('Delete comment', 'danger', type='submit', size='sm', name='submit', value='Delete') }}
+          </form>
+        </details>
+        {% endif %}
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="q-empty-line">No comments yet.</p>
+  {% endif %}
+  {% if cannot_comment %}
+  <p class="q-note">{{ cannot_comment }}</p>
+  {% else %}
+  <form class="q-disc__form" method="post" action="{{ url_for('vaults.post_comment', vid=vault.id, pid=proposal.proposal_uuid) }}">
+    {{ comment_form.hidden_tag() }}
+    {% set handles = [] %}{% for p in mentionable[:8] %}{% set _ = handles.append('@' ~ p.handles[0]) %}{% endfor %}
+    {{ field('body', 'Add a comment', type='textarea', id='f-comment', required=True,
+             caption=('Mention someone who can see this ' ~ noun ~ ' to tell them: ' ~ handles|join(', ') ~ ('…' if mentionable|length > 8 else '') ~ '. ' if handles else '') ~ 'Up to 2,000 characters. Not signed.',
+             attrs={'maxlength': 2000, 'rows': 3}) }}
+    {{ button('Post comment', 'secondary', type='submit', name='submit', value='Post comment') }}
+  </form>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -376,7 +467,7 @@
         {% set cp = ev.checkpoint.row %}
         <div><dt>Checkpoint</dt><dd><span class="q-line">{{ '{:,}'.format(cp.tree_size) }} entries, root {{ hash(cp.root_hash, 'root hash') }}</span><span class="q-cap q-line">Signed by the log key, {{ cp.alg_id }}{% if ev.checkpoint.key_fingerprint %}, fingerprint {{ hash(ev.checkpoint.key_fingerprint, 'log key fingerprint', 16, 0) }}{% endif %}</span><span class="q-line">{{ result(ev.checkpoint.valid) }}</span></dd></div>
         {% for w in ev.witnesses %}
-        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap q-line">Key fingerprint {{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ result(w.valid) }}</span></dd></div>
+        <div><dt>Witness</dt><dd>{{ w.row.witness_name }}, {{ w.row.alg_id }}<span class="q-cap q-line">Key fingerprint {{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}</span><span class="q-cap">Co-signed {{ ev_precise(w.row.created_at) }}</span><span class="q-line">{{ result(w.valid, 'Valid', 'Didn’t verify' if w.key_pinned else 'Not the pinned witness key') }}</span></dd></div>
         {% else %}
         <div><dt>Witness</dt><dd>No witness has co-signed this checkpoint.</dd></div>
         {% endfor %}
@@ -415,9 +506,36 @@
   <h2 class="q-dblk__t" id="det-t">Details</h2>
   <dl class="q-plain">
     <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
-    <div><dt>Type</dt><dd>{{ 'Payment' if is_payment else 'General' }}</dd></div>
-    <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the vault’s rule don’t apply to this decision.</span></dd></div>
+    <div><dt>Type</dt><dd>{{ typed.label }}{% if typed.version %}<span class="q-cap">Its text is written from its fields.</span>{% endif %}</dd></div>
+    <div><dt>Rule when raised</dt><dd>Any {{ proposal.required_m }} of {{ proposal.required_n }}<span class="q-cap">{{ people(approver_ids) }}. Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
+    {% if changes_since %}
+    {#- R5: the vault's rule changes since this was raised, and which of them reach it: its
+        threshold and signer set are frozen, but who may sign is checked again at signing. -#}
+    <div><dt>Changed since raised</dt><dd>
+      <ul class="q-since">
+      {% for c in changes_since %}
+        <li>{{ rule_diff(c.diff) }}<span class="q-cap">
+          {#- Decided from this decision's own facts (vaults._with_effects). -#}
+          {%- if c.effect == 'kept_rule' %}Doesn’t apply here: this {{ noun }} keeps the rule it was raised with.
+          {%- elif c.effect == 'sod_on' %}Applies here too: whoever raised it can’t approve it.
+          {%- elif c.effect == 'sod_off' %}Applies here: whoever raised it can approve it again.
+          {%- elif c.effect == 'sod_off_frozen' %}Doesn’t reopen this {{ noun }} to whoever raised it: it was raised while they couldn’t approve it.
+          {%- elif c.effect == 'not_in_set' %}Doesn’t apply here: only its approvers when it was raised can sign it.
+          {%- elif c.effect == 'approver_again' %}Applies here: they were one of its approvers when it was raised, so being one again lets them sign it.
+          {%- elif c.effect == 'no_longer' %}Applies here: only someone who is still an approver can sign it.
+          {%- else %}Doesn’t apply here: they still can’t sign it.{% endif %}
+          {{ c.who }}, {{ ui_absolute(c.when) if c.when }}.</span></li>
+      {% endfor %}
+      </ul>
+    </dd></div>
+    {% endif %}
     <div><dt>Raised</dt><dd>{{ ui_absolute(proposal.created_at) }}</dd></div>
+    {% if raised_again_from %}
+    <div><dt>Raised again from</dt><dd><a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=raised_again_from.proposal_uuid) }}">{{ raised_again_from.title }}</a><span class="q-cap">A new decision: nothing signed there counts here.</span></dd></div>
+    {% endif %}
+    {% if raised_again_as %}
+    <div><dt>Raised again as</dt><dd>{% for p in raised_again_as %}<a href="{{ url_for('vaults.proposal_detail', vid=vault.id, pid=p.proposal_uuid) }}">{{ p.title }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</dd></div>
+    {% endif %}
     <div><dt>Decision ID</dt><dd>{{ hash(proposal.proposal_uuid, 'decision ID') }}</dd></div>
     {% if is_signer %}
     <div><dt>You</dt><dd>
@@ -425,6 +543,10 @@
       {%- elif proposal.status == 'open' %}An approver. You sign with your {{ 'password key' if my_key and my_key.wrap_domain != 'device' else 'key' }}{% if my_key %}, {{ my_key.alg_id }}{% endif %}.
       {%- else %}An approver. You didn’t sign this.{% endif -%}
     </dd></div>
+    {% elif own_decision %}
+    <div><dt>You</dt><dd>You raised this<span class="q-cap">In {{ vault.name }}, whoever raises a decision can’t approve or reject it.</span></dd></div>
+    {% elif was_signer %}
+    <div><dt>You</dt><dd>No longer an approver<span class="q-cap">You were one of its approvers when it was raised, and can’t sign it now. A vote you cast before still counts.</span></dd></div>
     {% else %}
     <div><dt>You</dt><dd>View only<span class="q-cap">You aren’t one of this decision’s approvers.</span></dd></div>
     {% endif %}
@@ -434,7 +556,7 @@
         Shared
         <input class="q-input q-input--mono q-pubinput" value="{{ public_url }}" readonly data-select-on-focus aria-label="Public link">
         <span class="q-line q-line--gap">
-          {{ button('Open', 'ghost', href=public_url, size='sm', attrs={'target': '_blank', 'rel': 'noopener'}) }}
+          {{ button('Open the public page', 'ghost', href=public_url, size='sm', attrs={'target': '_blank', 'rel': 'noopener'}) }}
           <form method="post" action="{{ url_for('vaults.unpublish_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
             {{ unpublish_form.hidden_tag() }}
             {{ button('Revoke link', 'ghost', type='submit', size='sm', name='submit', value='Revoke link') }}
@@ -477,6 +599,22 @@
 </aside>
 </div>
 
+{#- ------------------------------------------------------------------ withdraw (S16) -#}
+{% if can_withdraw %}
+{% call(part) dialog('dlg-withdraw', 'Withdraw this ' ~ noun ~ '?') %}
+  {% if part == 'body' %}
+  <form id="withdraw-form" method="post" action="{{ url_for('vaults.withdraw_proposal', vid=vault.id, pid=proposal.proposal_uuid) }}">
+    {{ withdraw_form.hidden_tag() }}
+    <p class="q-conseq">Withdrawing ends it for everyone. Approvals already given stop counting, and nobody can sign it after this.</p>
+    <p class="q-conseq">To change it, withdraw it and raise it again: signatures bind the text, so an edited {{ noun }} is a new one.</p>
+  </form>
+  {% else %}
+  {{ button('Cancel', 'secondary', attrs={'data-dialog-close': True}) }}
+  {{ button('Withdraw', 'danger', type='submit', attrs={'form': 'withdraw-form', 'data-busy-on-submit': True}) }}
+  {% endif %}
+{% endcall %}
+{% endif %}
+
 {#- ------------------------------------------------------------------ phone: the actions stay in reach -#}
 {% if can_vote %}
 <div class="q-actbar">
@@ -516,7 +654,7 @@
   <form id="reject-form" method="post" action="{{ url_for('vaults.vote', vid=vault.id, pid=proposal.proposal_uuid) }}">
     {{ vote_form.csrf_token }}
     {{ restated('reject-text') }}
-    {{ field('reason', 'Reason (optional)', id='f-reason-reject', caption='Everyone in ' ~ vault.name ~ ' sees this next to your rejection. It isn’t part of what you sign. Up to 255 characters.', attrs={'maxlength': 255, 'autofocus': True}) }}
+    {{ field('reason', 'Reason', id='f-reason-reject', required=True, caption='Required. Everyone in ' ~ vault.name ~ ' sees this next to your rejection, so whoever raised it knows what to change. It isn’t part of what you sign. Up to 255 characters.', attrs={'maxlength': 255, 'autofocus': True}) }}
     {% for line in reject_lines %}<p class="q-conseq">{{ line }}</p>{% endfor %}
     {{ field('password', 'Password', type='password', id='f-password-reject', required=True, caption='Unlocks your signing key for this signature only. It isn’t stored.', attrs={'autocomplete': 'current-password'}) }}
   </form>

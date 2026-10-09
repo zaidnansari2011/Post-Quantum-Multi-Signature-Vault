@@ -63,6 +63,7 @@ from qvault.services import (  # noqa: E402
     publication_service,
     rotation_service,
     vault_service,
+    workspace_service,
 )
 
 PASSWORD = "demo-password-2026"
@@ -625,6 +626,15 @@ def seed(stage: str, clock: _Clock | None = None, *, small: bool = False) -> dic
         ]
         if small:
             specs = specs[:2]
+
+        # Plan S15: new vaults stop whoever raises a decision from approving it, unless the
+        # workspace says otherwise. This team decided otherwise before creating its vaults (its
+        # script has requesters sign their own decisions, and Key custody needs all three), so its
+        # owner turns the default off once, through the real setting, and the log records it.
+        workspace_service.set_vault_defaults(
+            workspace_service.current_workspace(ada), sod_default=False, actor=ada
+        )
+        clock.advance(minutes=2)
 
         vaults = []
         for owner, name, description, threshold, signers, viewers in specs:

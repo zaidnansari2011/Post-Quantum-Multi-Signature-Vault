@@ -35,15 +35,39 @@
     {% endif %}
   </section>
 
+  {#- The pin (WITNESS_KEY_FINGERPRINT, checkpoint_service.witness_pin): a mismatch is told to
+      everyone, because co-signatures stop; the setting and how to fix it only to admins. -#}
+  {% set pin = witness.pin %}
   <section class="q-figure" aria-labelledby="wit-t">
     <div class="q-wcard__hd"><span class="q-figure__l" id="wit-t">Witness</span>
-      {%- if witness_check.size and witness_check.ok %}{{ res(true, 'Co-signature valid') }}
+      {%- if witness.mismatch %}{{ res(false, '', 'Key mismatch') }}
+      {%- elif witness_check.size and witness_check.ok %}{{ res(true, 'Co-signature valid') }}
       {%- elif witness_check.size %}{{ res(false, '', 'Doesn’t hold') }}{% endif -%}
     </div>
+    {% if witness.mismatch %}
+    {% set m = witness.mismatch %}
+    <p class="q-figure__s q-brief__bad">The witness co-signed with a key this log doesn’t trust, so its co-signatures are refused and not stored.</p>
+    <p class="q-figure__s q-line">Presented {{ hash(m.fingerprint, 'presented witness key fingerprint', 16, 0) }}</p>
+    {% if pin.state == 'pinned' %}<p class="q-figure__s q-line">Expected {{ hash(pin.value, 'pinned witness key fingerprint', 16, 0) }}</p>{% endif %}
+    <p class="q-figure__s">Last refused {{ ev_precise(m.last_seen) }}, {{ m.attempts }} time{{ '' if m.attempts == 1 else 's' }} in all. No new checkpoint is witnessed until this is resolved.</p>
+    {% if is_admin %}
+    <p class="q-figure__s">If the witness’s key was replaced on purpose, set <code>WITNESS_KEY_FINGERPRINT</code> to the new fingerprint, which the witness prints when it starts, and restart. If it wasn’t, something other than your witness is answering at <code>{{ witness.url }}</code>.</p>
+    {% endif %}
+    {% endif %}
+    {% if is_admin and witness.configured and not witness.mismatch %}
+      {% if pin.state == 'pinned' %}
+      <p class="q-figure__s q-line">{{ res(true, 'Key pinned') }} {{ hash(pin.value, 'pinned witness key fingerprint', 16, 0) }}</p>
+      {% elif pin.state == 'invalid' %}
+      <p class="q-figure__s q-brief__bad"><code>WITNESS_KEY_FINGERPRINT</code> isn’t a fingerprint (16 hexadecimal characters), so every co-signature is refused.</p>
+      {% else %}
+      <p class="q-figure__s q-line"><span class="q-res q-res--warn">{{ icon('warning') }}Key not pinned</span></p>
+      <p class="q-figure__s">A co-signature from any key is accepted. Set <code>WITNESS_KEY_FINGERPRINT</code> to the fingerprint the witness prints when it starts, so a different key is refused.</p>
+      {% endif %}
+    {% endif %}
     {% if witness.witnesses %}
-      {% for name, fingerprint, alg in witness.witnesses %}
-      <p class="q-figure__s"><b>{{ name }}</b>, {{ alg }}</p>
-      <p class="q-figure__s q-line">Key {{ hash(fingerprint, 'witness key fingerprint', 16, 0) }}</p>
+      {% for w in witness.witnesses %}
+      <p class="q-figure__s"><b>{{ w.name }}</b>, {{ w.alg_id }}</p>
+      <p class="q-figure__s q-line">Key {{ hash(w.fingerprint, 'witness key fingerprint', 16, 0) }}{% if not w.accepted %} <span class="q-brief__bad">Not the pinned key</span>{% endif %}</p>
       {% endfor %}
       <p class="q-figure__s">
         {%- if witness_check.size and witness_check.ok %}Witnessed up to entry #{{ '{:,}'.format(witness_check.size - 1) }}, co-signed {{ ev_precise(witness_check.row.created_at) }}.{% endif %}
@@ -72,7 +96,7 @@
         <td class="is-num">{{ '{:,}'.format(c.tree_size) }}</td>
         <td>{{ hash(c.root_hash, 'root hash', 12, 8) }}</td>
         <td>{{ c.alg_id }}</td>
-        <td>{% if c.cosignatures %}{% for w in c.cosignatures %}{% if w.id in valid_cosignatures %}<span class="q-integ q-integ--success">{{ icon('success') }}Witnessed by {{ w.witness_name }}</span>{% else %}<span class="q-integ q-integ--critical">{{ icon('critical') }}{{ w.witness_name }}’s co-signature didn’t verify</span>{% endif %}{% endfor %}{% else %}<span class="q-integ q-integ--neutral">Not witnessed</span>{% endif %}</td>
+        <td>{% if c.cosignatures %}{% for w in c.cosignatures %}{% if w.id in valid_cosignatures %}<span class="q-integ q-integ--success">{{ icon('success') }}Witnessed by {{ w.witness_name }}</span>{% elif w.id in unpinned_cosignatures %}<span class="q-integ q-integ--critical">{{ icon('critical') }}{{ w.witness_name }}, not the pinned key</span>{% else %}<span class="q-integ q-integ--critical">{{ icon('critical') }}{{ w.witness_name }}’s co-signature didn’t verify</span>{% endif %}{% endfor %}{% else %}<span class="q-integ q-integ--neutral">Not witnessed</span>{% endif %}</td>
         <td class="q-audit__when">{{ ui_absolute(c.created_at) }}</td>
       </tr>
       {% else %}

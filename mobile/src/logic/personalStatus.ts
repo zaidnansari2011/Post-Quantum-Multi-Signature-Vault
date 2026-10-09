@@ -68,6 +68,12 @@ export type DecisionFacts = {
   signers?: Array<{ user_id: number; name: string | null }>;
   /** R5: false when the phone does not know this decision type or template version (row 17). */
   known_type?: boolean;
+  /**
+   * R5: false when too few people can still approve this open decision to reach its threshold
+   * (approvers demoted, removed or suspended, separation of duties, rejections). Its badge is then
+   * "Can't pass" in place of "Waiting on N", as on the web.
+   */
+  can_still_pass?: boolean;
 };
 
 /** This session's vote, which the page shows before the refetch lands. */
@@ -138,6 +144,20 @@ function badgeFor(status: string, waitingOn: number): Badge {
 }
 
 const NEEDS_YOU: Badge = { word: 'Needs your signature', tone: 'warning' };
+
+/** The web's `cannot_pass` word (qvault/ui.py STATUS), with the phone's straight apostrophe. */
+const CANNOT_PASS: Badge = { word: "Can't pass", tone: 'warning' };
+
+/**
+ * The badge of an open decision that doesn't ask this person to sign: "Waiting on N", or
+ * "Can't pass" when the server says too few people can still approve it (`can_still_pass:
+ * false`). A word derived for display, not a status: the decision is still open and nothing
+ * signed changes. The web's `inbox_service.status_key` decides the same way. A list row reads
+ * this too (`src/ui/DecisionRow.tsx` still draws "Waiting on N" itself: left to the phone stream).
+ */
+export function waitingBadge(approvals: number, M: number, canStillPass?: boolean): Badge {
+  return canStillPass === false ? CANNOT_PASS : badgeFor('open', M - approvals);
+}
 
 /** The names of the people who voted `decision`, with the viewer as "you", last. */
 function voters(d: DecisionFacts, viewerId: number, decision: string, sessionVote?: SessionVote | null) {
@@ -225,8 +245,7 @@ export function personalStatus(input: PersonalInput): PersonalStatus {
     return done(closed.row, closed.badge, closed.line, closed.actions);
   }
 
-  const waitingOn = M - approvals;
-  const waiting = badgeFor('open', waitingOn);
+  const waiting = waitingBadge(approvals, M, d.can_still_pass);
 
   // Rows 4 and 5: this person has already voted. `signed_by_me` without a vote on the list says
   // they voted but not which way, so the line claims neither.

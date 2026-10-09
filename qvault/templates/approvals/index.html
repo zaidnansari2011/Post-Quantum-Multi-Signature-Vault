@@ -30,7 +30,7 @@
   {%- set vault_options = [('', 'All vaults')] %}
   {%- for v in vaults %}{% set _ = vault_options.append((v.id, v.name)) %}{% endfor %}
   {{ select('vault', 'Vault', vault_options, filters.vault_id or '', inline=True) }}
-  {{ select('type', 'Type', [('', 'All types'), ('general', 'General'), ('payment', 'Payment')], filters.kind, inline=True) }}
+  {{ select('type', 'Type', [('', 'All types'), ('general', 'General'), ('payment', 'Payment'), ('access', 'Production access'), ('contract', 'Contract')], filters.kind, inline=True) }}
   {{ select('sort', 'Order', [('recent', 'Newest first'), ('oldest', 'Oldest first'), ('deadline', 'Due soonest'), ('title', 'Title, A to Z')], filters.sort, inline=True) }}
   {%- if filters.is_filtered %}
   {{ button('Clear filters', 'ghost', href=clear_href, size='sm') }}

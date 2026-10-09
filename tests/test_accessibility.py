@@ -16,11 +16,6 @@ hidden. Visually hidden text counts: a screen reader reads it.
 
 Pages are drawn as an administrator, as a member and as an auditor, signed out, and in the states
 a refused form comes back in (each with its field marked invalid), and as every error page.
-
-The decision page, New decision and the vault page are another stream's (R5) while this one runs.
-Their problems are not fixed here; they are listed in R5_KNOWN below, so the guard still reports
-them and the list says what is left to fix at integration. The comparison is exact, so an entry
-that R5 fixes fails the test until it is removed: the list cannot go stale.
 """
 
 from __future__ import annotations
@@ -53,24 +48,6 @@ VAGUE_LINKS = {
     "here", "click here", "more", "read more", "learn more", "link", "this", "this page", "go",
     "open", "view", "change", "edit", "details",
 }  # fmt: skip
-
-# ------------------------------------------------------------------------------ the R5 screens
-
-#: Problems on the screens R5 owns (vaults/detail.html, vaults/proposal_new.html,
-#: vaults/proposal_detail.html), reported but not fixed by this stream. Each entry is
-#: (page, problem). Fix the template at integration, then delete its line here.
-R5_KNOWN: set[tuple[str, str]] = {
-    # proposal_detail.html, the public link panel: name the link "Open the public page".
-    (
-        "decision, approved",
-        'link text "Open" does not say where it goes: '
-        '<a class="q-btn q-btn--ghost q-btn--sm" href="/d/<uuid>">',
-    ),
-    # detail.html, Treasury tab, "Your key: ... — change": name it "Change your key" (or link
-    # the whole phrase).
-    ("vault treasury", 'link text "change" does not say where it goes: <a href="/account/">'),
-}
-
 
 # ------------------------------------------------------------------------------ the parser
 
@@ -432,7 +409,7 @@ def signed_in_pages(client, w) -> dict[str, str]:
         "remove member": f"/workspace/members/{w['cleo'].id}/remove",
         "invitation, wrong account": f"/invite/{w['token']}",
         "not found": "/no-such-page",
-        # R5's screens: checked, and their problems listed in R5_KNOWN.
+        # The vault, New decision and the decision page.
         "vault": f"/vaults/{vid}",
         "vault members": f"/vaults/{vid}?tab=members",
         "vault files": f"/vaults/{vid}?tab=files",
@@ -577,16 +554,14 @@ def test_every_signed_out_page_passes_the_structural_checks(app, client, world):
     assert _marked(refused, banner_only=("sign in, refused",)) == []
 
 
-def test_every_signed_in_page_passes_the_structural_checks_but_r5s_known_ones(app, client, world):
+def test_every_signed_in_page_passes_the_structural_checks(app, client, world):
     _login(client, "ada@e.com")
     rendered = _render(client, signed_in_pages(client, world))
     rendered.update(_posted(client, world))
     refused = _refused_signed_in(client)
     rendered.update(refused)
     rendered.update(_error_pages(app, client, world["ada"]))
-    found = _report(rendered)
-    assert sorted(found - R5_KNOWN) == [], "new problems"
-    assert sorted(R5_KNOWN - found) == [], "fixed: delete these from R5_KNOWN"
+    assert sorted(_report(rendered)) == []
     assert _marked(refused) == []
 
 
@@ -601,7 +576,7 @@ def test_a_member_and_an_auditor_see_pages_that_pass_too(app, client, world, ema
         assert r.status_code in (200, 403, 404), f"{key}: {path} answered {r.status_code}"
         rendered[key] = r.get_data(as_text=True)
     assert "have access to this page" in rendered["security, algorithms"]
-    assert sorted(_report(rendered) - R5_KNOWN) == []
+    assert sorted(_report(rendered)) == []
 
 
 def test_signed_in_page_titles_are_unique_and_name_the_screen(app, client, world):

@@ -39,6 +39,10 @@
    reltime(moment)
      A <time> whose text is the absolute time; qvault.js rewrites it to "3 minutes ago" and keeps
      the absolute time as its title. Without JavaScript the absolute time stays.
+
+   rule_diff(diff)
+     A vault rule change as before -> after (R5): diff is {label, before, after}, from
+     audit_service.rule_diff. The arrow is hidden from screen readers, which hear "from" and "to".
 #}
 {% from "ui/icons.html" import icon %}
 {% from "ui/buttons.html" import button %}
@@ -123,4 +127,8 @@
 
 {% macro reltime(moment) -%}
 <time datetime="{{ ui_iso(moment) }}" data-relative title="{{ ui_absolute(moment) }}">{{ ui_absolute(moment) }}</time>
+{%- endmacro %}
+
+{% macro rule_diff(diff) -%}
+<span class="q-diff"><span class="q-diff__l">{{ diff.label }}</span> <span class="visually-hidden">from</span><del class="q-diff__b">{{ diff.before }}</del><span class="q-diff__a" aria-hidden="true">→</span><span class="visually-hidden">to</span><ins class="q-diff__n">{{ diff.after }}</ins></span>
 {%- endmacro %}

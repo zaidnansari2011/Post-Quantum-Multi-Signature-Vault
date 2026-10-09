@@ -27,20 +27,27 @@ from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, current_app, g, jsonify, request
 
+from qvault import evidence
 from qvault.chain.action import NETWORKS, format_wei
 from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
 from qvault.crypto import sha256_hex
 from qvault.extensions import db
+from qvault.models.key import Key
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
 from qvault.models.treasury import TreasurySigner
+from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.security.decorators import device_token_required
 from qvault.services import (
     approval_service,
     auth_service,
+    decision_types,
     device_service,
+    discussion_service,
+    eligibility,
+    evidence_service,
     execution_service,
     inbox_service,
     key_service,
@@ -55,7 +62,12 @@ from qvault.services import (
 )
 from qvault.services.approval_service import ApprovalError
 from qvault.services.device_service import DeviceError
-from qvault.services.proposal_service import PaymentRequest, ProposalError
+from qvault.services.proposal_service import (
+    FieldsRefused,
+    PaymentRequest,
+    ProposalError,
+    TypedRequest,
+)
 from qvault.services.signing import signing_bytes_for
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
@@ -286,6 +298,8 @@ def _vault_summary(vault: Vault, user) -> dict:
     signers = vault.signer_ids()
     member = vault.member_for(user.id)
     awaiting = 0
+    # Who may sign here now (the vote gate's rule), once for the vault rather than per decision.
+    signing_here = user.id in eligibility.current_signer_ids(vault)
     for p in vault.proposals:
         # The effective status, not the stored one: a deadline that passed before the sweep ran
         # leaves the count at once (rework S20), as it leaves every other needs-you queue.
@@ -293,7 +307,11 @@ def _vault_summary(vault: Vault, user) -> dict:
             continue
         if approval_service.vote_of(p, user.id) is not None:
             continue
-        if user.id in set(json.loads(p.authorized_signers_snapshot)):
+        if (
+            signing_here
+            and user.id in set(json.loads(p.authorized_signers_snapshot))
+            and not eligibility.own_decision_blocked(p, user.id)
+        ):
             awaiting += 1
     return {
         "vault_id": vault.id,
@@ -674,15 +692,24 @@ def create_proposal(vid: int):
     vault = _member_of(user, vid)
     if vault is None:
         return _error("unknown_vault", "No such vault.", 404)
-    if not proposal_service.may_propose(vault, user):
-        # A viewer is read-only. Answered before the body is read, as the owner-only routes do;
-        # the service refuses too, since every path to a decision goes through it.
-        return _error("view_only", proposal_service.NOT_A_PROPOSER, 403)
+    refusal = proposal_service.why_cannot_propose(vault, user)
+    if refusal is not None:
+        # A viewer is read-only, and so is a suspended member or an auditor. Answered before the
+        # body is read, as the owner-only routes do; the service refuses too, since every path to
+        # a decision goes through it.
+        return _error("view_only", refusal, 403)
 
     body = _body()
     title = (body.get("title") or "").strip()
     action_text = (body.get("action_text") or "").strip()
     payment = body.get("payment")
+    # Plan S13 (A13): a Production access or Contract decision, its text written from `fields`.
+    # `type` is the name phone-ux gives it; `decision_type` matches what the detail returns. Sent
+    # under both names they must agree, null included: {"type": "access", "decision_type": null}
+    # is a contradiction, not a General decision.
+    if "type" in body and "decision_type" in body and body["type"] != body["decision_type"]:
+        return _error("bad_request", "Send the type once, as decision_type.", 422)
+    decision_type = body["decision_type"] if "decision_type" in body else body.get("type")
     if "action" in body:
         # The signed action is built by the server from `payment` (plan D23); a client never
         # supplies it. Accepting and ignoring it would create a text-only decision that reads like
@@ -694,7 +721,32 @@ def create_proposal(vid: int):
         )
     if not title:
         return _error("title_required", "A title is required.", 422)
-    if payment is None and not action_text:
+    typed = None
+    if decision_type in (None, "general") and body.get("fields") is not None:
+        # A General decision is the words its requester wrote: fields would be ignored, and a
+        # client that sent them meant something else.
+        return _error(
+            "unknown_field",
+            "Only a Production access or Contract decision takes fields.",
+            422,
+        )
+    if decision_type not in (None, "general"):
+        if decision_type == "payment":
+            return _error(
+                "payment_invalid", "Send a payment's recipient and amount as 'payment'.", 422
+            )
+        if decision_type not in decision_types.STORED_TYPES:
+            return _error("unknown_type", decision_types.MESSAGES["unknown_type"], 422)
+        if payment is not None:
+            return _error("bad_request", "A payment has no other type.", 422)
+        if action_text:
+            return _error(
+                "typed_text_generated",
+                "This decision's text is written from its fields; omit action_text.",
+                422,
+            )
+        typed = TypedRequest(decision_type, body.get("fields"))
+    if payment is None and typed is None and not action_text:
         return _error("action_required", "Describe what is being decided.", 422)
     if len(title) > 255:
         return _error("title_too_long", "Titles are limited to 255 characters.", 422)
@@ -746,10 +798,24 @@ def create_proposal(vid: int):
             return _error("bad_deadline", "A deadline must be in the future.", 422)
         deadline = datetime.now(UTC) + timedelta(hours=hours)
 
+    again = body.get("raised_again_from")
+    if again is not None and not isinstance(again, str):
+        return _error("bad_request", "raised_again_from must be a decision id.", 422)
     try:
         proposal = proposal_service.create_proposal(
-            vault, user, title, action_text, deadline=deadline, payment=payment_request
+            vault,
+            user,
+            title,
+            action_text,
+            deadline=deadline,
+            payment=payment_request,
+            typed=typed,
+            raised_again_from=again or None,
         )
+    except FieldsRefused as exc:
+        # Which field, so the phone can mark it; the words are the web form's.
+        refusal = {"ok": False, "code": "fields_invalid", "error": str(exc), "field": exc.field}
+        return jsonify(refusal), 422
     except ProposalError as exc:
         # The commonest case is a policy that needs more signatures than the vault has signers,
         # which is a governance answer rather than a malformed request.
@@ -776,8 +842,18 @@ def _authorized_ids(proposal) -> set[int]:
 
 def _proposal_summary(proposal, user) -> dict:
     approvals, rejections = approval_service.tally(proposal)
+    eligible = eligibility.eligible_ids(proposal)
+    outlook = eligibility.outlook(
+        proposal,
+        approvals=approvals,
+        voted=[s.signer_id for s in proposal.signatures],
+        eligible=eligible,
+    )
+    can_still_pass = inbox_service.effective_status(proposal) != "open" or outlook.reachable
     return {
-        **_summary_facts(proposal, user, approvals, rejections),
+        **_summary_facts(
+            proposal, user, approvals, rejections, eligible=eligible, can_still_pass=can_still_pass
+        ),
         "proposal_uuid": proposal.proposal_uuid,
         "title": proposal.title,
         "vault_id": proposal.vault_id,
@@ -789,24 +865,175 @@ def _proposal_summary(proposal, user) -> dict:
         "rejections": rejections,
         "expires_at": proposal.expires_at.isoformat() if proposal.expires_at else None,
         "signed_by_me": approval_service.vote_of(proposal, user.id) is not None,
-        "can_sign": user.id in _authorized_ids(proposal),
+        # Whether the vote endpoint would let this user sign: the frozen signer set AND an
+        # approver of the vault now, in good standing (``eligibility``, owner decision 2026-10-08).
+        "can_sign": user.id in eligible,
+        # Additive (R5): who can still approve it, and whether they are enough to decide it. An
+        # open decision whose approvers were demoted, removed or suspended can stop being able to
+        # pass; it stays open until its deadline rather than being rejected for them.
+        "can_still_approve": list(outlook.still),
+        "can_still_pass": can_still_pass,
+        # Why it can't, one sentence per cause that holds now, as the web's banner says it
+        # (eligibility.shortfall); empty while it can still pass.
+        "cannot_pass_why": (
+            []
+            if can_still_pass
+            else evidence.shortfall_lines(
+                eligibility.shortfall(proposal), evidence_service.names_for(proposal), user.id
+            )
+        ),
+        # A1 and plan S15, for the phone's personal status (mobile/src/logic/personalStatus.ts).
+        "raised_by": {
+            "id": proposal.creator_id,
+            "name": proposal.creator.display_name if proposal.creator else None,
+        },
+        "separation_of_duties": not eligibility.requester_may_approve(proposal),
+        # Plan S16 (A11): who may withdraw it, and who did and when (personalStatus row 15).
+        "can_withdraw": approval_service.why_cannot_withdraw(proposal, user) is None,
+        **_lifecycle_view(proposal),
         # Safe for an old app to receive: summaries are parsed leniently, and it lets the inbox
         # say "payment" before the detail refuses with upgrade_required.
         "is_payment": proposal.action is not None,
+        # Plan S13: the type its signed text bears out (``decision_types.typed_view``), as the
+        # web's rows show it, so a row edited behind the decision's back lists as General. The
+        # detail sends the stored type and fields, for the phone to check against the signed text.
+        "decision_type": decision_types.typed_view(proposal).type,
+        # A3: everyone in its signed signer set, by id, with a name and whether they hold a key.
+        "signers": _signers_view(proposal),
+        # A4: when it was decided (approved, rejected, withdrawn or expired); null while open.
+        "decided_at": _decided_at(proposal),
+        **(_payment_summary(proposal, user) if proposal.action is not None else {}),
     }
 
 
-def _summary_facts(proposal, user, approvals: int, rejections: int) -> dict:
+def _type_facts(proposal) -> tuple[str, dict | None, int | None]:
+    """Its type, stored fields and template version, as stored (plan S13). Unsigned: a payment's
+    fields are its signed ``action``, and a typed decision's are for the phone to check against
+    its signed text (``mobile/src/logic/decisionTypes.ts``), never the other way round."""
+    if proposal.action is not None:
+        return "payment", None, None
+    stored = proposal.typed
+    if stored is None:
+        return "general", None, None
+    return stored.decision_type, stored.fields(), stored.template_version
+
+
+def _signers_view(proposal) -> list[dict]:
+    """A3: the frozen signer set with names (unsigned) and ``has_key``: whether each holds an
+    active key that can sign now, password-held or on a phone."""
+    ids = sorted(_authorized_ids(proposal))
+    if not ids:
+        return []
+    people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()}
+    keyed = set(
+        db.session.scalars(
+            db.select(Key.owner_id).where(
+                Key.owner_id.in_(ids),
+                Key.role == "sig",
+                Key.status == "active",
+                Key.can_sign.is_(True),
+            )
+        )
+    )
+    return [
+        {
+            "user_id": uid,
+            "name": people[uid].display_name if uid in people else None,
+            "has_key": uid in keyed,
+        }
+        for uid in ids
+    ]
+
+
+def _decided_at(proposal) -> str | None:
+    """When it stopped being open, by its effective status; None while it is open."""
+    lifecycle = proposal.lifecycle
+    when = {
+        "approved": proposal.approved_at,
+        "rejected": proposal.rejected_at,
+        "withdrawn": lifecycle.withdrawn_at if lifecycle is not None else None,
+        "expired": proposal.expires_at,
+    }.get(inbox_service.effective_status(proposal))
+    return when.isoformat() if when is not None else None
+
+
+def _payment_summary(proposal, user) -> dict:
+    """A2 and A17 for a payment's row: its amount for display, and which of the caller's keys
+    the treasury holds (``seat``), so a row can say where it can be approved before the detail is
+    opened. The detail's ``execution.seat_fingerprint`` is the claim the phone checks."""
+    value = proposal.action.value_wei
+    readable = isinstance(value, str) and value.isascii() and value.isdigit() and len(value) <= 78
+    return {
+        "amount": format_wei(int(value)) if readable else None,
+        "seat": _seat(proposal, user),
+    }
+
+
+def _seat(proposal, user) -> str | None:
+    """``this_device``, ``password``, ``other_device``, or None when the treasury holds no key
+    for ``user``."""
+    treasury = proposal.action.treasury
+    if treasury is None:
+        return None
+    seat = TreasurySigner.query.filter_by(treasury_id=treasury.id, user_id=user.id).one_or_none()
+    if seat is None or seat.key is None:
+        return None
+    device = getattr(g, "api_device", None)
+    if device is not None and seat.key.id == device.key_id:
+        return "this_device"
+    return "password" if seat.key.wrap_domain == "password" else "other_device"
+
+
+def _lifecycle_view(proposal) -> dict:
+    """How it was withdrawn and raised again (plan S16); unsigned, shown only."""
+    lifecycle = proposal.lifecycle
+    withdrawn_by = lifecycle.withdrawn_by if lifecycle is not None else None
+    source = lifecycle.raised_again_from if lifecycle is not None else None
+    return {
+        # A11: "Raised again from" and the forward links, each a decision in the same vault.
+        "raised_again_from": (
+            {"proposal_uuid": source.proposal_uuid, "title": source.title}
+            if source is not None
+            else None
+        ),
+        "raised_again_as": [
+            {"proposal_uuid": p.proposal_uuid, "title": p.title}
+            for p in proposal_service.raised_again_as(proposal)
+        ],
+        "withdrawn_by": (
+            {"id": withdrawn_by.id, "name": withdrawn_by.display_name}
+            if withdrawn_by is not None
+            else None
+        ),
+        "withdrawn_at": (
+            lifecycle.withdrawn_at.isoformat()
+            if lifecycle is not None and lifecycle.withdrawn_at
+            else None
+        ),
+    }
+
+
+def _summary_facts(
+    proposal,
+    user,
+    approvals: int,
+    rejections: int,
+    *,
+    eligible: set[int] | None = None,
+    can_still_pass: bool = True,
+) -> dict:
     """The status as every web list says it (rework S6): ``display_status`` is the key of the
     closed vocabulary with its word and tone, from the same ``inbox_service.status_key`` the Home
     lists and the inbox use. Additive: ``status`` stays the stored value the app already reads,
     and the app may show this word instead of working one out."""
     status = inbox_service.effective_status(proposal)
-    # The same test as this API's awaiting list (the frozen signer set, not yet voted), so a row
-    # in it never says Waiting on N; the vote route checks no more than that either.
+    # The same test as this API's awaiting list (may sign it now, not yet voted), so a row in it
+    # never says Waiting on N; it is the vote route's own rule (``eligibility``).
+    if eligible is None:
+        eligible = eligibility.eligible_ids(proposal)
     needs_me = (
         status == "open"
-        and user.id in _authorized_ids(proposal)
+        and user.id in eligible
         and approval_service.vote_of(proposal, user.id) is None
     )
     payout = payout_service.payout_of(proposal) if proposal.action is not None else None
@@ -818,6 +1045,7 @@ def _summary_facts(proposal, user, approvals: int, rejections: int) -> dict:
         payment=proposal.action is not None,
         payout_state=payout.state if payout is not None else None,
         treasuries_on=bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED")),
+        can_still_pass=can_still_pass,
     )
     word, tone = status_of(key, n)
     return {"display_status": {"key": key, "word": word, "tone": tone}}
@@ -938,14 +1166,25 @@ def proposal_detail(uuid: str):
         detail["execution"] = _execution_view(proposal, user)
         # How the payout stands (Phase 8): shown, never signed.
         detail["payout"] = payout_service.view(proposal)
+    _type, fields, version = _type_facts(proposal)
     detail.update(
         {
+            # Plan S13 (A13): a typed decision's stored type, its fields and the template version
+            # that wrote its text. Unsigned; fields are null for General and Payment (a payment's
+            # are signing_inputs.action). As stored, unlike the summary's type: the phone writes
+            # the text again from them and refuses when it differs (``type_text``).
+            "decision_type": _type,
+            "fields": fields,
+            "template_version": version,
             "action_text": proposal.action_text,
             # The complete canonical inputs, so the device can recompute payload_hash itself and
             # refuse to sign if this server's answer disagrees. Do not trim this to the hash.
             "signing_inputs": signing_inputs,
             "payload_hash": proposal.payload_hash,
             "signing_bytes_sha256": sha256_hex(signing_bytes_for(proposal)),
+            # A16 (plan S16): a rejection must carry a reason; the vote endpoint refuses one
+            # without (``reason_required``). The reason is shown, never signed.
+            "reject_reason_required": True,
             "votes": [
                 {
                     "signer_id": s.signer_id,
@@ -992,6 +1231,9 @@ def cast_vote(uuid: str):
         )
     except DeviceError as exc:
         return _error(exc.code, exc.message, 400)
+    reason = body.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        return _error("reason_required", approval_service.REASON_NOT_TEXT, 422)
 
     # The key comes from the authenticated device, never from the request body. That is an
     # authorisation property, not a convenience: a token can only ever vote with its own key.
@@ -1002,7 +1244,7 @@ def cast_vote(uuid: str):
             device.key,
             body.get("decision", ""),
             sig_bytes,
-            reason=body.get("reason"),
+            reason=reason,
             execution=execution,
         )
     except ApprovalError as exc:
@@ -1038,6 +1280,8 @@ def cast_vote(uuid: str):
 _VOTE_STATUS = {
     "already_voted": 409,
     "not_a_signer": 403,
+    "own_decision": 403,
+    "reason_required": 422,
     "proposal_closed": 422,
     "signature_invalid": 422,
     "device_key_not_active": 422,
@@ -1058,6 +1302,12 @@ def _vote_code(message: str) -> str:
         return "execution_signature_required"
     if "could not be asked" in lowered:
         return "chain_unavailable"
+    # Plan S15, before the generic "approve ... reject" test below, which its sentence would match.
+    if "you raised this" in lowered:
+        return "own_decision"
+    # Plan S16 (A16): a rejection without a reason, or with one too long.
+    if "add a reason" in lowered or "keep the reason" in lowered:
+        return "reason_required"
     if "already voted" in lowered:
         return "already_voted"
     if "not an authorised signer" in lowered:
@@ -1165,6 +1415,71 @@ def archive_notification(nid: int):
         return _error("unknown_notification", "No such notification.", 404)
     return jsonify(
         ok=True, notification=item, unread=notification_service.unread_counts(g.api_user)
+    )
+
+
+@bp.post("/proposals/<uuid>/withdraw")
+@device_token_required
+def withdraw_proposal(uuid: str):
+    """The person who raised an open decision withdraws it (plan S16, A11). Nothing is signed: it
+    ends the decision, and the phone's own check of who raised it is only a display."""
+    user = g.api_user
+    proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
+    if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
+        return _error("unknown_proposal", "No such proposal.", 404)
+    try:
+        approval_service.withdraw(proposal, user)
+    except ApprovalError as exc:
+        message = str(exc)
+        if message == approval_service.NOT_YOURS_TO_WITHDRAW:
+            return _error("not_requester", message, 403)
+        if "can't be withdrawn" in message:
+            return _error("proposal_closed", message, 409)
+        return _error("withdraw_refused", message, 403)
+    return jsonify(ok=True, proposal=_proposal_summary(proposal, user))
+
+
+@bp.get("/proposals/<uuid>/comments")
+@device_token_required
+def list_comments(uuid: str):
+    """A decision's discussion, oldest first, for the phone (rework R5). Read only.
+
+    The same people who can open the decision can read it. Comments are unsigned and the
+    response says so; ``segments`` gives each comment as runs of text and resolved mentions, so a
+    client draws a mention only where the server resolved one. Paged by comment id: ``after`` is
+    the last id the client has, ``limit`` at most 100.
+    """
+    user = g.api_user
+    proposal = Proposal.query.filter_by(proposal_uuid=uuid).first()
+    if proposal is None or proposal.vault_id not in _visible_vault_ids(user):
+        return _error("unknown_proposal", "No such proposal.", 404)
+    limit = _whole("limit", 50, 1, 100)
+    after = _whole("after", 0, 0, 2**31 - 1)
+    if limit is None or after is None:
+        return _error("bad_request", "limit and after must be whole numbers.", 400)
+    rows = discussion_service.thread(proposal, user, after=after or None, limit=limit + 1)
+    more = len(rows) > limit
+    rows = rows[:limit]
+    return jsonify(
+        ok=True,
+        signed=False,
+        note=discussion_service.UNSIGNED_NOTE,
+        can_post=discussion_service.why_cannot_post(proposal, user) is None,
+        comments=[
+            {
+                "id": c["id"],
+                "author": {"id": c["author_id"], "name": c["author"]},
+                "created_at": c["created_at"].isoformat() if c["created_at"] else None,
+                "deleted": c["deleted"],
+                "mine": c["mine"],
+                "body": "".join(part["text"] for part in c["segments"]),
+                "segments": [
+                    {"text": part["text"], "mention": part.get("mention")} for part in c["segments"]
+                ],
+            }
+            for c in rows
+        ],
+        next_after=rows[-1]["id"] if more and rows else None,
     )
 
 

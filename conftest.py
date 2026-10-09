@@ -16,6 +16,28 @@ sys.path.insert(0, os.path.dirname(__file__))
 from qvault.crypto import build_registry  # noqa: E402
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "separation_default: new vaults take the product's S15 default (whoever raises a decision "
+        "can't approve it) instead of the suite's pre-R5 one",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _new_vaults_let_the_requester_approve(request, monkeypatch):
+    """Most of the suite predates S15: its vaults' owners raise decisions and sign them, to test
+    signing, the log, exports and payments, not who may sign. Since 2026-10-08 a new vault stops
+    that by default, so here new vaults start as every vault did before R5. Tests of the default
+    itself are marked ``separation_default``; tests of the rule set it on their vault explicitly.
+    """
+    if request.node.get_closest_marker("separation_default"):
+        return
+    from qvault.services import vault_service
+
+    monkeypatch.setattr(vault_service, "new_vault_separates", lambda owner: False)
+
+
 @pytest.fixture(scope="session")
 def registry():
     """A fully populated CryptoRegistry using the default backend."""

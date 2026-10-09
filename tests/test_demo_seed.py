@@ -22,6 +22,9 @@ from qvault.models.key import Key
 from qvault.models.ledger import LedgerEntry
 from qvault.services import ledger_service, rotation_service
 
+# The demo is built as a new deployment would be: new vaults take the product's S15 default.
+pytestmark = pytest.mark.separation_default
+
 SEED_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "seed_demo.py"
 
 

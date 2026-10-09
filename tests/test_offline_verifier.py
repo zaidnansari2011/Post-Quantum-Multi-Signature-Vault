@@ -220,7 +220,7 @@ def test_a_rejected_decision_agrees(app, page, witnessed):
     other = auth_service.register_user("no@e.com", "Objector", PASSWORD)
     vault_service.add_member(vault, other.email, "signer", actor_id=owner.id)
     proposal = proposal_service.create_proposal(vault, owner, "Motion", "Adopt it.")
-    approval_service.cast_vote(proposal, owner, PASSWORD, "reject")
+    approval_service.cast_vote(proposal, owner, PASSWORD, "reject", reason="Not convinced.")
     checkpoint_service.maybe_checkpoint()
     checkpoint_service.sync_witness()
 

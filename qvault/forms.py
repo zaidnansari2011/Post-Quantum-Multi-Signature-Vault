@@ -99,6 +99,22 @@ class ThresholdForm(FlaskForm):
     submit = SubmitField("Save")
 
 
+class VaultRuleForm(FlaskForm):
+    """Plan S15: "The person who raises a decision can also approve it". Unchecked is off."""
+
+    requester_can_approve = BooleanField("The person who raises a decision can also approve it")
+    submit = SubmitField("Save")
+
+
+class VaultRulesForm(FlaskForm):
+    """The vault's Approval rule card: the threshold and plan S15 together, under one Save."""
+
+    threshold_m = IntegerField(
+        "Approvals required", validators=[DataRequired(), NumberRange(min=1, max=50)]
+    )
+    requester_can_approve = BooleanField("The person who raises a decision can also approve it")
+
+
 class ProfileForm(FlaskForm):
     display_name = StringField("Display name", validators=[DataRequired(), Length(max=255)])
     submit = SubmitField("Save")
@@ -133,6 +149,8 @@ class ProposalForm(FlaskForm):
         "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
     )
     file = FileField("Attach a file (optional)")
+    #: Plan S16, "Raise again": the closed decision this replaces. Checked by the service.
+    raised_again_from = HiddenField()
     submit = SubmitField("Create proposal")
 
 
@@ -146,7 +164,46 @@ class PaymentProposalForm(FlaskForm):
     deadline = DateTimeLocalField(
         "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
     )
+    raised_again_from = HiddenField()
     submit = SubmitField("Create payment decision")
+
+
+class AccessProposalForm(FlaskForm):
+    """A Production access decision (plan S13). The fields write the decision text, so their rules
+    are ``qvault.services.decision_types``'s, the phone's too; the lengths here only stop an
+    absurd post early."""
+
+    title = StringField("Title", validators=[DataRequired(), Length(max=255)])
+    person = StringField("Who gets access", validators=[Length(max=400)])
+    system = StringField("System", validators=[Length(max=400)])
+    level = StringField("Access", validators=[Length(max=40)])
+    until = StringField("Until", validators=[Length(max=40)])
+    reason = StringField("Reason", validators=[Length(max=1200)])
+    reference = StringField("Ticket or reference", validators=[Length(max=400)])
+    deadline = DateTimeLocalField(
+        "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
+    )
+    raised_again_from = HiddenField()
+    submit = SubmitField("Create access decision")
+
+
+class ContractProposalForm(FlaskForm):
+    """A Contract decision (plan S13): who with, what for, and optionally its value and term."""
+
+    title = StringField("Title", validators=[DataRequired(), Length(max=255)])
+    counterparty = StringField("Counterparty", validators=[Length(max=600)])
+    subject = StringField("What it's for", validators=[Length(max=1200)])
+    amount = StringField("Value", validators=[Length(max=100)])
+    currency = StringField("Currency", validators=[Length(max=20)])
+    starts = StringField("Starts", validators=[Length(max=40)])
+    ends = StringField("Ends", validators=[Length(max=40)])
+    reference = StringField("Contract reference", validators=[Length(max=400)])
+    deadline = DateTimeLocalField(
+        "Deadline (optional)", format=DEADLINE_FORMATS, validators=[Optional()]
+    )
+    file = FileField("Attach the contract (optional)")
+    raised_again_from = HiddenField()
+    submit = SubmitField("Create contract decision")
 
 
 class VoteForm(FlaskForm):
@@ -156,7 +213,9 @@ class VoteForm(FlaskForm):
     password = PasswordField(
         "Your password (to unlock your signing key)", validators=[DataRequired()]
     )
-    reason = StringField("Reason (optional)", validators=[Optional(), Length(max=255)])
+    # Required for a rejection (plan S16); the service enforces it, as the route cannot know
+    # which button was pressed before the form validates.
+    reason = StringField("Reason", validators=[Optional(), Length(max=255)])
     approve = SubmitField("Approve & sign")
     reject = SubmitField("Reject")
 
@@ -257,6 +316,26 @@ class RunBenchmarkForm(FlaskForm):
         "Iterations", validators=[Optional(), NumberRange(min=1, max=25)], default=3
     )
     submit = SubmitField("Run live")
+
+
+class WithdrawForm(FlaskForm):
+    """Withdraw an open decision you raised (plan S16). A POST with a CSRF token: it ends the
+    decision for everyone."""
+
+    submit = SubmitField("Withdraw")
+
+
+class CommentForm(FlaskForm):
+    """Post to a decision's discussion. The limits are ``discussion_service``'s, checked there."""
+
+    body = TextAreaField("Comment")
+    submit = SubmitField("Post comment")
+
+
+class DeleteCommentForm(FlaskForm):
+    """Delete your own comment. A POST with a CSRF token."""
+
+    submit = SubmitField("Delete")
 
 
 class PublishForm(FlaskForm):

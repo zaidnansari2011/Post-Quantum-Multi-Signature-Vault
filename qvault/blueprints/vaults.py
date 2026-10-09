@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from base64 import b64decode
 from datetime import UTC, datetime, timedelta
 
@@ -28,7 +29,11 @@ from qvault.chain.relayer import RelayerError
 from qvault.chain.rpc import RpcError
 from qvault.extensions import db
 from qvault.forms import (
+    AccessProposalForm,
     AddMemberForm,
+    CommentForm,
+    ContractProposalForm,
+    DeleteCommentForm,
     MemberRoleForm,
     PaymentProposalForm,
     ProposalForm,
@@ -41,7 +46,10 @@ from qvault.forms import (
     ThresholdForm,
     UnpublishForm,
     VaultForm,
+    VaultRuleForm,
+    VaultRulesForm,
     VoteForm,
+    WithdrawForm,
 )
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
@@ -50,6 +58,10 @@ from qvault.security.decorators import get_membership_or_403
 from qvault.security.demo_gate import demo_enabled
 from qvault.services import (
     approval_service,
+    audit_service,
+    decision_types,
+    discussion_service,
+    eligibility,
     evidence_service,
     export_service,
     file_crypto_service,
@@ -68,7 +80,12 @@ from qvault.services import (
 from qvault.services.approval_service import ApprovalError
 from qvault.services.file_crypto_service import CiphertextMissing, FileDecryptError
 from qvault.services.key_service import KeyUnlockError
-from qvault.services.proposal_service import PaymentRequest, ProposalError
+from qvault.services.proposal_service import (
+    FieldsRefused,
+    PaymentRequest,
+    ProposalError,
+    TypedRequest,
+)
 from qvault.services.publication_service import PublicationError
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
@@ -123,10 +140,16 @@ def new_vault():
             )
         except PolicyError as exc:
             flash(str(exc), "danger")
-            return render_template("vaults/new.html", form=form)
+            return render_template(
+                "vaults/new.html",
+                form=form,
+                separated=vault_service.new_vault_separates(current_user),
+            )
         flash("Vault created — its ML-KEM keypair was generated.", "success")
         return redirect(url_for("vaults.vault_detail", vid=vault.id))
-    return render_template("vaults/new.html", form=form)
+    return render_template(
+        "vaults/new.html", form=form, separated=vault_service.new_vault_separates(current_user)
+    )
 
 
 class TreasuryForm(FlaskForm):
@@ -157,6 +180,9 @@ def vault_detail(vid: int):
     )
     me = vault.member_for(current_user.id)
     is_owner = me.member_role == "owner"
+    if tab == "settings" and not is_owner:
+        # Not offered to anyone else; a link to it drew the owner's forms (their routes refuse).
+        tab = "decisions"
     signer_vaults = inbox_service.signer_vault_ids(current_user)
     treasury = treasury_jobs.view(vault) if _treasuries_on() else None
     if tab == "treasury" and treasury is None:
@@ -183,6 +209,12 @@ def vault_detail(vid: int):
         remove_form=RemoveMemberForm(),
         threshold_form=ThresholdForm(threshold_m=vault.policy.threshold_m),
         n_signers=len(vault.signer_ids()),
+        # Plan S15, and whether it leaves every new decision unable to pass (eligibility.py).
+        requester_can_approve=eligibility.vault_allows_requester(vault),
+        impossible=eligibility.why_cannot_pass_if_raised(vault),
+        rule_form=VaultRuleForm(),
+        # Its rule changes as before -> after, from the audit log (R5). Settings is the owner's.
+        rule_changes=audit_service.rule_changes(vault) if tab == "settings" and is_owner else [],
         treasury=treasury,
         treasury_status=(
             payout_service.treasury_status(linked, current_app.extensions.get("relayer"))
@@ -375,6 +407,120 @@ def set_threshold(vid: int):
     return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
 
 
+@bp.post("/<int:vid>/settings/requester")
+@login_required
+def set_requester_rule(vid: int):
+    """Plan S15: the vault's owner sets whether the person who raises a decision can approve it."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = VaultRuleForm()
+    if not form.validate_on_submit():
+        flash("That didn’t save. Reload the page and try again.", "danger")
+        return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+    allowed = bool(form.requester_can_approve.data)
+    if vault_service.set_requester_can_approve(vault, allowed, actor_id=current_user.id):
+        if allowed:
+            flash("The person who raises a decision can now approve it too.", "success")
+        else:
+            flash(
+                "The person who raises a decision can no longer approve or reject it, including "
+                "decisions already open.",
+                "success",
+            )
+        refusal = eligibility.cannot_raise(vault)
+        if refusal is not None:
+            flash(refusal, "warning")
+    return redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+
+
+@bp.post("/<int:vid>/settings/rules")
+@login_required
+def save_rules(vid: int):
+    """The Approval rule card's one Save: the threshold and plan S15 together. Each is changed
+    only if it differs, both in one commit, and a threshold the vault refuses saves neither.
+    ``set_threshold`` and ``set_requester_rule`` above still take one setting each."""
+    vault = get_membership_or_403(vid, roles=("owner",))
+    form = VaultRulesForm()
+    back = redirect(url_for("vaults.vault_detail", vid=vid, tab="settings"))
+    if not form.validate_on_submit():
+        flash("Enter a valid number of approvals.", "danger")
+        return back
+    before = vault.policy.threshold_m
+    try:
+        vault_service.set_threshold(
+            vault, form.threshold_m.data, actor_id=current_user.id, commit=False
+        )
+    except PolicyError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+        return back
+    allowed = bool(form.requester_can_approve.data)
+    rule_changed = vault_service.set_requester_can_approve(
+        vault, allowed, actor_id=current_user.id, commit=False
+    )
+    db.session.commit()
+    if vault.policy.threshold_m != before:
+        flash("Approval threshold updated.", "success")
+    if rule_changed and allowed:
+        flash("The person who raises a decision can now approve it too.", "success")
+    elif rule_changed:
+        flash(
+            "The person who raises a decision can no longer approve or reject it, including "
+            "decisions already open.",
+            "success",
+        )
+    if vault.policy.threshold_m == before and not rule_changed:
+        flash("Nothing changed.", "info")
+    else:
+        refusal = eligibility.cannot_raise(vault)
+        if refusal is not None:
+            flash(refusal, "warning")
+    return back
+
+
+#: What a vault rule change since a decision was raised does to it (``_with_effects``).
+_APPROVER_WORDS = ("Approver", "Owner")
+
+
+def _with_effects(proposal, changes: list[dict]) -> list[dict]:
+    """Each change with ``effect``: whether and how it reaches this open decision, decided from
+    the decision’s own facts. Its threshold and signer set are frozen; who may sign is checked
+    at signing (the frozen set AND an approver now), and so is separation of duties (the rule
+    it was raised under AND the vault’s now). Keys, worded by the decision page:
+
+    * ``kept_rule``: a threshold change, which never reaches it;
+    * ``sod_on``: the requester can’t approve it now;
+    * ``sod_off``: the requester can approve it again (it was raised while they could);
+    * ``sod_off_frozen``: it doesn’t (it was raised while they couldn’t);
+    * ``not_in_set``: someone who wasn’t one of its approvers when it was raised;
+    * ``approver_again``: one of its approvers then, an approver again now;
+    * ``no_longer``: one of its approvers then, no longer one;
+    * ``still_cannot``: one of its approvers then, and still not an approver.
+    """
+    snapshot = set(json.loads(proposal.authorized_signers_snapshot))
+    lifecycle = proposal.lifecycle
+    raised_allowing = lifecycle is None or lifecycle.requester_can_approve is not False
+    out = []
+    for change in changes:
+        event, diff = change["event"], change["diff"]
+        if event == "vault_threshold_changed":
+            effect = "kept_rule"
+        elif event == "vault_rule_changed":
+            if diff["after"] == "No":
+                effect = "sod_on"
+            else:
+                effect = "sod_off" if raised_allowing else "sod_off_frozen"
+        elif change.get("user_id") not in snapshot:
+            effect = "not_in_set"
+        elif diff["after"] in _APPROVER_WORDS:
+            effect = "approver_again"
+        elif diff["before"] in _APPROVER_WORDS:
+            effect = "no_longer"
+        else:
+            effect = "still_cannot"
+        out.append({**change, "effect": effect})
+    return out
+
+
 def _payments_possible(vault) -> bool:
     return _treasuries_on() and treasury_service.linked_treasury(vault) is not None
 
@@ -387,24 +533,24 @@ def new_proposal(vid: int):
         # A viewer is read-only. The service refuses too; this keeps the form from being offered
         # and answers before the request is read, for either kind of decision.
         abort(403)
-    if request.args.get("kind") == "payment":
-        return _new_payment(vault)
+    again = _raise_again(vault)
+    # Raising again keeps the type (and its fields, prefilled below): signatures bind the words,
+    # so the new decision is written afresh from them.
+    prefill = proposal_service.raise_again_prefill(again) if again is not None else None
+    kind = prefill["kind"] if prefill is not None else request.args.get("kind")
+    if kind == "payment":
+        return _new_payment(vault, again)
+    if kind in decision_types.STORED_TYPES:
+        return _new_typed(vault, kind, again, prefill)
     form = ProposalForm()
+    if again is not None and request.method == "GET":
+        form.title.data, form.action_text.data = prefill["title"], prefill["action_text"]
+        form.raised_again_from.data = again.proposal_uuid
     if form.validate_on_submit():
-        file_bytes = None
-        filename = None
-        upload = form.file.data
-        if upload is not None and getattr(upload, "filename", ""):
-            file_bytes = upload.read()
-            filename = secure_filename(upload.filename)
-        deadline = form.deadline.data
-        if deadline is not None and deadline.tzinfo is None:
-            deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
-        if deadline is not None and deadline <= datetime.now(UTC):
-            # It would be expired the moment it was raised. Payments are refused the same way by
-            # the D23 policy; a general decision had no check.
-            flash("Choose a due time in the future.", "danger")
-            return _new_decision_page(form, vault, "general")
+        file_bytes, filename = _upload(form)
+        deadline = _due(form)
+        if deadline is False:
+            return _new_decision_page(form, vault, "general", again)
         try:
             proposal = proposal_service.create_proposal(
                 vault,
@@ -414,17 +560,100 @@ def new_proposal(vid: int):
                 deadline=deadline,
                 file_bytes=file_bytes,
                 filename=filename,
+                raised_again_from=form.raised_again_from.data or None,
             )
         except ProposalError as exc:
             flash(str(exc), "danger")
-            return _new_decision_page(form, vault, "general")
+            return _new_decision_page(form, vault, "general", again)
         flash("Proposal created.", "success")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=proposal.proposal_uuid))
-    return _new_decision_page(form, vault, "general")
+    return _new_decision_page(form, vault, "general", again)
 
 
-def _new_decision_page(form, vault, kind: str):
-    """New decision, either type, with the "who approves" preview (plan S14) beside the form."""
+def _upload(form) -> tuple[bytes | None, str | None]:
+    """The attached file's bytes and a safe name, or (None, None) when none was chosen."""
+    upload = form.file.data
+    if upload is not None and getattr(upload, "filename", ""):
+        return upload.read(), secure_filename(upload.filename)
+    return None, None
+
+
+def _due(form):
+    """The due time entered, as UTC; None when there is none; False (said once) when it is past."""
+    deadline = form.deadline.data
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=UTC)  # treat the entered time as UTC
+    if deadline is not None and deadline <= datetime.now(UTC):
+        # It would be expired the moment it was raised. Payments are refused the same way by
+        # the D23 policy; a general decision had no check.
+        flash("Choose a due time in the future.", "danger")
+        return False
+    return deadline
+
+
+def _new_typed(vault, kind: str, again=None, prefill=None):
+    """A Production access or Contract decision (plan S13): its fields write the text."""
+    form = AccessProposalForm() if kind == "access" else ContractProposalForm()
+    keys = [spec.key for spec in decision_types.SPECS[kind]]
+    if again is not None and request.method == "GET":
+        form.title.data = prefill["title"]
+        for key in keys:
+            getattr(form, key).data = prefill["fields"].get(key)
+        form.raised_again_from.data = again.proposal_uuid
+    errors: dict[str, str] = {}
+    if form.validate_on_submit():
+        file_bytes, filename = _upload(form) if kind == "contract" else (None, None)
+        deadline = _due(form)
+        if deadline is False:
+            return _new_decision_page(form, vault, kind, again)
+        try:
+            proposal = proposal_service.create_proposal(
+                vault,
+                current_user,
+                form.title.data,
+                "",
+                deadline=deadline,
+                file_bytes=file_bytes,
+                filename=filename,
+                typed=TypedRequest(kind, {key: getattr(form, key).data for key in keys}),
+                raised_again_from=form.raised_again_from.data or None,
+            )
+        except FieldsRefused as exc:
+            if exc.field in keys:
+                errors[exc.field] = str(exc)
+            else:
+                flash(str(exc), "danger")
+        except ProposalError as exc:
+            flash(str(exc), "danger")
+        else:
+            flash(f"{decision_types.LABELS[kind]} decision created.", "success")
+            return redirect(
+                url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
+            )
+    return _new_decision_page(form, vault, kind, again, errors=errors)
+
+
+def _raise_again(vault):
+    """The closed decision being raised again (plan S16), from ``?again=`` on the way in or the
+    form's hidden field on the way back; None when there is none, or it can't be (said once)."""
+    uuid = request.args.get("again") or request.form.get("raised_again_from")
+    if not uuid:
+        return None
+    try:
+        source = proposal_service.raise_again_source(vault, uuid)
+    except ProposalError as exc:
+        if request.method == "GET":  # a POST is refused by create_proposal, in these words
+            flash(str(exc), "danger")
+        return None
+    if source.action is not None and not _payments_possible(vault):
+        flash("This vault can't make payments now, so a payment can't be raised again.", "danger")
+        return None
+    return source
+
+
+def _new_decision_page(form, vault, kind: str, again=None, errors=None):
+    """New decision, any type, with the "who approves" preview (plan S14) beside the form.
+    ``errors`` are a typed decision's field refusals, by field (plan S13)."""
     payments = kind == "payment" or _payments_possible(vault)
     now = datetime.now(UTC)
     return render_template(
@@ -433,7 +662,10 @@ def _new_decision_page(form, vault, kind: str):
         vault=vault,
         payments=payments,
         kind=kind,
+        errors=errors or {},
+        access_levels=decision_types.ACCESS_LEVELS,
         preview=proposal_service.who_approves(vault, current_user),
+        again=again,
         treasury=treasury_service.linked_treasury(vault) if kind == "payment" else None,
         # The date field's range: from now, and for a payment at most 30 days out (D23).
         due_min=now,
@@ -441,11 +673,16 @@ def _new_decision_page(form, vault, kind: str):
     )
 
 
-def _new_payment(vault):
+def _new_payment(vault, again=None):
     """A payment decision (plan Phase 8): recipient and amount; the server writes the rest."""
     if not _payments_possible(vault):
         abort(404)
     form = PaymentProposalForm()
+    if again is not None and request.method == "GET":
+        prefill = proposal_service.raise_again_prefill(again)
+        form.title.data, form.to.data = prefill["title"], prefill.get("to")
+        form.amount.data = prefill.get("amount")
+        form.raised_again_from.data = again.proposal_uuid
     if form.validate_on_submit():
         deadline = form.deadline.data
         if deadline is not None and deadline.tzinfo is None:
@@ -459,6 +696,7 @@ def _new_payment(vault):
                 "",
                 deadline=deadline,
                 payment=PaymentRequest(to=form.to.data.strip(), value_wei=value),
+                raised_again_from=form.raised_again_from.data or None,
             )
         except (ProposalError, ActionError) as exc:
             flash(f"{str(exc)[:1].upper()}{str(exc)[1:]}.", "danger")
@@ -467,7 +705,7 @@ def _new_payment(vault):
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )
-    return _new_decision_page(form, vault, "payment")
+    return _new_decision_page(form, vault, "payment", again)
 
 
 @bp.get("/<int:vid>/proposals/<pid>")
@@ -494,13 +732,20 @@ def proposal_detail(vid: int, pid: str):
     device_signed = sum(1 for s in proposal.signatures if s.custody == "device")
 
     my_vote = approval_service.vote_of(proposal, current_user.id)
-    # An approver of THIS decision: in its frozen signer set (what the service authorises
-    # against) and still a signer of the vault. Someone added after it was raised is neither
-    # offered a vote nor told it needs them (rework R2, the personal status).
-    is_signer = current_user.id in {m.user_id for m in vault.signer_members()} and (
-        current_user.id in evidence_service.approver_ids(proposal)
-    )
+    # An approver of THIS decision: whoever the vote gate would let sign it (its frozen signer
+    # set, an approver of the vault now, in good standing in the workspace). Someone added after
+    # it was raised, or demoted or suspended since, is neither offered a vote nor told it needs
+    # them (rework R2, the personal status; owner decision 2026-10-08).
+    eligible = eligibility.eligible_ids(proposal)
+    is_signer = current_user.id in eligible
     can_vote = proposal.status == "open" and is_signer and my_vote is None
+    # Who can still approve, and whether they are enough to decide it (``eligibility``).
+    outlook = eligibility.outlook(
+        proposal,
+        approvals=approvals,
+        voted=[s.signer_id for s in proposal.signatures],
+        eligible=eligible,
+    )
     binding = approval_service.verify_proposal_binding(proposal)
     # Approving a payment signs what the treasury will pay, built from the stored payment; when
     # that no longer matches what was signed, offering Approve would invite a signature over a
@@ -513,6 +758,7 @@ def proposal_detail(vid: int, pid: str):
     # and the evidence layers, each built from the checks above or run fresh in evidence_service.
     tab = request.args.get("tab")
     tab = tab if tab in ("evidence", "technical") else "overview"
+    cannot_pass = proposal.status == "open" and not outlook.reachable
     status_key, status_n = evidence.personal_status(
         # Effective, not stored: a passed deadline reads Expired before the sweep runs (S20).
         inbox_service.effective_status(proposal),
@@ -520,6 +766,7 @@ def proposal_detail(vid: int, pid: str):
         approvals=approvals,
         required_m=proposal.required_m,
         payout_state=payout["state"] if payout else None,
+        can_still_pass=not cannot_pass,
     )
     proof = evidence_service.decision_evidence(
         proposal, binding=binding, votes=votes, viewer_id=current_user.id, payout=payout
@@ -537,6 +784,23 @@ def proposal_detail(vid: int, pid: str):
         status_n=status_n,
         ev=proof,
         approver_ids=evidence_service.approver_ids(proposal),
+        still_ids=list(outlook.still),
+        # Who can approve it, by the vote gate's rule, plus anyone whose approval already counts.
+        can_approve_ids=sorted(
+            set(eligible) | {s.signer_id for s in proposal.signatures if s.decision == "approve"}
+        ),
+        cannot_pass=cannot_pass,
+        # Why, person by person, from what holds now (``eligibility.shortfall``).
+        shortfall=(
+            evidence.shortfall_lines(eligibility.shortfall(proposal), proof.names, current_user.id)
+            if cannot_pass
+            else []
+        ),
+        needed=outlook.needed,
+        # Plan S15: the person who raised it, when they may not approve it.
+        own_decision=current_user.id == proposal.creator_id
+        and not eligibility.requester_may_approve(proposal),
+        was_signer=not is_signer and current_user.id in evidence_service.approver_ids(proposal),
         due_soon=proposal.status == "open" and due is not None and due - now <= DUE_SOON,
         approve_lines=evidence.approve_consequence(
             approvals=approvals, required_m=proposal.required_m, payment=amount
@@ -559,6 +823,40 @@ def proposal_detail(vid: int, pid: str):
         can_approve=can_approve,
         payout=payout,
         vote_form=VoteForm(),
+        withdraw_form=WithdrawForm(),
+        # Plan S13: its type, with fields only when they write its signed text again.
+        typed=decision_types.typed_view(proposal),
+        # Its discussion (rework R5): unsigned, and drawn apart from the decision text.
+        comments=discussion_service.thread(proposal, current_user) if tab == "overview" else [],
+        cannot_comment=discussion_service.why_cannot_post(proposal, current_user),
+        mentionable=(
+            discussion_service.directory(proposal, exclude=current_user.id)
+            if tab == "overview"
+            else []
+        ),
+        comment_form=CommentForm(),
+        # The vault's rule changes since this decision was raised, while it is open (R5): some
+        # apply to it (who can sign is checked at signing), some don't (its threshold is frozen).
+        changes_since=(
+            _with_effects(
+                proposal,
+                audit_service.rule_changes(vault, after_seq=proof.payload["created_seq"], limit=5),
+            )
+            if proposal.status == "open" and proof.payload["created_seq"] is not None
+            else []
+        ),
+        delete_comment_form=DeleteCommentForm(),
+        # Plan S16: where it came from and what replaced it, both in this vault.
+        raised_again_from=(
+            proposal.lifecycle.raised_again_from if proposal.lifecycle is not None else None
+        ),
+        raised_again_as=proposal_service.raised_again_as(proposal),
+        can_raise_again=inbox_service.effective_status(proposal)
+        in proposal_service.RAISE_AGAIN_FROM
+        and proposal_service.may_propose(vault, current_user),
+        # Plan S16: Withdraw is drawn only where the service would take it (whoever raised it,
+        # still in the vault and not suspended, while it is open).
+        can_withdraw=approval_service.why_cannot_withdraw(proposal, current_user) is None,
         # Present only immediately after this member signed (or when someone follows a receipt
         # link). Scoped to this proposal inside the service, which is the authorisation check.
         receipt=receipt_service.for_signature_id(proposal, request.args.get("receipt")),
@@ -636,6 +934,68 @@ def export_proposal(vid: int, pid: str):
             )
         },
     )
+
+
+@bp.post("/<int:vid>/proposals/<pid>/withdraw")
+@login_required
+def withdraw_proposal(vid: int, pid: str):
+    """The person who raised an open decision withdraws it (plan S16). The service decides who
+    may; membership is checked first so another vault's decision is a 403 like any other."""
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    if not WithdrawForm().validate_on_submit():
+        abort(400)
+    try:
+        approval_service.withdraw(proposal, current_user)
+    except ApprovalError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash(
+            "Withdrawn. It has ended for everyone, and approvals already given no longer count. "
+            "You can raise it again from here.",
+            "success",
+        )
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
+
+
+@bp.post("/<int:vid>/proposals/<pid>/comments")
+@login_required
+def post_comment(vid: int, pid: str):
+    """Post to a decision's discussion. Membership first, as for the page itself; the service
+    decides whether this member may post (``discussion_service.why_cannot_post``)."""
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    form = CommentForm()
+    if not form.validate_on_submit():
+        abort(400)
+    try:
+        comment = discussion_service.post(proposal, current_user, form.body.data)
+    except discussion_service.CommentError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid, _anchor="discussion"))
+    return redirect(
+        url_for("vaults.proposal_detail", vid=vid, pid=pid, _anchor=f"comment-{comment.id}")
+    )
+
+
+@bp.post("/<int:vid>/proposals/<pid>/comments/<int:cid>/delete")
+@login_required
+def delete_comment(vid: int, pid: str, cid: int):
+    """Delete your own comment. Only a comment of this decision's, in a vault the caller is in."""
+    get_membership_or_403(vid)
+    proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
+    comment = discussion_service.get(proposal, cid)
+    if comment is None:
+        abort(404)
+    if not DeleteCommentForm().validate_on_submit():
+        abort(400)
+    try:
+        discussion_service.delete(comment, current_user)
+    except discussion_service.CommentError as exc:
+        flash(str(exc), "danger")
+    else:
+        flash("Comment deleted. The audit log keeps a record that it was.", "success")
+    return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid, _anchor="discussion"))
 
 
 @bp.post("/<int:vid>/proposals/<pid>/publish")
@@ -739,7 +1099,10 @@ def vote(vid: int, pid: str):
     proposal = Proposal.query.filter_by(vault_id=vid, proposal_uuid=pid).first_or_404()
     form = VoteForm()
     if not form.validate_on_submit():
-        flash("Please enter your password to sign.", "danger")
+        if form.reason.errors:
+            flash("Keep the reason to 255 characters; nothing was recorded.", "danger")
+        else:
+            flash("Please enter your password to sign.", "danger")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=pid))
 
     # Require exactly one explicit decision: never default an ambiguous submit to "approve".

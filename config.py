@@ -68,6 +68,11 @@ class BaseConfig:
     # only by the log itself and cannot survive an operator who controls this database.
     WITNESS_URL = os.environ.get("WITNESS_URL")
     WITNESS_TIMEOUT_S = float(os.environ.get("WITNESS_TIMEOUT_S", "3.0"))
+    # The witness key this log trusts, as the 16 hex characters the witness prints on startup
+    # (the value ``python -m qvault.verify --expect-witness`` takes). Set: a co-signature from any
+    # other key is refused and shown as a mismatch. Unset: any key is accepted, as before, and
+    # admins see that the key isn't pinned. Never learnt from the witness: only this setting pins.
+    WITNESS_KEY_FINGERPRINT = os.environ.get("WITNESS_KEY_FINGERPRINT") or None
     # Offered on a timer, never in the request path: an unreachable witness must cost a growing
     # lag on the transparency page, not latency on every write.
     WITNESS_SYNC_SECONDS = int(os.environ.get("WITNESS_SYNC_SECONDS", "60"))
@@ -152,6 +157,7 @@ class TestConfig(BaseConfig):
     SCHEDULER_ENABLED = False  # tests drive the rotation/expiry jobs directly, no background thread
     LOG_ORIGIN = "qvault.test/ledger"
     WITNESS_URL = None  # tests drive the witness in-process; no sockets in the suite
+    WITNESS_KEY_FINGERPRINT = None  # a test that pins sets it; never the developer's .env value
     # On in the suite so the instrumentation is exercised by every existing test that signs
     # anything -- an unwrapped value or a broken presenter then fails a vote test, loudly, rather
     # than waiting to be discovered on the /trace page during a demonstration.

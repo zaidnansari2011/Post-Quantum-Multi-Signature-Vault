@@ -39,7 +39,13 @@ def make_decision(*, m: int = 1, decided: bool = True, reject: bool = False):
         vault, ada, "Wire to escrow", "Wire 250,000 EUR to escrow account GB29 NWBK."
     )
     if decided:
-        approval_service.cast_vote(proposal, ada, PASSWORD, "reject" if reject else "approve")
+        approval_service.cast_vote(
+            proposal,
+            ada,
+            PASSWORD,
+            "reject" if reject else "approve",
+            reason="Not convinced." if reject else None,
+        )
     return ada, vault, proposal
 
 

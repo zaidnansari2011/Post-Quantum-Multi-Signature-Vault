@@ -87,7 +87,7 @@ def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> d
         # the moment the log is being asked to stand behind these entries.
         checkpoint = checkpoint_service.create_checkpoint()
 
-    if sync_witness and not checkpoint.cosignatures:
+    if sync_witness and not checkpoint_service.trusted_cosignatures(checkpoint):
         # Offer the log's CURRENT head, never this particular checkpoint. The witness only moves
         # forward, so handing it an older checkpoint is at best refused and at worst recorded as a
         # `shrank` violation — a false accusation raised by entirely honest behaviour. Getting the
@@ -163,7 +163,9 @@ def build_decision_bundle(proposal: Proposal, *, sync_witness: bool = True) -> d
                     "public_key_b64": b64encode(c.public_key).decode(),
                     "signature_b64": b64encode(c.signature).decode(),
                 }
-                for c in checkpoint.cosignatures
+                # Only those from a key the pin accepts (WITNESS_KEY_FINGERPRINT): a row under
+                # another key is not this log's witness, and is not passed off as one.
+                for c in checkpoint_service.trusted_cosignatures(checkpoint)
             ],
             "entries": [
                 {
@@ -231,7 +233,7 @@ def transparency_status(proposal: Proposal) -> dict:
         "logged": True,
         "seq": highest,
         "checkpoint": checkpoint,
-        "witnesses": list(checkpoint.cosignatures) if checkpoint else [],
+        "witnesses": checkpoint_service.trusted_cosignatures(checkpoint) if checkpoint else [],
     }
 
 
