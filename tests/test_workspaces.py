@@ -525,6 +525,22 @@ def test_a_suspended_member_cannot_be_promoted_to_approver(app, team):
     assert chen.id in vault.signer_ids()
 
 
+def test_a_suspended_approver_cannot_raise_a_decision_either(app, team):
+    """They sign nothing while suspended (``signing_standing``), so they raise nothing either."""
+    workspace, ada, _, chen, _ = team
+    vault = vault_service.create_vault(ada, "Treasury", "", 1)
+    vault_service.add_member(vault, chen.email, "signer", actor_id=ada.id)
+    assert proposal_service.may_propose(vault, chen)
+    workspace_service.suspend_member(workspace, chen.id, actor=ada)
+
+    assert not proposal_service.may_propose(vault, chen)
+    with pytest.raises(proposal_service.NotAllowedToPropose, match="suspended"):
+        proposal_service.create_proposal(vault, chen, "T", "Release 33,000.")
+
+    workspace_service.reinstate_member(workspace, chen.id, actor=ada)
+    proposal_service.create_proposal(vault, chen, "T", "Release 33,000.")
+
+
 def test_an_auditor_can_be_a_viewer_but_never_an_approver(app, team):
     """Auditors are read-only (plan S10)."""
     workspace, ada, _, chen, _ = team

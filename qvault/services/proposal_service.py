@@ -64,8 +64,24 @@ def may_propose(vault: Vault, user) -> bool:
     nothing either. The same roles as the signer set (``SIGNER_ROLES``), so a role that comes to
     count towards a threshold can raise decisions without a second list to update.
     """
+    return why_cannot_propose(vault, user) is None
+
+
+def why_cannot_propose(vault: Vault, user) -> str | None:
+    """Why ``user`` may not raise a decision in ``vault``, or None when they may.
+
+    Their vault role first (``may_propose``), then their standing in the vault's workspace: a
+    suspended member or an auditor raises nothing, as they sign nothing (``signing_standing``).
+    """
+    from qvault.services.workspace_service import signing_standing
+
     member = vault.member_for(user.id)
-    return member is not None and member.member_role in SIGNER_ROLES
+    if member is None or member.member_role not in SIGNER_ROLES:
+        return NOT_A_PROPOSER
+    standing = signing_standing(vault, user.id)
+    if standing is not None:
+        return f"You can't raise a decision here: {standing}."
+    return None
 
 
 #: Plan S16: the decisions "Raise again" starts from. An approved one is done, an open one can
@@ -221,9 +237,10 @@ def create_proposal(
     replaces (plan S16, :func:`raise_again_source`). It is recorded beside the decision, never in
     what is signed.
     """
-    if not may_propose(vault, creator):
+    refusal = why_cannot_propose(vault, creator)
+    if refusal is not None:
         # First, before anything is encrypted, hashed or written.
-        raise NotAllowedToPropose(NOT_A_PROPOSER)
+        raise NotAllowedToPropose(refusal)
     source = raise_again_source(vault, raised_again_from) if raised_again_from else None
     # Normalised once, before hashing: the signed text must be exactly the stored text. Hashing
     # the submitted text and storing it stripped made any proposal with surrounding whitespace
