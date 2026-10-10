@@ -58,6 +58,11 @@ import { NotificationsPrimer } from './src/screens/NotificationsPrimer.tsx';
 import { wireFocusManager } from './src/freshness.tsx';
 import { RETRY } from './src/queries.ts';
 import { STALE_MS } from './src/logic/freshness.ts';
+import { holdSplash, releaseSplash } from './src/native/splash.ts';
+import { wireNetInfo } from './src/native/network.ts';
+
+// The native splash stays up until the first real frame (§6.1); released in Routes, or after a cap.
+holdSplash();
 
 // Set before any request can be made. `extra.apiBaseUrl` lets a teammate point a build at a
 // different server without touching source.
@@ -122,6 +127,8 @@ const queryClient = new QueryClient({
 });
 // A link to a decision already on screen refetches it in place (§2.4 rule 1).
 configureLinks(queryClient);
+// The phone's own network state, where the binary has NetInfo: the offline bar at once (§2.6).
+wireNetInfo(queryClient);
 
 /**
  * The badge count (phone-ux §2.5).
@@ -295,7 +302,12 @@ function Routes() {
   // A link kept while not enrolled (or while the session had ended) opens once the screens are up.
   useEffect(() => setLinksEnrolled(status === 'enrolled'), [status]);
 
-  if (status === 'loading' || (status === 'enrolled' && !lock.ready)) return <Launch />;
+  const launching = status === 'loading' || (status === 'enrolled' && !lock.ready);
+  useEffect(() => {
+    if (!launching) releaseSplash();
+  }, [launching]);
+
+  if (launching) return <Launch />;
   if (status === 'anonymous') return <EnrolScreen />;
   // The key is still on the phone (I-3); this screen says what ended and what setting up again does.
   if (status === 'ended') return <SessionEndedScreen />;

@@ -6,7 +6,7 @@
 // they are only the values that differ, the one this phone derived first.
 
 import { useState } from 'react';
-import { Linking, Share, View } from 'react-native';
+import { Linking, View } from 'react-native';
 
 import {
   Button,
@@ -22,6 +22,7 @@ import {
   TextLink,
 } from '../../ui/index.tsx';
 import { getApiBaseUrl } from '../../config.ts';
+import { copyText } from '../../native/clipboard.ts';
 import { makeStyles, useTheme } from '../../theme/index.ts';
 import type { ProposalDetail } from '../../api/schemas.ts';
 import type { Checked } from '../../checks.ts';
@@ -115,7 +116,7 @@ export function EvidenceSheet({
                     <IconButton
                       icon="copy"
                       label="Copy the decision code"
-                      onPress={() => void Share.share({ message: code }).catch(() => {})}
+                      onPress={() => void copyText(code)}
                       size={18}
                     />
                   </View>
