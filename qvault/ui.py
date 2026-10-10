@@ -10,9 +10,6 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
-from typing import TypeVar
-
-K = TypeVar("K")
 
 #: The closed status vocabulary (plan S6): one word per state, and the tone it always takes. A
 #: badge outside this table is refused rather than invented on the spot.
@@ -175,7 +172,7 @@ def first_name(name: str | None) -> str:
     return name.split(" ", 1)[0] if name else "Someone"
 
 
-def short_names(names: Mapping[K, str | None]) -> dict[K, str]:
+def short_names[K](names: Mapping[K, str | None]) -> dict[K, str]:
     """What each person in one list, sentence or row of avatars is called: their first name, or
     their full name when someone else in the same group shares that first name.
 

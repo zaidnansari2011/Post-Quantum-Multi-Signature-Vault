@@ -569,9 +569,15 @@ def decision_feed(user: User, *, limit: int = 6) -> list[dict]:
             Proposal.proposal_uuid.in_(tuple(latest)), Proposal.vault_id.in_(member_vaults)
         ).all()
     }
-    actor_ids = {e.actor_id for e in latest.values() if e.actor_id}
-    people = {u.id: u for u in User.query.filter(User.id.in_(actor_ids))} if actor_ids else {}
-    # First names, or full names where two people in this feed share one (``ui.short_names``).
+    # Who each actor is called: a first name, or the full name when someone else in the same
+    # vaults shares it (``ui.short_names``). Compared against everyone in those vaults, not only
+    # this feed's actors: "QA approved" is no help when QA Brij and QA Chen both approve there.
+    vault_ids = {p.vault_id for p in proposals.values()}
+    group_ids = {e.actor_id for e in latest.values() if e.actor_id} | set(
+        db.session.scalars(select(VaultMember.user_id).where(VaultMember.vault_id.in_(vault_ids)))
+    )
+    group_ids.discard(user.id)
+    people = {u.id: u for u in User.query.filter(User.id.in_(group_ids))} if group_ids else {}
     short = short_names({uid: (u.display_name or u.email) for uid, u in people.items()})
 
     def who(entry: LedgerEntry) -> str:
