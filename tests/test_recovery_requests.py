@@ -473,6 +473,134 @@ def test_completing_twice_does_nothing_the_second_time(app, team):
 
 
 # --------------------------------------------------------------------------------------------
+# A new kit and a completing recovery never cross
+#
+# One process cannot run two transactions at once, so each test lands the other side's commit at
+# the worst moment inside the first (from a patched step), as a second process could.
+
+
+def _kit_rows(user):
+    from qvault.models.recovery import RecoveryKit
+
+    return RecoveryKit.query.filter_by(user_id=user.id).order_by(RecoveryKit.id).all()
+
+
+def test_a_new_kit_asked_for_after_the_wait_is_over_lets_the_recovery_take_effect_first(app, team):
+    issued = issue(team.ada, now=NOW)
+    request = start(team.ada, issued.code, now=NOW).request
+    with pytest.raises(recovery_kit.KitError, match="just taken effect"):
+        issue(team.ada, PW, now=after_wait(NOW))
+    db.session.refresh(request)
+    assert request.state == "completed"
+    assert issued.kit.state == "revoked" and issued.kit.revoked_reason == "used"
+    assert recovery_kit.active_kit(team.ada) is None and len(_kit_rows(team.ada)) == 1
+    assert auth_service.authenticate(team.ada.email, NEW) is not None
+
+
+def test_a_recovery_completing_after_the_password_was_checked_stops_the_new_kit(
+    app, team, monkeypatch
+):
+    """The proof was of the old password; the recovery replaced it before the new kit was
+    written. That kit would give whoever knew the old password the key again: it is not made."""
+    issued = issue(team.ada, now=NOW)
+    request = start(team.ada, issued.code, now=NOW).request
+    # This test is about the write, not about the proof cancelling (tested above).
+    monkeypatch.setattr(recovery_service, "password_proven", lambda *a, **k: None)
+    real_unlock = key_service.unlock_secret_key
+    landed = []
+
+    def unlock_then_the_recovery_commits(user, key, password):
+        secret = real_unlock(user, key, password)
+        if not landed:
+            landed.append(recovery_service.complete(request, now=after_wait(NOW)))
+        return secret
+
+    monkeypatch.setattr(key_service, "unlock_secret_key", unlock_then_the_recovery_commits)
+    with pytest.raises(recovery_kit.KitError, match="password changed"):
+        issue(team.ada, PW, now=NOW + timedelta(hours=1))
+    assert landed == [True]
+    db.session.refresh(request)
+    assert request.state == "completed"
+    assert recovery_kit.active_kit(team.ada) is None and len(_kit_rows(team.ada)) == 1
+    assert len(_events("recovery_kit_issued")) == 1
+    assert auth_service.authenticate(team.ada.email, NEW) is not None
+
+
+def test_a_new_kit_committed_during_a_completion_stops_the_completion(app, team, monkeypatch):
+    issued = issue(team.ada, now=NOW)
+    request = start(team.ada, issued.code, now=NOW).request
+    real_check = recovery_service._completion_problem
+    made = []
+
+    def a_new_kit_commits_first(req):
+        if not made:
+            made.append(issue(team.ada, PW, now=after_wait(NOW)))
+        return real_check(req)
+
+    monkeypatch.setattr(recovery_service, "_completion_problem", a_new_kit_commits_first)
+    assert recovery_service.complete(request, now=after_wait(NOW)) is True
+    assert request.state == "failed" and "stopped working" in request.end_reason
+    assert recovery_kit.active_kit(team.ada).id == made[0].kit.id
+    assert auth_service.authenticate(team.ada.email, NEW) is None
+    key = key_service.active_signing_key(team.ada)
+    assert key_service.unlock_secret_key(team.ada, key, PW)  # the account is as it was
+
+
+def test_a_kit_replaced_after_the_completion_checked_it_is_caught_by_compare_and_set(
+    app, team, monkeypatch
+):
+    """The re-check read the kit as active; a new kit replaced it before the completion wrote."""
+    from qvault.models.recovery import RecoveryKit
+
+    issued = issue(team.ada, now=NOW)
+    request = start(team.ada, issued.code, now=NOW).request
+    real_check = recovery_service._completion_problem
+
+    def checked_then_replaced(req):
+        problem = real_check(req)
+        db.session.execute(
+            RecoveryKit.__table__.update()
+            .where(RecoveryKit.id == issued.kit.id)
+            .values(state="revoked", revoked_reason="regenerated")
+        )
+        db.session.commit()  # the other side's commit
+        return problem
+
+    monkeypatch.setattr(recovery_service, "_completion_problem", checked_then_replaced)
+    assert recovery_service.complete(request, now=after_wait(NOW)) is True
+    assert request.state == "failed" and "stopped working" in request.end_reason
+    db.session.refresh(issued.kit)
+    assert issued.kit.revoked_reason == "regenerated"  # the other side's end stands
+    assert auth_service.authenticate(team.ada.email, NEW) is None
+    assert _events("recovery_completed") == []
+
+
+def test_a_kit_spent_after_a_new_kit_read_it_is_caught_by_compare_and_set(app, team, monkeypatch):
+    """The new kit read the old one as active; a completion spent it before the new kit wrote."""
+    from qvault.models.recovery import RecoveryKit
+
+    issued = issue(team.ada, now=NOW)
+    real_current = recovery_kit.current_kit
+
+    def read_then_spent(user):
+        kit = real_current(user)
+        db.session.execute(
+            RecoveryKit.__table__.update()
+            .where(RecoveryKit.id == issued.kit.id)
+            .values(state="revoked", revoked_reason="used")
+        )
+        db.session.commit()  # the other side's commit
+        return kit
+
+    monkeypatch.setattr(recovery_kit, "current_kit", read_then_spent)
+    with pytest.raises(recovery_kit.KitError, match="changed while"):
+        issue(team.ada, PW, now=NOW + timedelta(hours=1))
+    assert len(_kit_rows(team.ada)) == 1
+    db.session.refresh(issued.kit)
+    assert issued.kit.revoked_reason == "used"
+
+
+# --------------------------------------------------------------------------------------------
 # The transparency log
 
 

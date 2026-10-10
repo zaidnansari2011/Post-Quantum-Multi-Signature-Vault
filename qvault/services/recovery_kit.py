@@ -46,6 +46,7 @@ from datetime import UTC, datetime
 
 from cryptography.exceptions import InvalidTag
 from flask import current_app
+from sqlalchemy import update
 
 from qvault.crypto import canonical_json, kit_code, sha256, sha256_hex
 from qvault.crypto.kdf import DEFAULT_PARAMS, derive_kek, hkdf_sha256
@@ -226,10 +227,21 @@ def issue(
     wraps is unlocked with it first (``KeyUnlockError`` on a wrong one, before anything changes).
     Unlocking is a proof of the password, so it also cancels any open recovery of this account
     and burns the kit that started it (⚑5).
+
+    It cannot cross a recovery of the same account taking effect: a recovery whose wait is over
+    completes first (the password in hand then opens nothing), the account's row is held, the old
+    kit is ended by compare-and-set, and nothing is written unless the credential the password
+    was checked against is still the account's (``recovery_service``'s "one writer at a time").
     """
-    from qvault.services import key_service, ledger_service, notification_service
+    from qvault.services import key_service, ledger_service, notification_service, recovery_service
 
     now = (now or _now()).replace(microsecond=0)
+    if recovery_service.prepare_password_write(user, now=now):
+        raise KitError(
+            "a recovery of this account has just taken effect, so this password no longer opens "
+            "your signing key. Sign in with the new one"
+        )
+    seen_salt = user.kek_salt
     keys = keys_to_wrap(user)
     if not any(k.status == "active" for k in keys):
         raise KitError("there is no active signing key on this account to put in a kit")
@@ -240,7 +252,12 @@ def issue(
 
         previous = current_kit(user)
         if previous is not None:
-            revoke(previous, "regenerated", now=now)
+            if not revoke(previous, "regenerated", now=now):
+                db.session.rollback()
+                raise KitError(
+                    "your Recovery Kit changed while this one was being made, so nothing was "
+                    "made. Try again"
+                )
             db.session.flush()  # the old kit leaves the one-active-kit index before the new joins
 
         _k, code = kit_code.new_code()
@@ -278,6 +295,15 @@ def issue(
             _add_wrap(kit, key, plaintexts[key.id])
     finally:
         plaintexts.clear()
+
+    if not recovery_service.credential_unchanged(user.id, seen_salt):
+        # A recovery (or a password change) committed after the password was checked: that
+        # password is no longer the account's, so it makes nothing.
+        db.session.rollback()
+        raise KitError(
+            "your password changed while the kit was being made, so nothing was made. Sign in "
+            "again and make it then"
+        )
 
     entry = ledger_service.append(
         "recovery_kit_issued",
@@ -382,18 +408,34 @@ def mark_stale(kit: RecoveryKit, *, now: datetime | None = None) -> None:
     )
 
 
-def revoke(kit: RecoveryKit, reason: str, *, now: datetime | None = None) -> None:
+def revoke(
+    kit: RecoveryKit, reason: str, *, now: datetime | None = None, only_active: bool = False
+) -> bool:
     """Stop ``kit`` working for good: its wrapped KEM key and every wrap are deleted, the row is
-    kept as a record. Logged as ``recovery_kit_revoked``; the caller tells whoever needs telling."""
+    kept as a record. Logged as ``recovery_kit_revoked``; the caller tells whoever needs telling.
+
+    Compare-and-set: one conditional UPDATE from a state that is not ``revoked`` (only from
+    ``active`` with ``only_active``), so a completion spending the kit and a new kit replacing it
+    cannot both believe they ended it. True if this call did."""
     from qvault.services import ledger_service
 
-    if kit.state == "revoked":
-        return
-    kit.state = "revoked"
-    kit.revoked_at = now or _now()
-    kit.revoked_reason = reason
-    kit.kem_sk_wrapped = None
-    kit.kem_sk_nonce = None
+    db.session.flush()
+    allowed = ("active",) if only_active else ("active", "stale")
+    changed = db.session.execute(
+        update(RecoveryKit)
+        .where(RecoveryKit.id == kit.id, RecoveryKit.state.in_(allowed))
+        .values(
+            state="revoked",
+            revoked_at=now or _now(),
+            revoked_reason=reason,
+            kem_sk_wrapped=None,
+            kem_sk_nonce=None,
+        )
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    db.session.refresh(kit)
+    if changed != 1:
+        return False
     for wrap in list(kit.wraps):
         db.session.delete(wrap)
     ledger_service.append(
@@ -405,6 +447,7 @@ def revoke(kit: RecoveryKit, reason: str, *, now: datetime | None = None) -> Non
         ref_id=str(kit.user_id),
         commit=False,
     )
+    return True
 
 
 # --------------------------------------------------------------------------------------------
