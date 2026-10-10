@@ -109,7 +109,10 @@ SENTENCES = {
     # Account recovery (plan R9). Recorded against the person; never the kit's code.
     "recovery_kit_issued": "{who} made a Recovery Kit.",
     "recovery_kit_revoked": "A Recovery Kit of {who}'s stopped working.",
-    "recovery_kit_stale": "A Recovery Kit of {who}'s could no longer be checked and stopped working.",
+    "recovery_kit_stale": (
+        "A Recovery Kit of {who}'s could no longer be checked and stopped working."
+    ),
+    "recovery_kit_paused": "Too many wrong codes paused {who}'s Recovery Kit for 24 hours.",
     "recovery_requested": "Someone used {who}'s Recovery Kit to start recovering the account.",
     "recovery_waiting": "A recovery of {who}'s account started its wait.",
     "recovery_cancelled": "{who} cancelled a recovery of an account.",

@@ -31,6 +31,11 @@ from .key import Key
 from .ledger import LedgerEntry
 from .notification import Notification, NotificationPreference
 from .proposal import DecisionFields, Proposal, ProposalLifecycle
+from .reconfiguration import (
+    Reconfiguration,
+    ReconfigurationSignature,
+    ReconfigurationTransaction,
+)
 from .recovery import (
     CredentialEpoch,
     RecoveryKit,
@@ -40,11 +45,6 @@ from .recovery import (
     RecoveryNotice,
     RecoveryRequest,
     RecoveryRequestWrap,
-)
-from .reconfiguration import (
-    Reconfiguration,
-    ReconfigurationSignature,
-    ReconfigurationTransaction,
 )
 from .signature import Signature
 from .signer_preference import SignerPreference
