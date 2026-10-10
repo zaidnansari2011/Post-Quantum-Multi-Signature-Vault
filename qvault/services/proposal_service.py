@@ -28,7 +28,7 @@ from qvault.services import (
     notification_service,
 )
 from qvault.services.signing import format_wei, proposal_signing_bytes
-from qvault.ui import short_names
+from qvault.ui import first_name, short_names
 
 
 class ProposalError(ValueError):
@@ -501,10 +501,15 @@ def who_approves(vault: Vault, user) -> dict:
     ids = vault.signer_ids()
     people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()} if ids else {}
 
-    # First names, or full names where two of the vault's approvers share one (``ui.short_names``).
-    short = short_names({uid: (u.display_name or u.email) for uid, u in people.items()})
+    # First names, or full names where two of the vault's other approvers share one
+    # (``ui.short_names``); the reader is "you" here, so their own name collides with nobody's.
+    short = short_names(
+        {uid: (u.display_name or u.email) for uid, u in people.items() if uid != user.id}
+    )
 
     def name(uid: int) -> str:
+        if uid == user.id and uid in people:
+            return first_name(people[uid].display_name or people[uid].email)
         return short.get(uid, "Someone")
 
     separation = not eligibility.vault_allows_requester(vault)

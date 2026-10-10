@@ -373,7 +373,7 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     people = _people(
         {uid for ids in snapshots.values() for uid in ids} | {p.creator_id for p in proposals}
     )
-    short = _short(people)
+    short = _short(people, user)
     payouts = _payout_states([p.id for p in proposals if p.action is not None])
     typed = _typed_rows([p.id for p in proposals if p.action is None])
     treasuries_on = bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED"))
@@ -507,10 +507,13 @@ def _people(ids: set[int]) -> dict[int, User]:
     return {u.id: u for u in User.query.filter(User.id.in_(ids)).all()}
 
 
-def _short(people: dict[int, User]) -> dict[int, str]:
+def _short(people: dict[int, User], viewer: User) -> dict[int, str]:
     """What each of ``people`` is called on this page: a first name, or the full name when two
-    of them share a first name (``ui.short_names``)."""
-    return short_names({uid: (u.display_name or u.email) for uid, u in people.items()})
+    of them share a first name (``ui.short_names``). The reader is "You", so their own first
+    name collides with nobody's, as in the vault header (``ui.short_name_list``)."""
+    return short_names(
+        {uid: (u.display_name or u.email) for uid, u in people.items() if uid != viewer.id}
+    )
 
 
 def _name(short: dict[int, str], uid: int, viewer: User) -> str:

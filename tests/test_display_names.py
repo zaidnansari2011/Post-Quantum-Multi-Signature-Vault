@@ -83,6 +83,7 @@ def test_who_approves_lists_and_activity_tell_them_apart(app):
     ada, brij, chen, vault = _qa_team("lists")
     preview = proposal_service.who_approves(vault, ada)
     assert sorted(preview["asked"]) == ["QA Brij", "QA Chen"]
+    assert "Someone" not in [p["name"] for p in preview["people"]]
 
     proposal = proposal_service.create_proposal(vault, ada, "Renew", "Renew the lease.")
     approval_service.cast_vote(proposal, brij, PASSWORD, "approve")

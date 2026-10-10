@@ -220,10 +220,10 @@ export function Avatar({
   square?: boolean;
 }) {
   const s = useStyles();
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
+  // The first letters of the first and last words, as the web draws them ("QA Brij" is QB,
+  // "Ada Byron Lovelace" AL), so two people who share a first name aren't both "Q".
+  const words = name.split(/\s+/).filter(Boolean);
+  const initials = (words.length > 1 ? [words[0]!, words[words.length - 1]!] : words)
     .map((w) => w[0]!.toUpperCase())
     .join('');
   return (
