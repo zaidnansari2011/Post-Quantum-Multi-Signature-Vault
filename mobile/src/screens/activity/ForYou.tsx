@@ -5,7 +5,8 @@
 // device", which opens Account, Other devices with that device's remove sheet open (§6.18).
 //
 // A tap opens the item's screen and marks it read; a swipe left offers Mark read and Archive (the
-// only swipe in the app, and also the row's accessibility actions); the header's "Mark all read"
+// only swipe in the app, and also the row's accessibility actions; a security alert has no Archive,
+// which the server refuses too); the header's "Mark all read"
 // marks the section and says so in a toast. Nothing here acts on a decision: a row opens a screen,
 // where anything that signs happens after reading (I-12). The copy is the server's, unsigned, sans.
 //
@@ -37,11 +38,12 @@ import { makeStyles } from '../../theme/index.ts';
 import { useEnrolledSession } from '../../session.tsx';
 import { getApiBaseUrl } from '../../config.ts';
 import * as api from '../../api/endpoints.ts';
+import { ApiError } from '../../api/client.ts';
 import type { AppNotification, UnreadCounts } from '../../api/schemas.ts';
 import { OfflineNotice, useRefreshOnFocus } from '../../freshness.tsx';
 import { openLink } from '../../links.ts';
 import { keys, meQuery, notificationsQuery } from '../../queries.ts';
-import { INBOX_EMPTY, forYou, inboxTarget, inboxWhen, removeOffer } from '../../logic/inbox.ts';
+import { INBOX_EMPTY, archiveOffered, forYou, inboxTarget, inboxWhen, removeOffer } from '../../logic/inbox.ts';
 
 type Head = (action: NavAction | undefined, extra?: ReactNode) => ReactNode;
 
@@ -99,7 +101,15 @@ export function ForYou({
       patch(id, { archived_at: answer.notification.archived_at, unread: false }, answer.unread);
       toast.show('Archived');
     },
-    onError: () => toast.show("Couldn't archive it. Try again."),
+    onError: (err) => {
+      if (err instanceof ApiError && err.code === 'not_archivable') {
+        // A security alert: the server keeps it in the inbox. Say so, and show it again.
+        toast.show('Security alerts stay in your inbox');
+        void query.refetch();
+      } else {
+        toast.show("Couldn't archive it. Try again.");
+      }
+    },
   });
   const readAll = useMutation({
     mutationFn: () => api.markAllNotificationsRead(token, 'updates'),
@@ -150,7 +160,7 @@ export function ForYou({
             const remove = removeOffer(n, thisDevice);
             const actions = [
               ...(n.unread ? [{ key: 'read', label: 'Mark read', onPress: () => read.mutate(n.id) }] : []),
-              { key: 'archive', label: 'Archive', onPress: () => archive.mutate(n.id) },
+              ...(archiveOffered(n) ? [{ key: 'archive', label: 'Archive', onPress: () => archive.mutate(n.id) }] : []),
             ];
             return (
               <GroupedItem index={index} total={section.data.length}>

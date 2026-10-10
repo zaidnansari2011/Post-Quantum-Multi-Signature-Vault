@@ -5,8 +5,9 @@ here through ``mobile/tools/p4b_probe.ts``:
 
 * §6.12 For you: unread security alerts pinned; the rest in Today, Yesterday, This week and
   Earlier; archived and needs-you items left out (Approvals holds those); each row's target is a
-  screen, never an action; "Not you? Remove that device" never offered for this phone itself; the
-  tab dot only for unread updates.
+  screen, never an action; "Not you? Remove that device" never offered for this phone itself;
+  Archive never offered for a security alert (the server refuses it too); the tab dot only for
+  unread updates.
 * §6.3 item 5: "Notifications are off" only where push could work and is off, and not for 30 days
   after it is dismissed.
 * §6.4, §6.21: Remind waits until the server's ``next_allowed_at`` and says when.
@@ -141,6 +142,13 @@ def results(tmp_path_factory):
             "now": now,
             "thisDevice": THIS_DEVICE,
             "dots": [{"updates": 0}, {"updates": 2}, None],
+            "archiveCases": [
+                {"security": True, "archivable": True},
+                {"security": True},
+                {"security": False, "archivable": False},
+                {"security": False, "archivable": True},
+                {"security": False},
+            ],
         },
         "offLine": [
             {
@@ -378,6 +386,15 @@ def test_not_you_is_offered_for_another_device_only(results):
     assert remove["8"] is None  # this phone: that is Remove this phone, on This phone
     assert remove["9"] is None  # no device named
     assert all(remove[str(i)] is None for i in (2, 3, 4, 5, 6, 7))
+
+
+def test_a_security_alert_never_offers_archive_whatever_the_reply_says(results):
+    archive = results["inbox"]["archive"]
+    assert [archive[str(i)] for i in (1, 2, 8, 9)] == [False] * 4
+    assert archive["3"] is True and archive["4"] is True
+    # A security alert even if a reply claims otherwise; the server's no; an older server's
+    # silence, which offers Archive as before.
+    assert results["inbox"]["archiveCases"] == [False, False, False, True, True]
 
 
 def test_row_times_say_what_the_group_title_does_not(results):

@@ -13,6 +13,8 @@
 //     open (a changed password) only marks itself read.
 //   - `removeOffer`: whether a new-device alert offers "Not you? Remove that device", and for which
 //     device: never for this phone itself (that is Remove this phone, at the end of This phone).
+//   - `archiveOffered`: whether a row offers Archive. Never a security alert: the server refuses
+//     it (409 `not_archivable`), so a new device or a changed password can't be hidden.
 //   - `forYouDot`: Activity's tab dot.
 //
 // Copy is the server's, unsigned, and always sans (I-12): this module never rewrites it.
@@ -37,6 +39,7 @@ export type InboxFacts = {
   vault: { id: number; name: string } | null;
   proposal_uuid: string | null;
   device_id?: number | null;
+  archivable?: boolean;
 };
 
 export type InboxGroup<T> = { title: string; items: T[] };
@@ -113,6 +116,17 @@ export function removeOffer(n: InboxFacts, thisDeviceId: number | null): LinkTar
   if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return null;
   if (thisDeviceId !== null && id === thisDeviceId) return null;
   return { kind: 'security', deviceId: id };
+}
+
+/**
+ * Whether a row offers Archive (the swipe and its accessibility action). A security alert never
+ * does, whatever the reply says: the server refuses to archive one, and the alert must stay where
+ * the person will see it. Otherwise the server's `archivable` decides; a reply without it (an
+ * older server) offers Archive, as before.
+ */
+export function archiveOffered(n: Pick<InboxFacts, 'security' | 'archivable'>): boolean {
+  if (n.security) return false;
+  return n.archivable !== false;
 }
 
 /** Activity's tab dot (§2.5): something unread in For you. Never a number. */

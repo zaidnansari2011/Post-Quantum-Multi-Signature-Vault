@@ -296,6 +296,7 @@ def inbox_items(ada2_id, general_uuid):
             "proposal_uuid": None,
             "device_id": None,
         }
+        base["archivable"] = not base["security"]
         base.update(over)
         return base
 
@@ -406,6 +407,16 @@ def inbox_routes(items, failing=False):
     def one(route):
         nid = int(re.search(r"/notifications/(\d+)/", route.request.url).group(1))
         i = state[nid]
+        if route.request.url.endswith("/archive") and i["security"]:
+            # As the server does: a security notice stays in the inbox.
+            return route.fulfill(
+                status=409,
+                json={
+                    "ok": False,
+                    "code": "not_archivable",
+                    "error": "Security notices stay in your inbox.",
+                },
+            )
         i["unread"] = False
         if route.request.url.endswith("/archive"):
             i["archived_at"] = iso(timedelta(0))
@@ -486,6 +497,8 @@ def p4b_tour(browser, ada, ada2_id, ada2_fp, ada_fp):
         page.wait_for_timeout(500)
         shot(page, "ac12_marked_all_read", wait_ms=150)
         segment(page, "Yours")
+        # Past the toast from "Mark all read", which would cover a row.
+        page.get_by_text("All marked read").wait_for(state="hidden", timeout=15000)
         shot(page, "ac16_yours_with_your_vote")
 
     run(browser, ada, "ac1", for_you, routes=inbox_routes(items) + [seat_for(ada2_fp)])
