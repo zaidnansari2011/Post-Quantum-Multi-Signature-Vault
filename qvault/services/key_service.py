@@ -348,6 +348,11 @@ def change_password(
     recovery of the account is cancelled, because the password was just proven (⚑5).
     """
     _guard_password(user)
+    from qvault.services import recovery_service
+
+    # One writer per account (plan R9): a recovery whose wait is over takes effect first, and a
+    # completing one cannot cross this change.
+    recovery_service.prepare_password_write(user)
     if not verify_password(user.password_hash, current_password):
         password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: cannot change the password")
@@ -377,8 +382,6 @@ def change_password(
 
     user.kek_salt = new_salt_bytes
     user.password_hash = hash_password(new_password)
-    from qvault.services import recovery_service
-
     recovery_service.stamp_session(user.id, recovery_service.bump_epoch(user.id))
 
     entry = ledger_service.append(
@@ -411,11 +414,15 @@ def reissue_signing_key(
     Phase 7 automates this on a schedule and adds a rotation policy; here it is user-initiated.
     """
     _guard_password(user)
+    from qvault.services import recovery_kit, recovery_service
+
+    # One writer per account (plan R9): a recovery whose wait is over takes effect first, and a
+    # completing one cannot cross this reissue.
+    recovery_service.prepare_password_write(user)
     if not verify_password(user.password_hash, password):
         password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: cannot re-issue the signing key")
     password_attempts.record(user.id, ok=True)
-    from qvault.services import recovery_kit, recovery_service
 
     recovery_service.password_proven(user, via="key_replaced")
 

@@ -141,6 +141,71 @@ def session_is_current(user_id: int) -> bool:
 
 
 # --------------------------------------------------------------------------------------------
+# One account's credential changes one writer at a time
+#
+# A completing recovery swaps the person's password and spends their kit. A new kit, a password
+# change and a new key are each made on the strength of the *old* password. Interleaved, either
+# could land on the other: a kit issued from a proof of a password the recovery has just replaced,
+# or a recovery completing with a kit a new one has just superseded. So each of them first takes
+# the account's row (``lock_account``: a row lock on PostgreSQL, the write lock on SQLite) and
+# writes only if the credential is still the one it read (``credential_unchanged``); and the kit
+# is ended by compare-and-set (``recovery_kit.revoke``). Whichever commits first wins; the other
+# finds the world changed and writes nothing.
+
+
+def lock_account(user: User) -> None:
+    """Hold ``user``'s row until this transaction ends, then read it afresh: a concurrent
+    completion, password change, reissue or new kit of the same account waits for this one."""
+    db.session.flush()
+    db.session.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(kek_salt=User.kek_salt)
+        .execution_options(synchronize_session=False)
+    )
+    # The session's own instance (``user`` may be Flask-Login's proxy for it).
+    instance = db.session.get(User, user.id)
+    if instance is not None:
+        db.session.refresh(instance)
+
+
+def credential_unchanged(user_id: int, kek_salt: bytes) -> bool:
+    """Compare-and-set on the credential: True if ``user_id``'s KEK salt is still ``kek_salt``
+    (every password change and every completed recovery replaces it), holding the row as
+    ``lock_account`` does."""
+    return (
+        db.session.execute(
+            update(User)
+            .where(User.id == user_id, User.kek_salt == kek_salt)
+            .values(kek_salt=User.kek_salt)
+            .execution_options(synchronize_session=False)
+        ).rowcount
+        == 1
+    )
+
+
+def complete_if_due(user: User, *, now: datetime | None = None) -> RecoveryRequest | None:
+    """Let a recovery of ``user`` whose wait is over take effect before anything proven with the
+    old password is written. State is a function of time (design §4.2): from ``completes_at`` the
+    recovery has won, whether or not the scheduler has run yet. Returns the request if this call
+    ended it (completed, or refused at the re-check); it commits when it does."""
+    now = now or _now()
+    request = open_request(user)
+    if request is None or request.state != "waiting" or _aware(request.completes_at) > now:
+        return None
+    return request if complete(request, now=now) else None
+
+
+def prepare_password_write(user: User, *, now: datetime | None = None) -> bool:
+    """Before a write made with the person's password (a new kit, a password change, a new key):
+    let a due recovery take effect, then take the account's row. True if a recovery has just
+    replaced the password, so the one in hand no longer opens anything."""
+    ended = complete_if_due(user, now=now)
+    lock_account(user)
+    return ended is not None and ended.state == "completed"
+
+
+# --------------------------------------------------------------------------------------------
 # Who is told, and who may cancel (design §4.5)
 
 
@@ -628,6 +693,12 @@ def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
     from qvault.services import key_service, ledger_service, notification_service
 
     now = now or _now()
+    subject = db.session.get(User, request.user_id)
+    if subject is not None:
+        # The account's row first: a new kit, a password change or a new key of this account
+        # waits for this completion (or this one for it), and everything below is read afresh.
+        lock_account(subject)
+        db.session.expire_all()
     changed = db.session.execute(
         update(RecoveryRequest)
         .where(
@@ -639,10 +710,15 @@ def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
         .execution_options(synchronize_session=False)
     ).rowcount
     if changed != 1:
+        db.session.commit()  # nothing to do; let the account's row go
         return False
     db.session.refresh(request)
     user = request.user
     problem = _completion_problem(request)
+    if problem is None and not recovery_kit.revoke(request.kit, "used", now=now, only_active=True):
+        # Compare-and-set on the kit: a new kit committed after the re-check read this one as
+        # active. The kit that started this request no longer works, so neither does the request.
+        problem = "the Recovery Kit it used stopped working"
     if problem is not None:
         request.state = "failed"
         request.end_reason = problem
@@ -682,7 +758,6 @@ def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
     user.password_hash = request.pending_password_hash
     user.kek_salt = request.pending_kek_salt
     user.kdf_params = request.pending_kdf_params
-    recovery_kit.revoke(request.kit, "used", now=now)
     bump_epoch(user.id)
     digest = sha256_hex(active.public_key)
     ledger_service.append(
