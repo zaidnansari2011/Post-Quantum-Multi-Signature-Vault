@@ -77,7 +77,7 @@
 {%- endmacro %}
 
 {% macro rule(m, n) -%}
-<span class="q-tag q-tag--rule">Any {{ m }} of {{ n }}</span>
+<span class="q-tag q-tag--rule">{{ ui_rule(m, n) }}</span>
 {%- endmacro %}
 
 {% macro type_tag(row) -%}

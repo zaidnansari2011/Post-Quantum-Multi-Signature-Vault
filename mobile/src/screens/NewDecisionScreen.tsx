@@ -41,6 +41,7 @@ import { isOffline } from '../connectivity.ts';
 import { formatEth, parseEth } from '../crypto/signing.ts';
 import { OfflineNotice } from '../freshness.tsx';
 import { OFFLINE_RAISE } from '../logic/freshness.ts';
+import { plainRule } from '../logic/words.ts';
 import { vaultsQuery } from '../queries.ts';
 import { describeRaiseRefusal, vaultsToRaiseIn } from '../proposing.ts';
 
@@ -165,7 +166,10 @@ export default function NewDecisionScreen({
                   <ListRow
                     key={v.vault_id}
                     title={v.name}
-                    caption={`${v.threshold_m ?? '?'} of ${v.signer_count} signers must approve`}
+                    caption={
+                      plainRule(v.threshold_m, v.signer_count) ??
+                      `${v.threshold_m ?? '?'} of ${v.signer_count} signers must approve`
+                    }
                     accessibilityLabel={v.name}
                     onPress={() => setChosen({ id: v.vault_id, name: v.name })}
                   />

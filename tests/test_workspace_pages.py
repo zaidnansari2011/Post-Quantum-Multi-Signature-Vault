@@ -581,10 +581,41 @@ def test_a_bad_sign_up_form_shows_its_errors_and_creates_nothing(app, client, in
     r = client.post(
         f"/invite/{token}/register",
         data={"display_name": "Sam", "password": PW, "confirm": "different", "understood": "y"},
+        follow_redirects=True,
     )
 
-    assert r.status_code == 400 and "Passwords must match" in _text(r)
+    assert r.status_code == 200 and "Passwords must match" in _text(r)
     assert User.query.filter_by(email="sam@e.com").first() is None
+
+
+def test_a_refused_sign_up_redirects_so_a_refresh_sends_nothing_again(app, client, invited):
+    """Staging smoke test 2026-10-09: the refused form was the POST's own answer, at
+    /invite/<token>/register, so refreshing it sent the form again. Now it redirects to the
+    link's page, which shows the errors and the name typed once; the password is never held."""
+    _, token, _ = invited
+
+    r = client.post(
+        f"/invite/{token}/register",
+        data={"display_name": "Sam Okafor", "password": PW, "confirm": "different"},
+    )
+
+    assert r.status_code == 303 and r.headers["Location"].endswith(f"/invite/{token}")
+    with client.session_transaction() as held:
+        kept = repr(dict(held))
+    assert PW not in kept and token not in kept
+    page = _text(client.get(f"/invite/{token}"))
+    assert "Passwords must match" in page and "Tick the box" in page
+    assert 'value="Sam Okafor"' in page
+    again = _text(client.get(f"/invite/{token}"))  # a refresh: a fresh form, nothing re-sent
+    assert "Passwords must match" not in again and 'value="Sam Okafor"' not in again
+    assert User.query.filter_by(email="sam@e.com").first() is None
+
+
+def test_another_links_refusal_is_not_shown_on_this_one(app, client, invited, team):
+    _, token, _ = invited
+    client.post(f"/invite/{token}x/register", data={"display_name": "Mallory"})
+    page = _text(client.get(f"/invite/{token}"))
+    assert "Mallory" not in page and "This field is required" not in page
 
 
 def test_an_address_with_an_account_is_asked_to_sign_in_and_comes_back(app, client, invited):
@@ -754,7 +785,7 @@ def test_deleting_a_workspace_with_vaults_is_not_offered(app, client, team):
 
     page = _text(client.get("/workspace/settings"))
 
-    assert "Not possible while it has vaults (1)" in page
+    assert "Not possible while it has 1 vault:" in page
 
 
 def test_the_rail_links_to_members(app, client, team):

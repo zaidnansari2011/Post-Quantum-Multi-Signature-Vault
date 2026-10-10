@@ -21,6 +21,8 @@
 {% block bodyclass %}q-body q-dpage{% endblock %}
 
 {% set names = ev.names %}
+{#- For avatars: the reader's own name rather than "You", which is a word, not initials. -#}
+{% set full_names = dict(names) %}{% set _ = full_names.update({current_user.id: current_user.display_name or current_user.email}) %}
 {% set is_payment = ev.payment is not none %}
 {% set noun = 'payment' if is_payment else 'decision' %}
 {% set verified_votes = votes | selectattr('verified') | list %}
@@ -60,7 +62,7 @@
 {% block content %}
 
 {#- ------------------------------------------------------------------ header -#}
-{% set raised %}{{ avatar(names.get(proposal.creator_id, 'Someone'), 20, decorative=True) }}<span>{{ names.get(proposal.creator_id, 'Someone') }}, {{ reltime(proposal.created_at) }}</span>{% endset %}
+{% set raised %}{{ avatar(full_names.get(proposal.creator_id, 'Someone'), 20, decorative=True) }}<span>{{ names.get(proposal.creator_id, 'Someone') }}, {{ reltime(proposal.created_at) }}</span>{% endset %}
 {% set code %}<code class="q-code">{{ ev.code }}</code><button class="q-copy" type="button" data-copy="{{ ev.code }}" aria-label="Copy decision code" title="Check this code matches the start of the payload hash on your phone."><span class="q-copy__i">{{ icon('copy') }}</span><span class="q-copy__ok">{{ icon('check') }}</span></button>{% endset %}
 {% set facts = [('Raised by', raised)] %}
 {% if typed.type in ('access', 'contract') %}{% set _ = facts.append(('Type', typed.label)) %}{% endif %}
@@ -86,7 +88,9 @@
   </span>
   {% endif %}
   {% if can_withdraw %}{{ button('Withdraw', 'ghost', attrs={'data-dialog-open': 'dlg-withdraw'}) }}{% endif %}
-  {% if can_raise_again %}{{ button('Raise again', 'secondary', href=url_for('vaults.new_proposal', vid=vault.id, again=proposal.proposal_uuid)) }}{% endif %}
+  {#- "Raise again" is what the person who raised it does; anyone else who may raise decisions
+      here raises this one again (staging smoke test 2026-10-09). -#}
+  {% if can_raise_again %}{{ button('Raise again' if proposal.creator_id == current_user.id else 'Raise this again', 'secondary', href=url_for('vaults.new_proposal', vid=vault.id, again=proposal.proposal_uuid)) }}{% endif %}
   {% call menu('More actions', 'more', trigger='icon') %}
     {{ menu_item('Export for verification', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid)) }}
     {{ menu_item('Download as JSON', url_for('vaults.export_proposal', vid=vault.id, pid=proposal.proposal_uuid, format='json')) }}
@@ -186,13 +190,16 @@
       {#- Who can approve by the vote gate's rule (eligibility), not the frozen set: a demoted
           approver, or under S15 whoever raised it, is not offered as one. -#}
       {%- if cannot_pass %}It needs {{ left }} more approval{{ '' if left == 1 else 's' }}.
-      {%- else %}{{ left }} more approval{{ '' if left == 1 else 's' }} {{ 'pays this' if is_payment else 'decides this' }}. Any {{ proposal.required_m }} of {{ people(can_approve_ids) }} can approve.{% endif %}
+      {%- else %}{{ left }} more approval{{ '' if left == 1 else 's' }} {{ ('pays' if is_payment else 'decides') if left == 1 else ('pay' if is_payment else 'decide') }} this. {% if can_approve_ids|length == 1 %}Only {{ people(can_approve_ids) }} can approve it.{% else %}Any {{ proposal.required_m }} of {{ people(can_approve_ids) }} can approve.{% endif %}{% endif %}
     {#- Counts of approvers are of the people who could vote: under S15 not whoever raised it. -#}
     {%- elif proposal.status == 'approved' %}
       {%- if raiser_excluded %} Approved with {{ approvals }} of the {{ voter_ids|length }} approvers who could vote on it.
+      {%- elif proposal.required_n == 1 %} Approved by its only approver.
       {%- else %} Approved with {{ approvals }} of the {{ proposal.required_n }} approvers’ signatures.{% endif %}
     {%- elif proposal.status == 'rejected' %}
-      Rejected by {{ rejections }} of the {{ voter_ids|length if raiser_excluded else proposal.required_n }} approvers{{ ' who could vote on it' if raiser_excluded }}, so it could no longer reach {{ proposal.required_m }} approvals.
+      {%- set voters = voter_ids|length if raiser_excluded else proposal.required_n %}
+      {%- if voters == 1 %} Rejected by its only approver{{ ' who could vote on it' if raiser_excluded }}, so it could no longer be approved.
+      {%- else %} Rejected by {{ rejections }} of the {{ voters }} approvers{{ ' who could vote on it' if raiser_excluded }}, so it could no longer reach {{ ui_count(proposal.required_m, 'approval') }}.{% endif %}
     {%- elif proposal.status == 'withdrawn' %}
       Withdrawn by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }} with {{ approvals }} of the {{ proposal.required_m }} approvals it needed. Approvals already given no longer count.
     {%- else %}
@@ -203,7 +210,7 @@
 
   <ol class="q-tl">
     <li class="q-tl__i">
-      <span class="q-tl__who">{{ avatar(names.get(proposal.creator_id, 'Someone'), 24, decorative=True) }}</span>
+      <span class="q-tl__who">{{ avatar(full_names.get(proposal.creator_id, 'Someone'), 24, decorative=True) }}</span>
       <div class="q-tl__b"><p><b>{{ names.get(proposal.creator_id, 'Someone') }}</b> raised this {{ noun }}</p></div>
       <span class="q-tl__time">{{ ui_absolute(proposal.created_at) }}</span>
     </li>
@@ -212,7 +219,7 @@
     {% set s = v.sig %}{% set who = names.get(s.signer_id, 'Someone') %}
     {% if v.verified and s.decision == 'approve' and binding.ok %}{% set counted.n = counted.n + 1 %}{% endif %}
     <li class="q-tl__i">
-      <span class="q-tl__who">{{ avatar(who, 24, decorative=True) }}<span class="q-tl__g q-tl__g--{{ 'bad' if not v.verified else ('ok' if s.decision == 'approve' else 'no') }}" aria-hidden="true"></span></span>
+      <span class="q-tl__who">{{ avatar(full_names.get(s.signer_id, who), 24, decorative=True) }}<span class="q-tl__g q-tl__g--{{ 'bad' if not v.verified else ('ok' if s.decision == 'approve' else 'no') }}" aria-hidden="true"></span></span>
       <div class="q-tl__b">
         <p><b>{{ who }}</b> {{ 'approved' if s.decision == 'approve' else 'rejected' }}</p>
         <p class="q-tl__sub">
@@ -511,7 +518,7 @@
     <div><dt>Type</dt><dd>{{ typed.label }}{% if typed.version %}<span class="q-cap">Its text is written from its fields.</span>{% endif %}</dd></div>
     {#- Under S15 the rule counts who could vote: whoever raised it is in the signed set but can't. -#}
     {% set vn = voter_ids|length if raiser_excluded else proposal.required_n %}
-    <div><dt>Rule when raised</dt><dd>{{ 'Any ' if proposal.required_m < vn }}{{ proposal.required_m }} of {{ vn }}<span class="q-cap">{{ people(voter_ids if raiser_excluded else approver_ids)[:1]|upper }}{{ people(voter_ids if raiser_excluded else approver_ids)[1:] }}.{% if raiser_excluded %} {{ 'You' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'Whoever raised it') }} raised it, so can’t approve it.{% endif %} Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
+    <div><dt>Rule when raised</dt><dd>{% if vn == 1 and proposal.required_m == 1 %}One person decides{% else %}{{ 'Any ' if proposal.required_m < vn }}{{ proposal.required_m }} of {{ vn }}{% endif %}<span class="q-cap">{{ people(voter_ids if raiser_excluded else approver_ids)[:1]|upper }}{{ people(voter_ids if raiser_excluded else approver_ids)[1:] }}.{% if raiser_excluded %} {{ 'You' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'Whoever raised it') }} raised it, so can’t approve it.{% endif %} Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
     {% if changes_since %}
     {#- R5: the vault's rule changes since this was raised, and which of them reach it: its
         threshold and signer set are frozen, but who may sign is checked again at signing. -#}

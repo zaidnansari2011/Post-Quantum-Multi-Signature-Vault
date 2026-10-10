@@ -260,6 +260,9 @@ textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6)
   user-select: none;
 }
 .q-av--20 { --av: 20px; }
+/* Two initials (QB, QC) at 20px or in an overlapping stack: drawn a little smaller than the
+   caption step, which has no smaller size, so the next avatar doesn't cover the second letter. */
+.q-av--20 .q-av__t, .q-avs .q-av__t { transform: scale(0.8); letter-spacing: -0.02em; }
 .q-av--32 { --av: 32px; font-size: var(--text-body-size); }
 .q-avs { display: inline-flex; align-items: center; flex: none; }
 .q-avs .q-av { box-shadow: inset 0 0 0 var(--border-width) var(--border), 0 0 0 2px var(--av-ring, var(--surface)); }
