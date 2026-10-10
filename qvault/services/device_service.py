@@ -141,9 +141,7 @@ def enrol(
     interoperability trap — base64 has padding and alphabet variants, and a mismatch would surface
     as an unexplained proof failure.
     """
-    name = (device_name or "").strip()
-    if not name or len(name) > 64:
-        raise DeviceError("bad_request", "A device name of 1-64 characters is required.")
+    name = clean_name(device_name)
 
     _check_challenge(user, challenge)
 
@@ -310,8 +308,27 @@ def devices_for(user: User) -> list[Device]:
     return Device.query.filter_by(owner_id=user.id).order_by(Device.id.desc()).all()
 
 
-#: The longest device name, as enrolment allows.
+#: The longest device name, in characters (code points), at enrolment and on rename.
 NAME_MAX = 64
+
+
+def clean_name(name: object) -> str:
+    """A device name as enrolment and rename both take it, or ``DeviceError``.
+
+    One rule for both doors: outer whitespace trimmed; 1 to ``NAME_MAX`` characters; and R8's rule
+    for names people type (``security.text``): a control, format (zero-width, bidi override or
+    isolate), private-use or surrogate character, or a line separator, is refused rather than
+    silently dropped, so what is stored is what the person saw. The name is shown on the web's
+    device list and in the phone's sheets, beside a key that can sign.
+    """
+    from qvault.security import text
+
+    cleaned = name.strip() if isinstance(name, str) else ""
+    if not cleaned or len(cleaned) > NAME_MAX:
+        raise DeviceError("bad_request", f"A device name of 1-{NAME_MAX} characters is required.")
+    if text.invisible_in(cleaned):
+        raise DeviceError("hidden_characters", f"The name has hidden characters. {text.MESSAGE}")
+    return cleaned
 
 
 def rename(
@@ -319,20 +336,12 @@ def rename(
 ) -> Device:
     """Rename a device (phone-ux §6.18, A21). Its owner's label only: nothing signed changes.
 
-    Held to enrolment's length rule and to R8's rule for names people type (``security.text``):
-    a hidden or text-direction character is refused, never silently dropped, so what is stored is
-    what was seen. A removed device keeps the name it was removed under. An unchanged name writes
-    nothing.
+    Held to enrolment's rule (``clean_name``). A removed device keeps the name it was removed
+    under. An unchanged name writes nothing.
     """
-    from qvault.security import text
-
     if device.revoked_at is not None:
         raise DeviceError("already_revoked", "That device was removed, so its name can't change.")
-    cleaned = (name or "").strip()
-    if not cleaned or len(cleaned) > NAME_MAX:
-        raise DeviceError("bad_request", f"A device name of 1-{NAME_MAX} characters is required.")
-    if text.invisible_in(cleaned):
-        raise DeviceError("hidden_characters", f"The name has hidden characters. {text.MESSAGE}")
+    cleaned = clean_name(name)
     if cleaned == device.name:
         return device
     device.name = cleaned

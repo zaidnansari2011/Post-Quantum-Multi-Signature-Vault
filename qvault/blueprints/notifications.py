@@ -146,7 +146,11 @@ def read(nid: int):
 @bp.post("/notifications/<int:nid>/archive")
 @login_required
 def archive(nid: int):
-    item = notification_service.archive(current_user, nid)
+    try:
+        item = notification_service.archive(current_user, nid)
+    except notification_service.NotArchivable as exc:
+        flash(str(exc), "error")
+        return _back(url_for("notifications.inbox"))
     if item is None:
         abort(404)
     if item["kind"] in notification_service.NEEDS_YOU_KINDS and item["actionable"]:

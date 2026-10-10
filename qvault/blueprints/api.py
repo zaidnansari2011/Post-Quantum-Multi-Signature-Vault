@@ -298,9 +298,8 @@ def rename_device(device_id: int):
     device = db.session.get(Device, device_id)
     if device is None or device.owner_id != g.api_user.id:
         return _error("unknown_device", "No such device.", 404)
-    name = _body().get("name")
     try:
-        device_service.rename(device, name if isinstance(name, str) else "", actor_id=g.api_user.id)
+        device_service.rename(device, _body().get("name"), actor_id=g.api_user.id)
     except DeviceError as exc:
         return _error(exc.code, exc.message, 409 if exc.code == "already_revoked" else 400)
     return jsonify(ok=True, device=_device_json(device, current_id=g.api_device.id))
@@ -1531,7 +1530,10 @@ def read_all_notifications():
 @bp.post("/notifications/<int:nid>/archive")
 @device_token_required
 def archive_notification(nid: int):
-    item = notification_service.archive(g.api_user, nid)
+    try:
+        item = notification_service.archive(g.api_user, nid)
+    except notification_service.NotArchivable as exc:
+        return _error("not_archivable", str(exc), 409)
     if item is None:
         return _error("unknown_notification", "No such notification.", 404)
     return jsonify(

@@ -89,6 +89,11 @@ class PreferenceError(ValueError):
     """A preference that cannot be set: an unknown event or channel, or a locked security event."""
 
 
+class NotArchivable(ValueError):
+    """A security notice (a new device, a changed password) cannot be archived: it stays in the
+    inbox, so a person who did not do it can still see it and act. It can be marked read."""
+
+
 class RemindRefused(ValueError):
     """A requester's reminder that cannot be sent, in words they can act on."""
 
@@ -929,6 +934,8 @@ def _view(notification, *, waits: bool, now: datetime) -> dict:
         "path": copy.path,
         "actionable": actionable,
         "security": notification.kind in SECURITY_KINDS,
+        # Phone P4b, additive: whether archive is allowed. Never for a security notice.
+        "archivable": notification.kind not in SECURITY_KINDS,
         "unread": notification.read_at is None,
         "created_at": _iso(notification.created_at),
         "read_at": _iso(notification.read_at),
@@ -993,11 +1000,17 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
 
 def archive(user, notification_id: int, *, now: datetime | None = None) -> dict | None:
     """Move it out of the inbox, read. Archiving a request does not answer it: the decision is
-    still on the approvals page."""
+    still on the approvals page. A security notice is refused (``NotArchivable``): it stays where
+    its owner, or whoever else reads the inbox, will see it."""
     now = now or _utcnow()
     notification = _own(user, notification_id)
     if notification is None:
         return None
+    if notification.kind in SECURITY_KINDS:
+        raise NotArchivable(
+            "Security notices stay in your inbox, so a device or password change you didn't make "
+            "can't be hidden. You can mark it read."
+        )
     if notification.archived_at is None:
         notification.archived_at = now
         notification.read_at = notification.read_at or now

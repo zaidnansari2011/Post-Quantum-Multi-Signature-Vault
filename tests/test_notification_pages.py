@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, timedelta
+from types import SimpleNamespace
 
 import pytest
 from test_notifications import (
@@ -195,6 +196,30 @@ def test_mark_read_and_archive_return_to_the_page_they_came_from(client, team):
     assert "Ada Lovelace needs your approval" in text
     # Archiving a request did not answer it, and the next page says where it still waits.
     assert "The decision still waits on you" in text
+
+
+def test_a_security_notice_has_no_archive_button_and_the_route_refuses_it(client, team):
+    notification_service.password_changed(team.brij, entry=SimpleNamespace(seq=1))
+    note = Notification.query.filter_by(recipient_id=team.brij.id, kind="password_changed").one()
+    _login(client, team.brij)
+
+    html = client.get("/notifications/?section=updates").get_data(as_text=True)
+    item = re.search(
+        rf'<li class="nitem[^"]*">\s*<a class="nitem__link" '
+        rf'href="/notifications/{note.id}/open".*?</li>',
+        html,
+        re.S,
+    )
+    assert item, "the security notice is listed"
+    assert f"/notifications/{note.id}/archive" not in html
+    assert "Mark read" in item.group(0)
+
+    r = client.post(f"/notifications/{note.id}/archive", data={"next": "/notifications/"})
+    assert r.status_code == 302 and r.headers["Location"] == "/notifications/"
+    db.session.refresh(note)
+    assert note.archived_at is None and note.read_at is None
+    text = _text(client.get("/notifications/").get_data(as_text=True))
+    assert "Security notices stay in your inbox" in text
 
 
 #: Addresses that leave the site, or break the header, if followed as given. A tab or newline is
