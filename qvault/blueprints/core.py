@@ -7,7 +7,9 @@ who is already inside does not want to be sold the product again.
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify, render_template
+import re
+
+from flask import Blueprint, abort, current_app, jsonify, render_template
 from flask_login import current_user
 
 from qvault.services import (
@@ -20,6 +22,10 @@ from qvault.services import (
 )
 
 bp = Blueprint("core", __name__)
+
+#: An Android signing certificate's SHA-256 fingerprint as assetlinks.json writes it.
+_CERT_SHA256 = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){31}$")
+_PACKAGE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$")
 
 
 @bp.get("/")
@@ -70,3 +76,46 @@ def treasuries_record():
     ``chain/deployments/<network>.json``, which a restored copy of a database is checked against.
     """
     return jsonify(treasuries=treasury_service.public_record())
+
+
+def _cert_fingerprints(value: str | None) -> list[str]:
+    """The configured fingerprints, upper-cased; a malformed one is logged and left out."""
+    out = []
+    for raw in (value or "").split(","):
+        fingerprint = raw.strip().upper()
+        if not fingerprint:
+            continue
+        if _CERT_SHA256.match(fingerprint):
+            out.append(fingerprint)
+        else:
+            current_app.logger.warning("ANDROID_CERT_SHA256 has a malformed fingerprint; skipped")
+    return out
+
+
+@bp.get("/.well-known/assetlinks.json")
+def assetlinks():
+    """Android App Links (rework phone-ux §10.2, N13): this server vouches for the phone app.
+
+    Android fetches this when the app is installed and opens the decision links its intent filters
+    name (``/vaults/<id>/proposals/<uuid>``) in the app, never the browser, only if the package and
+    the signing certificate match. Public by design, no account needed, and never a redirect
+    (Android refuses one). Unconfigured, it is a 404 and the links stay in the browser.
+    """
+    package = (current_app.config.get("ANDROID_APP_PACKAGE") or "").strip()
+    fingerprints = _cert_fingerprints(current_app.config.get("ANDROID_CERT_SHA256"))
+    if not fingerprints or not _PACKAGE.match(package):
+        abort(404)
+    response = jsonify(
+        [
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": package,
+                    "sha256_cert_fingerprints": fingerprints,
+                },
+            }
+        ]
+    )
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response

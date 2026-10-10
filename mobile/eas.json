@@ -11,6 +11,17 @@
         "buildType": "apk"
       }
     },
+    "rework": {
+      "channel": "rework",
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "QVAULT_API_BASE_URL": "https://qvault-staging.livelybeach-69506dc5.centralindia.azurecontainerapps.io"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "channel": "production",
       "autoIncrement": true,

@@ -9,13 +9,14 @@
 // it for a payment's recipient: at the moment of signing the whole address is in front of the
 // person, never a shortened one.
 //
-// Copy goes through React Native's Share sheet (which offers Copy) until a clipboard module is in the
-// rework APK (N11): Share is part of React Native, so it adds no native module.
+// Copy puts the value on the clipboard in the rework APK (N11); a build without expo-clipboard opens
+// React Native's Share sheet instead, which offers Copy (src/native/clipboard.ts).
 
 import { useState } from 'react';
-import { AccessibilityInfo, Share, View } from 'react-native';
+import { AccessibilityInfo, View } from 'react-native';
 
 import { middleOut } from '../format.ts';
+import { copyText } from '../native/clipboard.ts';
 import { fontFamily, makeStyles, useTheme } from '../theme/index.ts';
 import { IconButton, TextLink } from './Button.tsx';
 import { Text } from './Text.tsx';
@@ -100,12 +101,9 @@ export function Identifier({
   const canShorten = short !== value;
   const full = expanded === 'always' || whole || !canShorten;
 
-  const share = async () => {
-    try {
-      await Share.share({ message: value });
-    } catch {
-      setWhole(true);
-    }
+  // Neither the clipboard nor the share sheet worked: show the whole value to select instead.
+  const copy = async () => {
+    if ((await copyText(value)) === 'failed') setWhole(true);
   };
 
   return (
@@ -155,7 +153,7 @@ export function Identifier({
         <IconButton
           icon="copy"
           label={`Copy the ${label.toLowerCase()}`}
-          onPress={() => void share()}
+          onPress={() => void copy()}
           size={18}
           compact
         />

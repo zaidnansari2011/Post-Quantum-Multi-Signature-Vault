@@ -11,12 +11,23 @@ export function rateLimitMessage(retryAfterSeconds: number | null | undefined): 
   return `Too many attempts. Try again in ${minutes === 1 ? '1 minute' : `${minutes} minutes`}.`;
 }
 
+/** The server's limit on a device's name (`device_service.enrol_device`). */
+export const DEVICE_NAME_MAX = 64;
+
 /**
- * The name the phone is listed under until its owner changes it. The platform's own device name
- * needs expo-device, a native module the rework APK adds (N8); until then the kind of phone, never
- * "My Android phone" (two of those in a list tell nobody which is which).
+ * The name the phone is listed under until its owner changes it (§6.2 step 3): the name set in
+ * the phone's settings ("Zaid's Pixel 8"), then its model ("Pixel 8"), both from expo-device in
+ * the rework APK (N8); without them, the kind of phone. Never "My Android phone" (two of those in
+ * a list tell nobody which is which). Cut to the server's limit.
  */
-export function defaultDeviceName(platform: string): string {
+export function defaultDeviceName(
+  platform: string,
+  native: { deviceName?: string | null; modelName?: string | null } = {},
+): string {
+  for (const candidate of [native.deviceName, native.modelName]) {
+    const name = (candidate ?? '').trim();
+    if (name) return name.slice(0, DEVICE_NAME_MAX).trim();
+  }
   return platform === 'ios' ? 'iPhone' : platform === 'android' ? 'Android phone' : 'Phone';
 }
 

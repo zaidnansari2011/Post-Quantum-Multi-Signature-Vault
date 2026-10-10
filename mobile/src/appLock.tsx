@@ -7,9 +7,10 @@
 // The cover: on iOS the app switcher's snapshot is taken while the app is `inactive`, so while app
 // lock is on a plain cover (the mark on `bg`) is drawn then, except while the OS's prompt is up
 // (Face ID itself makes the app inactive, and the cover would hide the approve sheet behind it).
-// Android has no `inactive` state to draw on; its cover is FLAG_SECURE through expo-screen-capture,
-// which needs the rework APK (N10). Until then Android's switcher can still show the app, and the
-// switch says nothing about screenshots, because it would not be true.
+// Android has no `inactive` state to draw on; its cover is FLAG_SECURE through expo-screen-capture
+// (src/native/screenCapture.ts, the rework APK's N10), held while app lock is on. A build without it
+// can still show the app in Android's switcher, and the switch then says nothing about screenshots,
+// because it would not be true.
 //
 // A link that arrives while locked is kept and opened once unlocked (§2.4 rule 6).
 
@@ -21,6 +22,7 @@ import { authPromptOpen, promptSpans } from './authPrompt.ts';
 import { onLeave, onReturn, type LockClock } from './logic/appLock.ts';
 import { setLinksLocked } from './links.ts';
 import { setAppLocked } from './lockState.ts';
+import { setSwitcherCover } from './native/screenCapture.ts';
 
 type AppLockValue = {
   /** Read from the keystore yet. */
@@ -64,6 +66,10 @@ export function AppLockProvider({ children, active }: { children: ReactNode; act
 
   // Only an enrolled app has anything to hide; without a key there is nothing to lock.
   const lockedNow = active && enabled && locked;
+  // Android's switcher cover, for as long as app lock is on (§6.1).
+  useEffect(() => {
+    void setSwitcherCover(active && enabled);
+  }, [active, enabled]);
   useEffect(() => {
     setLinksLocked(lockedNow);
     // Sheets close, modal forms draw the lock over themselves (src/lockState.ts).
