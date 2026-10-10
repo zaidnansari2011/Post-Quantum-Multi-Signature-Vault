@@ -1061,6 +1061,28 @@ already-proven setting rather than guessed.
    cover everything, the sheet must be gone, New decision must still hold what you typed after
    unlocking, and with TalkBack or VoiceOver on, swiping must not reach anything under the lock. On
    an iPhone, the app switcher must show the mark over an open sheet too.
+12. **The inbox, the "Notifications are off" line and Remind (P4b, on the rework APK).**
+   - *Notification permission.* On a fresh install, the "Get told when something needs you" sheet
+     appears once after setup and Android's own prompt comes only after "Turn on notifications".
+     Answer "Don't allow".
+   - *The off line.* With notifications refused, Approvals shows one quiet line under the
+     headline, "Notifications are off", which opens Account, Notifications. Dismiss it: it must stay
+     away after closing and reopening the app (it comes back after 30 days). Allow notifications in
+     Android's settings and return: the line must not come back. It never shows when the server has
+     no push set up.
+   - *Activity, For you.* Raise and approve a decision on the web as someone else. Activity's tab
+     gets a dot, For you lists the update under Today, and tapping it opens the decision and clears
+     the dot. Swipe a row left: "Mark read" and "Archive". Enrol a second phone: its "A new device
+     can sign for you" alert is pinned at the top in red with "Not you? Remove that device", which
+     opens that device's remove sheet. **A security alert has no Archive** (the server refuses it
+     too); it can only be marked read. "Mark all read" says so in a toast. With TalkBack on, the
+     row's actions are offered as accessibility actions.
+   - *A push tap marks it read.* Tap a push for an approval: the decision opens and the matching
+     For you row is already read.
+   - *Remind.* On a decision you raised that still waits on others, Remind says "Remind sent", and
+     then, until a day has passed, "You can remind again at ..." instead of the button.
+   - *Rename.* Account, This phone, "Change": rename the phone, and see the new name on the web's
+     device list.
 
 ## 4. Submission and delivery
 

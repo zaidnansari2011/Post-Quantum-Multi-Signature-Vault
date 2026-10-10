@@ -646,6 +646,10 @@ with sync_playwright() as p:
         page.get_by_role("tab", name=re.compile("^Account")).first.click()
         page.wait_for_timeout(800)
         quiet(page)
+        # Since P3, Remove this phone is at the end of Account, This phone (§6.18, D14).
+        button(page, "This phone").click()
+        page.wait_for_timeout(800)
+        quiet(page)
         button(page, "Remove this phone").click()
         page.wait_for_timeout(1500)
         quiet(page)
@@ -687,6 +691,10 @@ with sync_playwright() as p:
 
     def remove_401(page):
         page.get_by_role("tab", name=re.compile("^Account")).first.click()
+        page.wait_for_timeout(800)
+        quiet(page)
+        # Since P3, Remove this phone is at the end of Account, This phone (§6.18, D14).
+        button(page, "This phone").click()
         page.wait_for_timeout(800)
         quiet(page)
         button(page, "Remove this phone").click()
