@@ -117,9 +117,13 @@ def create_app(config_name: str | None = None) -> Flask:
     from flask_login import user_logged_in
 
     def _stamp_credential_epoch(sender, user, **extra):
+        from flask import session
+
         from .services import recovery_service
 
         recovery_service.stamp_session(user.id)
+        # A kit reminder hidden "for now" comes back at every sign-in (plan R9).
+        session.pop(recovery_service.KIT_REMINDER_HIDDEN, None)
 
     # Blinker holds receivers weakly: without a strong reference this closure would be collected
     # and sign-ins would stop being stamped, locking everyone out after their first password

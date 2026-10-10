@@ -497,3 +497,84 @@ def test_the_page_answers_unknown_email_no_kit_wrong_code_and_paused_identically
     assert {status for status, _ in answers} == {400}
     assert len({body for _, body in answers}) == 1
     assert RecoveryRequest.query.count() == 0
+
+
+# --------------------------------------------------------------------------------------------
+# Home's kit reminder, hidden until the next sign-in (design §16 item 16)
+
+
+def test_the_kit_reminder_can_be_hidden_until_the_next_sign_in(app, client, team):
+    _login(client, team.dee)
+    assert "Save a Recovery Kit" in _text(client.get("/"))
+    hidden = client.post("/account/recovery-kit/hide-reminder", follow_redirects=True)
+    text = _text(hidden)
+    assert "Hidden until you next sign in" in text and "Save a Recovery Kit" not in text
+    assert "Save a Recovery Kit" not in _text(client.get("/"))
+    # The Security page still says where the kit stands.
+    assert "There is no password reset" in _text(client.get("/account/security"))
+    client.post("/logout")
+    _login(client, team.dee)
+    assert "Save a Recovery Kit" in _text(client.get("/"))
+
+
+def test_hiding_the_reminder_is_one_persons_choice_not_the_browsers(app, client, team):
+    _login(client, team.dee)
+    client.post("/account/recovery-kit/hide-reminder")
+    _fresh()
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(team.chen.id)  # another person, same browser session
+    assert "Save a Recovery Kit" in _text(client.get("/"))
+
+
+def test_a_treasury_signers_kit_reminder_cannot_be_hidden(app, client, team, monkeypatch):
+    from qvault.services import recovery_kit
+
+    monkeypatch.setattr(recovery_kit, "seat_key_ids", lambda user: {1})
+    _login(client, team.dee)
+    home = _text(client.get("/"))
+    assert "A treasury holds your password key" in home
+    assert "Hide until I next sign in" not in home
+    answer = _text(client.post("/account/recovery-kit/hide-reminder", follow_redirects=True))
+    assert "This reminder stays" in answer and "A treasury holds your password key" in answer
+
+
+# --------------------------------------------------------------------------------------------
+# CSRF on every recovery POST
+
+
+def test_every_recovery_post_refuses_a_missing_csrf_token(app, client, team):
+    issued = issue(team.ada)
+    request = start(team.ada, issued.code).request
+    _login(client, team.bob)
+    app.config["WTF_CSRF_ENABLED"] = True
+    try:
+        posts = {
+            # A wrong code: had the form been taken, it would count against Ada's kit.
+            "/recover": {
+                "email": team.ada.email,
+                "code": kit_code.encode((kit_code.decode(issued.code) + 3) % 2**150),
+                "password": NEW,
+                "confirm": NEW,
+            },
+            "/recover/status/cancel": {},
+            f"/recover/requests/{request.request_uuid}/cancel": {},
+            "/account/recovery-kit": {"password": PW},
+            "/account/recovery-kit/confirm": {"kit_uuid": "x", "tag": "00", "last_group": "AAAA"},
+            "/account/recovery-kit/later": {"kit_uuid": "x"},
+            "/account/recovery-kit/hide-reminder": {},
+        }
+        for path, data in posts.items():
+            r = client.post(path, data=data)
+            assert r.status_code in (302, 400), path
+            if r.status_code == 302:  # a form that flashes and returns where it came from
+                assert "/recover/status" not in r.headers["Location"], path
+    finally:
+        app.config["WTF_CSRF_ENABLED"] = False
+    db.session.refresh(request)
+    assert request.state == "waiting"
+    assert RecoveryKit.query.filter_by(user_id=team.bob.id).count() == 0
+    from qvault.models.recovery import RecoveryKitFailure
+
+    assert RecoveryKitFailure.query.count() == 0
+    with client.session_transaction() as sess:
+        assert recovery_service.KIT_REMINDER_HIDDEN not in sess

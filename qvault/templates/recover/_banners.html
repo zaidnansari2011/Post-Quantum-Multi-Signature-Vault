@@ -10,7 +10,8 @@
    kit_banner(state, where='home')
      "Save your Recovery Kit" while the reader has none, has not confirmed the one they were shown,
      or has one that stopped working. Worded more strongly for treasury signers: only the kit keeps
-     the key a treasury holds for them. #}
+     the key a treasury holds for them. Anyone else can hide it on Home until they next sign in
+     (design §16 item 16); the Security page always says where their kit stands. #}
 {% from "ui/feedback.html" import banner %}
 {% from "ui/buttons.html" import button %}
 
@@ -55,6 +56,12 @@
 {% call banner('warning', title, body) %}
   {%- if where == 'home' %}
   {{ button('Make a Recovery Kit', 'secondary', href=url_for('account.security') ~ '#recovery', size='sm') }}
+  {%- if not state.treasury_signer %}
+  <form method="post" action="{{ url_for('recover.hide_reminder') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ button('Hide until I next sign in', 'ghost', type='submit', size='sm') }}
+  </form>
+  {%- endif %}
   {%- endif %}
 {% endcall %}
 </div>

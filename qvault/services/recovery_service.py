@@ -875,6 +875,27 @@ def kit_state(user: User) -> KitState:
     return KitState(problem=problem, kit=kit, treasury_signer=treasury)
 
 
+#: The session key that hides Home's "Save a Recovery Kit" reminder until the next sign-in.
+KIT_REMINDER_HIDDEN = "qv_kit_reminder_hidden"
+
+
+def hide_kit_reminder(user: User) -> bool:
+    """Hide Home's kit reminder for this sign-in (design §16 item 16). Not for a treasury signer:
+    only the kit gives them back the key a treasury holds, so theirs stays. True if hidden."""
+    if not has_request_context() or kit_state(user).treasury_signer:
+        return False
+    session[KIT_REMINDER_HIDDEN] = user.id
+    return True
+
+
+def kit_reminder_hidden(user: User, state: KitState) -> bool:
+    """Whether Home leaves out the kit reminder: hidden by this person in this sign-in, and they
+    hold no treasury seat. The Security page shows the kit's state whatever this says."""
+    if not has_request_context() or state.treasury_signer:
+        return False
+    return session.get(KIT_REMINDER_HIDDEN) == user.id
+
+
 def lost_key_ids(user: User) -> list[int]:
     return [
         key.id

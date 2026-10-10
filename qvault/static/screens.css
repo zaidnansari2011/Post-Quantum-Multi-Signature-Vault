@@ -135,7 +135,7 @@ p.q-panel__bd { margin: 0; }
 /* On a phone the banner's action goes under its words, which then keep the whole width. */
 @media (max-width: 560px) {
   .q-recovery-banner .q-banner { flex-wrap: wrap; }
-  .q-recovery-banner .q-banner__act { flex-basis: 100%; padding-left: var(--space-24); }
+  .q-recovery-banner .q-banner__act { flex-basis: 100%; flex-wrap: wrap; padding-left: var(--space-24); }
 }
 @media print {
   .q-kitpage > :not(.q-kit) { display: none; }

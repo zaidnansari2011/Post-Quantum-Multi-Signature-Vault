@@ -33,6 +33,7 @@ def index():
 
     # Work first (rework R2): what needs this person, what is due, what waits on others, then what
     # happened. The log's figures that used to lead this page live on Audit.
+    kit_state = recovery_service.kit_state(current_user)
     return render_template(
         "home.html",
         work=inbox_service.home(current_user),
@@ -48,9 +49,11 @@ def index():
         checklist=workspace_service.checklist_for(current_user),
         # Account recovery (plan R9): an open recovery of this person's account or of anyone they
         # watch over, computed from the requests table so no notice can hide it; and whether they
-        # still need to save a Recovery Kit.
+        # still need to save a Recovery Kit (a reminder they can hide until they next sign in,
+        # unless a treasury holds their key).
         open_recoveries=recovery_service.banners_for(current_user),
-        kit_state=recovery_service.kit_state(current_user),
+        kit_state=kit_state,
+        kit_reminder_hidden=recovery_service.kit_reminder_hidden(current_user, kit_state),
     )
 
 
