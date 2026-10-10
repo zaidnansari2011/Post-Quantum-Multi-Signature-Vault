@@ -73,7 +73,7 @@ from qvault.services.proposal_service import (
 from qvault.services.signing import signing_bytes_for
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
-from qvault.ui import status_of
+from qvault.ui import count_noun, status_of
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
@@ -421,7 +421,8 @@ def create_vault():
     if threshold_m > len(emails) + 1:
         return _error(
             "threshold_too_high",
-            f"{threshold_m} signatures cannot be required from {len(emails) + 1} signer(s).",
+            f"{count_noun(threshold_m, 'signature')} cannot be required from "
+            f"{count_noun(len(emails) + 1, 'signer')}.",
             422,
         )
 

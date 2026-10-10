@@ -211,6 +211,8 @@
     return out;
   };
   const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  // A count and its noun, singular or plural (1 check, 2 checks), as qvault/verify/core.py writes it.
+  const count = (n, noun, plural) => n + ' ' + (n === 1 ? noun : (plural || noun + 's'));
 
   // Must reproduce Python's json.dumps(sort_keys=True, separators=(',',':'), ensure_ascii=False)
   // byte for byte. Only integers, strings, booleans, nulls, lists and objects occur in these
@@ -447,7 +449,7 @@
       }
       add('authorisation', 'Every signer was authorised when the decision opened',
           !authProblems.length,
-          authProblems.join('; ') || authorised.size + ' authorised signer(s)');
+          authProblems.join('; ') || count(authorised.size, 'authorised signer'));
 
       // 4. threshold
       const approvals = verified.filter(s => s.decision === 'approve' && authorised.has(s.signer_id));
@@ -458,7 +460,8 @@
         detail = approvals.length + ' of ' + d.required_m + ' required approvals';
       } else if (d.status === 'rejected') {
         met = rejections.length > d.required_n - d.required_m;
-        detail = rejections.length + ' rejection(s) make ' + d.required_m + ' approvals unreachable';
+        detail = count(rejections.length, 'rejection') + (rejections.length === 1 ? ' makes ' : ' make ')
+          + count(d.required_m, 'approval') + ' unreachable';
       } else {
         met = approvals.length < d.required_m;
         detail = d.status + ': ' + approvals.length + ' of ' + d.required_m + ' approvals so far';
@@ -479,7 +482,7 @@
         good.push(e);
       }
       add('log_entries', "The audit log's records of these events recompute", !bad.length,
-          bad.join('; ') || good.length + ' entries');
+          bad.join('; ') || count(good.length, 'entry', 'entries'));
 
       // 6. binding
       const payloads = good.map(e => [e, JSON.parse(e.payload_json)]);
@@ -501,11 +504,11 @@
         }
       }
       if (signedEvents.size > verified.length && !unsupported.length) {
-        binding.push('the log records ' + signedEvents.size + ' signature(s) but the bundle carries '
+        binding.push('the log records ' + count(signedEvents.size, 'signature') + ' but the bundle carries '
                      + verified.length + ' — the export is incomplete');
       }
       add('binding', 'The log records these exact signatures, and no others', !binding.length,
-          binding.join('; ') || signedEvents.size + ' signing event(s) matched');
+          binding.join('; ') || count(signedEvents.size, 'signing event') + ' matched');
 
       // 6b. identity
       const registrations = new Map(
@@ -589,7 +592,7 @@
               }
             }
             if ([...recordedExec.keys()].some(id => !carried.has(id))) {
-              eProblems.push('the log records ' + recordedExec.size + ' authorisation(s) but the bundle carries '
+              eProblems.push('the log records ' + count(recordedExec.size, 'authorisation') + ' but the bundle carries '
                              + section.signatures.length + ': the export is incomplete');
             }
             if (executed.length > 1) {
@@ -599,7 +602,7 @@
                              + d.required_m + ' authorisations are genuine');
             }
             add('execution', title, !eProblems.length, eProblems.join('; ')
-                || goodSigners.size + ' authorisation(s) over this payment, each recorded'
+                || count(goodSigners.size, 'authorisation') + ' over this payment, each recorded'
                    + (executed.length ? '; paid in ' + (executed[0].tx_hash
                       || 'a transaction by another submitter') : ''));
           }
@@ -617,7 +620,7 @@
         }
       }
       add('inclusion', 'Those records are inside the published transparency log', !missing.length,
-          missing.join('; ') || 'proved against a log of ' + cp.tree_size + ' entries, root '
+          missing.join('; ') || 'proved against a log of ' + count(cp.tree_size, 'entry', 'entries') + ', root '
                                 + cp.root_hash.slice(0, 16) + '…');
 
       // 8. checkpoint
@@ -704,7 +707,7 @@
     return {
       ok, checks, facts, fingerprints,
       summary: ok
-        ? 'Verified' + (skipped ? ' (' + skipped + ' check(s) not applicable)' : '')
+        ? 'Verified' + (skipped ? ' (' + count(skipped, 'check') + ' not applicable)' : '')
         : 'NOT verified' + (firstBad ? ' — ' + firstBad.detail : ''),
     };
   }
