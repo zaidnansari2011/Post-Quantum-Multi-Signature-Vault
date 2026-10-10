@@ -551,6 +551,8 @@ export const notificationSchema = z.object({
   proposal_uuid: z.string().nullable(),
   // P4b, additive: a new device's id (the recipient's own), for "Not you? Remove that device".
   device_id: z.number().int().nullable().optional().catch(undefined),
+  // P4b, additive: whether the server lets it be archived. Never a security notice.
+  archivable: z.boolean().optional().catch(undefined),
 });
 export type AppNotification = z.infer<typeof notificationSchema>;
 

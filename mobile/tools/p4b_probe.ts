@@ -2,7 +2,7 @@
 // phone's schemas over replies the real server sent (tests/test_api_phone_p4b.py):
 //
 //   inbox      §6.12: `forYou` (pinning, day groups, what is left out), `inboxTarget`,
-//              `removeOffer`, `forYouDot`, `inboxWhen`.
+//              `removeOffer`, `archiveOffered`, `forYouDot`, `inboxWhen`.
 //   offLine    §6.3 item 5: `showOffLine` over every push state and dismissal age.
 //   remind     §6.4, §6.21: `remindView`.
 //   seats      §6.18, §6.19: `treasuriesHolding`, `lastSignedLine`.
@@ -27,7 +27,7 @@ import {
   vaultDetailResponse,
 } from '../src/api/schemas.ts';
 import { yourPart, type ActivityFacts } from '../src/logic/activity.ts';
-import { forYou, forYouDot, inboxTarget, inboxWhen, removeOffer, type InboxFacts } from '../src/logic/inbox.ts';
+import { archiveOffered, forYou, forYouDot, inboxTarget, inboxWhen, removeOffer, type InboxFacts } from '../src/logic/inbox.ts';
 import { deviceNameProblem } from '../src/logic/onboarding.ts';
 import { pushState, showOffLine, type PushPermission } from '../src/logic/push.ts';
 import { remindView, type RemindFacts } from '../src/logic/remind.ts';
@@ -46,6 +46,10 @@ if (input.inbox) {
     remove: Object.fromEntries(items.map((n) => [n.id, removeOffer(n, thisDevice)])),
     when: Object.fromEntries(items.map((n) => [n.id, inboxWhen(n.created_at, now)])),
     dot: (input.inbox.dots as Array<{ updates: number } | null>).map((u) => forYouDot(u)),
+    archive: Object.fromEntries(items.map((n) => [n.id, archiveOffered(n)])),
+    archiveCases: ((input.inbox.archiveCases ?? []) as Array<Pick<InboxFacts, 'security' | 'archivable'>>).map((c) =>
+      archiveOffered(c),
+    ),
   };
 }
 
