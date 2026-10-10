@@ -143,9 +143,12 @@ def test_an_approver_who_joins_after_a_decision_is_raised_is_not_asked_about_it(
 
 
 def test_a_request_says_when_it_is_due(team):
-    _raise(team, deadline=datetime(2026, 10, 9, 17, 0, tzinfo=UTC))
+    # Raised and read on the Monday of that week: both clocks frozen (the clock trap; read on the
+    # real clock after 9 Oct it had expired).
+    _raise(team, deadline=datetime(2026, 10, 9, 17, 0, tzinfo=UTC), at=MONDAY)
 
-    item = _one(team.brij, "decision_raised")
+    (row,) = _rows(team.brij, "decision_raised")
+    item = notification_service.view(row, now=MONDAY)
     assert item["body"] == "Renew the cloud contract, in Treasury. Due 9 Oct at 17:00 UTC."
 
 
