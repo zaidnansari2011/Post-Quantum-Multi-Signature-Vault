@@ -17,11 +17,12 @@ handles that resolve, belong to the decision's readers: members of its vault in 
 A handle that names nobody among them stays plain text and says nothing about whether such a person
 exists anywhere else, so the discussion cannot be used to find out who is in the workspace. The
 person mentioned is notified (``notification_service.mentioned``) only if they can still open the
-decision. Handles are a person's first name and the part of their email before the ``@`` (which
-every member already sees on the vault's Members tab), each only while it names one reader: a
-handle that is one reader's first name and another's email name names neither. A first name
-with a letter that has no plain a-z form (an accent is dropped: Élif is ``@elif``) gives no
-handle rather than a mangled one.
+decision. Handles come from a person's name, never their email address (staging smoke test
+2026-10-09: the composer offered ``@deliveredqa-brij``, the part of an address before the ``@``, to
+everyone in the vault): their first name and their whole name joined by dots (Ada Lovelace is
+``@ada`` and ``@ada.lovelace``), each only while it names one reader, so when two readers share a
+first name each is mentioned by their whole name. A name with a letter that has no plain a-z form
+(an accent is dropped: Élif is ``@elif``) gives no handle rather than a mangled one.
 
 **Limits.** A comment is 1 to 2,000 characters, names at most 10 people, a person posts at most
 5 comments a minute and 100 on one decision (deleted ones count, so posting and deleting can't
@@ -128,38 +129,39 @@ def _fold(text: str) -> str:
     return plain.lower().translate(_PLAIN)
 
 
-def _name_handle(name: str) -> str:
-    """A first name as a handle, or "" when a letter in it still has no plain form (a name in
-    another script): a handle that drops letters would offer one that names nobody the writer
-    knows, and a look-alike letter could pass for someone else's."""
-    first = _fold(name.split(" ", 1)[0]) if name else ""
-    return "" if _HANDLE.search(first) else first
-
-
-def _email_handle(email: str) -> str:
-    return _HANDLE.sub("", _fold(email.split("@", 1)[0]))
+def _name_handles(name: str) -> list[str]:
+    """A name's handles: its first word, then all its words joined by dots (``ada``,
+    ``ada.lovelace``; one for a one-word name). A word with a letter that still has no plain form
+    (a name in another script) gives no handle that holds it: a handle that drops letters would
+    offer one that names nobody the writer knows, and a look-alike letter could pass for someone
+    else's. An apostrophe is left out (Seán O'Brien is ``@sean.obrien``)."""
+    words = [w for w in _fold(name).replace("'", "").replace("’", "").split() if w]
+    if not words or _HANDLE.search(words[0]):
+        return []
+    whole = ".".join(words)[:64]
+    if whole == words[0] or any(_HANDLE.search(word) for word in words):
+        return [words[0]]
+    return [words[0], whole]
 
 
 def directory(proposal, *, exclude: int | None = None) -> list[dict]:
     """The people a comment on ``proposal`` can mention, each with the handles that name them.
 
     Only the decision's readers, and only handles that name exactly one of them, whichever way:
-    a first name two readers share names neither (their email handles still do), an email
-    handle two readers share (``ada@one.com``, ``ada@two.com``) is dropped too, and so is a
-    handle that is one reader's first name and another's email name (Brij Patel, and Zed Quinn
-    at ``brij@...``). A handle never names someone the writer did not mean.
+    a first name two readers share names neither (their whole names still do), and nor does a
+    handle that is one reader's first name and another's whole name (Brij Patel, and a reader
+    called just Brij). Two readers with the same whole name can't be mentioned. A handle never
+    names someone the writer did not mean, and none is made from an email address.
     """
     ids = reader_ids(proposal)
     users = User.query.filter(User.id.in_(ids)).order_by(User.display_name, User.id).all()
     owners: dict[str, set[int]] = {}
     mine: dict[int, list[str]] = {}
     for u in users:
-        name = (u.display_name or "").strip()
-        for handle in (_name_handle(name), _email_handle(u.email)):
-            if handle:
-                owners.setdefault(handle, set()).add(u.id)
-                if handle not in mine.setdefault(u.id, []):
-                    mine[u.id].append(handle)
+        for handle in _name_handles(u.display_name or ""):
+            owners.setdefault(handle, set()).add(u.id)
+            if handle not in mine.setdefault(u.id, []):
+                mine[u.id].append(handle)
     out = []
     for u in users:
         if u.id == exclude:
