@@ -52,6 +52,7 @@ from qvault.models import (
     Vault,
 )
 from qvault.services import key_service, ledger_service
+from qvault.ui import count_noun
 
 SEPOLIA = 11_155_111
 ALGORITHM = "ML-DSA-65"
@@ -241,7 +242,10 @@ def choose_keys(
     for email in sorted(device_emails - emails):
         problems.append(f"--device {email}: not a signer of {vault.name}")
     if len(members) > MAX_SIGNERS:
-        problems.append(f"{vault.name} has {len(members)} signers; at most {MAX_SIGNERS} can link")
+        problems.append(
+            f"{vault.name} has {count_noun(len(members), 'signer')}; "
+            f"at most {MAX_SIGNERS} can link"
+        )
     threshold = vault.policy.threshold_m
     if threshold > MAX_THRESHOLD:
         problems.append(
@@ -250,7 +254,8 @@ def choose_keys(
     if threshold > len(members):
         # The contract refuses an unreachable threshold, but only after every key was paid for.
         problems.append(
-            f"{vault.name} needs {threshold} approvals but has only {len(members)} signers"
+            f"{vault.name} needs {threshold} approvals but has only "
+            f"{count_noun(len(members), 'signer')}"
         )
 
     choices = []

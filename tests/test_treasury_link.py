@@ -538,7 +538,7 @@ def test_a_treasury_reporting_anything_else_is_not_linked(world):
     with pytest.raises(LinkIncomplete) as failed:
         _link(world, plan)
     message = str(failed.value)
-    assert "threshold is 1, not 2" in message and "reconfigured 2 time(s)" in message
+    assert "threshold is 1, not 2" in message and "reconfigured 2 times" in message
     assert Treasury.query.count() == 0
 
 

@@ -32,6 +32,7 @@ from ..services import (
     proposal_service,
     vault_service,
 )
+from ..ui import count_noun
 from .harness import Attack, Run, blocked, succeeded
 
 PASSWORD = "attack-lab-password-2026"
@@ -158,7 +159,7 @@ def forged_vote_row_real(_: random.Random) -> Run:
     run.step(
         "The database now contains the approval",
         "counting rows would report it",
-        f"{rows} row(s) with decision=approve",
+        f"{count_noun(rows, 'row')} with decision=approve",
     )
     run.step(
         "The tally verifies instead of counting",

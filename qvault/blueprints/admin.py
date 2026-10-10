@@ -35,7 +35,7 @@ from qvault.services import (
     rotation_service,
 )
 from qvault.services.config_service import ConfigError, DowngradeRefused
-from qvault.ui import standard_note
+from qvault.ui import count_noun, standard_note
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -299,8 +299,9 @@ def demo_expire_keys():
         return redirect(url_for("admin.rotation"))
 
     flash(
-        f"{affected} key(s) aged past their rotation deadline, and the ledger records that the "
-        "clock was moved. Run maintenance now to watch the server-custodied keys rotate.",
+        f"{count_noun(affected, 'key')} aged past their rotation deadline, and the ledger "
+        "records that the clock was moved. Run maintenance now to watch the server-custodied "
+        "keys rotate.",
         "warning",
     )
     return redirect(url_for("admin.rotation"))
@@ -401,7 +402,7 @@ def run_attack_lab():
     breached = live["summary"]["breached"] + live["summary"]["vacuous"] + live["summary"]["error"]
     if breached:
         flash(
-            f"{breached} attack(s) did not behave as expected. The detail is below. "
+            f"{count_noun(breached, 'attack')} did not behave as expected. The detail is below. "
             "This is a finding, not a display problem.",
             "danger",
         )

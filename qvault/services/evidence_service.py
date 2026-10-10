@@ -414,7 +414,8 @@ def decision_evidence(
         ok = ev.checkpoint["valid"] and ev.inclusion["valid"] and highest not in broken
         if ok:
             line = (
-                f"The log signed a checkpoint of {cp.tree_size:,} entries, and an inclusion proof "
+                f"The log signed a checkpoint of {_plural(cp.tree_size, 'entry', 'entries')}, "
+                "and an inclusion proof "
                 f"of {_plural(ev.inclusion['length'], 'hash', 'hashes')} places entry "
                 f"#{highest:,} in it."
             )
