@@ -95,7 +95,8 @@ def test_the_unread_count_falls_as_notifications_are_read_and_archived(client, i
     assert body["unread"]["needs_you"] == 0
 
     updates = client.get("/api/v1/notifications?section=updates", headers=phone).get_json()
-    target = updates["notifications"][0]["id"]
+    # The first update that is not a security notice: those cannot be archived (P4b).
+    target = next(n["id"] for n in updates["notifications"] if not n["security"])
     r = client.post(f"/api/v1/notifications/{target}/archive", headers=phone)
     assert r.get_json()["notification"]["section"] == "archived"
     assert r.get_json()["unread"] == {"needs_you": 0, "updates": 1, "total": 1}
@@ -214,7 +215,8 @@ def test_the_phones_schemas_accept_what_the_server_sends(client, inbox, tmp_path
     proposal = _raise(inbox)
     phone, ada_phone = inbox["brij_phone"], inbox["ada_phone"]
     listed = client.get("/api/v1/notifications?section=updates", headers=phone).get_json()
-    first = listed["notifications"][0]["id"]
+    # Not a security notice, which cannot be archived (P4b).
+    first = next(n["id"] for n in listed["notifications"] if not n["security"])
     cases = [
         ("needs_you", "notifications", client.get("/api/v1/notifications", headers=phone)),
         (

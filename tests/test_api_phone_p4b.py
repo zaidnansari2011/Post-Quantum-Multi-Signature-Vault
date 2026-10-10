@@ -24,7 +24,9 @@ from test_mobile_canonical import _node_available
 from test_mobile_p4b import PROBE, run_probe
 
 from qvault.extensions import db
+from qvault.models import Notification
 from qvault.models.device import Device
+from qvault.models.key import Key
 from qvault.models.ledger import LedgerEntry
 from qvault.models.treasury import Treasury, TreasurySigner
 from qvault.services import (
@@ -32,6 +34,7 @@ from qvault.services import (
     auth_service,
     device_service,
     key_service,
+    notification_service,
     proposal_service,
     vault_service,
 )
@@ -243,6 +246,62 @@ def test_a_new_device_notification_names_that_device(client, team):
     assert all(n["device_id"] is None for n in items if n["kind"] != "device_enrolled")
 
 
+# -- security notices cannot be archived -------------------------------------------------------
+
+
+def _security_notice(team):
+    return Notification.query.filter_by(recipient_id=team["brij"].id, kind="device_enrolled").one()
+
+
+def test_a_security_notice_cannot_be_archived_over_the_api(client, team):
+    note = _security_notice(team)
+    phone = team["brij_phone"]
+    r = client.post(f"/api/v1/notifications/{note.id}/archive", headers=phone)
+    assert r.status_code == 409 and r.get_json()["code"] == "not_archivable", r.get_json()
+    db.session.refresh(note)
+    assert note.archived_at is None and note.read_at is None
+    listed = client.get("/api/v1/notifications?section=updates", headers=phone).get_json()
+    assert note.id in [n["id"] for n in listed["notifications"]]
+    archived = client.get("/api/v1/notifications?section=archived", headers=phone).get_json()
+    assert archived["notifications"] == []
+    # It can still be marked read; read, it is still not archivable.
+    r = client.post(f"/api/v1/notifications/{note.id}/read", headers=phone)
+    assert r.status_code == 200 and r.get_json()["notification"]["archivable"] is False
+    r = client.post(f"/api/v1/notifications/{note.id}/archive", headers=phone)
+    assert r.status_code == 409
+    db.session.refresh(note)
+    assert note.archived_at is None
+
+
+def test_a_password_change_notice_cannot_be_archived_either(team):
+    entry = LedgerEntry.query.order_by(LedgerEntry.seq.desc()).first()
+    notification_service.password_changed(team["brij"], entry=entry)
+    note = Notification.query.filter_by(recipient_id=team["brij"].id, kind="password_changed").one()
+    with pytest.raises(notification_service.NotArchivable):
+        notification_service.archive(team["brij"], note.id)
+    db.session.refresh(note)
+    assert note.archived_at is None
+
+
+def test_every_notice_says_whether_it_can_be_archived(client, team):
+    _raise(team)
+    items = []
+    for section in ("needs_you", "updates"):
+        items += client.get(
+            f"/api/v1/notifications?section={section}", headers=team["brij_phone"]
+        ).get_json()["notifications"]
+    kinds = {n["kind"]: n["archivable"] for n in items}
+    assert kinds["device_enrolled"] is False
+    assert kinds["decision_raised"] is True and kinds["vault_member_added"] is True
+    assert all(n["archivable"] is (not n["security"]) for n in items)
+
+
+def test_someone_elses_security_notice_is_still_not_found(client, team):
+    note = _security_notice(team)
+    r = client.post(f"/api/v1/notifications/{note.id}/archive", headers=team["ada_phone"])
+    assert r.status_code == 404 and r.get_json()["code"] == "unknown_notification"
+
+
 # -- renaming a device ------------------------------------------------------------------------
 
 
@@ -323,6 +382,71 @@ def test_a_name_outside_the_rules_is_refused_and_nothing_changes(client, team, n
     assert r.status_code == 400 and r.get_json()["code"] == code, r.get_json()
     assert db.session.get(Device, team["ada_device"]).name == "Ada's phone"
     assert LedgerEntry.query.filter_by(event_type="device_renamed").count() == 0
+
+
+# One rule for enrolment and rename (``device_service.clean_name``): every Unicode category that
+# draws nothing or reorders what is drawn, and a line break, is refused at both doors.
+_HIDDEN_NAMES = [
+    ("tab", "Ada\tphone"),
+    ("C1 control", f"Ada{chr(0x85)}phone"),
+    ("delete", f"Ada{chr(0x7F)}"),
+    ("right-to-left override", f"Ada{_RLO}gnp.exe"),
+    ("left-to-right isolate", f"Ada{chr(0x2066)}phone"),
+    ("pop directional isolate", f"Ada{chr(0x2069)}phone"),
+    ("zero-width joiner", f"Ada{chr(0x200D)}phone"),
+    ("byte order mark", f"{chr(0xFEFF)}Ada"),
+    ("tag character", f"Ada{chr(0xE0041)}"),
+    ("private use", f"Ada{_PRIVATE}"),
+    ("supplementary private use", f"Ada{chr(0xF0000)}"),
+    ("lone surrogate", f"Ada{chr(0xD800)}"),
+    ("paragraph separator", f"Ada{chr(0x2029)}phone"),
+]
+
+
+@pytest.mark.parametrize("label, name", _HIDDEN_NAMES, ids=[label for label, _ in _HIDDEN_NAMES])
+def test_the_shared_device_name_rule_refuses_every_hidden_character(label, name):
+    with pytest.raises(device_service.DeviceError) as refused:
+        device_service.clean_name(name)
+    assert refused.value.code == "hidden_characters", label
+
+
+def test_the_shared_device_name_rule_trims_and_holds_the_length_in_characters():
+    assert device_service.clean_name("  Pixel 8 ") == "Pixel 8"
+    # Characters, not bytes or UTF-16 units: 64 accented letters or emoji are 64.
+    assert device_service.clean_name(chr(0xE9) * 64) == chr(0xE9) * 64
+    assert device_service.clean_name(chr(0x1F4F1) * 64) == chr(0x1F4F1) * 64
+    for bad in ("", "  ", "x" * 65, chr(0x1F4F1) * 65, None, 7, ["Pixel"]):
+        with pytest.raises(device_service.DeviceError) as refused:
+            device_service.clean_name(bad)
+        assert refused.value.code == "bad_request"
+
+
+@pytest.mark.parametrize(
+    "name, code",
+    [
+        (f"Pixel{_RLO}gnp.exe", "hidden_characters"),
+        (f"Pixel{_ZWSP}8", "hidden_characters"),
+        (f"Pixel{chr(0x2067)}8", "hidden_characters"),
+        ("Pixel\n8", "hidden_characters"),
+        (f"Pixel{_PRIVATE}", "hidden_characters"),
+        ("x" * 65, "bad_request"),
+        ("   ", "bad_request"),
+    ],
+)
+def test_enrolment_refuses_a_hidden_or_overlong_device_name_and_stores_nothing(
+    client, team, name, code
+):
+    devices = Device.query.count()
+    keys = Key.query.count()
+    body, _secret, _headers = _enrol_over_http(client, team["chen"], name=name)
+    assert not body["ok"] and body["code"] == code, body
+    assert Device.query.count() == devices and Key.query.count() == keys
+
+
+def test_enrolment_stores_a_trimmed_name(client, team):
+    body, _secret, _headers = _enrol_over_http(client, team["chen"], name="  Chen's Pixel  ")
+    assert body["ok"], body
+    assert db.session.get(Device, body["device"]["id"]).name == "Chen's Pixel"
 
 
 def test_sixty_four_characters_are_allowed(client, team):
@@ -429,3 +553,4 @@ def test_the_phones_schemas_keep_every_p4b_field_the_server_sends(app, client, t
         if n["kind"] == "device_enrolled"
     ]
     assert [n["device_id"] for n in enrolled] == [team["ada_device"]]
+    assert [n["archivable"] for n in enrolled] == [False]
