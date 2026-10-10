@@ -7,7 +7,8 @@
 //   node tools/display_probe.ts <input.json> <output.json>
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { middleOut } from '../src/format.ts';
+import { initials, middleOut } from '../src/format.ts';
+import { plainRule } from '../src/logic/words.ts';
 import { decisionStatus, statusWord, stillOpen, type StatusFacts } from '../src/status.ts';
 import {
   deadlineWhen,
@@ -24,6 +25,8 @@ type Input = {
   phrases: Array<{ name: string; iso: string; verb?: string }>;
   decisions: Array<StatusFacts & { name: string }>;
   identifiers: Record<string, string>;
+  names?: string[];
+  rules?: Array<[number | null, number]>;
 };
 
 const input: Input = JSON.parse(readFileSync(process.argv[2], 'utf8'));
@@ -64,5 +67,7 @@ writeFileSync(
     shortened: Object.fromEntries(
       Object.entries(input.identifiers).map(([name, value]) => [name, middleOut(value)]),
     ),
+    initials: Object.fromEntries((input.names ?? []).map((n) => [n, initials(n)])),
+    rules: Object.fromEntries((input.rules ?? []).map(([m, n]) => [`${m}/${n}`, plainRule(m, n)])),
   }),
 );

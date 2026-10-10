@@ -37,6 +37,7 @@ import type { VaultMember } from '../api/schemas.ts';
 import { mayPropose } from '../proposing.ts';
 import { decisionStatus, statusWord } from '../status.ts';
 import { deadlineWhen } from '../time.ts';
+import { plainRule } from '../logic/words.ts';
 
 export default function VaultScreen({
   vaultId,
@@ -202,6 +203,8 @@ function roleWord(role: string): string {
 }
 
 function policySentence(m: number | null, signers: number): string {
+  const plain = plainRule(m, signers);
+  if (plain) return plain;
   if (m == null) return `${signers} signers`;
   if (m === signers) return `Every one of the ${signers} signers must approve`;
   if (m === 1) return `Any one of the ${signers} signers may approve`;

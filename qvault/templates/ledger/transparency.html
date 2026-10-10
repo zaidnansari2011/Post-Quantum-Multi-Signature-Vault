@@ -77,9 +77,13 @@
       <p class="q-figure__s q-brief__bad">{% if not witness_check.sig_ok %}Its newest co-signature no longer verifies.{% else %}The log no longer reproduces the tree it co-signed.{% endif %}</p>
       {% endif %}
     {% elif witness.configured %}
-      <p class="q-figure__s">{{ witness.url }} hasn’t co-signed a checkpoint yet.</p>
+      <p class="q-figure__s">The independent witness hasn’t co-signed a checkpoint yet.{% if is_admin %} It answers at <code>{{ witness.url }}</code>.{% endif %}</p>
     {% else %}
-      <p class="q-figure__s">No witness is configured, so nothing outside this server vouches for the log. Set <code>WITNESS_URL</code> and run <code>python -m witness</code>.</p>
+      {#- Staging smoke test 2026-10-09: how to set a witness up is the operator's business, not a
+          workspace's, so only an instance admin is told it. -#}
+      <p class="q-figure__s q-line"><span class="q-res q-res--warn">{{ icon('warning') }}Not configured</span></p>
+      <p class="q-figure__s">No independent witness is configured, so the log’s checkpoints are signed only by this server. Each entry is still signed; nothing outside this server vouches that none was rewritten.</p>
+      {% if is_admin %}<p class="q-figure__s">To add one, set <code>WITNESS_URL</code> and run <code>python -m witness</code>.</p>{% endif %}
     {% endif %}
   </section>
 </div>

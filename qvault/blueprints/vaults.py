@@ -567,7 +567,7 @@ def new_proposal(vid: int):
         except ProposalError as exc:
             flash(str(exc), "danger")
             return _new_decision_page(form, vault, "general", again)
-        flash("Proposal created.", "success")
+        flash("Decision raised.", "success")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=proposal.proposal_uuid))
     return _new_decision_page(form, vault, "general", again)
 
@@ -628,7 +628,7 @@ def _new_typed(vault, kind: str, again=None, prefill=None):
         except ProposalError as exc:
             flash(str(exc), "danger")
         else:
-            flash(f"{decision_types.LABELS[kind]} decision created.", "success")
+            flash("Decision raised.", "success")
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )
@@ -703,7 +703,7 @@ def _new_payment(vault, again=None):
         except (ProposalError, ActionError) as exc:
             flash(f"{str(exc)[:1].upper()}{str(exc)[1:]}.", "danger")
         else:
-            flash("Payment decision created.", "success")
+            flash("Decision raised.", "success")
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )

@@ -86,6 +86,17 @@ export function countWord(n: number): string {
   return NUMBER_WORDS[n] ?? String(n);
 }
 
+/**
+ * A vault's rule as the web's tag says it (qvault/ui.py rule_words): "One person decides" for a
+ * single signer rather than "1 of 1", and never "2 of 1" for a threshold above its signers.
+ * Null when it is an ordinary "m of n", which each screen words in its own sentence.
+ */
+export function plainRule(m: number | null, n: number): string | null {
+  if (n === 1 && (m ?? 1) <= 1) return 'One person decides';
+  if (m != null && m > n) return `Needs ${m}, has ${n} signer${n === 1 ? '' : 's'}`;
+  return null;
+}
+
 export function capitalise(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }

@@ -31,6 +31,8 @@ from pathlib import Path
 import pytest
 from test_mobile_canonical import MOBILE_DIR, _node_available
 
+from qvault import ui
+
 PROBE = MOBILE_DIR / "tools" / "display_probe.ts"
 
 pytestmark = pytest.mark.skipif(
@@ -172,6 +174,21 @@ def _decisions() -> list[dict]:
     return out
 
 
+#: Staging smoke test 2026-10-09: "QA Brij" and "QA Chen" were both a lone Q. The phone's avatar
+#: letters are the web's (``ui.initials``).
+AVATAR_NAMES = ("QA Brij", "QA Chen", "Ada Lovelace", "Ada Byron Lovelace", "Ada", "")
+
+#: A single-signer vault says one person decides, plainly, as the web's ``ui.rule_words`` does; a
+#: threshold above the signers never reads "2 of 1"; an ordinary rule is left to each screen.
+RULES = {
+    (1, 1): "One person decides",
+    (None, 1): "One person decides",
+    (2, 1): "Needs 2, has 1 signer",
+    (3, 2): "Needs 3, has 2 signers",
+    (2, 3): None,
+}
+
+
 @pytest.fixture(scope="module", params=["Asia/Kolkata", "America/New_York"])
 def results(request, tmp_path_factory) -> dict:
     tmp = tmp_path_factory.mktemp("display")
@@ -187,6 +204,8 @@ def results(request, tmp_path_factory) -> dict:
                 "phrases": PHRASES,
                 "decisions": _decisions(),
                 "identifiers": IDENTIFIERS,
+                "names": list(AVATAR_NAMES),
+                "rules": [[m, n] for (m, n) in RULES],
             }
         ),
         encoding="utf-8",
@@ -323,3 +342,14 @@ def test_an_address_keeps_both_ends_and_loses_only_the_middle(results):
 @pytest.mark.parametrize("name", ["as_long_as_its_shortened_form", "shorter_still"])
 def test_a_value_that_would_not_get_shorter_is_shown_whole(results, name):
     assert results["shortened"][name] == IDENTIFIERS[name]
+
+
+@pytest.mark.parametrize("name", AVATAR_NAMES)
+def test_the_phones_avatar_letters_are_the_webs(results, name):
+    assert results["initials"][name] == ui.initials(name)
+
+
+@pytest.mark.parametrize("rule", RULES)
+def test_a_single_signer_vault_says_one_person_decides_on_the_phone(results, rule):
+    m, n = rule
+    assert results["rules"][f"{'null' if m is None else m}/{n}"] == RULES[rule]

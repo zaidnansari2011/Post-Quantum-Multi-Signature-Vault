@@ -166,7 +166,9 @@ def why_cannot_pass_if_raised(vault: Vault, requester_id: int | None = None) -> 
     if stopped:
         ask += ", or ask a workspace admin to reinstate a suspended approver"
     if sod and not stopped and m == len(signers):
-        return f"it needs all {m} of its approvers, and {own}. {ask}."
+        # One approver is "its only approver", never "all 1 of its approvers".
+        whom = "its only approver" if m == 1 else f"all {m} of its approvers"
+        return f"it needs {whom}, and {own}. {ask}."
     reasons = [own] if sod else []
     if stopped:
         reasons.append(
@@ -187,7 +189,7 @@ def cannot_raise(vault: Vault, requester_id: int | None = None) -> str | None:
     words = why_cannot_pass_if_raised(vault, requester_id)
     if words is None:
         return None
-    if words.startswith("it needs all "):
+    if words.startswith(("it needs all ", "it needs its only approver")):
         return CANNOT_PASS_UNDER_SOD
     return f"A decision raised here could never pass: {words}"
 

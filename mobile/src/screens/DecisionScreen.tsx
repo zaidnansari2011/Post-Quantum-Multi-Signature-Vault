@@ -673,7 +673,7 @@ export default function DecisionScreen({
     { key: 'web', title: 'Open on the web', icon: 'external', onPress: openWeb },
     { key: 'technical', title: 'Technical details', icon: 'shield', onPress: () => openEvidence('hashes') },
     ...(actions.kind === 'raiseAgain' && actions.placement === 'overflow'
-      ? [{ key: 'again', title: 'Raise again', icon: 'plus' as const, onPress: () => onRaiseIn(detail.vault_id, detail.vault_name ?? '') }]
+      ? [{ key: 'again', title: raiseAgainLabel(detail, identity.userId), icon: 'plus' as const, onPress: () => onRaiseIn(detail.vault_id, detail.vault_name ?? '') }]
       : []),
     { key: 'report', title: 'Report a problem', icon: 'alert', onPress: report },
   ];
@@ -1016,6 +1016,11 @@ function Bar({
  * "From Gracian, 38 minutes ago" once the server says who raised it (A1); until then "Raised 38
  * minutes ago". Older than a week, the date as the rest of the app writes it ("31 Aug").
  */
+/** "Raise again" for whoever raised it; "Raise this again" for anyone else, as on the web. */
+function raiseAgainLabel(detail: ProposalDetail, viewerId: number): string {
+  return detail.raised_by?.id === viewerId ? 'Raise again' : 'Raise this again';
+}
+
 function raisedLine(detail: ProposalDetail, viewerId: number, now: number): string {
   const created = detail.signing_inputs.created_at;
   const age = now - parseInstant(created);

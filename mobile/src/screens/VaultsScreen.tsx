@@ -34,6 +34,7 @@ import type { ProposalSummary, VaultSummary } from '../api/schemas.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { awaitingQuery, fetchedThisRun, keys, vaultsQuery } from '../queries.ts';
 import { stillOpen } from '../status.ts';
+import { plainRule } from '../logic/words.ts';
 
 export default function VaultsScreen({
   onOpen,
@@ -165,8 +166,10 @@ function countByVault(proposals: ProposalSummary[]): Map<number, number> {
  * achieved as easily as a requirement still outstanding.
  */
 function policyPhrase(vault: VaultSummary): string {
-  if (vault.threshold_m == null) return `${vault.signer_count} signers`;
   const others = vault.member_count - vault.signer_count;
+  const plain = plainRule(vault.threshold_m, vault.signer_count);
+  if (plain) return others <= 0 ? plain : `${plain}, ${others} viewing`;
+  if (vault.threshold_m == null) return `${vault.signer_count} signers`;
   const core = `${vault.threshold_m} of ${vault.signer_count} signers must approve`;
   if (others <= 0) return core;
   return `${core}, ${others} viewing`;

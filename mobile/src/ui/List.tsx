@@ -6,6 +6,7 @@
 import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 
+import { initials } from '../format.ts';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { Icon, type IconName } from './Icon.tsx';
 import { Text, type TextTone } from './Text.tsx';
@@ -220,12 +221,7 @@ export function Avatar({
   square?: boolean;
 }) {
   const s = useStyles();
-  // The first letters of the first and last words, as the web draws them ("QA Brij" is QB,
-  // "Ada Byron Lovelace" AL), so two people who share a first name aren't both "Q".
-  const words = name.split(/\s+/).filter(Boolean);
-  const initials = (words.length > 1 ? [words[0]!, words[words.length - 1]!] : words)
-    .map((w) => w[0]!.toUpperCase())
-    .join('');
+  const letters = initials(name);
   return (
     <View
       style={[
@@ -236,7 +232,7 @@ export function Avatar({
       importantForAccessibility="no"
     >
       <Text role="label" tone="muted" maxScale={1}>
-        {initials || '?'}
+        {letters}
       </Text>
     </View>
   );

@@ -8,8 +8,12 @@
 {{ page_header('New vault') }}
 {#- Plan S15: under separation of duties a vault whose approvers are just you can pass nothing, so
     say so before the vault exists rather than on its first decision. -#}
-{% set threshold_caption = 'How many approvals a decision in this vault needs. You are the first approver; add more members afterwards.'
-   ~ (' Whoever raises a decision here can’t approve it, so add other approvers before its first decision. Its owner can change that in the vault’s settings.' if separated else '') %}
+{#- Staging smoke test 2026-10-09: say plainly what 1 means, and that more needs more people. -#}
+{% if separated %}
+{% set threshold_caption = 'How many approvals a decision in this vault needs. You start as its only approver, and whoever raises a decision here can’t approve it, so add other approvers before its first decision. At 1, one of them decides alone. Its owner can change who may approve in the vault’s settings.' %}
+{% else %}
+{% set threshold_caption = 'How many approvals a decision in this vault needs. You start as its only approver, so at 1 you decide alone. For more than one person to decide, choose a higher number and add approvers once the vault exists.' %}
+{% endif %}
 
 <div class="q-acct">
   <section class="q-panel" aria-label="The new vault">

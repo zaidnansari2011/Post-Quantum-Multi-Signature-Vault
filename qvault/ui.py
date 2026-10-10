@@ -164,6 +164,17 @@ def count_noun(n: int, one: str, many: str | None = None) -> str:
     return f"{n:,} {one if n == 1 else (many or one + 's')}"
 
 
+def rule_words(m: int, n: int) -> str:
+    """A vault's approval rule in a few words: ``Any 2 of 3``. One approver is "One person
+    decides", said plainly rather than "Any 1 of 1"; a threshold above the approvers it has is
+    "Needs 2, has 1", never "Any 2 of 1" (staging smoke test 2026-10-09)."""
+    if n == 1 and m <= 1:
+        return "One person decides"
+    if m > n:
+        return f"Needs {m}, has {n}"
+    return f"Any {m} of {n}"
+
+
 def first_name(name: str | None) -> str:
     """The name people are called by in lists and sentences (screens.md: first names only)."""
     name = (name or "").strip()
@@ -285,6 +296,7 @@ def register(app) -> None:
         ui_count_word=count_word,
         ui_count=count_noun,
         ui_first_name=first_name,
+        ui_rule=rule_words,
         ui_short_names=short_name_list,
         ui_names=name_list,
     )
