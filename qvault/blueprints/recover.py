@@ -279,6 +279,28 @@ def confirm():
     return redirect(after)
 
 
+@bp.post("/account/recovery-kit/hide-reminder")
+@login_required
+def hide_reminder():
+    """Home's "Save a Recovery Kit" reminder, hidden until the next sign-in. It comes back, and the
+    Security page keeps saying where the kit stands; a treasury signer's stays (design §16)."""
+    if not _csrf_ok():
+        abort(400)
+    if recovery_service.hide_kit_reminder(current_user):
+        flash(
+            "Hidden until you next sign in. Until you save a Recovery Kit, a forgotten password "
+            "can't give you back your signing key.",
+            "warning",
+        )
+    else:
+        flash(
+            "This reminder stays: a treasury holds your password key, and only a Recovery Kit "
+            "gives you back that same key.",
+            "warning",
+        )
+    return redirect(url_for("core.index"))
+
+
 @bp.post("/account/recovery-kit/later")
 @login_required
 def later():

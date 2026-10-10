@@ -56,7 +56,7 @@
 
 {#- Account recovery (plan R9): an open recovery first, with Cancel; then a missing kit. -#}
 {{ recovery_banners(open_recoveries) }}
-{{ kit_banner(kit_state) }}
+{%- if not kit_reminder_hidden %}{{ kit_banner(kit_state) }}{% endif %}
 
 {% if checklist %}
 {% set ws_items = checklist[1] %}
