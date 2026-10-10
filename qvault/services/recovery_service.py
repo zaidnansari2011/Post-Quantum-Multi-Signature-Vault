@@ -333,9 +333,21 @@ def _record_failure(user: User, now: datetime) -> None:
         )
     )
     if (recent or 0) >= THROTTLE_LIMIT and paused_until(user.id, now) is None:
+        from qvault.services import ledger_service
+
         pause = RecoveryKitPause(user_id=user.id, paused_until=now + PAUSE, created_at=now)
         db.session.add(pause)
         db.session.flush()
+        # In the log too: someone is guessing at this person's kit (never the codes they tried).
+        ledger_service.append(
+            "recovery_kit_paused",
+            {"user_id": user.id, "wrong_codes": int(recent), "paused_until": _iso(now + PAUSE)},
+            actor=f"user:{user.id}",
+            actor_id=user.id,
+            ref_type="user",
+            ref_id=str(user.id),
+            commit=False,
+        )
         # Told once per pause, to the person and everyone in section 4.5. The kit itself is not
         # revoked: a throttle anyone could trip must not be a way to burn someone's kit.
         notification_service.recovery_kit_paused(user, pause, watchers(user), now=now)

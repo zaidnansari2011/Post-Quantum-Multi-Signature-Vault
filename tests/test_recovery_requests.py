@@ -139,8 +139,64 @@ def test_a_damaged_wrap_refuses_the_whole_kit_and_spends_nothing(app, team):
     assert RecoveryRequest.query.count() == 0
 
 
+def test_a_wrap_holding_some_other_secret_key_is_caught_by_the_self_test(app, team):
+    """Anyone who can write the database can encapsulate to the kit's public key: a wrap that
+    opens with the right AAD but holds a secret key that does not match is refused, not
+    re-wrapped into the person's account (ADR-0010)."""
+    from flask import current_app
+
+    from qvault.crypto.kdf import hkdf_sha256
+
+    issued = issue(team.ada)
+    kit = issued.kit
+    wrap = kit.wraps[0]
+    key = wrap.key
+    registry = current_app.extensions["crypto"]
+    stranger = registry.signature(key.alg_id).keygen()
+    ct, shared = registry.kem(recovery_kit.KIT_KEM_ALG).encapsulate(kit.kem_public_key)
+    dek = hkdf_sha256(shared, info=recovery_kit.wrap_info(kit.kit_uuid, key.id))
+    wrap.kem_ciphertext = ct
+    wrap.nonce, wrap.wrapped = registry.symmetric("AES-256-GCM").encrypt(
+        dek, stranger.secret_key, recovery_kit.wrap_aad(kit.kit_uuid, key.id, key.public_key)
+    )
+    db.session.commit()
+    with pytest.raises(RecoveryRefused) as refused:
+        start(team.ada, issued.code, now=NOW)
+    assert refused.value.code == "kit_broken"
+    assert RecoveryRequest.query.count() == 0
+
+
 # --------------------------------------------------------------------------------------------
 # Identical answers and the throttle
+
+
+def test_every_unopened_attempt_costs_one_argon2id_derivation(app, team, monkeypatch):
+    """Unknown email, no kit, wrong code and paused all do the same Argon2id work (design §4.6),
+    so the time an answer takes does not say which it was."""
+    issued = issue(team.ada)
+    calls = []
+    real = recovery_kit.derive_kek
+    monkeypatch.setattr(
+        recovery_kit, "derive_kek", lambda *a, **k: calls.append(1) or real(*a, **k)
+    )
+
+    def cost(email, code):
+        calls.clear()
+        with pytest.raises(RecoveryRefused):
+            recovery_service.start_with_kit(email, code, NEW, now=NOW)
+        return len(calls)
+
+    costs = [
+        cost("nobody@qvault.org", issued.code),
+        cost(team.bob.email, issued.code),
+        cost(team.ada.email, _wrong(issued.code)),
+    ]
+    db.session.add(
+        RecoveryKitPause(user_id=team.ada.id, paused_until=NOW + timedelta(hours=1), created_at=NOW)
+    )
+    db.session.commit()
+    costs.append(cost(team.ada.email, issued.code))
+    assert costs == [1, 1, 1, 1]
 
 
 def test_unknown_email_no_kit_wrong_code_and_paused_answer_identically(app, team):
@@ -192,6 +248,23 @@ def test_ten_wrong_codes_in_a_day_pause_the_kit_without_revoking_it(app, team):
     # A day after the pause began the kit works again.
     started = start(ada, issued.code, now=pause.paused_until)
     assert started.request.state == "waiting"
+
+
+def test_a_pause_is_logged_once_without_the_codes_tried(app, team):
+    issued = issue(team.ada)
+    wrong = [_wrong(kit_code.encode(i + 1)) for i in range(12)]
+    for i, code in enumerate(wrong):
+        with pytest.raises(RecoveryRefused):
+            start(team.ada, code, now=NOW + timedelta(minutes=i))
+    [paused] = _events("recovery_kit_paused")
+    assert paused == {
+        "user_id": team.ada.id,
+        "wrong_codes": 10,
+        "paused_until": "2026-10-10T12:09:00Z",
+    }
+    for entry in LedgerEntry.query.all():
+        text = entry.payload_json.upper()
+        assert issued.code not in text and not any(code in text for code in wrong)
 
 
 def test_wrong_codes_spread_over_more_than_a_day_never_pause(app, team):
