@@ -803,7 +803,7 @@ For the rework image (R10 staging and the switch), settings the deployment needs
    live demo on one network** (for example `RATE_LIMIT_SIGNUP_PER_HOUR=200` for the day), and put
    it back afterwards. Don't turn the limiter off.
 
-### 2.14 Rework R9: the Recovery Kit at the switch — `TODO` (added 2026-10-09)
+### 2.15 Rework R9: the Recovery Kit at the switch — `TODO` (added 2026-10-09)
 
 The Recovery Kit (R9 Phase 1) is built on `rework/r9-recovery-kit`. Nothing to set up before it works;
 three things to know, and two to do, when the rework goes live:
@@ -816,7 +816,8 @@ three things to know, and two to do, when the rework goes live:
    master key ever changes, every kit stops working: each person is told and asked to make a new
    one. This is one more reason to keep the backup of the master key from §2.9.
 3. **Every existing account sees "Save a Recovery Kit"** on Home until it makes one (owner
-   decision ⚑3). New accounts are shown theirs at sign-up.
+   decision ⚑3). Anyone can hide it until they next sign in; it then comes back, and for a
+   treasury signer it cannot be hidden. New accounts are shown theirs at sign-up.
 4. **To do: make your own kit** after the switch (Account, Security, Recovery Kit), print or
    download it, and keep it offline.
 5. **To do: try it once by hand on staging** (design §15 "done when"): make a kit for a test
@@ -1188,4 +1189,5 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-10-09 | Added §2.11 (Resend email) and §2.12 (Firebase push) for rework R8, after the owner chose both. |
 | 2026-10-09 | R8 built: §2.11 gains the switch-time settings (`RESEND_API_KEY` as a secret, `MAIL_FROM`, `PUBLIC_BASE_URL`); §2.12 gains the one EAS command for the Firebase file before the rework APK, and the handset check; §2.3's "decided against expo-notifications" is marked superseded on the rework. |
 | 2026-10-09 | R8 review fixes: §2.12 gains step 6 (switch on Expo Enhanced Push Security and set `EXPO_ACCESS_TOKEN` as a secret at the switch); §2.11 says push needs that secret. |
-| 2026-10-09 | Added §2.14: the Recovery Kit (R9 Phase 1) at the switch: the address printed on kits, the master key now also locking kits, the banner every account sees, and a hand test on staging. |
+| 2026-10-09 | Added §2.15: the Recovery Kit (R9 Phase 1) at the switch: the address printed on kits, the master key now also locking kits, the banner every account sees, and a hand test on staging. |
+| 2026-10-10 | R9 finishing pass: the Recovery Kit section is §2.15 (it was §2.14 on its branch, which clashed with staging's §2.14); item 3 now says the "Save a Recovery Kit" reminder can be hidden until the next sign-in, except by treasury signers. |

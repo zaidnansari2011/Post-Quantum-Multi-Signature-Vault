@@ -15,7 +15,15 @@ notices to the person, managers and co-signers (in-app, and email and push throu
 notices that cannot be archived while open, the Home banner with Cancel, `credential_epochs`,
 `'lost'` and its consumers, the ledger events and the additive `public_key_sha256`, and the
 forgotten-password page. Where this design was silent, the choices made are listed in §16.
-Phases 2 (phone) and 3 (approvers) are not built.
+Phases 2 (phone) and 3 (approvers) are not built. A finishing pass (2026-10-10) serialised a new
+kit, a password change and a new key against a completing recovery (§16 item 17), let the kit
+reminder be hidden until the next sign-in (item 16), logged the throttle (item 18), and added
+CSRF, equal-work and self-test checks to the tests.
+**Deferred to Phases 2 and 3 (review findings not closed by Phase 1 code):** C1, M5, M6, L2, L3
+(route b, Phase 3); H2, H3 items 2 to 5, M4, M7 item 3, M8, L4, L7, L13's supersede rule (phones
+and the kit-plus-phone path, Phase 2); M3's lineage in exports and the verifier line (Phase 2;
+the additive `public_key_sha256` is built); L1 (`recovery_claimed`, which the kit route has no
+claim step to write).
 **Decision:** S18 ([plan §4](../saas-rework.md#4-design-decisions)), Phase R9 ([plan §7](../saas-rework.md#7-phases)).
 **Evidence:** research [04 §8](research/04-customer-lifecycle.md) and [07](research/07-recovery.md).
 **Branch:** `rework/r9-recovery-design` from `saas-rework` `fe70a6d`. Code citations are to that commit.
@@ -641,4 +649,23 @@ Each is the safer reading, recorded here so the review can disagree with it.
     channel Security, high priority, locked on), worded by the server, opening the Activity tab;
     the installed app has no inbox list and no banner, and no phone screen was changed. An
     in-app banner with Cancel on the phone is left for Phase 2, with the phone's own screens.
-
+16. **Home's "Save a Recovery Kit" reminder can be hidden until the next sign-in.** After the
+    switch every existing account has no kit, so every one of them would see it on every visit.
+    "Hide until I next sign in" removes it from Home for that sign-in only, and the page then says
+    honestly what it means ("Until you save a Recovery Kit, a forgotten password can't give you
+    back your signing key"). It comes back at every sign-in, so ⚑3's "a banner that stays until it
+    is done" still holds across sign-ins; the Security page always shows where the kit stands; and
+    a treasury signer cannot hide it, because only the kit gives them back the key the treasury
+    holds. The choice is kept in the web session, so it is one person's, never the browser's.
+17. **One account's credential changes one writer at a time.** A completing recovery, a new kit, a
+    password change and a new key each first let a recovery whose wait is over take effect (state
+    is a function of time, §4.2: from `completes_at` the recovery has won, whether or not the
+    scheduler has run), then hold the account's row (a row lock on PostgreSQL, the write lock on
+    SQLite). A new kit is written only if the KEK salt its password was checked against is still
+    the account's (compare-and-set), and a kit is ended by compare-and-set from `active` (or
+    `stale`), so a new kit cannot be made from a proof of a password a recovery has just replaced,
+    and a recovery cannot complete with a kit a new one has just replaced. Whichever commits first
+    wins; the other writes nothing and says why.
+18. **A tripped throttle is also logged**, as `recovery_kit_paused` {user_id, wrong_codes,
+    paused_until} (additive to §4.4): someone guessing at a person's kit belongs in the audit
+    trail, not only in their inbox. The codes tried are never written.
