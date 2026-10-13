@@ -12,10 +12,16 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from flask_login import current_user, login_required, logout_user
 from flask_wtf import FlaskForm
 
-from qvault.forms import ChangePasswordForm, ProfileForm
+from qvault.forms import ChangePasswordForm, IssueKitForm, ProfileForm
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.device import Device
-from qvault.services import auth_service, key_service, treasury_service
+from qvault.services import (
+    auth_service,
+    key_service,
+    recovery_kit,
+    recovery_service,
+    treasury_service,
+)
 from qvault.services.key_service import KeyUnlockError, PasswordLockedError
 from qvault.services.treasury_service import LinkRefused
 
@@ -52,6 +58,11 @@ def _render(profile_form=None, password_form=None, tab="profile"):
         .order_by(Device.created_at.desc())
         .all(),
         choice_form=SigningChoiceForm(),
+        # The Recovery Kit (plan R9): what there is, and the form that makes or replaces one.
+        kit_state=recovery_service.kit_state(current_user),
+        kit_short_id=recovery_kit.short_id,
+        kit_form=IssueKitForm(),
+        open_recoveries=recovery_service.banners_for(current_user),
     )
 
 

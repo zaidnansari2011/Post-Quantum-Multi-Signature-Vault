@@ -47,12 +47,20 @@ from sqlalchemy.orm import joinedload, selectinload
 from qvault.extensions import db
 from qvault.models.notification import CHANNELS, Notification, NotificationPreference
 from qvault.models.proposal import Proposal
+from qvault.models.recovery import OPEN_STATES, RecoveryNotice, RecoveryRequest
 from qvault.models.signature import Signature
 from qvault.models.vault import SIGNER_ROLES, VaultMember
 from qvault.services import delivery_service, eligibility, notification_copy
 
 #: Requests: they ask the recipient to approve, and live in Needs you while that is still possible.
 NEEDS_YOU_KINDS = ("decision_raised", "decision_reminder", "decision_due_soon")
+#: Account recovery (plan R9, design §4.5): security events, so they cannot be switched off.
+RECOVERY_KINDS = (
+    "recovery_waiting",
+    "recovery_cancelled",
+    "recovery_completed",
+    "recovery_kit_changed",
+)
 UPDATE_KINDS = (
     "decision_approved",
     "decision_rejected",
@@ -65,9 +73,14 @@ UPDATE_KINDS = (
     "vault_rule_changed",
     "device_enrolled",
     "password_changed",
-)
+) + RECOVERY_KINDS
+#: At most this many repeat cancel notices about one account in a day (design §4.5, §16 item 9);
+#: the Home banner carries the rest. A recovery starting and a recovery taking effect are always
+#: told: every start costs the kit a day (§16 item 19), so it cannot be used to spam. Nor is the
+#: wrong-codes alarm capped: it comes at most three times a day, at 10, 100 and 1,000 (item 26).
+RECOVERY_NOTICES_PER_DAY = 5
 #: Delivered whatever a preference says (S12): the account holder must hear about these.
-SECURITY_KINDS = ("device_enrolled", "password_changed")
+SECURITY_KINDS = ("device_enrolled", "password_changed", *RECOVERY_KINDS)
 KINDS = NEEDS_YOU_KINDS + UPDATE_KINDS
 SECTIONS = ("needs_you", "updates", "archived")
 
@@ -483,6 +496,183 @@ def password_changed(user, *, entry, now: datetime | None = None) -> None:
 
 
 # --------------------------------------------------------------------------------------------
+# Account recovery (plan R9, design §4.5)
+#
+# Unlike every trigger above, these are NOT best-effort: they are written in the request's own
+# transaction, and if they cannot be written the recovery does not start (or end). Each is told
+# to the person and to everyone ``recovery_service.watchers`` names (owners and admins of their
+# workspaces, co-signers of their vaults); the words differ by who reads them, so each group is
+# sent apart, with ``as`` saying whose eyes it is for. Notices about an open request cannot be
+# archived or marked read (``_locked``).
+
+
+#: The event keys of the only recovery notices that are capped: a request ending without taking
+#: effect. Never a start, a completion or a wrong-codes alarm (design §16 items 19 and 26).
+_CAPPED_KEYS = ("recovery_cancelled:",)
+
+
+def _recovery_cap_reached(subject_id: int, now: datetime) -> bool:
+    """Whether ``RECOVERY_NOTICES_PER_DAY`` capped recovery events (``_CAPPED_KEYS``) about this
+    account were told in the last day. Starts and completions are not counted, and never held
+    back, so filling the cap cannot silence the request that will complete."""
+    told = db.session.scalar(
+        select(func.count(func.distinct(RecoveryNotice.event_key)))
+        .select_from(RecoveryNotice)
+        .where(
+            RecoveryNotice.subject_id == subject_id,
+            RecoveryNotice.created_at > now - timedelta(hours=24),
+            or_(*(RecoveryNotice.event_key.startswith(prefix) for prefix in _CAPPED_KEYS)),
+        )
+    )
+    return (told or 0) >= RECOVERY_NOTICES_PER_DAY
+
+
+def _send_recovery(
+    kind: str,
+    subject,
+    watchers: dict[int, str],
+    *,
+    key: str,
+    now: datetime,
+    request=None,
+    actor_id: int | None = None,
+    data: dict | None = None,
+    capped: bool = True,
+) -> list[Notification]:
+    if capped and _recovery_cap_reached(subject.id, now):
+        return []
+    base = {"subject_id": subject.id, **(data or {})}
+    if request is not None:
+        base["request"] = request.request_uuid
+    groups: dict[str, list[int]] = {"self": [subject.id]}
+    for user_id, role in sorted(watchers.items()):
+        if user_id != subject.id:
+            groups.setdefault(role, []).append(user_id)
+    created: list[Notification] = []
+    for role, ids in groups.items():
+        created += _send(kind, ids, key=key, now=now, actor_id=actor_id, data={**base, "as": role})
+    for row in created:
+        db.session.add(
+            RecoveryNotice(
+                notification_id=row.id,
+                request_id=request.id if request is not None else None,
+                subject_id=subject.id,
+                event_key=key,
+                created_at=now,
+            )
+        )
+    db.session.flush()
+    return created
+
+
+def _completes(request) -> str | None:
+    moment = request.completes_at
+    if moment is None:
+        return None
+    moment = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+    return moment.isoformat()
+
+
+def recovery_waiting(request, watchers: dict[int, str], *, now: datetime | None = None) -> None:
+    """Someone used the person's kit: the wait has started, and can be cancelled until it ends.
+    Never capped (design §16 item 19): this is the notice about the request that may complete."""
+    _send_recovery(
+        "recovery_waiting",
+        request.user,
+        watchers,
+        key=f"recovery_waiting:{request.request_uuid}",
+        now=now or _utcnow(),
+        request=request,
+        data={"completes_at": _completes(request)},
+        capped=False,
+    )
+
+
+def recovery_cancelled(request, watchers: dict[int, str], *, now: datetime | None = None) -> None:
+    """The request ended without taking effect: cancelled, or refused when it was due."""
+    _send_recovery(
+        "recovery_cancelled",
+        request.user,
+        watchers,
+        key=f"recovery_cancelled:{request.request_uuid}",
+        now=now or _utcnow(),
+        request=request,
+        actor_id=request.cancelled_by_id,
+        data={
+            "by_role": request.cancelled_as or "system",
+            "kit_burned": bool(request.kit_burned),
+            "failed": request.state == "failed",
+        },
+    )
+
+
+def recovery_completed(request, watchers: dict[int, str], *, now: datetime | None = None) -> None:
+    """The new password took effect. Always told, whatever the daily cap."""
+    _send_recovery(
+        "recovery_completed",
+        request.user,
+        watchers,
+        key=f"recovery_completed:{request.request_uuid}",
+        now=now or _utcnow(),
+        request=request,
+        capped=False,
+    )
+
+
+def recovery_kit_changed(user, *, change: str, key: str, now: datetime | None = None) -> None:
+    """The person made, replaced or lost the use of their kit: told to them alone, since they did
+    it themself with their password (or, for ``stale``, nobody did)."""
+    _send_recovery(
+        "recovery_kit_changed",
+        user,
+        {},
+        key=key,
+        now=now or _utcnow(),
+        data={"change": change},
+        capped=False,
+    )
+
+
+def recovery_kit_paused(
+    user, pause, watchers: dict[int, str], *, wrong_codes: int, now: datetime | None = None
+) -> None:
+    """Wrong codes reached an alarm level: everyone in §4.5 is told, with the count. The kit
+    still works (design §16 items 20 and 26). Never capped: at most three a day."""
+    until = (
+        pause.paused_until if pause.paused_until.tzinfo else pause.paused_until.replace(tzinfo=UTC)
+    )
+    _send_recovery(
+        "recovery_kit_changed",
+        user,
+        watchers,
+        key=f"recovery_kit_paused:{pause.id}",
+        now=now or _utcnow(),
+        data={"change": "paused", "until": until.isoformat(), "wrong_codes": int(wrong_codes)},
+        capped=False,
+    )
+
+
+def _locked():
+    """Notifications about a recovery that is still open: they cannot be archived or marked read,
+    so a thief who reaches the inbox cannot hide them (design §4.5, review H3)."""
+    return (
+        select(RecoveryNotice.notification_id)
+        .join(RecoveryRequest, RecoveryRequest.id == RecoveryNotice.request_id)
+        .where(RecoveryRequest.state.in_(OPEN_STATES))
+    )
+
+
+def is_locked(notification_id: int) -> bool:
+    return bool(
+        db.session.scalar(
+            select(Notification.id).where(
+                Notification.id == notification_id, Notification.id.in_(_locked())
+            )
+        )
+    )
+
+
+# --------------------------------------------------------------------------------------------
 # Reminders
 
 
@@ -839,7 +1029,11 @@ def inbox(
     condition = and_(Notification.recipient_id == user.id, _in_section(section, now, user.id))
     total = db.session.scalar(select(func.count()).select_from(Notification).where(condition))
     rows = db.session.execute(
-        select(Notification, _waits(now, user.id).label("waits"))
+        select(
+            Notification,
+            _waits(now, user.id).label("waits"),
+            Notification.id.in_(_locked()).label("locked"),
+        )
         .where(condition)
         .options(
             # Everything the copy reads, loaded for the whole page at once rather than one
@@ -861,7 +1055,10 @@ def inbox(
         page=page,
         per_page=per_page,
         total=total or 0,
-        items=[_view(row, waits=bool(waits), now=now) for row, waits in rows],
+        items=[
+            _view(row, waits=bool(waits), now=now, locked=bool(locked))
+            for row, waits, locked in rows
+        ],
     )
 
 
@@ -935,7 +1132,7 @@ def view(notification, *, now: datetime | None = None) -> dict:
             select(_waits(now, notification.recipient_id)).where(Notification.id == notification.id)
         )
     )
-    return _view(notification, waits=waits, now=now)
+    return _view(notification, waits=waits, now=now, locked=is_locked(notification.id))
 
 
 def _section_of(notification, *, waits: bool, voted: bool) -> str | None:
@@ -949,8 +1146,9 @@ def _section_of(notification, *, waits: bool, voted: bool) -> str | None:
     return "updates"
 
 
-def _view(notification, *, waits: bool, now: datetime) -> dict:
-    """What a client shows. Facts and a link to a page: nothing in it can approve or reject."""
+def _view(notification, *, waits: bool, now: datetime, locked: bool = False) -> dict:
+    """What a client shows. Facts and a link to a page: nothing in it can approve or reject.
+    ``locked``: it speaks of a recovery still open, so it can be neither archived nor read."""
     actionable = waits and notification.kind in NEEDS_YOU_KINDS
     proposal = notification.proposal
     voted = proposal is not None and any(
@@ -968,8 +1166,10 @@ def _view(notification, *, waits: bool, now: datetime) -> dict:
         "path": copy.path,
         "actionable": actionable,
         "security": notification.kind in SECURITY_KINDS,
-        # Phone P4b, additive: whether archive is allowed. Never for a security notice.
-        "archivable": notification.kind not in SECURITY_KINDS,
+        # Phone P4b, additive: whether archive is allowed. Never for a security notice, nor for a
+        # notice about a recovery still open (R9).
+        "archivable": notification.kind not in SECURITY_KINDS and not locked,
+        "locked": locked,
         "unread": notification.read_at is None,
         "created_at": _iso(notification.created_at),
         "read_at": _iso(notification.read_at),
@@ -1013,7 +1213,7 @@ def mark_read(
         return None
     if by_device_id is not None and _device_of(notification) == by_device_id:
         return view(notification, now=now)
-    if notification.read_at is None:
+    if notification.read_at is None and not is_locked(notification.id):
         notification.read_at = now
         db.session.commit()
         _forget_unread(user.id)
@@ -1029,6 +1229,7 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
         Notification.recipient_id == user.id,
         Notification.read_at.is_(None),
         Notification.kind.not_in(SECURITY_KINDS),
+        Notification.id.not_in(_locked()),
     )
     if section is not None:
         condition = and_(condition, _in_section(section, now, user.id))
@@ -1049,7 +1250,8 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
 def archive(user, notification_id: int, *, now: datetime | None = None) -> dict | None:
     """Move it out of the inbox, read. Archiving a request does not answer it: the decision is
     still on the approvals page. A security notice is refused (``NotArchivable``): it stays where
-    its owner, or whoever else reads the inbox, will see it."""
+    its owner, or whoever else reads the inbox, will see it. A notice about a recovery still open
+    stays where it is."""
     now = now or _utcnow()
     notification = _own(user, notification_id)
     if notification is None:
@@ -1059,7 +1261,7 @@ def archive(user, notification_id: int, *, now: datetime | None = None) -> dict 
             "Security notices stay in your inbox, so a device or password change you didn't make "
             "can't be hidden. You can mark it read."
         )
-    if notification.archived_at is None:
+    if notification.archived_at is None and not is_locked(notification.id):
         notification.archived_at = now
         notification.read_at = notification.read_at or now
         db.session.commit()

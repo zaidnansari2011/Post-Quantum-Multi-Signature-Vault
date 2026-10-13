@@ -11,7 +11,9 @@ workspace_member and invitation (the workspace layer, docs/plans/saas-rework.md 
 notification and notification_preference (in-app notifications, plan R4); vault_rule and
 proposal_lifecycle (decision depth, plan R5); decision_comment (a decision's unsigned
 discussion, R5); decision_fields (a typed decision's unsigned fields, R5); delivery and
-push_token (the email and push outbox, plan R8).
+push_token (the email and push outbox, plan R8); recovery_kit, recovery_kit_wrap,
+recovery_request, recovery_request_wrap, credential_epoch, recovery_notice and the kit throttle's
+two tables (account recovery, plan R9).
 Added in later phases: rotation_event.
 """
 
@@ -33,6 +35,16 @@ from .reconfiguration import (
     Reconfiguration,
     ReconfigurationSignature,
     ReconfigurationTransaction,
+)
+from .recovery import (
+    CredentialEpoch,
+    RecoveryKit,
+    RecoveryKitFailure,
+    RecoveryKitPause,
+    RecoveryKitWrap,
+    RecoveryNotice,
+    RecoveryRequest,
+    RecoveryRequestWrap,
 )
 from .signature import Signature
 from .signer_preference import SignerPreference
@@ -83,4 +95,12 @@ __all__ = [
     "UserSetting",
     "Delivery",
     "PushToken",
+    "RecoveryKit",
+    "RecoveryKitWrap",
+    "RecoveryRequest",
+    "RecoveryRequestWrap",
+    "CredentialEpoch",
+    "RecoveryNotice",
+    "RecoveryKitFailure",
+    "RecoveryKitPause",
 ]

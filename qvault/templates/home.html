@@ -7,6 +7,7 @@
 {% from "ui/status.html" import status %}
 {% from "ui/data.html" import reltime %}
 {% from "ui/work.html" import work_list %}
+{% from "recover/_banners.html" import recovery_banners, kit_banner %}
 {% block title %}Home — Q-Vault{% endblock %}
 
 {#- Home, work first (rework R2, screens.md A): what needs you, what is due, what waits on others,
@@ -52,6 +53,10 @@
   {% endcall %}
   {%- endif %}
 {% endcall %}
+
+{#- Account recovery (plan R9): an open recovery first, with Cancel; then a missing kit. -#}
+{{ recovery_banners(open_recoveries) }}
+{%- if not kit_reminder_hidden %}{{ kit_banner(kit_state) }}{% endif %}
 
 {% if checklist %}
 {% set ws_items = checklist[1] %}

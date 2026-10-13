@@ -6,6 +6,7 @@ import json
 
 from sqlalchemy.exc import IntegrityError
 
+from qvault.crypto import sha256_hex
 from qvault.crypto.kdf import DEFAULT_PARAMS, new_salt
 from qvault.extensions import db
 from qvault.models.user import User
@@ -85,7 +86,14 @@ def register_user(
 
     ledger_service.append(
         "user_registered",
-        {"user_id": user.id, "email": user.email, "key_id": key.id, "alg_id": key.alg_id},
+        {
+            "user_id": user.id,
+            "email": user.email,
+            "key_id": key.id,
+            "alg_id": key.alg_id,
+            # Additive (plan R9, design §4.4): a verifier can follow a person's key lineage.
+            "public_key_sha256": sha256_hex(key.public_key),
+        },
         actor=f"user:{user.id}",
         actor_id=user.id,
         ref_type="user",
@@ -171,12 +179,29 @@ def authenticate(email: str, password: str) -> User | None:
 
     A verification is always performed — against a dummy hash when the email is unknown — so
     the response time does not reveal whether an account exists (no user enumeration).
+
+    A correct password is a proof of it, so any open recovery of the account is cancelled and its
+    kit burned (plan R9, ⚑5): signing in on the web, or on a phone that is pairing.
+
+    A recovery whose wait is over has won (design §4.2, §16 item 23): it takes effect before the
+    password is checked, so the old password no longer signs in from ``completes_at`` even if the
+    scheduler has not run. The credential epoch is read before the check too, and the session
+    this sign-in makes is stamped with it, so a recovery completing during the check signs that
+    session out; if the epoch moved by the time the check is done, the sign-in is refused.
     """
+    from qvault.services import recovery_service
+
     user = User.query.filter_by(email=_normalise_email(email)).first()
     if user is None:
         verify_password(_DUMMY_PASSWORD_HASH, password)  # equalise timing; result discarded
         return None
+    recovery_service.complete_if_due(user)
+    seen = recovery_service.epoch(user.id)
     if verify_password(user.password_hash, password):
+        if recovery_service.epoch(user.id) != seen:
+            return None  # the credential changed while it was being checked
+        recovery_service.remember_sign_in_epoch(user.id, seen)
+        recovery_service.password_proven(user, via="sign_in")
         return user
     return None
 

@@ -301,6 +301,7 @@ def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
         connection.exec_driver_sql("ALTER TABLE users ADD COLUMN nickname VARCHAR(40)")
 
     assert check_baseline.differences(newer) == [
+        "table credential_epochs is not in the baseline",
         "table decision_comments is not in the baseline",
         "table decision_fields is not in the baseline",
         "table deliveries is not in the baseline",
@@ -309,6 +310,13 @@ def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
         "table notifications is not in the baseline",
         "table proposal_lifecycle is not in the baseline",
         "table push_tokens is not in the baseline",
+        "table recovery_kit_failures is not in the baseline",
+        "table recovery_kit_pauses is not in the baseline",
+        "table recovery_kit_wraps is not in the baseline",
+        "table recovery_kits is not in the baseline",
+        "table recovery_notices is not in the baseline",
+        "table recovery_request_wraps is not in the baseline",
+        "table recovery_requests is not in the baseline",
         "table user_settings is not in the baseline",
         "table vault_rules is not in the baseline",
         "table witness_key_refusals is not in the baseline",

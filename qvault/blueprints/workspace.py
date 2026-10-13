@@ -594,4 +594,10 @@ def register(token: str):
         f"Welcome to {workspace.name}. Your account and its signing key were created.",
         "success",
     )
+    # The Recovery Kit, shown once, while the password is still in hand (plan R9, ⚑3).
+    from qvault.blueprints.auth import issue_signup_kit
+
+    kit = issue_signup_kit(user, form.password.data)
+    if kit is not None:
+        return kit
     return redirect(url_for("core.index"))

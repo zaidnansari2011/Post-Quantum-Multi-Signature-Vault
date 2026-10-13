@@ -408,3 +408,46 @@ class RunAttackLabForm(FlaskForm):
     which seed) belongs to ``scripts/run_attack_lab.py``, where the result is a committed artefact
     rather than a page. The form exists for its CSRF token and its submit button.
     """
+
+
+class RecoverKitForm(FlaskForm):
+    """Using a Recovery Kit (plan R9, design §5.3). The code's own typo check runs in the service
+    (``kit_code.normalise``) and in the browser; here it is only bounded."""
+
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
+    code = StringField(
+        "Recovery Kit code",
+        validators=[DataRequired(message="Type the code from your Recovery Kit."), Length(max=80)],
+    )
+    password = PasswordField("New password", validators=[DataRequired(), Length(min=8, max=1024)])
+    confirm = PasswordField(
+        "Confirm new password",
+        validators=[DataRequired(), EqualTo("password", message="Passwords must match")],
+    )
+    submit = SubmitField("Start recovery")
+
+
+class IssueKitForm(FlaskForm):
+    """Making, or replacing, a Recovery Kit from the Security page: the password opens the keys
+    the kit will hold."""
+
+    password = PasswordField("Password", validators=[DataRequired()])
+    submit = SubmitField("Make a Recovery Kit")
+
+
+class KitConfirmForm(FlaskForm):
+    """The last group typed back, showing the kit was kept (⚑3)."""
+
+    kit_uuid = HiddenField(validators=[DataRequired(), Length(max=36)])
+    tag = HiddenField(validators=[DataRequired(), Length(max=64)])
+    last_group = StringField(
+        "Type the last group of your code", validators=[DataRequired(), Length(max=12)]
+    )
+    submit = SubmitField("I've saved it")
+
+
+class KitLaterForm(FlaskForm):
+    """ "Do this later": the kit just shown stops working, and Home reminds the person."""
+
+    kit_uuid = HiddenField(validators=[DataRequired(), Length(max=36)])
+    submit = SubmitField("Do this later")

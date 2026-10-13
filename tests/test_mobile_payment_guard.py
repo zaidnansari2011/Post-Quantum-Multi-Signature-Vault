@@ -295,7 +295,8 @@ def test_a_payment_prompt_names_the_amount_and_the_recipient_in_full(results):
     subject = payment_text(action).replace(f" from this vault's treasury {action['treasury']}", "")
     prompt = results["consistent_payment"]["prompt"]
     assert prompt["subtitle"] == subject
-    assert prompt["message"] == f"Approve payment {_code(results['consistent_payment']['payload_hash'])}"
+    code = _code(results["consistent_payment"]["payload_hash"])
+    assert prompt["message"] == f"Approve payment {code}"
     assert action["to"] in subject and action["treasury"] not in subject
 
 
