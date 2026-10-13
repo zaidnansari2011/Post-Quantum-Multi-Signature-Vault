@@ -11,7 +11,7 @@ export function rateLimitMessage(retryAfterSeconds: number | null | undefined): 
   return `Too many attempts. Try again in ${minutes === 1 ? '1 minute' : `${minutes} minutes`}.`;
 }
 
-/** The server's limit on a device's name (`device_service.enrol_device`). */
+/** The server's limit on a device's name, in characters (enrolment and rename alike). */
 export const DEVICE_NAME_MAX = 64;
 
 /**
@@ -26,7 +26,8 @@ export function defaultDeviceName(
 ): string {
   for (const candidate of [native.deviceName, native.modelName]) {
     const name = (candidate ?? '').trim();
-    if (name) return name.slice(0, DEVICE_NAME_MAX).trim();
+    // Cut by characters, not UTF-16 units, so an emoji is never split in half.
+    if (name) return [...name].slice(0, DEVICE_NAME_MAX).join('').trim();
   }
   return platform === 'ios' ? 'iPhone' : platform === 'android' ? 'Android phone' : 'Phone';
 }
@@ -38,9 +39,6 @@ export function signInProblems(email: string, password: string): { email?: strin
   if (!password) out.password = 'Enter your password.';
   return out;
 }
-
-/** The longest device name the server accepts (enrolment and rename alike). */
-export const DEVICE_NAME_MAX = 64;
 
 /**
  * What the phone can say about a device name before asking (§6.18 rename, A21): empty, or too
