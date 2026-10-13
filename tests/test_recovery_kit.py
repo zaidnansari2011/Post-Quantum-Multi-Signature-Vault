@@ -107,7 +107,9 @@ def test_a_tampered_public_key_mac_marks_the_kit_stale_and_still_creates_the_key
         recovery_kit.open_kem_key(issued.kit, issued.code)
 
 
-@pytest.mark.parametrize("field", ["kem_alg", "kem_public_key", "created_at"])
+@pytest.mark.parametrize(
+    "field", ["kem_alg", "kem_public_key", "created_at", "kdf_params", "kit_salt"]
+)
 def test_tampering_with_what_the_mac_covers_marks_the_kit_stale(app, ada, field):
     issued = issue(ada)
     kit = issued.kit
@@ -115,6 +117,10 @@ def test_tampering_with_what_the_mac_covers_marks_the_kit_stale(app, ada, field)
         kit.kem_alg = "RSA-2048-OAEP"
     elif field == "kem_public_key":
         kit.kem_public_key = bytes(len(kit.kem_public_key))
+    elif field == "kdf_params":  # cheaper to guess at: refused, MAC'd and pinned
+        kit.kdf_params = json.dumps({"memory_cost": 8, "parallelism": 1, "time_cost": 1})
+    elif field == "kit_salt":
+        kit.kit_salt = bytes(16)
     else:
         kit.created_at = kit.created_at.replace(year=2020)
     db.session.commit()
@@ -132,12 +138,44 @@ def test_a_kit_naming_another_algorithm_is_refused_even_with_a_valid_mac(app, ad
     kit.kem_alg = "RSA-2048-OAEP"
     kit.kem_public_key_mac = master_key.kit_pk_mac(
         recovery_kit.pk_mac_input(
-            ada.id, kit.kit_uuid, kit.kem_alg, recovery_kit.iso(kit.created_at), kit.kem_public_key
+            ada.id,
+            kit.kit_uuid,
+            kit.kem_alg,
+            recovery_kit.iso(kit.created_at),
+            kit.kem_public_key,
+            kdf_params=json.loads(kit.kdf_params),
+            kit_salt=kit.kit_salt,
         )
     )
     assert recovery_kit.mac_ok(kit) is False
     with pytest.raises(recovery_kit.KitUnusable):
         recovery_kit.open_kem_key(kit, issued.code)
+
+
+def test_a_kit_naming_cheaper_argon2id_parameters_is_refused_even_with_a_valid_mac(app, ada):
+    """The parameters are pinned in code like the algorithm: a row naming weaker ones, even one
+    MAC'd by someone holding the master key, is never derived with."""
+    from qvault.security import master_key
+
+    issued = issue(ada)
+    kit = issued.kit
+    weak = {"memory_cost": 8, "parallelism": 1, "time_cost": 1}
+    kit.kdf_params = json.dumps(weak, sort_keys=True)
+    kit.kem_public_key_mac = master_key.kit_pk_mac(
+        recovery_kit.pk_mac_input(
+            ada.id,
+            kit.kit_uuid,
+            kit.kem_alg,
+            recovery_kit.iso(kit.created_at),
+            kit.kem_public_key,
+            kdf_params=weak,
+            kit_salt=kit.kit_salt,
+        )
+    )
+    assert recovery_kit.mac_ok(kit) is False
+    with pytest.raises(recovery_kit.KitUnusable):
+        recovery_kit.open_kem_key(kit, issued.code)
+    assert json.loads(issue(ada).kit.kdf_params) == recovery_kit.KIT_KDF_PARAMS
 
 
 def test_a_wrap_moved_to_another_key_fails_its_aad(app, ada):
@@ -337,7 +375,9 @@ def test_no_code_hash_of_the_code_kek_or_pepper_is_stored(app, ada):
                 blob = (
                     value
                     if isinstance(value, bytes)
-                    else str(value).encode() if value is not None else b""
+                    else str(value).encode()
+                    if value is not None
+                    else b""
                 )
                 for secret in secrets:
                     assert secret not in blob, f"a kit secret is stored in {table}"

@@ -167,8 +167,18 @@ def test_the_pepper_hkdf_aad_and_mac_bytes_are_the_designs(app):
     assert recovery_kit.wrap_aad(uuid, key_id, public_key).decode() == B["wrap_aad"]
     assert recovery_kit.selftest_message(uuid, key_id).decode() == B["selftest_message"]
 
-    mac_input = recovery_kit.pk_mac_input(user_id, uuid, B["kem_alg"], B["created_at"], public_key)
+    # The MAC covers the Argon2id parameters and salt too: here, the Argon2id vector's.
+    mac_input = recovery_kit.pk_mac_input(
+        user_id,
+        uuid,
+        B["kem_alg"],
+        B["created_at"],
+        public_key,
+        kdf_params=B["argon2"]["params"],
+        kit_salt=bytes.fromhex(B["argon2"]["salt_hex"]),
+    )
     assert mac_input.hex() == B["pk_mac_input_hex"]
+    assert B["argon2"]["params"] == recovery_kit.KIT_KDF_PARAMS
     assert master_key.kit_pk_mac(mac_input).hex() == B["pk_mac_hex"]
 
     argon = B["argon2"]

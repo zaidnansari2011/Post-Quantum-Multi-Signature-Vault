@@ -74,8 +74,9 @@ UPDATE_KINDS = (
     "device_enrolled",
     "password_changed",
 ) + RECOVERY_KINDS
-#: At most this many recovery notices about one account in a day (design §4.5); the Home banner
-#: carries the rest. A completed recovery is always told.
+#: At most this many repeat cancel and wrong-code notices about one account in a day (design §4.5,
+#: §16 item 9); the Home banner carries the rest. A recovery starting and a recovery taking effect
+#: are always told: every start costs the kit a day (§16 item 19), so it cannot be used to spam.
 RECOVERY_NOTICES_PER_DAY = 5
 #: Delivered whatever a preference says (S12): the account holder must hear about these.
 SECURITY_KINDS = ("device_enrolled", "password_changed", *RECOVERY_KINDS)
@@ -499,17 +500,22 @@ def password_changed(user, *, entry, now: datetime | None = None) -> None:
 # archived or marked read (``_locked``).
 
 
+#: The event keys of the only recovery notices that are capped: a request ending without taking
+#: effect, and the wrong-codes alarm. Never a start or a completion (design §16 item 19).
+_CAPPED_KEYS = ("recovery_cancelled:", "recovery_kit_paused:")
+
+
 def _recovery_cap_reached(subject_id: int, now: datetime) -> bool:
-    """Whether ``RECOVERY_NOTICES_PER_DAY`` recovery events about this account were told in the
-    last day. Completions are not counted, and never held back."""
+    """Whether ``RECOVERY_NOTICES_PER_DAY`` capped recovery events (``_CAPPED_KEYS``) about this
+    account were told in the last day. Starts and completions are not counted, and never held
+    back, so filling the cap cannot silence the request that will complete."""
     told = db.session.scalar(
         select(func.count(func.distinct(RecoveryNotice.event_key)))
         .select_from(RecoveryNotice)
-        .join(Notification, Notification.id == RecoveryNotice.notification_id)
         .where(
             RecoveryNotice.subject_id == subject_id,
             RecoveryNotice.created_at > now - timedelta(hours=24),
-            Notification.kind != "recovery_completed",
+            or_(*(RecoveryNotice.event_key.startswith(prefix) for prefix in _CAPPED_KEYS)),
         )
     )
     return (told or 0) >= RECOVERY_NOTICES_PER_DAY
@@ -562,7 +568,8 @@ def _completes(request) -> str | None:
 
 
 def recovery_waiting(request, watchers: dict[int, str], *, now: datetime | None = None) -> None:
-    """Someone used the person's kit: the wait has started, and can be cancelled until it ends."""
+    """Someone used the person's kit: the wait has started, and can be cancelled until it ends.
+    Never capped (design §16 item 19): this is the notice about the request that may complete."""
     _send_recovery(
         "recovery_waiting",
         request.user,
@@ -571,6 +578,7 @@ def recovery_waiting(request, watchers: dict[int, str], *, now: datetime | None 
         now=now or _utcnow(),
         request=request,
         data={"completes_at": _completes(request)},
+        capped=False,
     )
 
 
@@ -622,7 +630,8 @@ def recovery_kit_changed(user, *, change: str, key: str, now: datetime | None = 
 def recovery_kit_paused(
     user, pause, watchers: dict[int, str], *, now: datetime | None = None
 ) -> None:
-    """Too many wrong codes: the kit route pauses, and everyone in §4.5 is told once."""
+    """Too many wrong codes: everyone in §4.5 is told, at most once a day. The kit still works
+    (design §16 item 20)."""
     until = (
         pause.paused_until if pause.paused_until.tzinfo else pause.paused_until.replace(tzinfo=UTC)
     )

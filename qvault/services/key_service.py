@@ -142,6 +142,16 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
             f"key {key.id} has no server-held private half (wrap_domain={key.wrap_domain!r})"
         )
     _guard_password(user)
+    from qvault.services import recovery_service
+
+    # A recovery whose wait is over has won (design §4.2, §16 item 23): it takes effect first,
+    # whether or not the scheduler has run, and the old password then opens nothing.
+    ended = recovery_service.complete_if_due(user)
+    if ended is not None and ended.state == "completed":
+        raise KeyUnlockError(
+            "a recovery of this account has just taken effect, so this password no longer opens "
+            "your signing key"
+        )
 
     with glassbox.step("Derive the key-encryption key (Argon2id)", code=derive_kek) as trace:
         trace.input("password", glassbox.Withheld("never shown, never logged, never stored"))
@@ -177,8 +187,6 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
         del kek
     # The password was just proven: any open recovery of this account is cancelled, and its kit
     # burned (plan R9, ⚑5). This covers votes, approvals, a password change and a new kit.
-    from qvault.services import recovery_service
-
     recovery_service.password_proven(user, via="signing")
     return secret_key
 

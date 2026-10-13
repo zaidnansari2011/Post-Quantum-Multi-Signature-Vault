@@ -18,7 +18,13 @@ forgotten-password page. Where this design was silent, the choices made are list
 Phases 2 (phone) and 3 (approvers) are not built. A finishing pass (2026-10-10) serialised a new
 kit, a password change and a new key against a completing recovery (§16 item 17), let the kit
 reminder be hidden until the next sign-in (item 16), logged the throttle (item 18), and added
-CSRF, equal-work and self-test checks to the tests.
+CSRF, equal-work and self-test checks to the tests. **The Phase 1 adversarial review
+(2026-10-13)** found 1 high, 2 medium and 3 low; all are fixed (§16 items 19 to 25): a kit
+cancelled from its own browser cannot restart for a day and a start is never capped (H1); wrong
+codes raise an alarm but never refuse the right code (M1); Home's banners are found from the
+viewer's side (M2); from `completes_at` the old password neither signs in nor opens a key (L1);
+the Argon2id work is the same on every path, at pinned parameters the MAC now covers (L2); every
+attempt is counted before its derivation (L3); and "Do this later" ends a request its kit started.
 **Deferred to Phases 2 and 3 (review findings not closed by Phase 1 code):** C1, M5, M6, L2, L3
 (route b, Phase 3); H2, H3 items 2 to 5, M4, M7 item 3, M8, L4, L7, L13's supersede rule (phones
 and the kit-plus-phone path, Phase 2); M3's lineage in exports and the verifier line (Phase 2;
@@ -243,8 +249,9 @@ person signs in; every co-signer of every vault the person signs in.
 
 **When:** on reaching `waiting` (and, for (b), at claim), on cancel, on completion, on kit
 issue/regenerate/revoke/stale, and once when the kit throttle trips (§4.6). Never on an
-unauthenticated attempt alone, so nobody can flood people with alarms. At most 5 recovery notices
-per account per day; the banner carries the rest.
+unauthenticated attempt alone, so nobody can flood people with alarms. At most 5 repeat cancel
+and wrong-code notices per account per day; the banner carries the rest. A start and a completion
+are always told (§16 items 9 and 19).
 
 **Not best-effort.** Unlike `notification_service._best_effort`, these rows are written inside the
 request's transaction: if they cannot be written, the request does not start.
@@ -264,7 +271,10 @@ notification rows, so deleting or reading a notice cannot remove it. New `SECURI
 - **Per-account kit throttle:** after 10 wrong codes that passed the typo check within 24 hours,
   the kit route for that account pauses for 24 hours and §4.5's recipients are told once. The kit
   is not revoked (that would let anyone burn it). R6's "per-account limits lock people out" does
-  not apply: this route already takes 72 hours and the others remain.
+  not apply: this route already takes 72 hours and the others remain. **Amended as built (§16
+  item 20):** the pause became an alarm only. Refusing the right code let anyone who knows an
+  email address keep its owner out for good, and with a 150-bit code the throttle was never what
+  stops guessing; the per-address `recover` bucket slows a guesser instead.
 - Unauthenticated forms answer the same way, with the same Argon2id work (dummy derivations, as
   `auth_service.authenticate`), whether the email exists, has a kit, has an open request or is
   paused. Specific answers ("a recovery is already under way", "paused until 14:00") are shown only
@@ -619,9 +629,9 @@ Each is the safer reading, recorded here so the review can disagree with it.
    code that may have been seen and may not have been kept should not open anything.
 3. **No "turn off" button.** §15 defers it; replacing the kit is how a person kills one.
 4. **The throttle is in the database**, not per process (`recovery_kit_failures`,
-   `recovery_kit_pauses`), so a restart cannot reset it. While paused the code is **not checked
-   at all** and the generic answer is given, so the pause cannot become an oracle; "paused until"
-   is therefore never shown (the generic sentence mentions that kits pause).
+   `recovery_kit_pauses`), so a restart cannot reset it. ~~While paused the code is not checked
+   at all and the generic answer is given.~~ Superseded by item 20: nothing is paused, every code
+   is checked, so there is no pause to reveal.
 5. **Any wrap that fails to open refuses the whole kit** (`kit_broken`), rather than dropping
    that key: a damaged wrap is a sign of tampering, and a dropped treasury-seat key would lock
    funds.
@@ -634,7 +644,8 @@ Each is the safer reading, recorded here so the review can disagree with it.
 8. **Kit issue, regenerate and stale notices go to the person alone** (they did it with their
    password, or nobody did); the throttle notice goes to everyone in §4.5, as written.
 9. **The daily cap** counts recovery *events* about an account (not copies), excluding
-   completions, which are always told. Kit notices are not capped.
+   completions, which are always told. Kit notices are not capped. Narrowed by item 19: only
+   repeat cancel notices and the wrong-codes alarm are capped, and only they count.
 10. **A refused completion** ends in state `failed` with its reason, logged as `recovery_rejected`
     {request_uuid, reason}, told as `recovery_cancelled` with `failed: true`; nothing is spent.
 11. **`recovery_requested` also carries `kit_uuid`** (additive), so the log ties a request to the
@@ -669,3 +680,63 @@ Each is the safer reading, recorded here so the review can disagree with it.
 18. **A tripped throttle is also logged**, as `recovery_kit_paused` {user_id, wrong_codes,
     paused_until} (additive to §4.4): someone guessing at a person's kit belongs in the audit
     trail, not only in their inbox. The codes tried are never written.
+
+Items 19 to 25 are the fixes from Phase 1's adversarial review (2026-10-13), each with a test that
+runs the review's attack and asserts it now fails.
+
+19. **A kit cancelled from the browser that started it cannot start again for 24 hours, and a
+    start is never capped** (review H1). That cancel keeps the kit (the person may have mistyped
+    their new password, and they have no other way back), so a thief could start and cancel in
+    seconds, fill the daily cap, and then start the request that completes with nobody told by
+    any channel; only Home's banner remained. Now the same kit is refused (`too_soon`, said only
+    once the code has opened it, with the time it may try again) for 24 hours after such a
+    cancel, and `recovery_waiting` is never capped: every start costs the kit a day, so it cannot
+    be used to spam. The cap applies only to repeat cancel notices and the wrong-codes alarm, and
+    only they count towards it. Burning the kit on that cancel was rejected: it would leave a
+    person who mistyped their new password with no way back at all. A cancel by a manager or
+    co-signer starts no wait, so a malicious colleague cannot slow the person's restart; a kit
+    thief could already hold the account's one open request, so the day's wait gives them nothing
+    new. The status page says so beside its Cancel button.
+20. **Wrong codes raise an alarm; they never refuse the right code** (review M1). Ten well-formed
+    wrong codes, from someone who knew only the email address, paused the kit for a day with the
+    right code refused, and repeating it daily shut the owner out of the only Phase 1 way back
+    (plus a daily alarm to every manager). With a 150-bit code the throttle is not what stops
+    guessing. So every code is checked; 10 wrong in 24 hours are logged and told to the person and
+    everyone in §4.5 at most once a day (`recovery_kit_pauses` now records when the alarm was
+    raised; the name, the ledger event `recovery_kit_paused` and its `paused_until` field are
+    kept, and mean "no new alarm until"), and a guesser is slowed per source address by the
+    `recover` rate-limit bucket (10 an hour). The notice wording says the kit still works.
+    Scoping a pause to the source address was considered; it would need the address stored per
+    attempt and adds nothing a 150-bit code and the per-address bucket do not already give.
+21. **Every attempt is counted before its derivation runs** (review L3). The wrong code used to be
+    recorded after Argon2id, so attempts made side by side all read the old count. Now a
+    `recovery_kit_failures` row is committed first and deleted only if the code opens the kit.
+22. **The same work on every path, at pinned parameters the MAC covers** (review L2 and the
+    review's hardening). `recovery_kit.KIT_KDF_PARAMS` (t=3, 64 MiB, p=4) is pinned in code like
+    `kem_alg`: kits are made and opened with it, and an unknown email or an account with no kit
+    runs the same kit-KEK derivation (Argon2id over the 30 typed symbols at those parameters, the
+    pepper, the HKDF) as a wrong code. `kit_pk_mac` now also covers `kdf_params` and `kit_salt`
+    (`pk_mac_input`'s record gains `"kdf_params"` and `"kit_salt"` as hex; vectors updated), and a
+    row naming other parameters is refused even with a valid MAC, so a database writer cannot make
+    a kit cheaper to guess at. Changing `KIT_KDF_PARAMS` later means every kit must be made again.
+    Not equalised: the number of database queries (an account with a kit records the attempt),
+    which is far below the Argon2id time; noted for the review to weigh.
+23. **From `completes_at`, the old password neither signs in nor opens a key** (review L1).
+    `auth_service.authenticate` and `key_service.unlock_secret_key` first let a recovery whose
+    wait is over take effect (`complete_if_due`), as item 17 already did for writes, so the old
+    password fails even if the scheduler has not run. Sign-in also reads the credential epoch
+    before Argon2id: if it moved by the end of the check the sign-in is refused, and the session
+    is stamped with the epoch read before, so a completion committing in between signs that
+    session out on its next request.
+24. **Home's banners are found from the viewer's side** (review M2). `banners_for` loaded every
+    open request in the deployment and ran `watchers` for each, on every Home and Security page.
+    It now asks only for requests of the viewer and of people they could be watching (members of
+    workspaces they actively own or administer, signers of vaults whose owner is one of those
+    members, signers of vaults they sign in: a superset of `watchers`, worked out in one query),
+    and `watchers` still decides each of those, so the banners are exactly as before. Unrelated
+    open requests add no query and no `watchers` call.
+25. **"Do this later" ends any request its kit started** (review hardening). The kit just shown
+    is revoked (item 2), so a request someone started with it could never complete, but its
+    banners and locked notices stayed up for 72 hours. It is now cancelled in the same
+    transaction, as the person (`cancel_reason` `kit_not_saved`, marked as burning the kit, which
+    it did), and everyone in §4.5 is told it ended.

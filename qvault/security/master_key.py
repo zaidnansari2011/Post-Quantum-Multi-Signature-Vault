@@ -116,8 +116,9 @@ def kit_pepper(kit_uuid: str) -> bytes:
 
 def kit_pk_mac(data: bytes) -> bytes:
     """HMAC-SHA256 over a kit's public-key record (``recovery_kit.pk_mac_input``): its owner, its
-    uuid, its KEM algorithm, when it was made and the public key. A database writer cannot swap
-    in a key of their own, or relabel the algorithm, without the master key (review L5)."""
+    uuid, its KEM algorithm, its Argon2id parameters and salt, when it was made and the public
+    key. A database writer cannot swap in a key of their own, relabel the algorithm, or weaken
+    the derivation, without the master key (review L5)."""
     return hmac.new(get_master_key(), _KIT_PK_DS + data, hashlib.sha256).digest()
 
 

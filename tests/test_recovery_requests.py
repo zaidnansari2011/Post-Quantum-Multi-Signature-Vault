@@ -14,6 +14,7 @@ from datetime import timedelta
 import pytest
 from recovery_support import NEW, NOW, PW, after_wait, issue, just_before, make_team, start
 
+from qvault import ui
 from qvault.crypto import kit_code
 from qvault.extensions import db
 from qvault.models.key import Key
@@ -43,6 +44,11 @@ def team(app):
 def _wrong(code: str) -> str:
     """A different, well-formed code: it passes the typo check and opens nothing."""
     return kit_code.encode((kit_code.decode(code) + 12345) % 2**150)
+
+
+def _z(moment) -> str:
+    """A moment as the ledger writes it: whole seconds, UTC, ending ``Z``."""
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _events(kind):
@@ -170,36 +176,39 @@ def test_a_wrap_holding_some_other_secret_key_is_caught_by_the_self_test(app, te
 # Identical answers and the throttle
 
 
-def test_every_unopened_attempt_costs_one_argon2id_derivation(app, team, monkeypatch):
-    """Unknown email, no kit, wrong code and paused all do the same Argon2id work (design §4.6),
-    so the time an answer takes does not say which it was."""
+def test_every_unopened_attempt_costs_one_argon2id_derivation_at_the_same_parameters(
+    app, team, monkeypatch
+):
+    """Unknown email, no kit and a wrong code do the same Argon2id work, over an input of the
+    same length at the same pinned parameters (design §4.6, §16 item 22, review L2), so the time
+    an answer takes does not say which it was."""
     issued = issue(team.ada)
     calls = []
     real = recovery_kit.derive_kek
     monkeypatch.setattr(
-        recovery_kit, "derive_kek", lambda *a, **k: calls.append(1) or real(*a, **k)
+        recovery_kit,
+        "derive_kek",
+        lambda secret, salt, **k: (
+            calls.append((len(secret), len(salt), k)) or real(secret, salt, **k)
+        ),
     )
 
     def cost(email, code):
         calls.clear()
         with pytest.raises(RecoveryRefused):
             recovery_service.start_with_kit(email, code, NEW, now=NOW)
-        return len(calls)
+        return list(calls)
 
     costs = [
         cost("nobody@qvault.org", issued.code),
         cost(team.bob.email, issued.code),
         cost(team.ada.email, _wrong(issued.code)),
     ]
-    db.session.add(
-        RecoveryKitPause(user_id=team.ada.id, paused_until=NOW + timedelta(hours=1), created_at=NOW)
-    )
-    db.session.commit()
-    costs.append(cost(team.ada.email, issued.code))
-    assert costs == [1, 1, 1, 1]
+    work = (30, 16, {"length": 32, **recovery_kit.KIT_KDF_PARAMS})
+    assert costs == [[work]] * 3
 
 
-def test_unknown_email_no_kit_wrong_code_and_paused_answer_identically(app, team):
+def test_unknown_email_no_kit_and_a_wrong_code_answer_identically(app, team):
     issued = issue(team.ada)
     code = issued.code
     answers = []
@@ -211,14 +220,7 @@ def test_unknown_email_no_kit_wrong_code_and_paused_answer_identically(app, team
         with pytest.raises(RecoveryRefused) as refused:
             recovery_service.start_with_kit(email, typed, NEW, now=NOW)
         answers.append((refused.value.code, refused.value.message))
-    db.session.add(
-        RecoveryKitPause(user_id=team.ada.id, paused_until=NOW + timedelta(hours=1), created_at=NOW)
-    )
-    db.session.commit()
-    with pytest.raises(RecoveryRefused) as refused:
-        start(team.ada, code, now=NOW)  # the right code, while paused
-    answers.append((refused.value.code, refused.value.message))
-    assert answers == [("generic", GENERIC_REFUSAL)] * 4
+    assert answers == [("generic", GENERIC_REFUSAL)] * 3
 
 
 def test_a_typo_is_refused_before_anything_is_looked_up(app, team, monkeypatch):
@@ -230,24 +232,62 @@ def test_a_typo_is_refused_before_anything_is_looked_up(app, team, monkeypatch):
     assert looked == [] and RecoveryKitFailure.query.count() == 0
 
 
-def test_ten_wrong_codes_in_a_day_pause_the_kit_without_revoking_it(app, team):
+def test_ten_wrong_codes_in_a_day_raise_the_alarm_without_revoking_the_kit(app, team):
     ada = team.ada
     issued = issue(ada)
     for i in range(10):
         with pytest.raises(RecoveryRefused):
             start(ada, _wrong(issued.code), now=NOW + timedelta(minutes=i))
-    pause = RecoveryKitPause.query.filter_by(user_id=ada.id).one()
-    assert pause.paused_until == NOW + timedelta(minutes=9) + timedelta(hours=24)
+    alarm = RecoveryKitPause.query.filter_by(user_id=ada.id).one()
+    assert alarm.paused_until == NOW + timedelta(minutes=9) + timedelta(hours=24)
     db.session.refresh(issued.kit)
     assert issued.kit.state == "active" and issued.kit.kem_sk_wrapped is not None
-    # Paused: even the right code is answered the generic way, and is not counted.
-    with pytest.raises(RecoveryRefused) as refused:
-        start(ada, issued.code, now=NOW + timedelta(hours=1))
-    assert refused.value.code == "generic"
     assert RecoveryKitFailure.query.count() == 10
-    # A day after the pause began the kit works again.
-    started = start(ada, issued.code, now=pause.paused_until)
+
+
+def test_wrong_codes_from_someone_who_knows_only_the_email_never_lock_the_owner_out(app, team):
+    """Review M1: ten well-formed wrong codes, by someone who knows nothing but the address, used
+    to pause the kit for a day, refusing the owner's right code; repeated daily, the only way
+    back was shut for good. Now the right code always works, at once, and is never counted."""
+    ada = team.ada
+    issued = issue(ada)
+    attacker = kit_code.encode((kit_code.decode(issued.code) + 1) % 2**150)
+    for day in range(3):
+        for i in range(10):
+            with pytest.raises(RecoveryRefused):
+                recovery_service.start_with_kit(
+                    ada.email,
+                    attacker,
+                    "attacker-pass-1",
+                    now=NOW + timedelta(days=day, seconds=i),
+                )
+    started = start(ada, issued.code, now=NOW + timedelta(days=2, minutes=1))
     assert started.request.state == "waiting"
+    assert RecoveryKitFailure.query.count() == 30  # the right code was not counted
+    assert RecoveryKitPause.query.count() == 3  # one alarm a day, no more
+
+
+def test_every_attempt_is_counted_before_its_derivation_runs(app, team, monkeypatch):
+    """Review L3: the count used to be written after Argon2id, so attempts made side by side all
+    read the old count. Now each is counted, and committed, before its derivation starts, and
+    taken back only if the code opens the kit."""
+    ada = team.ada
+    issued = issue(ada)
+    seen = []
+    real = recovery_kit.derive_kit_kek
+
+    def derive(*args, **kwargs):
+        # Another process, mid-derivation, reads the committed count.
+        seen.append(RecoveryKitFailure.query.count())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(recovery_kit, "derive_kit_kek", derive)
+    for i in range(3):
+        with pytest.raises(RecoveryRefused):
+            start(ada, _wrong(issued.code), now=NOW + timedelta(minutes=i))
+    start(ada, issued.code, now=NOW + timedelta(minutes=5))
+    assert seen == [1, 2, 3, 4]  # each one already counted while it derives...
+    assert RecoveryKitFailure.query.count() == 3  # ...and the right code taken back
 
 
 def test_a_pause_is_logged_once_without_the_codes_tried(app, team):
@@ -260,7 +300,7 @@ def test_a_pause_is_logged_once_without_the_codes_tried(app, team):
     assert paused == {
         "user_id": team.ada.id,
         "wrong_codes": 10,
-        "paused_until": "2026-10-10T12:09:00Z",
+        "paused_until": _z(NOW + timedelta(minutes=9, hours=24)),
     }
     for entry in LedgerEntry.query.all():
         text = entry.payload_json.upper()
@@ -382,6 +422,27 @@ def test_the_status_cookie_holder_cancelling_keeps_the_kit(app, team):
     assert issued.kit.state == "active"
     with pytest.raises(LookupError):
         recovery_service.cancel_by_status_token("not-a-token")
+
+
+def test_a_kit_cancelled_from_its_own_browser_cannot_start_again_for_a_day(app, team):
+    """Review H1: that cancel keeps the kit, so a thief could start and cancel without end. Now
+    the same kit cannot start again for 24 hours, and says so once the code has opened it."""
+    issued = issue(team.ada)
+    started = start(team.ada, issued.code, now=NOW)
+    cancelled_at = NOW + timedelta(seconds=5)
+    recovery_service.cancel_by_status_token(started.status_token, now=cancelled_at)
+    for moment in (
+        cancelled_at + timedelta(seconds=5),
+        just_before(cancelled_at + timedelta(days=1)),
+    ):
+        with pytest.raises(RecoveryRefused) as refused:
+            start(team.ada, issued.code, now=moment)
+        assert refused.value.code == "too_soon"
+        assert ui.absolute_time(cancelled_at + timedelta(days=1)) in refused.value.message
+    assert RecoveryRequest.query.count() == 1
+    assert RecoveryKitFailure.query.count() == 0  # the right code is not a wrong one
+    again = start(team.ada, issued.code, now=cancelled_at + timedelta(days=1))
+    assert again.request.state == "waiting"
 
 
 def test_pending_material_is_gone_after_a_cancel(app, team):
@@ -695,7 +756,7 @@ def test_the_log_records_each_step_with_key_hashes_and_never_the_code(app, team)
     [requested] = _events("recovery_requested")
     assert requested["route"] == "kit" and requested["user_id"] == ada.id
     [waiting] = _events("recovery_waiting")
-    assert waiting["completes_at"] == "2026-10-12T12:00:00Z"
+    assert waiting["completes_at"] == _z(NOW + timedelta(hours=72))
     [completed] = _events("recovery_completed")
     assert completed["old_public_key_sha256"] == completed["new_public_key_sha256"] == digest
     assert completed["new_key_id"] == key.id and completed["keys_rewrapped"] == 1

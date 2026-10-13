@@ -121,7 +121,9 @@ def create_app(config_name: str | None = None) -> Flask:
 
         from .services import recovery_service
 
-        recovery_service.stamp_session(user.id)
+        # The epoch read before the password was checked, so a recovery that completed during
+        # the check signs this session out on its next request (plan R9, design §16 item 23).
+        recovery_service.stamp_session(user.id, recovery_service.sign_in_epoch(user.id))
         # A kit reminder hidden "for now" comes back at every sign-in (plan R9).
         session.pop(recovery_service.KIT_REMINDER_HIDDEN, None)
 

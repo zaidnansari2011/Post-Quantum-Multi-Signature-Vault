@@ -305,13 +305,16 @@ def hide_reminder():
 @login_required
 def later():
     """ "Do this later": the kit just shown stops working (it may have been seen, and may not have
-    been kept), and Home and Security keep asking for one."""
+    been kept), and Home and Security keep asking for one. A recovery someone has already started
+    with it is cancelled with it, as the person (design §16 item 25): it could never complete,
+    and its banners and locked notices must not stay up for 72 hours."""
     form = KitLaterForm()
     if not form.validate_on_submit():
         abort(400)
     kit = _own_unconfirmed_kit(form.kit_uuid.data)
     if kit is not None:
         recovery_kit.revoke(kit, "not_saved")
+        recovery_service.cancel_kit_requests(kit, by=current_user, reason="kit_not_saved")
         db.session.commit()
     flash(
         "No Recovery Kit for now. Make one on the Security page: without it, a forgotten "

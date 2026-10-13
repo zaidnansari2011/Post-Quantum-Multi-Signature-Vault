@@ -112,7 +112,10 @@ SENTENCES = {
     "recovery_kit_stale": (
         "A Recovery Kit of {who}'s could no longer be checked and stopped working."
     ),
-    "recovery_kit_paused": "Too many wrong codes paused {who}'s Recovery Kit for 24 hours.",
+    "recovery_kit_paused": (
+        "Many wrong codes were typed for {who}'s Recovery Kit. It still works; everyone who "
+        "watches over the account was told."
+    ),
     "recovery_requested": "Someone used {who}'s Recovery Kit to start recovering the account.",
     "recovery_waiting": "A recovery of {who}'s account started its wait.",
     "recovery_cancelled": "{who} cancelled a recovery of an account.",

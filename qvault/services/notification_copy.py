@@ -356,19 +356,18 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
     if kind == "recovery_kit_changed":
         change = stored.get("change")
         if change == "paused":
-            until = _moment(stored.get("until"))
-            at = when(until, now=now) if until is not None else "24 hours from then"
+            # The stored name is historical: since design §16 item 20 nothing is paused.
             if me:
                 return Copy(
-                    "Your Recovery Kit is paused for 24 hours",
-                    "Someone typed too many wrong codes for it. Nobody can use it until "
-                    f"{at}. If that wasn't you, someone may have part of your kit: make a new one "
-                    "on the Security page.",
+                    "Many wrong codes were typed for your Recovery Kit",
+                    "Its code can't be guessed, so your kit still works. If that wasn't you and "
+                    "you think someone has part of your kit, make a new one on the Security page.",
                     security,
                 )
             return Copy(
-                f"{name}'s Recovery Kit is paused for 24 hours",
-                f"Someone typed too many wrong codes for it. Nobody can use it until {at}.",
+                f"Many wrong codes were typed for {name}'s Recovery Kit",
+                "Its code can't be guessed, and nothing changed. If a recovery of the account "
+                "starts, you will be told and can cancel it.",
                 home,
             )
         if change == "stale":
@@ -462,7 +461,7 @@ PREFERENCE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("recovery_completed", "A recovery takes effect"),
             (
                 "recovery_kit_changed",
-                "Your Recovery Kit is made, replaced, paused or stops working",
+                "Your Recovery Kit is made, replaced, guessed at or stops working",
             ),
         ),
     ),
