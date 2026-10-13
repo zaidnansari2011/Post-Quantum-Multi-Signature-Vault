@@ -25,11 +25,12 @@ runs from the scheduler (``tick``) or when the status page loads.
 same Argon2id work at the same pinned parameters (§4.6, §16 item 22). Only once the code has opened
 the kit does the page say anything specific. Every attempt at an account's kit is counted as a
 wrong code *before* the derivation runs, and taken back only if the code opens the kit, so
-attempts made side by side are all counted (§16 item 21). 10 wrong codes in 24 hours raise an
-alarm, once a day, to the person and everyone in §4.5, and are logged; they never stop the right
-code working (§16 item 20): with 150 bits nobody guesses it, and a lock anyone could trip by
-knowing only an email address would be a way to shut the owner out. Guessing is slowed per source
-address by the ``recover`` rate limit instead.
+attempts made side by side are all counted (§16 item 21). 10, 100 and 1,000 wrong codes in 24
+hours each raise an alarm, with the count, to the person and everyone in §4.5, and are logged;
+from 100 the person is told to make a new kit now (§16 item 26). Wrong codes never stop the right
+code working (§16 item 20): a lock anyone could trip by knowing only an email address would be a
+way to shut the owner out. Guessing is slowed per source address by the ``recover`` rate limit;
+a per-account brake was weighed and rejected for the same reason (§16 item 26).
 
 **A kit starts at most one request a day after a cancel from its own browser** (§16 item 19).
 That cancel keeps the kit (the person may have mistyped their new password), so without a limit a
@@ -74,11 +75,12 @@ from qvault.services import recovery_kit
 
 #: The kit route's wait (⚑2). A paired phone confirming it shortens it to 24 hours (Phase 2).
 KIT_WAIT = timedelta(hours=72)
-#: Wrong codes for one account, inside THROTTLE_WINDOW, that raise the alarm (§4.6). The alarm
-#: is raised at most once per PAUSE (the name of the table that remembers it); the kit keeps
-#: working throughout (design §16 item 20).
-THROTTLE_LIMIT = 10
+#: Wrong codes for one account inside THROTTLE_WINDOW at which the alarm is raised, each level at
+#: most once per window (design §16 items 20 and 26). The kit keeps working throughout.
+ALARM_LEVELS = (10, 100, 1000)
+THROTTLE_LIMIT = ALARM_LEVELS[0]
 THROTTLE_WINDOW = timedelta(hours=24)
+#: Written as ``paused_until`` (the table's historical name): when this alarm's window ends.
 PAUSE = timedelta(hours=24)
 #: After a cancel from the browser that started it, the same kit cannot start again for this long
 #: (design §16 item 19).
@@ -222,6 +224,17 @@ def credential_unchanged(user_id: int, kek_salt: bytes) -> bool:
     )
 
 
+def recovery_due(user: User, *, now: datetime | None = None) -> bool:
+    """Whether a recovery of ``user`` has reached ``completes_at`` and not yet been completed.
+    Reads only: from that moment the old password must open nothing (design §16 item 23)."""
+    request = open_request(user)
+    return (
+        request is not None
+        and request.state == "waiting"
+        and _aware(request.completes_at) <= (now or _now())
+    )
+
+
 def complete_if_due(user: User, *, now: datetime | None = None) -> RecoveryRequest | None:
     """Let a recovery of ``user`` whose wait is over take effect before anything proven with the
     old password is written. State is a function of time (design §4.2): from ``completes_at`` the
@@ -348,15 +361,10 @@ def request_for_status_token(token: str | None) -> RecoveryRequest | None:
 # The kit throttle (design §4.6)
 
 
-def paused_until(user_id: int, now: datetime) -> datetime | None:
-    """Until when no new wrong-codes alarm is raised for ``user_id`` (None if one may be). The
-    name is the table's: since design §16 item 20 nothing about the kit itself is paused."""
-    until = db.session.scalar(
-        select(func.max(RecoveryKitPause.paused_until)).where(
-            RecoveryKitPause.user_id == user_id, RecoveryKitPause.paused_until > now
-        )
-    )
-    return _aware(until)
+def alarm_level(wrong_codes: int) -> int | None:
+    """The highest of ``ALARM_LEVELS`` that ``wrong_codes`` has reached, or None."""
+    reached = [level for level in ALARM_LEVELS if wrong_codes >= level]
+    return reached[-1] if reached else None
 
 
 def _count_attempt(user: User, now: datetime) -> RecoveryKitFailure:
@@ -370,8 +378,9 @@ def _count_attempt(user: User, now: datetime) -> RecoveryKitFailure:
 
 
 def _after_failure(user: User, now: datetime) -> None:
-    """A wrong code was just counted: raise the alarm if it makes THROTTLE_LIMIT in a day and none
-    was raised in the last PAUSE. Never stops the kit working (design §16 item 20)."""
+    """A wrong code was just counted: raise the alarm when the day's count reaches a level of
+    ``ALARM_LEVELS`` not yet raised in the window (crossing, so concurrent attempts that skip
+    the exact number still raise it). Never stops the kit working (design §16 items 20, 26)."""
     from qvault.services import notification_service
 
     recent = db.session.scalar(
@@ -382,26 +391,46 @@ def _after_failure(user: User, now: datetime) -> None:
             RecoveryKitFailure.created_at > now - THROTTLE_WINDOW,
         )
     )
-    if (recent or 0) >= THROTTLE_LIMIT and paused_until(user.id, now) is None:
-        from qvault.services import ledger_service
-
-        pause = RecoveryKitPause(user_id=user.id, paused_until=now + PAUSE, created_at=now)
-        db.session.add(pause)
-        db.session.flush()
-        # In the log too: someone is guessing at this person's kit (never the codes they tried).
-        ledger_service.append(
-            "recovery_kit_paused",
-            {"user_id": user.id, "wrong_codes": int(recent), "paused_until": _iso(now + PAUSE)},
-            actor=f"user:{user.id}",
-            actor_id=user.id,
-            ref_type="user",
-            ref_id=str(user.id),
-            commit=False,
+    level = alarm_level(int(recent or 0))
+    if level is None:
+        return
+    raised = db.session.scalar(
+        select(func.count())
+        .select_from(RecoveryKitPause)
+        .where(
+            RecoveryKitPause.user_id == user.id,
+            RecoveryKitPause.level >= level,
+            RecoveryKitPause.created_at > now - THROTTLE_WINDOW,
         )
-        # Told once a day at most, to the person and everyone in section 4.5. The kit is neither
-        # revoked nor paused: anyone who knows an email address can trip this, so it must not be
-        # a way to burn someone's kit or keep them out of it.
-        notification_service.recovery_kit_paused(user, pause, watchers(user), now=now)
+    )
+    if raised:
+        return
+    from qvault.services import ledger_service
+
+    pause = RecoveryKitPause(user_id=user.id, paused_until=now + PAUSE, level=level, created_at=now)
+    db.session.add(pause)
+    db.session.flush()
+    # In the log too: someone is guessing at this person's kit (never the codes they tried).
+    ledger_service.append(
+        "recovery_kit_paused",
+        {
+            "user_id": user.id,
+            "wrong_codes": int(recent),
+            "level": level,
+            "paused_until": _iso(now + PAUSE),
+        },
+        actor=f"user:{user.id}",
+        actor_id=user.id,
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
+    # Told at each level, with the count, to the person and everyone in section 4.5. The kit is
+    # neither revoked nor paused: anyone who knows an email address can trip this, so it must
+    # not be a way to burn someone's kit or keep them out of it.
+    notification_service.recovery_kit_paused(
+        user, pause, watchers(user), wrong_codes=int(recent), now=now
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -690,7 +719,7 @@ def cancel_as(viewer: User, request_uuid: str, *, now: datetime | None = None) -
 def cancel_kit_requests(kit, *, by: User, reason: str, now: datetime | None = None) -> int:
     """Cancel, as the person (``by``), every open request ``kit`` started: the kit has just been
     ended, so they could never complete, and their banners must not stay up (design §16 item
-    27). Marked as burning the kit, which it was. Does not commit. Returns how many."""
+    25). Marked as burning the kit, which it was. Does not commit. Returns how many."""
     ended = 0
     for request in RecoveryRequest.query.filter(
         RecoveryRequest.kit_id == kit.id, RecoveryRequest.state.in_(OPEN_STATES)

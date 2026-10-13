@@ -74,9 +74,10 @@ UPDATE_KINDS = (
     "device_enrolled",
     "password_changed",
 ) + RECOVERY_KINDS
-#: At most this many repeat cancel and wrong-code notices about one account in a day (design §4.5,
-#: §16 item 9); the Home banner carries the rest. A recovery starting and a recovery taking effect
-#: are always told: every start costs the kit a day (§16 item 19), so it cannot be used to spam.
+#: At most this many repeat cancel notices about one account in a day (design §4.5, §16 item 9);
+#: the Home banner carries the rest. A recovery starting and a recovery taking effect are always
+#: told: every start costs the kit a day (§16 item 19), so it cannot be used to spam. Nor is the
+#: wrong-codes alarm capped: it comes at most three times a day, at 10, 100 and 1,000 (item 26).
 RECOVERY_NOTICES_PER_DAY = 5
 #: Delivered whatever a preference says (S12): the account holder must hear about these.
 SECURITY_KINDS = ("device_enrolled", "password_changed", *RECOVERY_KINDS)
@@ -501,8 +502,8 @@ def password_changed(user, *, entry, now: datetime | None = None) -> None:
 
 
 #: The event keys of the only recovery notices that are capped: a request ending without taking
-#: effect, and the wrong-codes alarm. Never a start or a completion (design §16 item 19).
-_CAPPED_KEYS = ("recovery_cancelled:", "recovery_kit_paused:")
+#: effect. Never a start, a completion or a wrong-codes alarm (design §16 items 19 and 26).
+_CAPPED_KEYS = ("recovery_cancelled:",)
 
 
 def _recovery_cap_reached(subject_id: int, now: datetime) -> bool:
@@ -628,10 +629,10 @@ def recovery_kit_changed(user, *, change: str, key: str, now: datetime | None = 
 
 
 def recovery_kit_paused(
-    user, pause, watchers: dict[int, str], *, now: datetime | None = None
+    user, pause, watchers: dict[int, str], *, wrong_codes: int, now: datetime | None = None
 ) -> None:
-    """Too many wrong codes: everyone in §4.5 is told, at most once a day. The kit still works
-    (design §16 item 20)."""
+    """Wrong codes reached an alarm level: everyone in §4.5 is told, with the count. The kit
+    still works (design §16 items 20 and 26). Never capped: at most three a day."""
     until = (
         pause.paused_until if pause.paused_until.tzinfo else pause.paused_until.replace(tzinfo=UTC)
     )
@@ -641,7 +642,8 @@ def recovery_kit_paused(
         watchers,
         key=f"recovery_kit_paused:{pause.id}",
         now=now or _utcnow(),
-        data={"change": "paused", "until": until.isoformat()},
+        data={"change": "paused", "until": until.isoformat(), "wrong_codes": int(wrong_codes)},
+        capped=False,
     )
 
 

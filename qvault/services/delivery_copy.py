@@ -228,9 +228,22 @@ def _recovery_push(kind: str, stored: dict) -> tuple[str, str]:
     if kind == "recovery_completed":
         return "Account recovered", f"The recovery of {whose} took effect."
     if stored.get("change") == "paused":
+        from qvault.services.notification_copy import wrong_code_count
+
+        count = wrong_code_count(stored)
+        if me:
+            replace = (
+                " Make a new kit now."
+                if isinstance(stored.get("wrong_codes"), int) and stored["wrong_codes"] >= 100
+                else " If any part of it may have been seen, make a new one."
+            )
+            return (
+                "Wrong Recovery Kit codes",
+                f"{count} wrong codes for your Recovery Kit in a day.{replace}",
+            )
         return (
             "Wrong Recovery Kit codes",
-            f"Many wrong Recovery Kit codes were typed for {whose}. The kit still works.",
+            f"{count} wrong Recovery Kit codes for {whose} in a day. Nothing changed.",
         )
     return "Recovery Kit changed", "Your Recovery Kit changed. Open Q-Vault to see what happened."
 
@@ -551,9 +564,16 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
         )
     change = stored.get("change")
     if change == "paused":
+        from qvault.services.notification_copy import kit_alarm_advice, wrong_code_count
+
+        count = wrong_code_count(stored)
         line = (
-            f"Someone typed many wrong Recovery Kit codes for {whose}. A kit's code can't be "
-            "guessed, so the kit still works. If a recovery starts, you will be told."
+            f"{count} wrong codes were typed for your Recovery Kit in a day. "
+            + kit_alarm_advice(stored)
+            if me
+            else f"{count} wrong Recovery Kit codes were typed for {whose} in a day. Nothing "
+            "about the account changed. If a recovery of it starts, you will be told and can "
+            "cancel it."
         )
     elif change == "stale":
         line = "Your Recovery Kit stopped working. Make a new one on the Security page."

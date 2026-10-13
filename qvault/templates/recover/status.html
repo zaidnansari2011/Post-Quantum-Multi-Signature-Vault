@@ -55,7 +55,7 @@
   <h1 class="q-auth__t">This recovery was cancelled</h1>
   <p class="q-auth__p">
     It was cancelled {{ cancelled_by.get(req.cancelled_as, '') }}{% if req.finished_at %} on {{ ui_absolute(req.finished_at) }}{% endif %}.
-    Nothing about the account changed.{% if req.kit_burned %} The Recovery Kit it used no longer works.{% elif req.cancelled_as == 'status_holder' %} The Recovery Kit still works, and can start another recovery 24 hours after this one was cancelled.{% endif %}
+    Nothing about the account changed.{% if req.kit_burned %} The Recovery Kit it used no longer works.{% elif req.cancelled_as == 'status_holder' and req.kit and req.kit.state == 'active' %} The Recovery Kit still works, and can start another recovery 24 hours after this one was cancelled.{% elif req.kit and req.kit.state != 'active' %} The Recovery Kit it used has since stopped working.{% endif %}
   </p>
   {%- endif %}
 </div>

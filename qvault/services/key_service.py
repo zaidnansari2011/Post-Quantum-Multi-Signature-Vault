@@ -144,13 +144,15 @@ def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
     _guard_password(user)
     from qvault.services import recovery_service
 
-    # A recovery whose wait is over has won (design §4.2, §16 item 23): it takes effect first,
-    # whether or not the scheduler has run, and the old password then opens nothing.
-    ended = recovery_service.complete_if_due(user)
-    if ended is not None and ended.state == "completed":
+    # A recovery whose wait is over has won (design §4.2, §16 item 23): the old password opens
+    # nothing from completes_at, whether or not the scheduler has run. Refused here without
+    # writing anything, so the caller's transaction is never committed from inside an unlock;
+    # the completion itself is made by the scheduler, the status page, the next sign-in, or a
+    # credential write (``prepare_password_write``), each in a transaction of its own.
+    if recovery_service.recovery_due(user):
         raise KeyUnlockError(
-            "a recovery of this account has just taken effect, so this password no longer opens "
-            "your signing key"
+            "a recovery of this account has taken effect, so this password no longer opens your "
+            "signing key. Sign in with the new one"
         )
 
     with glassbox.step("Derive the key-encryption key (Argon2id)", code=derive_kek) as trace:
