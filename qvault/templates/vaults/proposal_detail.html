@@ -262,9 +262,9 @@
           {% if proposal.status == 'approved' %}
           <p><b>Approved</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% elif proposal.status == 'rejected' %}
-          <p><b>Rejected</b>. It can no longer be approved</p>
+          <p><b>Rejected</b>. It can no longer be approved.</p>
           {% elif proposal.status == 'withdrawn' %}
-          <p><b>Withdrawn</b> by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }}. It can no longer be approved</p>
+          <p><b>Withdrawn</b> by {{ 'you' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'the person who raised it') }}. It can no longer be approved.</p>
           {% else %}
           <p><b>Expired</b> with {{ approvals }} of {{ proposal.required_m }} approvals</p>
           {% endif %}
