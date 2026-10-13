@@ -136,9 +136,11 @@ def _name_handles(name: str) -> list[str]:
     offer one that names nobody the writer knows, and a look-alike letter could pass for someone
     else's. An apostrophe is left out (Seán O'Brien is ``@sean.obrien``)."""
     words = [w for w in _fold(name).replace("'", "").replace("’", "").split() if w]
-    if not words or _HANDLE.search(words[0]):
+    # a handle must start where MENTION can start one (not ``_``, ``.`` or ``-``) and must not end
+    # in the full stop a sentence puts after it, which _resolve strips
+    if not words or _HANDLE.search(words[0]) or words[0][0] in "._-":
         return []
-    whole = ".".join(words)[:64]
+    whole = ".".join(words)[:64].rstrip(".")
     if whole == words[0] or any(_HANDLE.search(word) for word in words):
         return [words[0]]
     return [words[0], whole]

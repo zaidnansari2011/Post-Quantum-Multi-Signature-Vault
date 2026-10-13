@@ -105,6 +105,10 @@ def requester_may_approve(proposal, *, allows: bool | None = None) -> bool:
     frozen = True
     if lifecycle is not None and lifecycle.requester_can_approve is not None:
         frozen = bool(lifecycle.requester_can_approve)
+    if proposal.status != "open":
+        # A closed decision is described by the rule it ran under, not by a vault rule changed
+        # since: "Ada raised it, so can't approve it" must not appear above Ada's approval.
+        return frozen
     if allows is None:
         allows = vault_allows_requester(proposal.vault)
     return frozen and allows

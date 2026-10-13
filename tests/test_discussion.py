@@ -356,6 +356,19 @@ def test_an_apostrophe_is_left_out_of_a_handle(app):
     assert people[sean.id] == ["sean", "sean.obrien"]
 
 
+def test_a_handle_is_only_made_where_a_mention_can_reach_it():
+    # Review of rework/staging-fixes: MENTION can't start on "_", ".", "-", and _resolve strips a
+    # trailing full stop, so neither kind of handle could ever be typed.
+    from qvault.services.discussion_service import MENTION, _name_handles
+
+    assert _name_handles("_ada lovelace") == []
+    long_name = "a" * 63 + " b"  # joined and cut to 64 characters, it would end in "."
+    handles = _name_handles(long_name)
+    assert handles and not any(h.endswith(".") for h in handles)
+    for handle in handles:
+        assert MENTION.search(f"hi @{handle}").group(1) == handle
+
+
 def test_a_mention_typed_as_the_name_is_spelled_reaches_its_plain_handle(app):
     ada, _brij, _chen, _dev, vault, proposal = _team("spelled")
     elif_ = auth_service.register_user("spelled-e1@e.com", "Élif Kaya", PASSWORD)

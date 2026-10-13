@@ -198,6 +198,20 @@ def test_turning_the_rule_off_applies_to_a_decision_already_open(app):
         approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
 
 
+def test_a_closed_decision_is_described_by_the_rule_it_ran_under(app):
+    # Review of rework/staging-fixes: turning the rule off afterwards must not make an approved
+    # decision read "Ada raised it, so can't approve it" above Ada's own approval.
+    ada, brij, _chen, vault = _team("closed", separation=False)
+    proposal = proposal_service.create_proposal(vault, ada, "T", "Release 35,000.")
+    approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
+    approval_service.cast_vote(proposal, brij, PASSWORD, "approve")
+    assert proposal.status == "approved"
+    vault_service.set_requester_can_approve(vault, False, actor_id=ada.id)
+
+    assert eligibility.requester_may_approve(proposal)
+    assert ada.id in eligibility.voter_ids(proposal)
+
+
 def test_turning_it_back_on_never_reopens_a_decision_raised_while_it_was_off(app):
     ada, _brij, _chen, vault = _team("loosen")
     proposal = proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
