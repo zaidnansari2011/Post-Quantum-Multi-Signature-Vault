@@ -124,6 +124,142 @@ def test_a_tripped_throttle_is_told_once_to_everyone(app, team):
     assert len(paused) == 4
 
 
+def _alarms():
+    return [
+        (n.recipient_id, json.loads(n.data))
+        for n in Notification.query.filter_by(kind="recovery_kit_changed").order_by(Notification.id)
+        if json.loads(n.data)["change"] == "paused"
+    ]
+
+
+def _counted_wrong(user, count, now):
+    """``count`` wrong codes already counted against ``user`` today (as if typed earlier)."""
+    from qvault.models.recovery import RecoveryKitFailure
+
+    for i in range(count):
+        db.session.add(
+            RecoveryKitFailure(user_id=user.id, created_at=now - timedelta(seconds=count - i))
+        )
+    db.session.commit()
+
+
+def test_the_alarm_rises_at_10_100_and_1000_wrong_codes_and_tells_the_owner_to_replace_it(
+    app, team
+):
+    """Re-review of the M1 fix: the check symbols are public, so a partly seen kit can be guessed
+    (two adjacent unreadable symbols leave one candidate offline, three leave 32 online, five
+    about 32,000). With the right code never refused, the alarm is what must get the kit
+    replaced: it rises again at 100 and 1,000 in a day, says how many, and from 100 tells the
+    owner to make a new kit now. It never says the code can't be guessed."""
+    from qvault.crypto import kit_code
+    from qvault.services import audit_service, delivery_copy
+    from qvault.services.recovery_service import RecoveryRefused
+
+    everyone = {getattr(team, who).id for who in EVERYONE}
+    issued = issue(team.ada)
+    wrong = kit_code.encode((kit_code.decode(issued.code) + 1) % 2**150)
+
+    def guess(at):
+        with pytest.raises(RecoveryRefused):
+            start(team.ada, wrong, now=at)
+
+    for i in range(10):
+        guess(NOW + timedelta(seconds=i))
+    _counted_wrong(team.ada, 89, NOW + timedelta(minutes=1))
+    guess(NOW + timedelta(minutes=1))  # the 100th
+    guess(NOW + timedelta(minutes=1, seconds=1))  # the 101st: no new alarm
+    _counted_wrong(team.ada, 904, NOW + timedelta(minutes=2))
+    guess(NOW + timedelta(minutes=2))  # past 1,000 in one step: the alarm still rises
+
+    alarms = _alarms()
+    counts = [data["wrong_codes"] for _who, data in alarms]
+    assert sorted(set(counts)) == [10, 100, 1006]
+    for count in (10, 100, 1006):
+        assert {who for who, data in alarms if data["wrong_codes"] == count} == everyone
+
+    def owners(count):
+        [(_who, data)] = [
+            (who, data)
+            for who, data in alarms
+            if who == team.ada.id and data["wrong_codes"] == count
+        ]
+        return data
+
+    def everything(data, recipient):
+        stored = json.dumps(data)
+        n = Notification.query.filter_by(kind="recovery_kit_changed", recipient_id=recipient).all()
+        [note] = [x for x in n if json.loads(x.data) == data]
+        view = notification_service.view(note)
+        mail = delivery_copy.email_for(
+            kind="recovery_kit_changed",
+            recipient_id=recipient,
+            proposal=None,
+            vault=None,
+            actor=None,
+            data=stored,
+            now=NOW,
+        )
+        push = delivery_copy.push_for(
+            kind="recovery_kit_changed",
+            event_key="recovery_kit_paused:x",
+            proposal=None,
+            vault=None,
+            actor=None,
+            data=stored,
+            notification_id=1,
+            now=NOW,
+        )
+        return " ".join(
+            [view["title"], view["body"], mail.subject, " ".join(mail.lines), push.title, push.body]
+        )
+
+    early = everything(owners(10), team.ada.id)
+    assert "10 wrong codes" in early and "If any part of it may have been seen" in early
+    late = everything(owners(100), team.ada.id)
+    assert "100 wrong codes" in late and "Make a new Recovery Kit now" in late
+    assert "Make a new kit now" in late  # the push
+    many = everything(owners(1006), team.ada.id)
+    assert "1,006 wrong codes" in many and "Make a new Recovery Kit now" in many
+    manager = [data for who, data in alarms if who == team.bob.id and data["wrong_codes"] == 100]
+    watching = everything(manager[0], team.bob.id)
+    assert "100 wrong" in watching and "Nothing" in watching
+    for text in (early, late, many, watching):
+        assert "can't be guessed" not in text and "cannot be guessed" not in text
+
+    from qvault.models.ledger import LedgerEntry
+
+    logged = LedgerEntry.query.filter_by(event_type="recovery_kit_paused").all()
+    sentences = [row["sentence"] for row in audit_service.narrate(logged)]
+    assert [json.loads(e.payload_json)["level"] for e in logged] == [10, 100, 1000]
+    assert "1,006 wrong codes were typed for" in sentences[-1]
+    assert all("can't be guessed" not in s for s in sentences)
+
+
+def test_the_check_symbols_narrow_a_partly_seen_code(app):
+    """Why the alarm matters (design §16 item 26): the CRC-10 is public, so it takes 2**10 off
+    the search for any part of a code that was not seen."""
+    import itertools
+
+    from qvault.crypto import kit_code
+
+    def candidates(code, hidden):
+        found = 0
+        for combo in itertools.product(kit_code.ALPHABET, repeat=len(hidden)):
+            chars = list(code)
+            for pos, ch in zip(hidden, combo, strict=True):
+                chars[pos] = ch
+            try:
+                kit_code.normalise("".join(chars))
+            except kit_code.KitCodeError:
+                continue
+            found += 1
+        return found
+
+    _k, code = kit_code.new_code()
+    assert candidates(code, [10, 11]) == 1
+    assert candidates(code, [3, 12, 25]) == 32
+
+
 def test_wrong_codes_alone_never_reach_anyone_before_the_throttle(app, team):
     issued = issue(team.ada)
     from qvault.crypto import kit_code
@@ -321,15 +457,16 @@ def test_a_kit_thief_cannot_silence_the_warning_about_the_request_that_completes
         with pytest.raises(RecoveryRefused) as refused:
             start(ada, issued.code, now=NOW + timedelta(seconds=10 * (i + 2)))
         assert refused.value.code == "too_soon"
-    # Even with the cap full of other recovery events, the live request reaches everyone.
+    # Even with the cap full of cancel notices (an admin's cancels keep the kit and start no
+    # wait), the live request reaches everyone.
+    day = NOW + timedelta(days=1, minutes=1)
     for i in range(6):
-        notification_service.recovery_kit_paused(
-            ada,
-            type("Alarm", (), {"id": 900 + i, "paused_until": NOW + timedelta(days=1)})(),
-            recovery_service.watchers(ada),
-            now=NOW + timedelta(minutes=i),
+        started = start(ada, issued.code, now=day + timedelta(minutes=2 * i))
+        recovery_service.cancel_as(
+            team.bob, started.request.request_uuid, now=day + timedelta(minutes=2 * i + 1)
         )
-    live = start(ada, issued.code, now=NOW + timedelta(days=1, minutes=1)).request
+    assert notification_service._recovery_cap_reached(ada.id, day + timedelta(minutes=30))
+    live = start(ada, issued.code, now=day + timedelta(minutes=30)).request
     assert live.state == "waiting"
     assert _told_about("recovery_waiting", live) == everyone
     deliveries = [

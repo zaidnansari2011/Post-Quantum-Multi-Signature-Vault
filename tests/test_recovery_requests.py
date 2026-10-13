@@ -300,6 +300,7 @@ def test_a_pause_is_logged_once_without_the_codes_tried(app, team):
     assert paused == {
         "user_id": team.ada.id,
         "wrong_codes": 10,
+        "level": 10,
         "paused_until": _z(NOW + timedelta(minutes=9, hours=24)),
     }
     for entry in LedgerEntry.query.all():

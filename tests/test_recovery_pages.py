@@ -265,6 +265,10 @@ def test_the_status_page_cancels_without_burning_the_kit(app, client, team):
     assert "can start another recovery 24 hours after this one was cancelled" in page
     db.session.refresh(issued.kit)
     assert issued.kit.state == "active"
+    # Once that kit is replaced, the page no longer says it works.
+    issue(team.ada)
+    page = _text(client.get("/recover/status"))
+    assert "still works" not in page and "has since stopped working" in page
 
 
 def test_a_browser_without_the_cookie_sees_no_recovery_and_cannot_cancel(app, client, team):
@@ -406,11 +410,28 @@ def test_from_completes_at_the_old_password_no_longer_opens_the_key(app, team):
 
     request = _overdue(team.ada)
     key = key_service.active_signing_key(team.ada)
-    with pytest.raises(key_service.KeyUnlockError, match="just taken effect"):
+    pending = len(Notification.query.all())
+    with pytest.raises(key_service.KeyUnlockError, match="has taken effect"):
         key_service.unlock_secret_key(team.ada, key, PW)
+    # Refused without writing anything: an unlock never commits its caller's transaction.
     db.session.refresh(request)
-    assert request.state == "completed"
+    assert request.state == "waiting" and len(Notification.query.all()) == pending
+    recovery_service.tick()  # the scheduler (or the next sign-in) completes it
     assert key_service.unlock_secret_key(team.ada, key_service.active_signing_key(team.ada), NEW)
+
+
+def test_an_unlock_refused_after_completes_at_leaves_the_callers_changes_uncommitted(app, team):
+    """Re-review hardening: the unlock used to complete the recovery, and so commit whatever the
+    caller had pending. Now it only reads."""
+    from qvault.services import key_service
+
+    _overdue(team.ada)
+    team.dee.display_name = "Not committed"
+    with pytest.raises(key_service.KeyUnlockError):
+        key_service.unlock_secret_key(team.ada, key_service.active_signing_key(team.ada), PW)
+    db.session.rollback()
+    db.session.refresh(team.dee)
+    assert team.dee.display_name == "Dee Ray"
 
 
 def test_a_recovery_completing_during_the_password_check_refuses_the_sign_in(

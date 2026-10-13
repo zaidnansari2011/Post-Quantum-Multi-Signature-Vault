@@ -249,12 +249,15 @@ class RecoveryKitFailure(db.Model):
 
 
 class RecoveryKitPause(db.Model):
-    """Too many wrong codes for this person's kit raised the alarm; no other is raised until
-    ``paused_until``. The kit itself keeps working (design §16 item 20): the name is historical."""
+    """Wrong codes for this person's kit reached ``level`` (one of
+    ``recovery_service.ALARM_LEVELS``) in a day, and the alarm was raised; that level is not
+    raised again before ``paused_until``. The kit itself keeps working (design §16 items 20 and
+    26): the table's name is historical."""
 
     __tablename__ = "recovery_kit_pauses"
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     paused_until = db.Column(AwareDateTime, nullable=False)
+    level = db.Column(db.Integer, nullable=False, default=10)
     created_at = db.Column(AwareDateTime, nullable=False, default=_utcnow)

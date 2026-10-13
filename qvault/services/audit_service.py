@@ -312,10 +312,26 @@ def narrate(entries) -> list[dict]:
     return out
 
 
+def _kit_alarm_sentence(entry: LedgerEntry, who: str) -> str | None:
+    """The wrong-codes alarm with its count (design §16 item 26). Never the codes tried."""
+    try:
+        count = json.loads(entry.payload_json).get("wrong_codes")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(count, int):
+        return None
+    return (
+        f"{count:,} wrong codes were typed for {who}'s Recovery Kit in a day. It still works; "
+        "everyone who watches over the account was told."
+    )
+
+
 def _rule_sentence(entry: LedgerEntry, who: str, vault: str) -> str | None:
     """A vault rule change with its before and after (R5), when the entry records both. Numbers
     and yes/no only: names of members stay for ``evidence_service.describe``, which knows who
     may see them. The same sentence on screen and in the CSV."""
+    if entry.event_type == "recovery_kit_paused":
+        return _kit_alarm_sentence(entry, who)
     if entry.event_type not in ("vault_threshold_changed", "vault_rule_changed"):
         return None
     try:

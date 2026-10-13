@@ -25,6 +25,9 @@ codes raise an alarm but never refuse the right code (M1); Home's banners are fo
 viewer's side (M2); from `completes_at` the old password neither signs in nor opens a key (L1);
 the Argon2id work is the same on every path, at pinned parameters the MAC now covers (L2); every
 attempt is counted before its derivation (L3); and "Do this later" ends a request its kit started.
+A re-review of that fix pass found that the M1 fix left only the per-address limit on guessing a
+partly seen kit; the alarm now rises at 10, 100 and 1,000 wrong codes a day with the count, and
+tells the owner to replace the kit (item 26).
 **Deferred to Phases 2 and 3 (review findings not closed by Phase 1 code):** C1, M5, M6, L2, L3
 (route b, Phase 3); H2, H3 items 2 to 5, M4, M7 item 3, M8, L4, L7, L13's supersede rule (phones
 and the kit-plus-phone path, Phase 2); M3's lineage in exports and the verifier line (Phase 2;
@@ -250,8 +253,8 @@ person signs in; every co-signer of every vault the person signs in.
 **When:** on reaching `waiting` (and, for (b), at claim), on cancel, on completion, on kit
 issue/regenerate/revoke/stale, and once when the kit throttle trips (§4.6). Never on an
 unauthenticated attempt alone, so nobody can flood people with alarms. At most 5 repeat cancel
-and wrong-code notices per account per day; the banner carries the rest. A start and a completion
-are always told (§16 items 9 and 19).
+notices per account per day; the banner carries the rest. A start, a completion and the
+wrong-codes alarm (at most three a day) are always told (§16 items 9, 19 and 26).
 
 **Not best-effort.** Unlike `notification_service._best_effort`, these rows are written inside the
 request's transaction: if they cannot be written, the request does not start.
@@ -644,8 +647,8 @@ Each is the safer reading, recorded here so the review can disagree with it.
 8. **Kit issue, regenerate and stale notices go to the person alone** (they did it with their
    password, or nobody did); the throttle notice goes to everyone in §4.5, as written.
 9. **The daily cap** counts recovery *events* about an account (not copies), excluding
-   completions, which are always told. Kit notices are not capped. Narrowed by item 19: only
-   repeat cancel notices and the wrong-codes alarm are capped, and only they count.
+   completions, which are always told. Kit notices are not capped. Narrowed by items 19 and
+   26: only repeat cancel notices are capped, and only they count.
 10. **A refused completion** ends in state `failed` with its reason, logged as `recovery_rejected`
     {request_uuid, reason}, told as `recovery_cancelled` with `failed: true`; nothing is spent.
 11. **`recovery_requested` also carries `kit_uuid`** (additive), so the log ties a request to the
@@ -691,8 +694,8 @@ runs the review's attack and asserts it now fails.
     any channel; only Home's banner remained. Now the same kit is refused (`too_soon`, said only
     once the code has opened it, with the time it may try again) for 24 hours after such a
     cancel, and `recovery_waiting` is never capped: every start costs the kit a day, so it cannot
-    be used to spam. The cap applies only to repeat cancel notices and the wrong-codes alarm, and
-    only they count towards it. Burning the kit on that cancel was rejected: it would leave a
+    be used to spam. The cap applies only to repeat cancel notices, and only they count towards
+    it (the wrong-codes alarm was also capped until item 26). Burning the kit on that cancel was rejected: it would leave a
     person who mistyped their new password with no way back at all. A cancel by a manager or
     co-signer starts no wait, so a malicious colleague cannot slow the person's restart; a kit
     thief could already hold the account's one open request, so the day's wait gives them nothing
@@ -701,11 +704,12 @@ runs the review's attack and asserts it now fails.
     wrong codes, from someone who knew only the email address, paused the kit for a day with the
     right code refused, and repeating it daily shut the owner out of the only Phase 1 way back
     (plus a daily alarm to every manager). With a 150-bit code the throttle is not what stops
-    guessing. So every code is checked; 10 wrong in 24 hours are logged and told to the person and
-    everyone in §4.5 at most once a day (`recovery_kit_pauses` now records when the alarm was
-    raised; the name, the ledger event `recovery_kit_paused` and its `paused_until` field are
-    kept, and mean "no new alarm until"), and a guesser is slowed per source address by the
-    `recover` rate-limit bucket (10 an hour). The notice wording says the kit still works.
+    guessing a code nobody has seen. So every code is checked; 10 wrong in 24 hours are logged
+    and told to the person and everyone in §4.5 (`recovery_kit_pauses` now records when the
+    alarm was raised; the name, the ledger event `recovery_kit_paused` and its `paused_until`
+    field are kept, and mean "this level is not raised again until"), and a guesser is slowed
+    per source address by the `recover` rate-limit bucket (10 an hour). The notice wording says
+    the kit still works. A partly seen code is another matter: see item 26.
     Scoping a pause to the source address was considered; it would need the address stored per
     attempt and adds nothing a 150-bit code and the per-address bucket do not already give.
 21. **Every attempt is counted before its derivation runs** (review L3). The wrong code used to be
@@ -719,12 +723,19 @@ runs the review's attack and asserts it now fails.
     (`pk_mac_input`'s record gains `"kdf_params"` and `"kit_salt"` as hex; vectors updated), and a
     row naming other parameters is refused even with a valid MAC, so a database writer cannot make
     a kit cheaper to guess at. Changing `KIT_KDF_PARAMS` later means every kit must be made again.
+    Kits made before this change (`75c5168`) fail the new MAC and would go stale; no deployed
+    environment holds an R9 kit (this branch was never deployed), so no re-MAC migration is
+    needed.
     Not equalised: the number of database queries (an account with a kit records the attempt),
     which is far below the Argon2id time; noted for the review to weigh.
 23. **From `completes_at`, the old password neither signs in nor opens a key** (review L1).
-    `auth_service.authenticate` and `key_service.unlock_secret_key` first let a recovery whose
-    wait is over take effect (`complete_if_due`), as item 17 already did for writes, so the old
-    password fails even if the scheduler has not run. Sign-in also reads the credential epoch
+    `auth_service.authenticate` first lets a recovery whose wait is over take effect
+    (`complete_if_due`, in its own transaction before anything else in the request), as item 17
+    already did for writes, so the old password fails even if the scheduler has not run.
+    `key_service.unlock_secret_key` refuses the old password from `completes_at` without writing
+    anything (`recovery_due`): it runs inside its callers' transactions (a vote, a treasury
+    approval), and completing there would commit their pending work; the completion is left to
+    the scheduler, the status page, the next sign-in or a credential write. Sign-in also reads the credential epoch
     before Argon2id: if it moved by the end of the check the sign-in is refused, and the session
     is stamped with the epoch read before, so a completion committing in between signs that
     session out on its next request.
@@ -740,3 +751,25 @@ runs the review's attack and asserts it now fails.
     banners and locked notices stayed up for 72 hours. It is now cancelled in the same
     transaction, as the person (`cancel_reason` `kit_not_saved`, marked as burning the kit, which
     it did), and everyone in §4.5 is told it ended.
+26. **The alarm rises with the count, and tells the owner to replace the kit** (re-review of
+    item 20). The check symbols are public (CRC-10), so they take 2^10 off the search for any part
+    of a code that was not seen: two adjacent unreadable symbols leave one candidate, worked out
+    offline; three leave 32 online guesses, four about 1,000, five about 32,000. With the right
+    code never refused, only the per-address bucket bounded that, and an attacker with many
+    addresses (every IPv6 /64 is a bucket) goes past it. So: the alarm is raised again when the
+    day's wrong codes reach 10, 100 and 1,000 (each level once per 24 hours, raised on crossing,
+    so attempts made side by side that skip the exact number still raise it; at most three a
+    day, never capped), each carrying the count; every notice, email, push and audit line states
+    the count and none says the code can't be guessed; the owner is told that if any part of the
+    kit may have been seen they should make a new one, and from 100 to make a new one now (the
+    link is the Security page). A guess that does land only *starts* a request: 72 hours, told to
+    everyone, cancelled by any use of the password.
+    **A per-account brake was weighed and not built.** Any limit on how often one account's code
+    is checked (N a minute, one at a time, a queue) is a share of a fixed capacity that the
+    attacker and the owner compete for, and nothing before the check tells them apart. Refusing
+    over the limit lets an attacker with enough addresses keep the owner's right code refused for
+    as long as they keep sending; queueing instead makes the owner wait behind the attacker's
+    queue, which grows with what they send. Either way the owner's worst-case delay has no bound,
+    which is the lockout item 20 removed. (One-at-a-time would also hold a lock across Argon2id,
+    which on SQLite holds the whole database's writer.) The defence is the escalating alarm, the
+    owner replacing a kit that may have been seen, and the loud 72-hour wait.

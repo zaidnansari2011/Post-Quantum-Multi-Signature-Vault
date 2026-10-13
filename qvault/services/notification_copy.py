@@ -236,6 +236,30 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
     return Copy("Notification", "", _path("core.index"))
 
 
+def wrong_code_count(stored: dict) -> str:
+    """The wrong-codes alarm's count, as written in its notices ("Many" if it is missing)."""
+    value = stored.get("wrong_codes")
+    return f"{value:,}" if isinstance(value, int) and value > 0 else "Many"
+
+
+def kit_alarm_advice(stored: dict) -> str:
+    """What the owner of a kit being guessed at should do (design §16 item 26). A kit's code is
+    long, but a partly seen one can be guessed: so replace it if any part may have been seen, and
+    from 100 wrong codes, replace it now."""
+    value = stored.get("wrong_codes")
+    if isinstance(value, int) and value >= 100:
+        return (
+            "Someone is trying codes for your kit, many times over. Make a new Recovery Kit now "
+            "on the Security page: that stops this one working. Until you do, it still works for "
+            "you."
+        )
+    return (
+        "Someone is trying codes for your kit. It still works for you. If any part of it may "
+        "have been seen, by a photo, a glance or a copy left out, make a new one now on the "
+        "Security page: a partly seen code can be guessed."
+    )
+
+
 def _moment(text: object) -> datetime | None:
     if not isinstance(text, str):
         return None
@@ -357,17 +381,17 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
         change = stored.get("change")
         if change == "paused":
             # The stored name is historical: since design §16 item 20 nothing is paused.
+            count = wrong_code_count(stored)
             if me:
                 return Copy(
-                    "Many wrong codes were typed for your Recovery Kit",
-                    "Its code can't be guessed, so your kit still works. If that wasn't you and "
-                    "you think someone has part of your kit, make a new one on the Security page.",
+                    f"{count} wrong codes for your Recovery Kit in a day",
+                    kit_alarm_advice(stored),
                     security,
                 )
             return Copy(
-                f"Many wrong codes were typed for {name}'s Recovery Kit",
-                "Its code can't be guessed, and nothing changed. If a recovery of the account "
-                "starts, you will be told and can cancel it.",
+                f"{count} wrong codes for {name}'s Recovery Kit in a day",
+                "Nothing about the account changed. If a recovery of it starts, you will be told "
+                "and can cancel it.",
                 home,
             )
         if change == "stale":
