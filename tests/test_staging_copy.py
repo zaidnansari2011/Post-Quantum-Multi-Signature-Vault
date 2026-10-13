@@ -167,7 +167,8 @@ def test_recovery_says_there_is_no_password_reset_rather_than_not_available(clie
     ada = auth_service.register_user("rec-ada@e.com", "Ada Lovelace", PASSWORD)
     _login(client, ada)
     page = _get(client, "/account/security")
-    assert "No password reset" in page and "Not available" not in page
+    # R9 replaced the panel with the Recovery Kit's; without a kit it still says so plainly.
+    assert "There is no password reset" in page and "Not available" not in page
 
 
 # --- invitations ---------------------------------------------------------------------------------
