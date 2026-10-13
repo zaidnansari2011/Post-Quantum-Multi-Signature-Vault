@@ -22,7 +22,7 @@ from flask_wtf import FlaskForm
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
-from qvault import evidence
+from qvault import evidence, ui
 from qvault.chain.action import MAX_DEADLINE as PAYMENT_MAX_DEADLINE
 from qvault.chain.action import ActionError, parse_eth_value
 from qvault.chain.relayer import RelayerError
@@ -567,7 +567,7 @@ def new_proposal(vid: int):
         except ProposalError as exc:
             flash(str(exc), "danger")
             return _new_decision_page(form, vault, "general", again)
-        flash("Proposal created.", "success")
+        flash("Decision raised.", "success")
         return redirect(url_for("vaults.proposal_detail", vid=vid, pid=proposal.proposal_uuid))
     return _new_decision_page(form, vault, "general", again)
 
@@ -628,7 +628,7 @@ def _new_typed(vault, kind: str, again=None, prefill=None):
         except ProposalError as exc:
             flash(str(exc), "danger")
         else:
-            flash(f"{decision_types.LABELS[kind]} decision created.", "success")
+            flash("Decision raised.", "success")
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )
@@ -703,7 +703,7 @@ def _new_payment(vault, again=None):
         except (ProposalError, ActionError) as exc:
             flash(f"{str(exc)[:1].upper()}{str(exc)[1:]}.", "danger")
         else:
-            flash("Payment decision created.", "success")
+            flash("Decision raised.", "success")
             return redirect(
                 url_for("vaults.proposal_detail", vid=vault.id, pid=proposal.proposal_uuid)
             )
@@ -753,18 +753,21 @@ def proposal_detail(vid: int, pid: str):
     # that no longer matches what was signed, offering Approve would invite a signature over a
     # payment nobody proposed. The service refuses it too; this keeps the button from lying.
     # Reject stays: objecting authorises nothing.
-    can_approve = can_vote and (proposal.action is None or binding.ok)
+    # Owner decision 2026-10-09: a decision that can no longer pass offers nobody Approve (the
+    # vote gate refuses one too); Reject stays, with its reason.
+    cannot_pass = proposal.status == "open" and not outlook.reachable
+    can_approve = can_vote and not cannot_pass and (proposal.action is None or binding.ok)
     payout = payout_service.view(proposal) if _treasuries_on() else None
 
     # Presentation only (rework R2): which tab, the viewer's status word, what signing would do,
     # and the evidence layers, each built from the checks above or run fresh in evidence_service.
     tab = request.args.get("tab")
     tab = tab if tab in ("evidence", "technical") else "overview"
-    cannot_pass = proposal.status == "open" and not outlook.reachable
     status_key, status_n = evidence.personal_status(
         # Effective, not stored: a passed deadline reads Expired before the sweep runs (S20).
         inbox_service.effective_status(proposal),
-        can_vote=can_vote,
+        # Needs your signature only while it can still pass (owner decision 2026-10-09).
+        can_vote=can_vote and not cannot_pass,
         approvals=approvals,
         required_m=proposal.required_m,
         payout_state=payout["state"] if payout else None,
@@ -776,6 +779,22 @@ def proposal_detail(vid: int, pid: str):
     amount = proof.payment["amount"] if proof.payment else None
     due = evidence.parse_stamp(proposal.expires_at)
     now = datetime.now(UTC)
+
+    def word(uid: int) -> str:
+        return "you" if uid == current_user.id else proof.names.get(uid, "Someone")
+
+    # How an open decision still ends, from the facts: who can still vote, whether whoever raised
+    # it can still withdraw it, and its deadline (``evidence.how_it_ends``).
+    withdrawer = None
+    if (
+        proposal.status == "open"
+        and proposal.creator is not None
+        and approval_service.why_cannot_withdraw(proposal, proposal.creator) is None
+    ):
+        withdrawer = word(proposal.creator_id)
+    expires = ui.absolute_time(proposal.expires_at) if proposal.expires_at else None
+    # The people its signed rule lets vote: its signed set, less the raiser under S15.
+    voters = eligibility.voter_ids(proposal)
 
     return render_template(
         "vaults/proposal_detail.html",
@@ -799,6 +818,21 @@ def proposal_detail(vid: int, pid: str):
             else []
         ),
         needed=outlook.needed,
+        ending=(
+            evidence.how_it_ends(
+                rejections=rejections,
+                required_m=proposal.required_m,
+                required_n=proposal.required_n,
+                could_reject=[word(uid) for uid in outlook.still],
+                withdrawer=withdrawer,
+                expires=expires,
+            )
+            if cannot_pass
+            else None
+        ),
+        voter_ids=sorted(voters),
+        raiser_excluded=proposal.creator_id in set(evidence_service.approver_ids(proposal))
+        and proposal.creator_id not in voters,
         # Plan S15: the person who raised it, when they may not approve it.
         own_decision=current_user.id == proposal.creator_id
         and not eligibility.requester_may_approve(proposal),
@@ -811,6 +845,11 @@ def proposal_detail(vid: int, pid: str):
             rejections=rejections,
             required_m=proposal.required_m,
             required_n=proposal.required_n,
+            approvals=approvals,
+            # The other people who can still vote: the counts are theirs, not the signed N's.
+            others=[word(uid) for uid in outlook.still if uid != current_user.id],
+            withdrawer=withdrawer,
+            expires=expires,
         ),
         my_key=key_service.active_signing_key(current_user) if is_signer else None,
         votes=votes,

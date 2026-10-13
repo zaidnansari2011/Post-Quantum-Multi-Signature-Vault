@@ -4,7 +4,7 @@
 {%- set rs = remind_state(proposal) %}
 {%- if rs and rs.offered %}
 <section class="q-remind" aria-labelledby="remind-t">
-  <p class="q-remind__t" id="remind-t">Waiting on {{ rs.waiting }} approver{{ '' if rs.waiting == 1 else 's' }}</p>
+  <p class="q-remind__t" id="remind-t">{{ rs.waiting }} approver{{ ' hasn’t' if rs.waiting == 1 else 's haven’t' }} voted</p>
   <form method="post" action="{{ url_for('notifications.remind', vid=proposal.vault_id, pid=proposal.proposal_uuid) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="q-btn q-btn--secondary q-btn--sm" type="submit"

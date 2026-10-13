@@ -43,7 +43,7 @@ from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
 from qvault.services import decision_types, eligibility
 from qvault.services.signing import format_wei
-from qvault.ui import decision_code, first_name
+from qvault.ui import decision_code, short_names
 
 #: The inbox's tabs (plan section 5): Needs your signature, Waiting on others, Expiring soon, Done.
 #: ``open``, ``settled`` and ``all`` are the tabs from before rework R2. They are still answered,
@@ -211,7 +211,7 @@ def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
             _unsigned_by(user),
         )
     ).all()
-    return [
+    ids = [
         pid
         for pid, snapshot, creator_id in candidates
         if user.id in set(json.loads(snapshot))
@@ -221,6 +221,15 @@ def _snapshot_authorised_ids(user: User, now: datetime) -> list[int]:
             and eligibility.own_decision_blocked(db.session.get(Proposal, pid), user.id)
         )
     ]
+    if not ids:
+        return ids
+    # Owner decision 2026-10-09: a decision that can no longer pass asks nobody to approve it.
+    stalled = eligibility.stalled_ids(
+        Proposal.query.filter(Proposal.id.in_(ids)).options(
+            selectinload(Proposal.signatures), selectinload(Proposal.lifecycle)
+        )
+    )
+    return [pid for pid in ids if pid not in stalled]
 
 
 def _tab_condition(user: User, tab: str, now: datetime, needs_ids: list[int] | None = None):
@@ -364,6 +373,7 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
     people = _people(
         {uid for ids in snapshots.values() for uid in ids} | {p.creator_id for p in proposals}
     )
+    short = _short(people, user)
     payouts = _payout_states([p.id for p in proposals if p.action is not None])
     typed = _typed_rows([p.id for p in proposals if p.action is None])
     treasuries_on = bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED"))
@@ -383,7 +393,12 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
             eligible=eligibility.eligible_ids(p, current=signing_now.get(p.vault_id, ())),
         )
         needs_me = (
-            status == "open" and authorised and p.vault_id in signer_vaults and not signed_by_me
+            status == "open"
+            and authorised
+            and p.vault_id in signer_vaults
+            and not signed_by_me
+            # Owner decision 2026-10-09: a decision that can no longer pass needs nobody.
+            and outlook.reachable
         )
         key, n = status_key(
             status,
@@ -416,14 +431,20 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
                 "type_label": view.label,
                 "amount": _amount(p),
                 "code": decision_code(p.payload_hash),
-                "raised_by": _name(people, p.creator_id, user),
-                "approved_by": [_name(people, s.signer_id, user) for s in approvers],
+                "raised_by": _name(short, p.creator_id, user),
+                "approved_by": [_name(short, s.signer_id, user) for s in approvers],
                 # Their full names, for avatars: "You" is a word, not an initial.
                 "approved_by_full": [_full_name(people, s.signer_id, user) for s in approvers],
                 # Who can still give an approval: who may sign it now, not yet voted either way.
-                "can_still_approve": [_name(people, uid, user) for uid in outlook.still],
+                "can_still_approve": [_name(short, uid, user) for uid in outlook.still],
                 # False when too few of them are left to reach its threshold (``eligibility``).
                 "can_still_pass": status != "open" or outlook.reachable,
+                # How many its signed rule lets vote (less the raiser under S15), for sentences
+                # that count voters ("rejected only if 2 of the 2 who can vote reject").
+                "voters": len(
+                    set(snapshots[p.id])
+                    - ({p.creator_id} if not eligibility.requester_may_approve(p) else set())
+                ),
             }
         )
     return rows
@@ -459,8 +480,9 @@ def status_key(
 
     ``can_still_pass`` is False when too few people can still approve an open decision to reach
     its threshold (``eligibility.outlook``): it then reads Can’t pass instead of Waiting on N.
-    A derived word, not a status: the decision is still open, and Needs your signature still wins
-    for someone who can sign it, since their vote is still taken.
+    A derived word, not a status: the decision is still open. Since the owner's decision of
+    2026-10-09 such a decision needs nobody's signature (callers pass ``needs_me`` False for it),
+    so everyone reads Can’t pass; whoever can still vote may still reject it.
     """
     if status == "open":
         if needs_me:
@@ -485,12 +507,20 @@ def _people(ids: set[int]) -> dict[int, User]:
     return {u.id: u for u in User.query.filter(User.id.in_(ids)).all()}
 
 
-def _name(people: dict[int, User], uid: int, viewer: User) -> str:
-    """A person as a list names them: "You" for the reader, otherwise their first name."""
+def _short(people: dict[int, User], viewer: User) -> dict[int, str]:
+    """What each of ``people`` is called on this page: a first name, or the full name when two
+    of them share a first name (``ui.short_names``). The reader is "You", so their own first
+    name collides with nobody's, as in the vault header (``ui.short_name_list``)."""
+    return short_names(
+        {uid: (u.display_name or u.email) for uid, u in people.items() if uid != viewer.id}
+    )
+
+
+def _name(short: dict[int, str], uid: int, viewer: User) -> str:
+    """A person as a list names them: "You" for the reader, otherwise ``_short``'s name."""
     if uid == viewer.id:
         return "You"
-    person = people.get(uid)
-    return first_name(person.display_name or person.email) if person is not None else "Someone"
+    return short.get(uid, "Someone")
 
 
 def _full_name(people: dict[int, User], uid: int, viewer: User) -> str:

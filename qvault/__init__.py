@@ -112,6 +112,10 @@ def create_app(config_name: str | None = None) -> Flask:
     from . import ui
 
     ui.register(app)
+    # The password rule, shown under every new-password field before anyone types.
+    from .forms import PASSWORD_RULE
+
+    app.jinja_env.globals["password_rule"] = PASSWORD_RULE
 
     # The evidence screens' rules: decision code, check words, precise times (rework R2).
     from . import evidence

@@ -731,6 +731,9 @@ def _still_relevant(row: Delivery, now: datetime) -> str | None:
             return "already voted"
         if row.recipient_id not in eligibility.eligible_ids(proposal):
             return "can no longer approve it"
+        if eligibility.cannot_pass(proposal):
+            # Owner decision 2026-10-09: nobody is asked to approve a decision that can't pass.
+            return "it can no longer pass"
     return None
 
 

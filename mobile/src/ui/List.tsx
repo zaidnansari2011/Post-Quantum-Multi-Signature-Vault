@@ -6,6 +6,7 @@
 import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 
+import { initials } from '../format.ts';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { Icon, type IconName } from './Icon.tsx';
 import { Text, type TextTone } from './Text.tsx';
@@ -227,12 +228,7 @@ export function Avatar({
   square?: boolean;
 }) {
   const s = useStyles();
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join('');
+  const letters = initials(name);
   return (
     <View
       style={[
@@ -243,7 +239,7 @@ export function Avatar({
       importantForAccessibility="no"
     >
       <Text role="label" tone="muted" maxScale={1}>
-        {initials || '?'}
+        {letters}
       </Text>
     </View>
   );

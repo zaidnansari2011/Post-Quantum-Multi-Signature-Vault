@@ -42,6 +42,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from qvault.attack import cost, shor, toy_rsa  # noqa: E402
 from qvault.crypto import build_registry  # noqa: E402
 from qvault.services import signing  # noqa: E402
+from qvault.ui import count_noun  # noqa: E402
 
 DEFAULT_MESSAGE = "Approve the transfer of 250,000 to the escrow account"
 
@@ -159,7 +160,7 @@ def act_one_forge(out: Out, message: str, rng: random.Random) -> None:
     out.value("control register:", f"{last.t} qubits, {last.amplitudes_held:,} complex amplitudes")
     out.value("circuit would need:", f"{last.qubits} qubits in total")
     out.value("measured k:", f"{last.measured_k}  (phase {last.phase})")
-    out.value("order r recovered:", f"{last.candidate_r}  in {last.attempts} shot(s)")
+    out.value("order r recovered:", f"{last.candidate_r}  in {count_noun(last.attempts, 'shot')}")
     if result.redrawn_lucky_bases:
         out.note(
             f"{result.redrawn_lucky_bases} random base(s) discarded for sharing a factor with N.\n"
@@ -169,7 +170,7 @@ def act_one_forge(out: Out, message: str, rng: random.Random) -> None:
     p, q = result.factors
     out.good(
         f"FACTORED:  {public['n']} = {p} x {q}    "
-        f"({len(result.order_runs)} round(s), {elapsed:.0f} ms)"
+        f"({count_noun(len(result.order_runs), 'round')}, {elapsed:.0f} ms)"
     )
 
     out.step(

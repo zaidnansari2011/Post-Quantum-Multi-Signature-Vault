@@ -472,16 +472,21 @@ def test_a_decision_that_can_no_longer_pass_says_so_and_stays_open(client):
     client.post("/login", data={"email": ada.email, "password": PASSWORD})
     page = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
     assert "This decision can no longer pass" in page
-    assert "It needs 2 more approvals, and only 1 person who can still approve it is left" in page
+    # Owner decision 2026-10-09: it names who could still approve, and asks nobody to (it said
+    # "only 1 person who can still approve it is left" and still took the approval).
+    assert "It needs 2 more approvals, and only you could still give one." in page
+    assert "So nobody is asked to approve it, and you can still reject it." in page
     assert proposal.status == "open"  # not rejected for them
-
-    # The one approval left is still taken, and it still does not decide it.
-    approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
-    assert proposal.status == "open"
 
     # Home's "Waiting on others" row says so too.
     home = client.get("/").get_data(as_text=True)
     assert "Too few approvers left" in home
+
+    # No approval is taken; a rejection still is, and one does not decide it by its signed rule.
+    with pytest.raises(ApprovalError, match="can no longer pass"):
+        approval_service.cast_vote(proposal, ada, PASSWORD, "approve")
+    approval_service.cast_vote(proposal, ada, PASSWORD, "reject", reason="Can't pass.")
+    assert proposal.status == "open"
 
 
 def test_a_decision_that_can_still_pass_shows_no_warning(client):
@@ -537,10 +542,14 @@ def test_lists_the_header_and_the_api_say_cant_pass_instead_of_waiting(app, clie
     assert "Can’t pass" in header and "Waiting on" not in header
 
 
-def test_someone_who_can_still_sign_is_still_asked_to(app):
+def test_someone_who_could_still_vote_is_not_asked_to_approve_what_cant_pass(app):
+    """Owner decision 2026-10-09 (it was "still asked to"): Ada can still vote, but a decision
+    that can't pass asks nobody to approve it. Every list reads Can't pass and none counts it."""
     ada, _brij, _chen, _vault, proposal = _cannot_pass("cantpassneedsyou")
     row = inbox_service.decorate([proposal], ada, inbox_service.signer_vault_ids(ada))[0]
-    assert row["status_key"] == "needs_you"
+    assert row["status_key"] == "cannot_pass"
+    assert row["needs_me"] is False and row["can_sign"] is True
+    assert inbox_service.counts(ada)["needs_you"] == 0
 
 
 def test_a_decision_that_can_still_pass_still_says_waiting(app):

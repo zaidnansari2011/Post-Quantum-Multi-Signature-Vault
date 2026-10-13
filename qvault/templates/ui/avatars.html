@@ -13,7 +13,7 @@
 
 {% macro avatar(name, size=24, decorative=False, entity=False) -%}
 <span class="q-av{% if size != 24 %} q-av--{{ size }}{% endif %}{% if entity %} q-av--entity{% endif %}"
-  {%- if decorative %} aria-hidden="true"{% else %} role="img" aria-label="{{ name }}" title="{{ name }}"{% endif %}>{{ ui_initials(name) }}</span>
+  {%- if decorative %} aria-hidden="true"{% else %} role="img" aria-label="{{ name }}" title="{{ name }}"{% endif %}><span class="q-av__t">{{ ui_initials(name) }}</span></span>
 {%- endmacro %}
 
 {% macro avatar_stack(names, max=3, size=24) -%}

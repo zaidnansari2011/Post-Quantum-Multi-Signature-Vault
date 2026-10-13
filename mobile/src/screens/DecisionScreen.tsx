@@ -785,7 +785,7 @@ export default function DecisionScreen({
       ? [{ key: 'withdraw', title: 'Withdraw decision', icon: 'minus-circle' as const, onPress: () => setWithdrawing(true) }]
       : []),
     ...(actions.kind === 'raiseAgain' && actions.placement === 'overflow'
-      ? [{ key: 'again', title: 'Raise again', icon: 'plus' as const, onPress: raiseAgain }]
+      ? [{ key: 'again', title: raiseAgainLabel(detail, identity.userId), icon: 'plus' as const, onPress: raiseAgain }]
       : []),
     { key: 'report', title: 'Report a problem', icon: 'alert', onPress: report },
   ];
@@ -989,6 +989,7 @@ export default function DecisionScreen({
         onReport={report}
         onOpenWeb={openWeb}
         onRaiseAgain={raiseAgain}
+        raiseAgainTitle={raiseAgainLabel(detail, identity.userId)}
         onRemind={() => void remind()}
         reminding={reminding}
       />
@@ -1088,6 +1089,7 @@ function Bar({
   onReport,
   onOpenWeb,
   onRaiseAgain,
+  raiseAgainTitle,
   onRemind,
   reminding,
 }: {
@@ -1104,6 +1106,8 @@ function Bar({
   onReport: () => void;
   onOpenWeb: () => void;
   onRaiseAgain: () => void;
+  /** "Raise again" to whoever raised it, "Raise this again" to anyone else, as on the web. */
+  raiseAgainTitle: string;
   /** Row 3: remind the approvers who haven't voted (R4), once a day. */
   onRemind: () => void;
   reminding: boolean;
@@ -1169,7 +1173,7 @@ function Bar({
       );
     case 'raiseAgain':
       return actions.placement === 'bar' ? (
-        <ActionBar message={message} primary={{ label: 'Raise again', variant: 'secondary', onPress: onRaiseAgain }} />
+        <ActionBar message={message} primary={{ label: raiseAgainTitle, variant: 'secondary', onPress: onRaiseAgain }} />
       ) : message ? (
         <ActionBar message={message} />
       ) : null;
@@ -1182,6 +1186,11 @@ function Bar({
  * "From Gracian, 38 minutes ago" once the server says who raised it (A1); until then "Raised 38
  * minutes ago". Older than a week, the date as the rest of the app writes it ("31 Aug").
  */
+/** "Raise again" for whoever raised it; "Raise this again" for anyone else, as on the web. */
+function raiseAgainLabel(detail: ProposalDetail, viewerId: number): string {
+  return detail.raised_by?.id === viewerId ? 'Raise again' : 'Raise this again';
+}
+
 function raisedLine(detail: ProposalDetail, viewerId: number, now: number): string {
   const created = detail.signing_inputs.created_at;
   const age = now - parseInstant(created);

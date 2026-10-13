@@ -82,6 +82,12 @@ _PIN = re.compile(r"[0-9a-f]{16,64}")
 PIN_RULE = "a key pin is 16 to 64 hex characters (the 16 printed, or the whole SHA-256)"
 
 
+def _count(n: int, noun: str, plural: str | None = None) -> str:
+    """``n`` and its noun, singular or plural (``1 check``, ``2 checks``); never ``check(s)``.
+    The browser verifier's ``count`` writes the same words."""
+    return f"{n} {noun if n == 1 else (plural or noun + 's')}"
+
+
 def normalise_pin(pin: Any) -> str | None:
     """The pin as compared (lower case, no surrounding space), or None when it is not a pin."""
     if not isinstance(pin, str):
@@ -226,7 +232,7 @@ def verify_bundle(
     if report.ok:
         skipped = [c for c in report.checks if c.skipped]
         report.summary = "Verified" + (
-            f" ({len(skipped)} check(s) not applicable)" if skipped else ""
+            f" ({_count(len(skipped), 'check')} not applicable)" if skipped else ""
         )
     else:
         first = report.failures[0] if report.failures else None
@@ -412,7 +418,7 @@ def _verify_into(
                     *(f"{n} signed more than once" for n in duplicates),
                 ]
             )
-            or f"{len(authorised)} authorised signer(s)",
+            or _count(len(authorised), "authorised signer"),
         )
     )
 
@@ -428,7 +434,10 @@ def _verify_into(
         detail = f"{len(approvals)} of {required_m} required approvals"
     elif status == "rejected":
         met = len(rejections) > decision["required_n"] - required_m
-        detail = f"{len(rejections)} rejection(s) make {required_m} approvals unreachable"
+        detail = (
+            f"{_count(len(rejections), 'rejection')} {'makes' if len(rejections) == 1 else 'make'} "
+            f"{_count(required_m, 'approval')} unreachable"
+        )
     else:
         met = len(approvals) < required_m
         detail = f"{status}: {len(approvals)} of {required_m} approvals so far"
@@ -500,7 +509,7 @@ def _verify_into(
             )
     if len(signed_events) > len(verified):
         binding.append(
-            f"the log records {len(signed_events)} signature(s) but the bundle carries "
+            f"the log records {_count(len(signed_events), 'signature')} but the bundle carries "
             f"{len(verified)} — the export is incomplete"
         )
 
@@ -509,7 +518,7 @@ def _verify_into(
             "binding",
             "The log records these exact signatures, and no others",
             not binding,
-            "; ".join(binding) or f"{len(signed_events)} signing event(s) matched",
+            "; ".join(binding) or f"{_count(len(signed_events), 'signing event')} matched",
         )
     )
 
@@ -594,7 +603,8 @@ def _verify_into(
             "Those records are inside the published transparency log",
             not not_included,
             "; ".join(not_included)
-            or f"proved against a log of {tree_size} entries, root {root.hex()[:16]}…",
+            or f"proved against a log of {_count(tree_size, 'entry', 'entries')}, "
+            f"root {root.hex()[:16]}…",
         )
     )
 
@@ -829,7 +839,7 @@ def _check_execution(
             good.add(signer_id)
     if any(signer not in carried for signer in recorded):
         problems.append(
-            f"the log records {len(recorded)} authorisation(s) but the bundle carries "
+            f"the log records {_count(len(recorded), 'authorisation')} but the bundle carries "
             f"{len(entries)}: the export is incomplete"
         )
     if len(executed) > 1:
@@ -840,7 +850,7 @@ def _check_execution(
             "authorisations are genuine"
         )
     detail = "; ".join(problems) or (
-        f"{len(good)} authorisation(s) over this payment, each recorded"
+        f"{_count(len(good), 'authorisation')} over this payment, each recorded"
         + (
             f"; paid in {executed[0].get('tx_hash') or 'a transaction by another submitter'}"
             if executed

@@ -477,9 +477,11 @@ def _refused_signed_out(client, w) -> dict[str, str]:
             "/register",
             data={"display_name": "", "email": "ada", "password": "short", "confirm": "other"},
         ),
+        # Redirected to the link's page, which shows the refusal (Post/Redirect/Get).
         "invitation sign up, refused": client.post(
             f"/invite/{w['token']}/register",
             data={"display_name": "", "password": "short", "confirm": "other"},
+            follow_redirects=True,
         ),
         "register, taken": client.post(
             "/register",

@@ -94,7 +94,37 @@ def test_login_ignores_a_next_off_this_site(client, target):
         data={"email": "next@auth-e.com", "password": "password-123"},
     )
     assert resp.status_code == 302
-    assert resp.headers["Location"] == "/dashboard"
+    # Home, where every sign-in lands (it was /dashboard, which led to Account; staging 2026-10-09).
+    assert resp.headers["Location"] == "/"
+
+
+def test_signing_in_lands_on_home_not_account(client):
+    auth_service.register_user("home@auth-e.com", "Home Person", "password-123")
+    resp = client.post("/login", data={"email": "home@auth-e.com", "password": "password-123"})
+    assert resp.status_code == 302 and resp.headers["Location"] == "/"
+    page = client.get("/").get_data(as_text=True)
+    assert "<title>Home" in page
+
+
+def test_signing_in_still_goes_back_to_the_page_that_sent_you(client):
+    auth_service.register_user("next2@auth-e.com", "Next Two", "password-123")
+    resp = client.post(
+        "/login",
+        query_string={"next": "/vaults/"},
+        data={"email": "next2@auth-e.com", "password": "password-123"},
+    )
+    assert resp.headers["Location"] == "/vaults/"
+
+
+def test_a_signed_in_person_opening_sign_in_or_sign_up_goes_home(client):
+    auth_service.register_user("again@auth-e.com", "Again Person", "password-123")
+    client.post("/login", data={"email": "again@auth-e.com", "password": "password-123"})
+    assert client.get("/login").headers["Location"] == "/"
+    assert client.get("/register").headers["Location"] == "/"
+    assert client.get("/login?next=/vaults/").headers["Location"] == "/vaults/"
+    assert client.get("/login?next=//evil.com").headers["Location"] == "/"
+    # The old /dashboard link lands on Home too.
+    assert client.get("/dashboard").headers["Location"] == "/"
 
 
 def test_login_unknown_email_returns_none(app):
