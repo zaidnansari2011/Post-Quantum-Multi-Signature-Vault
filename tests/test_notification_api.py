@@ -109,12 +109,14 @@ def test_mark_all_read_over_the_api_can_name_a_section(client, inbox):
     _raise(inbox, "Second")
     phone = inbox["brij_phone"]
 
+    # Updates holds one ordinary notice and the "new device" security notice; read-all leaves the
+    # security notice unread (it is read on its own, from another device or the web).
     r = client.post("/api/v1/notifications/read-all", json={"section": "updates"}, headers=phone)
-    assert r.get_json()["marked"] == 2
-    assert r.get_json()["unread"] == {"needs_you": 2, "updates": 0, "total": 2}
+    assert r.get_json()["marked"] == 1
+    assert r.get_json()["unread"] == {"needs_you": 2, "updates": 1, "total": 3}
 
     r = client.post("/api/v1/notifications/read-all", headers=phone)
-    assert r.get_json()["marked"] == 2 and r.get_json()["unread"]["total"] == 0
+    assert r.get_json()["marked"] == 2 and r.get_json()["unread"]["total"] == 1
 
     r = client.post("/api/v1/notifications/read-all", json={"section": "archived"}, headers=phone)
     assert r.status_code == 400 and r.get_json()["code"] == "bad_request"

@@ -330,7 +330,9 @@ def results(tmp_path_factory):
                 "not a date",
             ],
         },
-        "names": ["", "   ", "x" * 65, "x" * 64, "Ada's Pixel 8", "  ok  "],
+        # 64 emoji are 128 UTF-16 units but 64 characters, as the server counts (review of P4b)
+        "names": ["", "   ", "x" * 65, "x" * 64, "Ada's Pixel 8", "  ok  ", chr(0x1F4F1) * 64,
+                  chr(0x1F4F1) * 65],
         "parts": [
             {"p": _summary(my_vote="approve"), "status": "approved", "viewer": 1},
             {"p": _summary(my_vote="reject"), "status": "approved", "viewer": 1},
@@ -476,6 +478,8 @@ def test_a_device_name_is_checked_for_what_the_phone_can_say(results):
         None,
         None,
         None,
+        None,
+        "Use 64 characters or fewer.",
     ]
 
 

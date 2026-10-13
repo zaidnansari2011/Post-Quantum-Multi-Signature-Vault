@@ -39,6 +39,7 @@ export const DEVICE_NAME_MAX = 64;
 export function deviceNameProblem(name: string): string | null {
   const trimmed = name.trim();
   if (!trimmed) return 'Enter a name.';
-  if (trimmed.length > DEVICE_NAME_MAX) return `Use ${DEVICE_NAME_MAX} characters or fewer.`;
+  // Characters as the server counts them (code points), not UTF-16 units: 64 emoji are fine.
+  if ([...trimmed].length > DEVICE_NAME_MAX) return `Use ${DEVICE_NAME_MAX} characters or fewer.`;
   return null;
 }

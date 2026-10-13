@@ -1508,7 +1508,7 @@ def unread_notifications():
 @bp.post("/notifications/<int:nid>/read")
 @device_token_required
 def read_notification(nid: int):
-    item = notification_service.mark_read(g.api_user, nid)
+    item = notification_service.mark_read(g.api_user, nid, by_device_id=g.api_device.id)
     if item is None:
         return _error("unknown_notification", "No such notification.", 404)
     return jsonify(

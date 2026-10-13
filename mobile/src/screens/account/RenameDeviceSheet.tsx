@@ -94,7 +94,8 @@ export function RenameDeviceSheet({
         }}
         error={problem}
         caption="How this device appears in your device lists, here and on the web."
-        maxLength={64}
+        // UTF-16 units, so twice the 64 characters: the field must never cut an emoji in half.
+        maxLength={128}
         autoCapitalize="sentences"
         autoCorrect={false}
         autoFocus
