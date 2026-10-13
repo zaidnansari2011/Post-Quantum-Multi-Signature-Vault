@@ -17,7 +17,7 @@ from recovery_support import NOW, PW, issue, make_team, start
 from qvault.extensions import db
 from qvault.models.delivery import Delivery
 from qvault.models.notification import Notification, NotificationPreference
-from qvault.models.recovery import RecoveryNotice
+from qvault.models.recovery import RecoveryNotice, RecoveryRequest
 from qvault.services import (
     delivery_copy,
     notification_service,
@@ -199,22 +199,145 @@ def test_nobody_outside_sees_the_banner(app, team, who):
     assert recovery_service.banners_for(getattr(team, who)) == []
 
 
-def test_at_most_five_recovery_events_a_day_are_told_but_a_completion_always_is(app, team):
-    issued = issue(team.ada)
-    for i in range(4):  # four starts and four cancels: eight events in a day
-        started = start(team.ada, issued.code, now=NOW + timedelta(minutes=10 * i))
-        recovery_service.cancel_by_status_token(
-            started.status_token, now=NOW + timedelta(minutes=10 * i + 1)
+def _brute_force_banners(viewer, now):
+    """What Home showed before review M2: every open request in the deployment, each tested with
+    ``watchers``. The narrowed query must agree with it exactly."""
+    found = []
+    for request in RecoveryRequest.query.filter(RecoveryRequest.state == "waiting").all():
+        if request.completes_at <= now:
+            continue
+        role = (
+            "self"
+            if request.user_id == viewer.id
+            else recovery_service.watchers(request.user_id).get(viewer.id)
         )
-    told = {
-        n.dedupe_key for n in Notification.query.filter(Notification.kind != "recovery_kit_changed")
+        if role is not None:
+            found.append((request.id, role))
+    return sorted(found)
+
+
+def test_the_banners_are_exactly_the_requests_watchers_names(app, team):
+    from qvault.models.workspace import WorkspaceMember
+
+    for who in ("ada", "chen", "eve", "dee"):
+        user = getattr(team, who)
+        start(user, issue(user, now=NOW - timedelta(days=1)).code, now=NOW)
+    later = NOW + timedelta(hours=1)
+    people = [getattr(team, who) for who in ("owen", "ada", "bob", "chen", "dee", "eve")]
+    for viewer in people:
+        shown = sorted(
+            (b.request.id, b.viewer_as) for b in recovery_service.banners_for(viewer, now=later)
+        )
+        assert shown == _brute_force_banners(viewer, later), viewer.email
+    WorkspaceMember.query.filter_by(user_id=team.bob.id).one().status = "suspended"
+    db.session.commit()
+    assert recovery_service.banners_for(team.bob, now=later) == []
+
+
+def test_home_banners_cost_what_the_viewer_watches_not_the_whole_deployment(app, team, monkeypatch):
+    """Review M2: every Home render loaded every open recovery in the deployment and worked out
+    ``watchers`` for each. Now unrelated requests are never loaded: the same queries, and
+    ``watchers`` only for a request the viewer may be watching."""
+    from sqlalchemy import event
+
+    from qvault.services import auth_service
+
+    start(team.ada, issue(team.ada, now=NOW - timedelta(days=1)).code, now=NOW)
+    calls = []
+    real = recovery_service.watchers
+    monkeypatch.setattr(recovery_service, "watchers", lambda user: calls.append(user) or real(user))
+
+    def measure(viewer):
+        statements = []
+
+        def count(*_args, **_kwargs):
+            statements.append(1)
+
+        calls.clear()
+        event.listen(db.engine, "before_cursor_execute", count)
+        try:
+            banners = recovery_service.banners_for(viewer, now=NOW + timedelta(hours=1))
+        finally:
+            event.remove(db.engine, "before_cursor_execute", count)
+        return len(banners), len(calls), len(statements)
+
+    before = {who: measure(getattr(team, who)) for who in ("bob", "dee")}
+    for i in range(6):  # throwaway accounts, each in a workspace of its own, each recovering
+        user = auth_service.sign_up(f"x{i}@spam.example", f"X {i}", PW, f"Spam {i}")
+        code = issue(user, now=NOW - timedelta(days=1)).code
+        recovery_service.start_with_kit(user.email, code, "new-password-456", now=NOW)
+    after = {who: measure(getattr(team, who)) for who in ("bob", "dee")}
+    assert after == before
+    assert before["bob"][:2] == (1, 1)  # Ada's banner, one watchers() for it
+    assert before["dee"][:2] == (0, 0)  # nothing, and no watchers() at all
+
+
+def _event_keys(kind):
+    return {n.dedupe_key for n in Notification.query.filter_by(kind=kind)}
+
+
+def _told_about(kind, request):
+    return {
+        n.recipient_id
+        for n in Notification.query.filter_by(kind=kind)
+        if json.loads(n.data).get("request") == request.request_uuid
     }
-    assert len(told) == notification_service.RECOVERY_NOTICES_PER_DAY
+
+
+EVERYONE = ("ada", "owen", "bob", "chen")
+
+
+def test_repeat_cancel_notices_are_capped_but_every_start_and_completion_is_told(app, team):
+    """The daily cap is anti-spam for repeat cancels and alarms only (design §16 items 9, 19): a
+    start, which may be the request that completes, and a completion are always told."""
+    everyone = {getattr(team, who).id for who in EVERYONE}
+    issued = issue(team.ada)
+    for i in range(6):  # six starts, each cancelled by an admin: twelve events in a day
+        started = start(team.ada, issued.code, now=NOW + timedelta(minutes=10 * i))
+        recovery_service.cancel_as(
+            team.bob, started.request.request_uuid, now=NOW + timedelta(minutes=10 * i + 1)
+        )
+    assert len(_event_keys("recovery_waiting")) == 6
+    assert len(_event_keys("recovery_cancelled")) == notification_service.RECOVERY_NOTICES_PER_DAY
     last = start(team.ada, issued.code, now=NOW + timedelta(hours=1)).request
-    assert recovery_service.banners_for(team.bob, now=NOW + timedelta(hours=1))  # the banner does
+    assert _told_about("recovery_waiting", last) == everyone
+    assert recovery_service.banners_for(team.bob, now=NOW + timedelta(hours=1))
     recovery_service.complete(last, now=last.completes_at)
-    everyone = {team.ada.id, team.owen.id, team.bob.id, team.chen.id}
     assert set(_told("recovery_completed")) == everyone
+
+
+def test_a_kit_thief_cannot_silence_the_warning_about_the_request_that_completes(app, team):
+    """Review H1: a thief filled the daily cap by starting and cancelling from their own browser
+    (which never burns the kit), so the real start told nobody, by any channel. Now a kit cannot
+    restart for a day after such a cancel, and a start is never capped."""
+    from qvault.services.recovery_service import RecoveryRefused
+
+    everyone = {getattr(team, who).id for who in EVERYONE}
+    ada = team.ada
+    issued = issue(ada, now=NOW - timedelta(days=30))
+    first = start(ada, issued.code, now=NOW)
+    recovery_service.cancel_by_status_token(first.status_token, now=NOW + timedelta(seconds=5))
+    for i in range(3):  # the cycles that used to fill the cap are refused
+        with pytest.raises(RecoveryRefused) as refused:
+            start(ada, issued.code, now=NOW + timedelta(seconds=10 * (i + 2)))
+        assert refused.value.code == "too_soon"
+    # Even with the cap full of other recovery events, the live request reaches everyone.
+    for i in range(6):
+        notification_service.recovery_kit_paused(
+            ada,
+            type("Alarm", (), {"id": 900 + i, "paused_until": NOW + timedelta(days=1)})(),
+            recovery_service.watchers(ada),
+            now=NOW + timedelta(minutes=i),
+        )
+    live = start(ada, issued.code, now=NOW + timedelta(days=1, minutes=1)).request
+    assert live.state == "waiting"
+    assert _told_about("recovery_waiting", live) == everyone
+    deliveries = [
+        d
+        for d in Delivery.query.filter_by(kind="recovery_waiting")
+        if live.request_uuid in d.event_key
+    ]
+    assert {d.recipient_id for d in deliveries if d.channel == "email"} == everyone
 
 
 # --------------------------------------------------------------------------------------------

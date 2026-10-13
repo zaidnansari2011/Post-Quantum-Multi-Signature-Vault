@@ -182,14 +182,25 @@ def authenticate(email: str, password: str) -> User | None:
 
     A correct password is a proof of it, so any open recovery of the account is cancelled and its
     kit burned (plan R9, ⚑5): signing in on the web, or on a phone that is pairing.
+
+    A recovery whose wait is over has won (design §4.2, §16 item 23): it takes effect before the
+    password is checked, so the old password no longer signs in from ``completes_at`` even if the
+    scheduler has not run. The credential epoch is read before the check too, and the session
+    this sign-in makes is stamped with it, so a recovery completing during the check signs that
+    session out; if the epoch moved by the time the check is done, the sign-in is refused.
     """
+    from qvault.services import recovery_service
+
     user = User.query.filter_by(email=_normalise_email(email)).first()
     if user is None:
         verify_password(_DUMMY_PASSWORD_HASH, password)  # equalise timing; result discarded
         return None
+    recovery_service.complete_if_due(user)
+    seen = recovery_service.epoch(user.id)
     if verify_password(user.password_hash, password):
-        from qvault.services import recovery_service
-
+        if recovery_service.epoch(user.id) != seen:
+            return None  # the credential changed while it was being checked
+        recovery_service.remember_sign_in_epoch(user.id, seen)
         recovery_service.password_proven(user, via="sign_in")
         return user
     return None

@@ -820,7 +820,7 @@ EVENT_LABELS = {
     "recovery_kit_issued": "Recovery Kit made",
     "recovery_kit_revoked": "Recovery Kit stopped",
     "recovery_kit_stale": "Recovery Kit stopped",
-    "recovery_kit_paused": "Recovery Kit paused",
+    "recovery_kit_paused": "Recovery Kit wrong codes",
     "recovery_requested": "Recovery started",
     "recovery_waiting": "Recovery waiting",
     "recovery_cancelled": "Recovery cancelled",

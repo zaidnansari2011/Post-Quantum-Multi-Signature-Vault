@@ -15,7 +15,8 @@ nobody has migrated still starts. Revision ``0010_recovery_kit`` makes the same 
 - ``credential_epochs``: bumping it signs out every web session of that person.
 - ``recovery_notices``: which notifications speak of which request, so they cannot be archived or
   marked read while it is open.
-- ``recovery_kit_failures`` and ``recovery_kit_pauses``: the per-account throttle on wrong codes.
+- ``recovery_kit_failures`` and ``recovery_kit_pauses``: wrong codes per account, and when the
+  alarm about them was last raised (they never stop the kit working).
 """
 
 from __future__ import annotations
@@ -248,7 +249,8 @@ class RecoveryKitFailure(db.Model):
 
 
 class RecoveryKitPause(db.Model):
-    """The kit route for this person is paused until ``paused_until``: too many wrong codes."""
+    """Too many wrong codes for this person's kit raised the alarm; no other is raised until
+    ``paused_until``. The kit itself keeps working (design §16 item 20): the name is historical."""
 
     __tablename__ = "recovery_kit_pauses"
 

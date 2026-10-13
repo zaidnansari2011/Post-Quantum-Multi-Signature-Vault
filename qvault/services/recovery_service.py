@@ -21,10 +21,19 @@ completes_at ...`` (compare-and-set: SQLite has no ``SELECT ... FOR UPDATE``), s
 first wins, on SQLite and PostgreSQL alike. Completion re-checks everything in one transaction and
 runs from the scheduler (``tick``) or when the status page loads.
 
-**Unauthenticated answers are the same** for an unknown email, no kit, a wrong code and a paused
-kit, with the same Argon2id work (§4.6). Only once the code has opened the kit does the page say
-anything specific. A wrong code counts against the account: 10 in 24 hours pause the kit route for
-24 hours (the kit is not revoked: that would let anyone burn it), and everyone in §4.5 is told once.
+**Unauthenticated answers are the same** for an unknown email, no kit and a wrong code, with the
+same Argon2id work at the same pinned parameters (§4.6, §16 item 22). Only once the code has opened
+the kit does the page say anything specific. Every attempt at an account's kit is counted as a
+wrong code *before* the derivation runs, and taken back only if the code opens the kit, so
+attempts made side by side are all counted (§16 item 21). 10 wrong codes in 24 hours raise an
+alarm, once a day, to the person and everyone in §4.5, and are logged; they never stop the right
+code working (§16 item 20): with 150 bits nobody guesses it, and a lock anyone could trip by
+knowing only an email address would be a way to shut the owner out. Guessing is slowed per source
+address by the ``recover`` rate limit instead.
+
+**A kit starts at most one request a day after a cancel from its own browser** (§16 item 19).
+That cancel keeps the kit (the person may have mistyped their new password), so without a limit a
+kit thief could start and cancel over and over; with it, every start is told to everyone, uncapped.
 
 Never written anywhere: the kit code, anything derived from it, or a password. The ledger entries
 carry ids, times and public-key hashes.
@@ -42,7 +51,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from flask import current_app, g, has_request_context, session
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 
 from qvault.crypto import kit_code, sha256_hex
@@ -65,10 +74,15 @@ from qvault.services import recovery_kit
 
 #: The kit route's wait (⚑2). A paired phone confirming it shortens it to 24 hours (Phase 2).
 KIT_WAIT = timedelta(hours=72)
-#: Wrong codes for one account, inside THROTTLE_WINDOW, that pause its kit route for PAUSE (§4.6).
+#: Wrong codes for one account, inside THROTTLE_WINDOW, that raise the alarm (§4.6). The alarm
+#: is raised at most once per PAUSE (the name of the table that remembers it); the kit keeps
+#: working throughout (design §16 item 20).
 THROTTLE_LIMIT = 10
 THROTTLE_WINDOW = timedelta(hours=24)
 PAUSE = timedelta(hours=24)
+#: After a cancel from the browser that started it, the same kit cannot start again for this long
+#: (design §16 item 19).
+RESTART_AFTER_OWN_CANCEL = timedelta(hours=24)
 
 #: The status cookie: scoped to /recover, never readable by script, never sent cross-site.
 STATUS_COOKIE = "qvault_recovery"
@@ -81,8 +95,7 @@ SESSION_EPOCH = "qv_epoch"
 #: The answer to every attempt whose code has not opened a kit (design §4.6).
 GENERIC_REFUSAL = (
     "That didn't work. Check the email address and the code against your Recovery Kit, then try "
-    "again. A kit stops working when a newer one is made, and pauses for 24 hours after too many "
-    "wrong codes."
+    "again. A kit stops working when a newer one is made."
 )
 
 
@@ -111,8 +124,33 @@ def _aware(moment: datetime | None) -> datetime | None:
 
 
 def epoch(user_id: int) -> int:
-    row = db.session.get(CredentialEpoch, user_id)
-    return row.epoch if row is not None else 0
+    """The person's credential epoch, read from the database (never the session's cached row, so
+    a bump another process has just committed is seen)."""
+    value = db.session.scalar(
+        select(CredentialEpoch.epoch).where(CredentialEpoch.user_id == user_id)
+    )
+    return int(value or 0)
+
+
+_SIGN_IN_EPOCH = "_recovery_sign_in_epoch"
+
+
+def remember_sign_in_epoch(user_id: int, value: int) -> None:
+    """``auth_service.authenticate`` read ``value`` *before* checking the password: the session
+    this sign-in makes is stamped with it, so a recovery completing during the check (which bumps
+    the epoch) signs that session out on its next request (design §16 item 23)."""
+    if has_request_context():
+        g.setdefault(_SIGN_IN_EPOCH, {})[user_id] = value
+
+
+def sign_in_epoch(user_id: int) -> int:
+    """The epoch to stamp a session that has just signed in with: the one read before its
+    password was checked, else the current one."""
+    if has_request_context():
+        seen = g.get(_SIGN_IN_EPOCH, {})
+        if user_id in seen:
+            return seen.pop(user_id)
+    return epoch(user_id)
 
 
 def bump_epoch(user_id: int) -> int:
@@ -311,6 +349,8 @@ def request_for_status_token(token: str | None) -> RecoveryRequest | None:
 
 
 def paused_until(user_id: int, now: datetime) -> datetime | None:
+    """Until when no new wrong-codes alarm is raised for ``user_id`` (None if one may be). The
+    name is the table's: since design §16 item 20 nothing about the kit itself is paused."""
     until = db.session.scalar(
         select(func.max(RecoveryKitPause.paused_until)).where(
             RecoveryKitPause.user_id == user_id, RecoveryKitPause.paused_until > now
@@ -319,11 +359,21 @@ def paused_until(user_id: int, now: datetime) -> datetime | None:
     return _aware(until)
 
 
-def _record_failure(user: User, now: datetime) -> None:
+def _count_attempt(user: User, now: datetime) -> RecoveryKitFailure:
+    """Count an attempt at ``user``'s kit as a wrong code, and commit, *before* its derivation
+    runs (design §16 item 21): attempts made side by side all see each other. The caller deletes
+    the row if the code opens the kit."""
+    attempt = RecoveryKitFailure(user_id=user.id, created_at=now)
+    db.session.add(attempt)
+    db.session.commit()
+    return attempt
+
+
+def _after_failure(user: User, now: datetime) -> None:
+    """A wrong code was just counted: raise the alarm if it makes THROTTLE_LIMIT in a day and none
+    was raised in the last PAUSE. Never stops the kit working (design §16 item 20)."""
     from qvault.services import notification_service
 
-    db.session.add(RecoveryKitFailure(user_id=user.id, created_at=now))
-    db.session.flush()
     recent = db.session.scalar(
         select(func.count())
         .select_from(RecoveryKitFailure)
@@ -348,8 +398,9 @@ def _record_failure(user: User, now: datetime) -> None:
             ref_id=str(user.id),
             commit=False,
         )
-        # Told once per pause, to the person and everyone in section 4.5. The kit itself is not
-        # revoked: a throttle anyone could trip must not be a way to burn someone's kit.
+        # Told once a day at most, to the person and everyone in section 4.5. The kit is neither
+        # revoked nor paused: anyone who knows an email address can trip this, so it must not be
+        # a way to burn someone's kit or keep them out of it.
         notification_service.recovery_kit_paused(user, pause, watchers(user), now=now)
 
 
@@ -379,20 +430,22 @@ def start_with_kit(
     code = kit_code.normalise(typed_code)  # the typo check: public, and reveals nothing
     user = User.query.filter_by(email=(email or "").strip().lower()).first()
     kit = None
-    if user is not None and paused_until(user.id, now) is None:
+    if user is not None:
         kit = recovery_kit.active_kit(user)
         if kit is not None and not recovery_kit.mac_ok(kit):
             recovery_kit.mark_stale(kit, now=now)
             db.session.commit()
             kit = None
     if kit is None:
-        recovery_kit.dummy_derivation()
+        # The same derivation, at the same pinned parameters, as a kit that is there.
+        recovery_kit.dummy_derivation(code)
         raise RecoveryRefused("generic", GENERIC_REFUSAL)
 
+    attempt = _count_attempt(user, now)
     try:
         kem_secret = recovery_kit.open_kem_key(kit, code)
     except recovery_kit.WrongKitCode:
-        _record_failure(user, now)
+        _after_failure(user, now)
         db.session.commit()
         raise RecoveryRefused("generic", GENERIC_REFUSAL) from None
     except recovery_kit.KitUnusable:
@@ -400,11 +453,22 @@ def start_with_kit(
 
     # The code opened the kit: from here on the answers can be specific.
     try:
+        # It was not a wrong code after all.
+        db.session.delete(attempt)
+        db.session.commit()
         if open_request(user) is not None:
             raise RecoveryRefused(
                 "under_way",
                 "A recovery of this account is already under way, so nothing new was started. "
                 "Whoever started it can see when it takes effect on its status page.",
+            )
+        again_at = _restart_allowed_at(kit, now)
+        if again_at is not None:
+            raise RecoveryRefused(
+                "too_soon",
+                "This kit's last recovery was cancelled from the browser that started it less "
+                "than 24 hours ago, so it can't start another yet. Nothing was changed. Try again "
+                f"after {_readable(again_at)}.",
             )
         try:
             opened = recovery_kit.open_wraps(kit, kem_secret)
@@ -425,7 +489,7 @@ def start_with_kit(
 
         token, token_hash = _new_status_token()
         salt = new_salt()
-        params = dict(DEFAULT_PARAMS)
+        params = dict(DEFAULT_PARAMS)  # the account's own password KDF, as change_password
         request = RecoveryRequest(
             request_uuid=str(uuid.uuid4()),
             user_id=user.id,
@@ -500,6 +564,25 @@ def start_with_kit(
     notification_service.recovery_waiting(request, watchers(user), now=now)
     db.session.commit()
     return Started(request=request, status_token=token)
+
+
+def _restart_allowed_at(kit, now: datetime) -> datetime | None:
+    """When ``kit`` may start again, if a request it started was cancelled from its own browser
+    less than RESTART_AFTER_OWN_CANCEL ago (design §16 item 19); otherwise None."""
+    last = db.session.scalar(
+        select(func.max(RecoveryRequest.finished_at)).where(
+            RecoveryRequest.kit_id == kit.id,
+            RecoveryRequest.cancelled_as == "status_holder",
+            RecoveryRequest.finished_at > now - RESTART_AFTER_OWN_CANCEL,
+        )
+    )
+    return _aware(last) + RESTART_AFTER_OWN_CANCEL if last is not None else None
+
+
+def _readable(moment: datetime) -> str:
+    from qvault.ui import absolute_time
+
+    return absolute_time(moment)
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -604,8 +687,22 @@ def cancel_as(viewer: User, request_uuid: str, *, now: datetime | None = None) -
     return request
 
 
+def cancel_kit_requests(kit, *, by: User, reason: str, now: datetime | None = None) -> int:
+    """Cancel, as the person (``by``), every open request ``kit`` started: the kit has just been
+    ended, so they could never complete, and their banners must not stay up (design §16 item
+    27). Marked as burning the kit, which it was. Does not commit. Returns how many."""
+    ended = 0
+    for request in RecoveryRequest.query.filter(
+        RecoveryRequest.kit_id == kit.id, RecoveryRequest.state.in_(OPEN_STATES)
+    ).all():
+        if cancel(request, by=by, as_role="self", reason=reason, burn=True, now=now):
+            ended += 1
+    return ended
+
+
 def cancel_by_status_token(token: str | None, *, now: datetime | None = None) -> RecoveryRequest:
-    """Cancel from the browser that started it (it never burns the kit). Commits."""
+    """Cancel from the browser that started it. It never burns the kit, but the kit cannot start
+    another request for RESTART_AFTER_OWN_CANCEL (design §16 item 19). Commits."""
     request = request_for_status_token(token)
     if request is None:
         raise LookupError("no request for this status cookie")
@@ -841,13 +938,44 @@ class Banner:
     viewer_as: str
 
 
+def _possibly_watched(viewer_id: int):
+    """A subquery of everyone ``viewer_id`` might be among the ``watchers`` of: a superset, worked
+    out from the viewer's side, so Home's banners cost what the viewer's own workspaces and vaults
+    hold, never what the whole deployment does (design §16 item 24).
+
+    ``watchers(u)`` names v as ``manager`` when v is an active owner or admin of a workspace u is
+    an active member of, or of the home workspace of a vault u signs in (the vault owner's
+    workspace, so the owner is a member of it); and as ``cosigner`` when both sign in one vault.
+    So u is one of: a member of a workspace v manages; a signer of a vault whose owner is one; a
+    signer of a vault v signs in."""
+    managed = select(WorkspaceMember.workspace_id).where(
+        WorkspaceMember.user_id == viewer_id,
+        WorkspaceMember.role.in_(MANAGER_ROLES),
+        WorkspaceMember.status == "active",
+    )
+    members = select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id.in_(managed))
+    signed = select(VaultMember.vault_id).where(
+        VaultMember.user_id == viewer_id, VaultMember.member_role.in_(SIGNER_ROLES)
+    )
+    vaults = select(Vault.id).where(or_(Vault.owner_id.in_(members), Vault.id.in_(signed)))
+    signers = select(VaultMember.user_id).where(
+        VaultMember.vault_id.in_(vaults), VaultMember.member_role.in_(SIGNER_ROLES)
+    )
+    return union(members, signers)
+
+
 def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
     """The open-recovery banners ``viewer`` sees on Home: one for each open request of their own
     account or of anyone they watch. Computed from ``recovery_requests``, never from notices."""
     now = now or _now()
     rows = (
         RecoveryRequest.query.filter(
-            RecoveryRequest.state == "waiting", RecoveryRequest.completes_at > now
+            RecoveryRequest.state == "waiting",
+            RecoveryRequest.completes_at > now,
+            or_(
+                RecoveryRequest.user_id == viewer.id,
+                RecoveryRequest.user_id.in_(_possibly_watched(viewer.id)),
+            ),
         )
         .order_by(RecoveryRequest.completes_at)
         .all()
@@ -857,6 +985,8 @@ def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
         if request.user_id == viewer.id:
             role = "self"
         else:
+            # The one definition decides (design §16 item 7); the query above only narrowed the
+            # requests to those of people the viewer could be watching.
             role = watchers(request.user_id).get(viewer.id)
         if role is not None and request.user is not None:
             found.append(Banner(request, request.user, _aware(request.completes_at), role))

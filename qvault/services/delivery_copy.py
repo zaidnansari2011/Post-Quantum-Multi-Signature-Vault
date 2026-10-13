@@ -229,8 +229,8 @@ def _recovery_push(kind: str, stored: dict) -> tuple[str, str]:
         return "Account recovered", f"The recovery of {whose} took effect."
     if stored.get("change") == "paused":
         return (
-            "Recovery Kit paused",
-            f"Too many wrong Recovery Kit codes were typed for {whose}. It is paused for 24 hours.",
+            "Wrong Recovery Kit codes",
+            f"Many wrong Recovery Kit codes were typed for {whose}. The kit still works.",
         )
     return "Recovery Kit changed", "Your Recovery Kit changed. Open Q-Vault to see what happened."
 
@@ -552,8 +552,8 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
     change = stored.get("change")
     if change == "paused":
         line = (
-            f"Someone typed too many wrong Recovery Kit codes for {whose}. Nobody can use that "
-            "kit for 24 hours."
+            f"Someone typed many wrong Recovery Kit codes for {whose}. A kit's code can't be "
+            "guessed, so the kit still works. If a recovery starts, you will be told."
         )
     elif change == "stale":
         line = "Your Recovery Kit stopped working. Make a new one on the Security page."
@@ -562,7 +562,9 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
     else:
         line = "You made a Recovery Kit. Keep it where you keep your passport."
     return EmailCopy(
-        "Your Q-Vault Recovery Kit changed" if me else "A Q-Vault Recovery Kit was paused",
+        "Your Q-Vault Recovery Kit changed"
+        if me
+        else "Wrong codes were typed for a Q-Vault Recovery Kit",
         "Recovery Kit",
         (line,),
         "Open Q-Vault",

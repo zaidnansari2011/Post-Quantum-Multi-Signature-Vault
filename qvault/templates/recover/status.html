@@ -4,8 +4,9 @@
 {% block title %}Your recovery — Q-Vault{% endblock %}
 
 {#- /recover/status (plan R9, design §4.2): the browser that started a recovery, by its HttpOnly
-    cookie, sees when it takes effect and can cancel it (which never burns the kit). Once the wait
-    is over, loading this page completes it if the scheduler has not. -#}
+    cookie, sees when it takes effect and can cancel it (which never burns the kit, but keeps it
+    from starting another recovery for 24 hours: design §16 item 19). Once the wait is over,
+    loading this page completes it if the scheduler has not. -#}
 {% macro body() %}
 {%- set cancelled_by = {
     'self': 'by the account’s owner',
@@ -33,6 +34,9 @@
     We’ve told the account’s owner, its workspace’s admins and its fellow approvers. Any of them can
     cancel it, and using the current password anywhere cancels it too.
   </p>
+  <p class="q-auth__p">
+    If you cancel it here, the kit still works, but it can’t start another recovery for 24 hours.
+  </p>
   <form method="post" action="{{ url_for('recover.status_cancel') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {{ button('Cancel this recovery', 'danger', type='submit', block=True) }}
@@ -51,7 +55,7 @@
   <h1 class="q-auth__t">This recovery was cancelled</h1>
   <p class="q-auth__p">
     It was cancelled {{ cancelled_by.get(req.cancelled_as, '') }}{% if req.finished_at %} on {{ ui_absolute(req.finished_at) }}{% endif %}.
-    Nothing about the account changed.{% if req.kit_burned %} The Recovery Kit it used no longer works.{% endif %}
+    Nothing about the account changed.{% if req.kit_burned %} The Recovery Kit it used no longer works.{% elif req.cancelled_as == 'status_holder' %} The Recovery Kit still works, and can start another recovery 24 hours after this one was cancelled.{% endif %}
   </p>
   {%- endif %}
 </div>

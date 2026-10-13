@@ -18,8 +18,11 @@ from qvault.services import auth_service, recovery_kit, recovery_service, vault_
 
 PW = "old-password-123"
 NEW = "new-password-456"
-#: A fixed moment for the state-machine tests, used for every step: never mixed with the clock.
-NOW = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
+#: A fixed moment for the state-machine tests, used for every step: tomorrow at noon UTC, fixed
+#: for the whole run. Ahead of the real clock on purpose: signing in and opening a key read the
+#: clock and complete a recovery whose wait is over (design §16 item 23), so a fixture's request
+#: must never be found already due by them, whatever day the suite runs.
+NOW = (datetime.now(UTC) + timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
 
 
 @dataclass

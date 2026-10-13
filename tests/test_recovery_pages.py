@@ -146,6 +146,25 @@ def test_do_this_later_stops_the_code_working_and_home_keeps_asking(app, client)
     assert recovery_service.GENERIC_REFUSAL.split(".")[0] in _text(refused)
 
 
+def test_do_this_later_also_cancels_a_recovery_already_started_with_that_kit(app, client):
+    """Hardening after the R9 review: the kit stops working, so a request someone started with it
+    could never complete; it is cancelled with it rather than left up on Home for 72 hours."""
+    r = _sign_up(client)
+    code = _code_on(r)
+    nova = User.query.filter_by(email="nova@kestrel.org").one()
+    started = recovery_service.start_with_kit(nova.email, code, NEW)  # someone who saw it
+    assert recovery_service.banners_for(nova)
+    client.post("/account/recovery-kit/later", data={"kit_uuid": _hidden(r, "kit_uuid")})
+    request = db.session.get(RecoveryRequest, started.request.id)
+    db.session.refresh(request)
+    assert request.state == "cancelled" and request.cancel_reason == "kit_not_saved"
+    assert request.cancelled_as == "self" and request.pending_password_hash is None
+    kit = RecoveryKit.query.one()
+    assert kit.state == "revoked" and kit.revoked_reason == "not_saved"
+    assert recovery_service.banners_for(nova) == []
+    assert "Someone is recovering your account" not in _text(client.get("/"))
+
+
 def test_joining_through_an_invitation_shows_the_kit_too(app, client):
     from qvault.services import auth_service, workspace_service
 
@@ -241,7 +260,9 @@ def test_the_status_page_cancels_without_burning_the_kit(app, client, team):
     client.post("/recover/status/cancel")
     request = RecoveryRequest.query.one()
     assert request.state == "cancelled" and request.cancelled_as == "status_holder"
-    assert "It was cancelled from this browser" in _text(client.get("/recover/status"))
+    page = _text(client.get("/recover/status"))
+    assert "It was cancelled from this browser" in page
+    assert "can start another recovery 24 hours after this one was cancelled" in page
     db.session.refresh(issued.kit)
     assert issued.kit.state == "active"
 
@@ -345,6 +366,91 @@ def test_a_completed_recovery_signs_out_every_web_session(app, client, team):
     recovery_service.complete(request, now=request.completes_at)
     _fresh()
     r = client.get("/account/security")
+    assert r.status_code == 302 and "/login" in r.headers["Location"]
+
+
+def _due_in_an_hour(user):
+    """A request whose wait ends an hour from now, on the real clock."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    issued = issue(user, now=now - timedelta(days=10))
+    return start(user, issued.code, now=now - timedelta(hours=71)).request
+
+
+def _overdue(user):
+    """A request whose wait ended an hour ago, which the scheduler has not completed."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    issued = issue(user, now=now - timedelta(days=10))
+    return start(user, issued.code, now=now - timedelta(hours=73)).request
+
+
+def test_from_completes_at_the_old_password_no_longer_signs_in(app, client, team):
+    """Review L1: until the scheduler ran, the old password still signed in after the wait was
+    over. State is a function of time: from completes_at the recovery has won."""
+    from qvault.services import auth_service
+
+    request = _overdue(team.ada)
+    assert recovery_service.banners_for(team.ada) == []
+    assert auth_service.authenticate(team.ada.email, PW) is None
+    db.session.refresh(request)
+    assert request.state == "completed"
+    assert _login(client, team.ada, PW).status_code == 200  # refused on the page too
+    assert _login(client, team.ada, NEW).status_code == 302
+
+
+def test_from_completes_at_the_old_password_no_longer_opens_the_key(app, team):
+    from qvault.services import key_service
+
+    request = _overdue(team.ada)
+    key = key_service.active_signing_key(team.ada)
+    with pytest.raises(key_service.KeyUnlockError, match="just taken effect"):
+        key_service.unlock_secret_key(team.ada, key, PW)
+    db.session.refresh(request)
+    assert request.state == "completed"
+    assert key_service.unlock_secret_key(team.ada, key_service.active_signing_key(team.ada), NEW)
+
+
+def test_a_recovery_completing_during_the_password_check_refuses_the_sign_in(
+    app, client, team, monkeypatch
+):
+    """Review L1: Argon2id takes a moment. A recovery that commits during it has replaced the
+    password being checked, so that sign-in must not stand."""
+    from qvault.services import auth_service
+
+    request = _due_in_an_hour(team.ada)
+    real_verify = auth_service.verify_password
+
+    def verify_while_it_completes(stored, password):
+        ok = real_verify(stored, password)
+        if request.state == "waiting":
+            assert recovery_service.complete(request, now=request.completes_at)
+        return ok
+
+    monkeypatch.setattr(auth_service, "verify_password", verify_while_it_completes)
+    assert _login(client, team.ada, PW).status_code == 200  # "Invalid email or password"
+    _fresh()
+    r = client.get("/account/security")
+    assert r.status_code == 302 and "/login" in r.headers["Location"]
+
+
+def test_a_session_is_stamped_with_the_epoch_read_before_its_password_was_checked(
+    app, client, team, monkeypatch
+):
+    """The last moment of the same race: the recovery commits after the check, before the session
+    is stamped. The session carries the epoch from before the check, so it is signed out."""
+    request = _due_in_an_hour(team.ada)
+
+    def completes_instead(user, **_kwargs):
+        recovery_service.complete(request, now=request.completes_at)
+
+    monkeypatch.setattr(recovery_service, "password_proven", completes_instead)
+    assert _login(client, team.ada, PW).status_code == 302  # it got through...
+    assert db.session.get(RecoveryRequest, request.id).state == "completed"
+    _fresh()
+    r = client.get("/account/security")  # ...and is signed out on its next request
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 
 
@@ -465,11 +571,7 @@ def test_a_kit_made_at_sign_up_recovers_after_a_reissue_and_a_password_change(ap
     key_service.unlock_secret_key(nova, key, NEW)
 
 
-def test_the_page_answers_unknown_email_no_kit_wrong_code_and_paused_identically(app, client, team):
-    from datetime import UTC, datetime, timedelta
-
-    from qvault.models.recovery import RecoveryKitPause
-
+def test_the_page_answers_unknown_email_no_kit_and_a_wrong_code_identically(app, client, team):
     issued = issue(team.ada)
     wrong = kit_code.encode((kit_code.decode(issued.code) + 7) % 2**150)
 
@@ -485,15 +587,6 @@ def test_the_page_answers_unknown_email_no_kit_wrong_code_and_paused_identically
         attempt(team.bob.email, issued.code),
         attempt(team.ada.email, wrong),
     ]
-    db.session.add(
-        RecoveryKitPause(
-            user_id=team.ada.id,
-            paused_until=datetime.now(UTC) + timedelta(hours=1),
-            created_at=datetime.now(UTC),
-        )
-    )
-    db.session.commit()
-    answers.append(attempt(team.ada.email, issued.code))
     assert {status for status, _ in answers} == {400}
     assert len({body for _, body in answers}) == 1
     assert RecoveryRequest.query.count() == 0

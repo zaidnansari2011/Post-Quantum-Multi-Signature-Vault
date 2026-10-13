@@ -24,9 +24,11 @@ a wrap moved to another key, or another kit, does not open. Each kit KEK and eac
 exactly once.
 
 **The public key is MAC'd** under the master key over the owner, the kit's uuid, its KEM algorithm,
-when it was made and the key itself, and checked before every encapsulation. A failed check marks
-the kit stale (the key being made is still made), and a stale kit is never used. The algorithm is
-pinned here, whatever a row says.
+its Argon2id parameters and salt, when it was made and the key itself, and checked before every
+encapsulation and every opening. A failed check marks the kit stale (the key being made is still
+made), and a stale kit is never used. The algorithm and the Argon2id parameters are pinned here
+(``KIT_KEM_ALG``, ``KIT_KDF_PARAMS``), whatever a row says, and the dummy derivation an attempt
+with no kit to open makes uses the very same parameters.
 
 **What is wrapped:** the active password key and any password key a treasury seat still names
 (D39 lets a retired seat key sign its own replacement). Not other retired keys: a kit holding every
@@ -49,7 +51,7 @@ from flask import current_app
 from sqlalchemy import update
 
 from qvault.crypto import canonical_json, kit_code, sha256, sha256_hex
-from qvault.crypto.kdf import DEFAULT_PARAMS, derive_kek, hkdf_sha256
+from qvault.crypto.kdf import derive_kek, hkdf_sha256
 from qvault.extensions import db
 from qvault.models.key import Key
 from qvault.models.recovery import RecoveryKit, RecoveryKitWrap
@@ -58,6 +60,10 @@ from qvault.security import master_key
 
 #: Pinned in code (design §5.1 step 4): a row naming anything else is refused, MAC or not.
 KIT_KEM_ALG = "ML-KEM-768"
+#: Pinned in code too (design §5.1 step 1, §16 item 22): every kit is made, opened and imitated
+#: (``dummy_derivation``) with exactly these, so no answer takes a different time, and a row that
+#: names anything else is refused, MAC or not. Changing them means every kit must be made again.
+KIT_KDF_PARAMS: dict[str, int] = {"time_cost": 3, "memory_cost": 65536, "parallelism": 4}
 _SYMMETRIC = "AES-256-GCM"
 SELFTEST_PREFIX = b"QVAULT-SIG-v1:KIT-SELFTEST|"
 
@@ -110,11 +116,27 @@ def iso(moment: datetime) -> str:
 
 
 def pk_mac_input(
-    user_id: int, kit_uuid: str, kem_alg: str, created_at: str, public_key: bytes
+    user_id: int,
+    kit_uuid: str,
+    kem_alg: str,
+    created_at: str,
+    public_key: bytes,
+    *,
+    kdf_params: dict,
+    kit_salt: bytes,
 ) -> bytes:
-    """What ``master_key.kit_pk_mac`` covers: canonical JSON of the record, ``|``, the key."""
+    """What ``master_key.kit_pk_mac`` covers: canonical JSON of the record (the salt as hex),
+    ``|``, the key. The Argon2id parameters and salt are in it, so a database writer cannot make
+    a kit cheaper to guess at, or swap a salt, without the kit going stale."""
     record = canonical_json(
-        {"created_at": created_at, "kem_alg": kem_alg, "kit_uuid": kit_uuid, "user_id": user_id}
+        {
+            "created_at": created_at,
+            "kdf_params": kdf_params,
+            "kem_alg": kem_alg,
+            "kit_salt": kit_salt.hex(),
+            "kit_uuid": kit_uuid,
+            "user_id": user_id,
+        }
     )
     return record + b"|" + public_key
 
@@ -129,10 +151,15 @@ def derive_kit_kek(code: str, kit_salt: bytes, kdf_params: dict, kit_uuid: str, 
         del a, pepper
 
 
-def dummy_derivation() -> None:
-    """The Argon2id work a real attempt costs, for an attempt with no kit to open, so a missing
-    account, a missing kit and a paused one cost the same as a wrong code (design §4.6)."""
-    derive_kek("0" * kit_code.DATA_SYMBOLS, b"\x00" * 16, length=32, **DEFAULT_PARAMS)
+_DUMMY_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def dummy_derivation(code: str) -> None:
+    """The work a real attempt costs, for an attempt with no kit to open: the same Argon2id with
+    the same pinned parameters over the code typed, the pepper and the HKDF. So a missing account
+    and a missing kit cost what a wrong code does (design §4.6, §16 item 22)."""
+    kek = derive_kit_kek(code, b"\x00" * 16, KIT_KDF_PARAMS, _DUMMY_UUID, 0)
+    del kek
 
 
 # --------------------------------------------------------------------------------------------
@@ -169,11 +196,24 @@ def short_id(kit: RecoveryKit) -> str:
 
 
 def mac_ok(kit: RecoveryKit) -> bool:
-    """The public key and its algorithm are as issued: MAC'd under the master key, and pinned."""
+    """The public key, its algorithm and the Argon2id parameters and salt are as issued: MAC'd
+    under the master key, and the algorithm and parameters are the pinned ones."""
     if kit.kem_alg != KIT_KEM_ALG:
         return False
+    try:
+        params = json.loads(kit.kdf_params)
+    except (TypeError, ValueError):
+        return False
+    if params != KIT_KDF_PARAMS or not isinstance(kit.kit_salt, bytes | bytearray):
+        return False
     data = pk_mac_input(
-        kit.user_id, kit.kit_uuid, kit.kem_alg, iso(kit.created_at), kit.kem_public_key
+        kit.user_id,
+        kit.kit_uuid,
+        kit.kem_alg,
+        iso(kit.created_at),
+        kit.kem_public_key,
+        kdf_params=params,
+        kit_salt=bytes(kit.kit_salt),
     )
     return master_key.verify_kit_pk_mac(data, kit.kem_public_key_mac)
 
@@ -263,7 +303,7 @@ def issue(
         _k, code = kit_code.new_code()
         kit_uuid = str(uuid.uuid4())
         salt = os.urandom(16)
-        params = dict(DEFAULT_PARAMS)
+        params = dict(KIT_KDF_PARAMS)
         registry = _registry()
         kem = registry.kem(KIT_KEM_ALG)
         keypair = kem.keygen()
@@ -283,7 +323,15 @@ def issue(
             kem_alg=KIT_KEM_ALG,
             kem_public_key=keypair.public_key,
             kem_public_key_mac=master_key.kit_pk_mac(
-                pk_mac_input(user.id, kit_uuid, KIT_KEM_ALG, iso(now), keypair.public_key)
+                pk_mac_input(
+                    user.id,
+                    kit_uuid,
+                    KIT_KEM_ALG,
+                    iso(now),
+                    keypair.public_key,
+                    kdf_params=params,
+                    kit_salt=salt,
+                )
             ),
             kem_sk_nonce=sk_nonce,
             kem_sk_wrapped=sk_wrapped,
@@ -461,7 +509,8 @@ def open_kem_key(kit: RecoveryKit, code: str) -> bytes:
         raise KitUnusable("the kit is not active")
     if not mac_ok(kit):
         raise KitUnusable("the kit's public key or algorithm fails its MAC")
-    kek = derive_kit_kek(code, kit.kit_salt, json.loads(kit.kdf_params), kit.kit_uuid, kit.user_id)
+    # The pinned parameters, never the row's: ``mac_ok`` has just checked the row names them.
+    kek = derive_kit_kek(code, kit.kit_salt, KIT_KDF_PARAMS, kit.kit_uuid, kit.user_id)
     try:
         return (
             _registry()
