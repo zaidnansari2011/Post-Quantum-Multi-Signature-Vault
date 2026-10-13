@@ -27,6 +27,8 @@ import {
   DecisionRow,
   DecisionRowSkeleton,
   DisclosureRow,
+  InboxRow,
+  SwipeRow,
   EmptyState,
   Field,
   Icon,
@@ -263,6 +265,46 @@ function Rows() {
         <List>
           <DecisionRowSkeleton />
           <DecisionRowSkeleton />
+        </List>
+      </Story>
+      <Story title="InboxRow in a SwipeRow: a security alert, an unread update, a read one (P4b)">
+        <List>
+          <InboxRow
+            title="A new device can sign for you"
+            body="Ada's second phone was enrolled on 9 Oct, 09:12. If this wasn't you, change your password now."
+            when="09:12"
+            unread
+            security
+            actor="Ada Lovelace"
+            vault={null}
+            opens
+            onPress={noop}
+            onRemoveDevice={noop}
+          />
+          <SwipeRow actions={[{ key: 'read', label: 'Mark read', onPress: noop }, { key: 'archive', label: 'Archive', onPress: noop }]}>
+            <InboxRow
+              title="Your decision was approved"
+              body="Top up the release deployer wallet, in Operations."
+              when="11:40"
+              unread
+              security={false}
+              actor="Hassan Ali"
+              vault="Operations"
+              opens
+              onPress={noop}
+            />
+          </SwipeRow>
+          <InboxRow
+            title="The treasury for Operations was updated"
+            body="It now matches the vault: payments need any 2 of 3 approvers."
+            when="Tue 16:05"
+            unread={false}
+            security={false}
+            actor={null}
+            vault="Operations"
+            opens
+            onPress={noop}
+          />
         </List>
       </Story>
       <Story title="ListRow, DisclosureRow, avatars">

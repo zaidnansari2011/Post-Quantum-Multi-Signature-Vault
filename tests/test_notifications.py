@@ -829,7 +829,12 @@ def test_every_notification_links_to_a_page_on_this_site_and_carries_nothing_tha
             "actor",
             "vault",
             "proposal_uuid",
+            # P4b, additive: a new device's id (the recipient's own), never an action.
+            "device_id",
+            # P4b, additive: whether archive is allowed (never for a security notice).
+            "archivable",
         }
+        assert item["device_id"] is None or item["kind"] == "device_enrolled"
     assert seen >= {
         "decision_raised",
         "decision_reminder",

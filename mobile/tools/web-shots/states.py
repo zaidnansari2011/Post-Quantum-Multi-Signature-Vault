@@ -539,7 +539,12 @@ def states(fp, other_fp):
             "rejected",
             [
                 vote((5, "Elif Demir"), "approve", 300),
-                vote((6, "Femi Adeyemi"), "reject", 200, reason="Keep it until the export is verified."),
+                vote(
+                    (6, "Femi Adeyemi"),
+                    "reject",
+                    200,
+                    reason="Keep it until the export is verified.",
+                ),
                 vote(BRIJ, "approve", 100, custody="server"),
                 vote(CHEN, "reject", 50, reason="Same as Femi."),
                 vote((8, "Hassan Idris"), "reject", 10, reason="Not before the audit."),
@@ -601,6 +606,11 @@ def run_state(browser, name, state_file, title, rewrite, extra_sheet=None):
     quiet(page)
     if FROM_ACTIVITY.match(name):
         page.get_by_role("tab", name=re.compile("^Activity")).first.click()
+        quiet(page)
+        # P4b: Activity opens on For you; the decision is under Yours.
+        page.get_by_role("tab", name="Yours", exact=True).or_(
+            page.get_by_role("radio", name="Yours", exact=True)
+        ).first.click()
         quiet(page)
     button(page, title).click()
     button(page, "Details").wait_for(timeout=60000)

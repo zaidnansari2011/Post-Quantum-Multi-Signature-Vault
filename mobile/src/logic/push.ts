@@ -128,3 +128,20 @@ export function forgetsPush(deletes: { seed: boolean; token: boolean; identity: 
 export function canToggle(group: PushGroup): boolean {
   return !group.locked && group.id !== 'security';
 }
+
+/** How long a dismissed "Notifications are off" line stays away (§6.3 item 5). */
+export const OFF_LINE_QUIET_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Approvals' "Notifications are off" line (§6.3 item 5): shown where this phone could be told and
+ * is not (the person said no in system settings, or never turned notifications on), unless it was
+ * dismissed in the last 30 days. Never where push cannot work at all (this build, or a server that
+ * sends none): the line would offer something that cannot be turned on.
+ */
+export function showOffLine(args: { state: PushState; dismissedAt: number | null; now: number }): boolean {
+  if (args.state !== 'blocked' && args.state !== 'off') return false;
+  if (args.dismissedAt === null || !Number.isFinite(args.dismissedAt)) return true;
+  return args.now - args.dismissedAt >= OFF_LINE_QUIET_MS;
+}
+
+export const OFF_LINE = "Notifications are off, so you'll only see new decisions when you open Q-Vault.";

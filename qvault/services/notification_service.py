@@ -89,6 +89,11 @@ class PreferenceError(ValueError):
     """A preference that cannot be set: an unknown event or channel, or a locked security event."""
 
 
+class NotArchivable(ValueError):
+    """A security notice (a new device, a changed password) cannot be archived: it stays in the
+    inbox, so a person who did not do it can still see it and act. It can be marked read."""
+
+
 class RemindRefused(ValueError):
     """A requester's reminder that cannot be sent, in words they can act on."""
 
@@ -963,6 +968,8 @@ def _view(notification, *, waits: bool, now: datetime) -> dict:
         "path": copy.path,
         "actionable": actionable,
         "security": notification.kind in SECURITY_KINDS,
+        # Phone P4b, additive: whether archive is allowed. Never for a security notice.
+        "archivable": notification.kind not in SECURITY_KINDS,
         "unread": notification.read_at is None,
         "created_at": _iso(notification.created_at),
         "read_at": _iso(notification.read_at),
@@ -972,7 +979,19 @@ def _view(notification, *, waits: bool, now: datetime) -> dict:
         ),
         "vault": {"id": vault.id, "name": vault.name} if vault is not None else None,
         "proposal_uuid": proposal.proposal_uuid if proposal is not None else None,
+        # Phone P4b, additive: for a new device, which one (the recipient's own), so "Not you?
+        # Remove that device" can open its remove sheet (phone-ux §6.12, §6.18).
+        "device_id": _device_of(notification),
     }
+
+
+def _device_of(notification) -> int | None:
+    if notification.kind != "device_enrolled":
+        return None
+    prefix = "device_enrolled:"
+    key = notification.dedupe_key
+    tail = key[len(prefix) :] if key.startswith(prefix) else ""
+    return int(tail) if tail.isascii() and tail.isdigit() else None
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -981,11 +1000,19 @@ def _iso(moment: datetime | None) -> str | None:
     return (moment if moment.tzinfo else moment.replace(tzinfo=UTC)).isoformat()
 
 
-def mark_read(user, notification_id: int, *, now: datetime | None = None) -> dict | None:
+def mark_read(
+    user, notification_id: int, *, now: datetime | None = None, by_device_id: int | None = None
+) -> dict | None:
+    """Mark it read. A device never clears the "new device" notice about itself (``by_device_id``,
+    the phone asking): a phone enrolled with a stolen password must not be able to unpin the alert
+    that names it. Its owner clears it from another device or the web; the item is returned
+    unchanged."""
     now = now or _utcnow()
     notification = _own(user, notification_id)
     if notification is None:
         return None
+    if by_device_id is not None and _device_of(notification) == by_device_id:
+        return view(notification, now=now)
     if notification.read_at is None:
         notification.read_at = now
         db.session.commit()
@@ -994,9 +1021,15 @@ def mark_read(user, notification_id: int, *, now: datetime | None = None) -> dic
 
 
 def mark_all_read(user, *, section: str | None = None, now: datetime | None = None) -> int:
-    """Mark every unread notification read, or every one in ``section``. Returns how many."""
+    """Mark every unread notification read, or every one in ``section``. Returns how many.
+    Security notices are left unread: each is read on its own, so one tap can't unpin an alert
+    nobody has looked at (review of P4b, 2026-10-13)."""
     now = now or _utcnow()
-    condition = and_(Notification.recipient_id == user.id, Notification.read_at.is_(None))
+    condition = and_(
+        Notification.recipient_id == user.id,
+        Notification.read_at.is_(None),
+        Notification.kind.not_in(SECURITY_KINDS),
+    )
     if section is not None:
         condition = and_(condition, _in_section(section, now, user.id))
     ids = db.session.scalars(select(Notification.id).where(condition)).all()
@@ -1015,11 +1048,17 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
 
 def archive(user, notification_id: int, *, now: datetime | None = None) -> dict | None:
     """Move it out of the inbox, read. Archiving a request does not answer it: the decision is
-    still on the approvals page."""
+    still on the approvals page. A security notice is refused (``NotArchivable``): it stays where
+    its owner, or whoever else reads the inbox, will see it."""
     now = now or _utcnow()
     notification = _own(user, notification_id)
     if notification is None:
         return None
+    if notification.kind in SECURITY_KINDS:
+        raise NotArchivable(
+            "Security notices stay in your inbox, so a device or password change you didn't make "
+            "can't be hidden. You can mark it read."
+        )
     if notification.archived_at is None:
         notification.archived_at = now
         notification.read_at = notification.read_at or now

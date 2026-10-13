@@ -11,7 +11,12 @@ import {
   enrolResponse,
   meResponse,
   notificationResponse,
+  notificationsResponse,
   notificationSettingsResponse,
+  readAllResponse,
+  renameResponse,
+  unreadResponse,
+  type NotificationSection,
   pushTokenResponse,
   peopleResponse,
   proposalDetailResponse,
@@ -79,6 +84,19 @@ export function revokeDevice(token: string, deviceId: number, options: { quietUn
     path: `/api/v1/devices/${deviceId}/revoke`,
     token,
     quietUnauthorized: options.quietUnauthorized,
+  });
+}
+
+/**
+ * Rename one of this account's own active devices (P4b, A21). The server refuses a name with
+ * hidden characters (`hidden_characters`) and says why in its own words.
+ */
+export function renameDevice(token: string, deviceId: number, name: string) {
+  return request(renameResponse, {
+    method: 'POST',
+    path: `/api/v1/devices/${deviceId}/name`,
+    token,
+    body: { name },
   });
 }
 
@@ -342,6 +360,40 @@ export function markNotificationRead(token: string, notificationId: number) {
   return request(notificationResponse, {
     method: 'POST',
     path: `/api/v1/notifications/${notificationId}/read`,
+    token,
+  });
+}
+
+// -- The inbox (plan R4, phone-ux §6.12) -----------------------------------------------------------
+
+/** One section of the inbox, newest first. A notification only points at a screen; it never acts. */
+export function fetchNotifications(token: string, section: NotificationSection, signal?: AbortSignal) {
+  return request(notificationsResponse, {
+    path: `/api/v1/notifications?section=${encodeURIComponent(section)}&per_page=100`,
+    token,
+    signal,
+  });
+}
+
+export function fetchUnread(token: string, signal?: AbortSignal) {
+  return request(unreadResponse, { path: '/api/v1/notifications/unread', token, signal });
+}
+
+/** Mark every unread notification in a section read (For you is `updates`). */
+export function markAllNotificationsRead(token: string, section: 'needs_you' | 'updates') {
+  return request(readAllResponse, {
+    method: 'POST',
+    path: '/api/v1/notifications/read-all',
+    token,
+    body: { section },
+  });
+}
+
+/** Out of the inbox, read. Archiving a request does not answer it. */
+export function archiveNotification(token: string, notificationId: number) {
+  return request(notificationResponse, {
+    method: 'POST',
+    path: `/api/v1/notifications/${notificationId}/archive`,
     token,
   });
 }

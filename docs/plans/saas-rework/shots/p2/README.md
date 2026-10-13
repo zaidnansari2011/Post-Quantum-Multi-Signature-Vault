@@ -1,6 +1,7 @@
 # P2 shots: Approvals, the decision in every state, signing, freshness
 
-Re-shot in full in the fix pass (2026-10-08), after the custody and design reviews, by the three
+Re-shot in full on 2026-10-10 on the P4b code (first shot in the fix pass of 2026-10-08, after the
+custody and design reviews), by the three
 web harness scripts in `mobile/tools/web-shots/` (390 x 844 at 2x) against a disposable backend on
 a copy of the demo database. First screen only: there are no full-page shots any more.
 

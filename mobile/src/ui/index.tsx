@@ -12,6 +12,7 @@ export { ColdStartHint } from './ColdStartHint.tsx';
 export { DecisionRow, DecisionRowSkeleton, type DecisionRowProps } from './DecisionRow.tsx';
 export { feedback } from './feedback.ts';
 export { Icon, type IconName } from './Icon.tsx';
+export { InboxRow, type InboxRowProps } from './InboxRow.tsx';
 export { GroupedValue, Identifier, groupsOfFour, spokenIdentifier } from './Identifier.tsx';
 export {
   Checkbox,
@@ -39,6 +40,7 @@ export { Banner, EmptyState, InlineMessage, Skeleton } from './messages.tsx';
 export { PaymentCard } from './PaymentCard.tsx';
 export { Seal } from './Seal.tsx';
 export { Sheet, useKeyboardHeight } from './Sheet.tsx';
+export { SwipeRow, type SwipeAction } from './SwipeRow.tsx';
 export { SignedOverlay } from './SignedOverlay.tsx';
 export { SignedText } from './SignedText.tsx';
 export { StatusBadge, StatusLine } from './Status.tsx';

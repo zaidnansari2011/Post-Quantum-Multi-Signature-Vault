@@ -10,9 +10,8 @@
 // open under a target that cannot be pushed over it) is kept and applied as soon as it can be. It is
 // never dropped.
 //
-// Push: `openPush` takes a notification's data, once expo-notifications is in the APK (N12); until
-// then nothing calls it. Marking the notification read (`POST /notifications/<id>/read`) waits for
-// that route (A8).
+// Push: `openPush` takes a notification's data (R8, src/push.ts, which marks it read first). The
+// inbox (Activity's For you, P4b) opens its rows through `openLink` the same way.
 
 import { Linking } from 'react-native';
 import { CommonActions, StackActions, createNavigationContainerRef } from '@react-navigation/native';
@@ -116,6 +115,8 @@ function routesFor(target: LinkTarget): object[] {
       return [tabs('Vaults', [{ name: 'VaultList' }, { name: 'Vault', params: { vaultId: target.vaultId } }])];
     case 'activity':
       return [tabs('Activity')];
+    case 'devices':
+      return [tabs('Account', [{ name: 'AccountHome' }, { name: 'OtherDevices' }])];
     case 'security':
       // Account, Other devices, with the remove sheet for that device open (§6.18).
       return [
@@ -201,7 +202,7 @@ export function openUrl(url: string | null | undefined): void {
   if (target) openLink(target);
 }
 
-/** A notification tap's data (§2.4). Nothing calls this until push exists (N12, R8). */
+/** A notification tap's data (§2.4), from src/push.ts. */
 export function openPush(data: unknown): void {
   const read = targetFromPush(data);
   if (read) openLink(read.target);

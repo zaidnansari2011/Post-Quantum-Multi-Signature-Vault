@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 import * as SystemUI from 'expo-system-ui';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { DarkTheme, DefaultTheme, NavigationContainer, type Theme as NavTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -56,7 +56,8 @@ import { configureLinks, flushLinks, listenForLinks, navigationRef, setLinksEnro
 import { usePushWiring } from './src/push.ts';
 import { NotificationsPrimer } from './src/screens/NotificationsPrimer.tsx';
 import { wireFocusManager } from './src/freshness.tsx';
-import { RETRY } from './src/queries.ts';
+import { RETRY, unreadQuery } from './src/queries.ts';
+import { forYouDot } from './src/logic/inbox.ts';
 import { STALE_MS } from './src/logic/freshness.ts';
 import { holdSplash, releaseSplash } from './src/native/splash.ts';
 import { wireNetInfo } from './src/native/network.ts';
@@ -152,7 +153,15 @@ type Open = {
 };
 
 /** The Approvals tab's own stack: the queue, and Waiting on others under it, tab bar kept (§2.1). */
-function ApprovalsTab({ open, onOpenTreasuryApprovals }: { open: Open; onOpenTreasuryApprovals: () => void }) {
+function ApprovalsTab({
+  open,
+  onOpenTreasuryApprovals,
+  onOpenNotifications,
+}: {
+  open: Open;
+  onOpenTreasuryApprovals: () => void;
+  onOpenNotifications: () => void;
+}) {
   const t = useTheme();
   return (
     <ApprovalsStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.color.bg } }}>
@@ -164,6 +173,7 @@ function ApprovalsTab({ open, onOpenTreasuryApprovals }: { open: Open; onOpenTre
             onRaise={() => open.onRaise()}
             onOpenWaiting={() => navigation.navigate('Waiting')}
             onOpenTreasuryApprovals={onOpenTreasuryApprovals}
+            onOpenNotifications={onOpenNotifications}
           />
         )}
       </ApprovalsStack.Screen>
@@ -245,13 +255,24 @@ function AccountTab() {
   );
 }
 
+/**
+ * Activity's dot (phone-ux §2.5, §6.12): something unread in For you. Polled every minute while the
+ * app is in front, and refreshed by a push (src/push.ts) and by the list itself.
+ */
+function useForYouDot(): boolean {
+  const { token } = useSession();
+  const unread = useQuery({ ...unreadQuery(token ?? ''), enabled: !!token, refetchInterval: 60_000 });
+  return forYouDot(unread.data?.unread);
+}
+
 function MainTabs({ open }: { open: Open }) {
   const awaiting = useAwaitingCount();
+  const dot = useForYouDot();
   const t = useTheme();
 
   return (
     <Tabs.Navigator
-      tabBar={(props) => <TabBar {...props} />}
+      tabBar={(props) => <TabBar {...props} dots={{ Activity: dot }} />}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: t.color.bg } }}
     >
       <Tabs.Screen name="Home" options={{ title: 'Approvals', tabBarBadge: awaiting }}>
@@ -261,6 +282,7 @@ function MainTabs({ open }: { open: Open }) {
             onOpenTreasuryApprovals={() =>
               navigation.navigate('Account', { screen: 'TreasuryApprovals', params: { fromPayment: true } })
             }
+            onOpenNotifications={() => navigation.navigate('Account', { screen: 'NotificationSettings' })}
           />
         )}
       </Tabs.Screen>

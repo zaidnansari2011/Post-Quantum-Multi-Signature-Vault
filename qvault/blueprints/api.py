@@ -36,6 +36,7 @@ from qvault.extensions import db
 from qvault.models.key import Key
 from qvault.models.proposal import Proposal
 from qvault.models.reconfiguration import Reconfiguration
+from qvault.models.signature import Signature
 from qvault.models.treasury import TreasurySigner
 from qvault.models.user import User
 from qvault.models.vault import Vault, VaultMember
@@ -284,6 +285,26 @@ def revoke_device(device_id: int):
     return jsonify(ok=True, device=_device_json(device, current_id=g.api_device.id))
 
 
+@bp.route("/devices/<int:device_id>/name", methods=["POST", "PUT"])
+@device_token_required
+def rename_device(device_id: int):
+    """Rename one of the caller's own devices (A21, phone-ux §6.18): ``{"name": "..."}``.
+
+    Any device the account owns, as revoke allows, but never a removed one. Someone else's device
+    is a 404, exactly like one that does not exist. The name is held to what enrolment allows,
+    plus R8's rule for names people type: no hidden characters."""
+    from qvault.models.device import Device
+
+    device = db.session.get(Device, device_id)
+    if device is None or device.owner_id != g.api_user.id:
+        return _error("unknown_device", "No such device.", 404)
+    try:
+        device_service.rename(device, _body().get("name"), actor_id=g.api_user.id)
+    except DeviceError as exc:
+        return _error(exc.code, exc.message, 409 if exc.code == "already_revoked" else 400)
+    return jsonify(ok=True, device=_device_json(device, current_id=g.api_device.id))
+
+
 # -- vaults ---------------------------------------------------------------------------------------
 
 
@@ -490,6 +511,17 @@ def vault_treasury(vid: int):
         reconfiguration_service.view(vault, user) if view["treasury"] is not None else None
     )
     linked = treasury_service.linked_treasury(vault) if view["treasury"] is not None else None
+    if linked is not None:
+        # A20/A21 (phone P4b), additive: the fingerprint of the key the treasury holds for the
+        # caller, so the phone can tell which of its devices that is (the remove sheets, §6.18,
+        # §6.19). Only the caller's own seat: everyone else's is null.
+        mine = {
+            row.user_id: row.key.public_fingerprint()
+            for row in linked.signers
+            if row.user_id == user.id and row.key is not None
+        }
+        for seat in view["treasury"]["signers"]:
+            seat["key_fingerprint"] = mine.get(seat["user_id"])
     view["status"] = (
         payout_service.treasury_status(linked, current_app.extensions.get("relayer"))
         if linked is not None
@@ -673,6 +705,7 @@ def vault_detail(vid: int):
     detail = _vault_summary(vault, user)
     member_ids = [m.user_id for m in vault.members]
     keyed = _keyed(member_ids)
+    last_signed = _last_signed(vault.id, member_ids)
     detail["members"] = [
         {
             "user_id": m.user_id,
@@ -683,6 +716,9 @@ def vault_detail(vid: int):
             # Additive (phone-ux §6.14): an approver without an active key can't sign yet, which
             # is why a quorum can be out of reach.
             "has_key": m.user_id in keyed,
+            # A21 (phone P4b), additive: when they last approved or rejected a decision in this
+            # vault, which every member can already read off its decisions; null if never.
+            "last_signed_at": _iso_utc(last_signed.get(m.user_id)),
         }
         for m in vault.members
     ]
@@ -703,6 +739,19 @@ def vault_detail(vid: int):
         for change in audit_service.rule_changes(vault, limit=5)
     ]
     return jsonify(ok=True, vault=detail)
+
+
+def _last_signed(vault_id: int, user_ids: list[int]) -> dict:
+    """Each of ``user_ids``'s latest vote on a decision in this vault, by user id."""
+    if not user_ids:
+        return {}
+    rows = db.session.execute(
+        db.select(Signature.signer_id, db.func.max(Signature.created_at))
+        .join(Proposal, Proposal.id == Signature.proposal_id)
+        .where(Proposal.vault_id == vault_id, Signature.signer_id.in_(user_ids))
+        .group_by(Signature.signer_id)
+    ).all()
+    return {signer_id: at for signer_id, at in rows if at is not None}
 
 
 def _keyed(user_ids: list[int]) -> set[int]:
@@ -887,6 +936,7 @@ def _authorized_ids(proposal) -> set[int]:
 
 def _proposal_summary(proposal, user) -> dict:
     approvals, rejections = approval_service.tally(proposal)
+    mine = approval_service.vote_of(proposal, user.id)
     eligible = eligibility.eligible_ids(proposal)
     outlook = eligibility.outlook(
         proposal,
@@ -909,7 +959,10 @@ def _proposal_summary(proposal, user) -> dict:
         "approvals": approvals,
         "rejections": rejections,
         "expires_at": proposal.expires_at.isoformat() if proposal.expires_at else None,
-        "signed_by_me": approval_service.vote_of(proposal, user.id) is not None,
+        "signed_by_me": mine is not None,
+        # A21 (phone P4b), additive: which way the caller voted, so a list can say "You approved"
+        # rather than only that they voted. Their own vote only; null when they have not voted.
+        "my_vote": mine.decision if mine is not None else None,
         # Whether the vote endpoint would let this user sign: the frozen signer set AND an
         # approver of the vault now, in good standing (``eligibility``, owner decision 2026-10-08).
         "can_sign": user.id in eligible,
@@ -956,7 +1009,31 @@ def _proposal_summary(proposal, user) -> dict:
         "signers": _signers_view(proposal),
         # A4: when it was decided (approved, rejected, withdrawn or expired); null while open.
         "decided_at": _decided_at(proposal),
+        # A12 and A21 (phone P4b), additive: for the person who raised it, whether Remind can be
+        # sent now and, if not, when it can. Null for everyone else.
+        "remind": _remind_view(proposal, user),
         **(_payment_summary(proposal, user) if proposal.action is not None else {}),
+    }
+
+
+def _iso_utc(moment) -> str | None:
+    if moment is None:
+        return None
+    return (moment if moment.tzinfo else moment.replace(tzinfo=UTC)).isoformat()
+
+
+def _remind_view(proposal, user) -> dict | None:
+    """The requester's Remind (R4), as ``notification_service.remind_state`` decides it: offered at
+    all, allowed now, and the moment the next one may be sent. Only for the person who raised it
+    and only while it is open, so nobody else learns who was reminded when."""
+    if proposal.creator_id != user.id or inbox_service.effective_status(proposal) != "open":
+        return None
+    state = notification_service.remind_state(proposal, user)
+    return {
+        "offered": state.offered,
+        "allowed": state.allowed,
+        "last_sent_at": _iso_utc(state.last_sent),
+        "next_allowed_at": _iso_utc(state.next_at),
     }
 
 
@@ -1453,7 +1530,7 @@ def unread_notifications():
 @bp.post("/notifications/<int:nid>/read")
 @device_token_required
 def read_notification(nid: int):
-    item = notification_service.mark_read(g.api_user, nid)
+    item = notification_service.mark_read(g.api_user, nid, by_device_id=g.api_device.id)
     if item is None:
         return _error("unknown_notification", "No such notification.", 404)
     return jsonify(
@@ -1475,7 +1552,10 @@ def read_all_notifications():
 @bp.post("/notifications/<int:nid>/archive")
 @device_token_required
 def archive_notification(nid: int):
-    item = notification_service.archive(g.api_user, nid)
+    try:
+        item = notification_service.archive(g.api_user, nid)
+    except notification_service.NotArchivable as exc:
+        return _error("not_archivable", str(exc), 409)
     if item is None:
         return _error("unknown_notification", "No such notification.", 404)
     return jsonify(
@@ -1559,8 +1639,25 @@ def remind_approvers(uuid: str):
     try:
         reminded = notification_service.remind(proposal, user)
     except notification_service.RemindRefused as exc:
-        return _error("remind_refused", str(exc), 409)
-    return jsonify(ok=True, reminded=reminded)
+        # A12, additive: when the next one may be sent, beside the sentence that says so.
+        state = notification_service.remind_state(proposal, user)
+        return (
+            jsonify(
+                ok=False,
+                code="remind_refused",
+                error=str(exc),
+                next_allowed_at=_iso_utc(state.next_at),
+            ),
+            409,
+        )
+    state = notification_service.remind_state(proposal, user)
+    # A12, additive: when this reminder went, and when the next may (a day later).
+    return jsonify(
+        ok=True,
+        reminded=reminded,
+        reminded_at=_iso_utc(state.last_sent),
+        next_allowed_at=_iso_utc(state.next_at),
+    )
 
 
 # -- phone push (plan R8, A15) -------------------------------------------------------------------

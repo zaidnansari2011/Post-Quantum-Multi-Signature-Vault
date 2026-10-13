@@ -95,7 +95,8 @@ def test_the_unread_count_falls_as_notifications_are_read_and_archived(client, i
     assert body["unread"]["needs_you"] == 0
 
     updates = client.get("/api/v1/notifications?section=updates", headers=phone).get_json()
-    target = updates["notifications"][0]["id"]
+    # The first update that is not a security notice: those cannot be archived (P4b).
+    target = next(n["id"] for n in updates["notifications"] if not n["security"])
     r = client.post(f"/api/v1/notifications/{target}/archive", headers=phone)
     assert r.get_json()["notification"]["section"] == "archived"
     assert r.get_json()["unread"] == {"needs_you": 0, "updates": 1, "total": 1}
@@ -108,12 +109,14 @@ def test_mark_all_read_over_the_api_can_name_a_section(client, inbox):
     _raise(inbox, "Second")
     phone = inbox["brij_phone"]
 
+    # Updates holds one ordinary notice and the "new device" security notice; read-all leaves the
+    # security notice unread (it is read on its own, from another device or the web).
     r = client.post("/api/v1/notifications/read-all", json={"section": "updates"}, headers=phone)
-    assert r.get_json()["marked"] == 2
-    assert r.get_json()["unread"] == {"needs_you": 2, "updates": 0, "total": 2}
+    assert r.get_json()["marked"] == 1
+    assert r.get_json()["unread"] == {"needs_you": 2, "updates": 1, "total": 3}
 
     r = client.post("/api/v1/notifications/read-all", headers=phone)
-    assert r.get_json()["marked"] == 2 and r.get_json()["unread"]["total"] == 0
+    assert r.get_json()["marked"] == 2 and r.get_json()["unread"]["total"] == 1
 
     r = client.post("/api/v1/notifications/read-all", json={"section": "archived"}, headers=phone)
     assert r.status_code == 400 and r.get_json()["code"] == "bad_request"
@@ -189,7 +192,10 @@ def test_the_requester_reminds_over_the_api_at_most_once_a_day(client, inbox):
     path = f"/api/v1/proposals/{proposal.proposal_uuid}/remind"
 
     r = client.post(path, headers=inbox["ada_phone"])
-    assert r.status_code == 200 and r.get_json() == {"ok": True, "reminded": 2}
+    body = r.get_json()
+    assert r.status_code == 200 and (body["ok"], body["reminded"]) == (True, 2)
+    # P4b, additive: when it went and when the next may (tests/test_api_phone_p4b.py).
+    assert set(body) == {"ok", "reminded", "reminded_at", "next_allowed_at"}
 
     again = client.post(path, headers=inbox["ada_phone"])
     assert again.status_code == 409 and again.get_json()["code"] == "remind_refused"
@@ -211,7 +217,8 @@ def test_the_phones_schemas_accept_what_the_server_sends(client, inbox, tmp_path
     proposal = _raise(inbox)
     phone, ada_phone = inbox["brij_phone"], inbox["ada_phone"]
     listed = client.get("/api/v1/notifications?section=updates", headers=phone).get_json()
-    first = listed["notifications"][0]["id"]
+    # Not a security notice, which cannot be archived (P4b).
+    first = next(n["id"] for n in listed["notifications"] if not n["security"])
     cases = [
         ("needs_you", "notifications", client.get("/api/v1/notifications", headers=phone)),
         (

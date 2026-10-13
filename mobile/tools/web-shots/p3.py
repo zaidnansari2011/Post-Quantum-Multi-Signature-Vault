@@ -716,6 +716,12 @@ def main_tour(browser, ada, fp):
     def activity(page, _link):
         open_app(page)
         tab(page, "Activity")
+        # P4b: Activity opens on For you; Yours is the second segment (a chip at large text).
+        page.get_by_role("tab", name="Yours", exact=True).or_(
+            page.get_by_role("radio", name="Yours", exact=True)
+        ).first.click()
+        page.wait_for_timeout(500)
+        quiet(page)
         shot(page, "ac01_your_decisions")
         page.get_by_role("radio", name="Decided", exact=True).click()
         page.wait_for_timeout(500)

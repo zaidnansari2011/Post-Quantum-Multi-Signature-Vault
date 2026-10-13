@@ -4,7 +4,12 @@ Shot on 2026-10-09 by `mobile/tools/web-shots/p3.py` (390 x 844 at 2x) against a
 on a copy of the demo database, renamed to the workspace "Northwind" and the vault "Operations".
 Re-shot whole after the P3 review's fix pass. First screen only. `light_1` and `dark_1` hold every
 shot; `light_2` and `dark_2` (emulated 2.0 text) hold the screens whose layout at large text is worth
-reviewing. Every PNG is a 256-colour palette image, as P2's are (162 PNGs, 7.1 MB).
+reviewing. Every PNG is a 256-colour palette image, as P2's are (162 PNGs, 6.7 MB).
+Re-shot whole on 2026-10-13 on the P4b code (branch `rework/p4b-phone-inbox`), the same 162 names,
+each run on a fresh copy of the P4b demo database and a state folder holding only Ada's second phone
+(`ada2.json`). That run's audits: 658 targets in each of `light_1` and `dark_1`, 159 in each of
+`light_2` and `dark_2`, 0 touch-target findings and 0 overflow, no page errors. The counts in the
+next paragraph are the 2026-10-09 run's.
 
 Two audits run on every shot, and the run fails on any finding. Touch targets (every target 48 x 48
 or larger, none nested): 696 targets in `light_1`, 748 in `dark_1`, 183 in `light_2`, 197 in
