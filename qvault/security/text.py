@@ -19,10 +19,36 @@ _HIDDEN = {"Cf", "Co", "Cs", "Cc", "Zl", "Zp"}
 MESSAGE = "Remove the invisible or text-direction characters from it."
 
 
+#: Characters that are assigned and not in a hidden category, yet draw nothing: the Hangul
+#: fillers, the braille blank, the combining grapheme joiner, the Mongolian free variation
+#: selectors and the variation selectors. Only U+FE0E and U+FE0F are left out, because they
+#: choose how an emoji is drawn ("a heart" vs a red heart), which names legitimately use
+#: (review of P4b, 2026-10-13: a name of one Hangul filler was stored and showed as blank).
+_BLANK = frozenset(
+    [0x034F, 0x115F, 0x1160, 0x180B, 0x180C, 0x180D, 0x180F, 0x2800, 0x3164, 0xFFA0]
+    + list(range(0xFE00, 0xFE0E))
+    + list(range(0xE0100, 0xE01F0))
+)
+#: More combining marks than this on one letter stack into a smear that hides what is under it.
+_MAX_MARKS = 4
+
+
+def _drawn_nothing(ch: str) -> bool:
+    return unicodedata.category(ch) in _HIDDEN or unicodedata.category(ch) == "Cn" or ord(ch) in _BLANK
+
+
 def invisible_in(text: str | None) -> bool:
     """Whether ``text`` holds a character that is not seen (or a control), apart from the ordinary
-    spaces a person types."""
-    return any(unicodedata.category(ch) in _HIDDEN for ch in (text or ""))
+    spaces a person types: a hidden category, an unassigned code point, a character that draws
+    nothing (``_BLANK``), or a pile of more than ``_MAX_MARKS`` combining marks."""
+    run = 0
+    for ch in text or "":
+        if _drawn_nothing(ch):
+            return True
+        run = run + 1 if unicodedata.category(ch) in ("Mn", "Me") else 0
+        if run > _MAX_MARKS:
+            return True
+    return False
 
 
 def visible(text: object) -> str:
@@ -33,6 +59,6 @@ def visible(text: object) -> str:
         category = unicodedata.category(ch)
         if category in ("Cc", "Zl", "Zp"):
             out.append(" ")
-        elif category not in _HIDDEN:
+        elif not _drawn_nothing(ch):
             out.append(ch)
     return " ".join("".join(out).split())

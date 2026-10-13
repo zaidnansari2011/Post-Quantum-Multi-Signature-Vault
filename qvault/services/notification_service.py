@@ -966,11 +966,19 @@ def _iso(moment: datetime | None) -> str | None:
     return (moment if moment.tzinfo else moment.replace(tzinfo=UTC)).isoformat()
 
 
-def mark_read(user, notification_id: int, *, now: datetime | None = None) -> dict | None:
+def mark_read(
+    user, notification_id: int, *, now: datetime | None = None, by_device_id: int | None = None
+) -> dict | None:
+    """Mark it read. A device never clears the "new device" notice about itself (``by_device_id``,
+    the phone asking): a phone enrolled with a stolen password must not be able to unpin the alert
+    that names it. Its owner clears it from another device or the web; the item is returned
+    unchanged."""
     now = now or _utcnow()
     notification = _own(user, notification_id)
     if notification is None:
         return None
+    if by_device_id is not None and _device_of(notification) == by_device_id:
+        return view(notification, now=now)
     if notification.read_at is None:
         notification.read_at = now
         db.session.commit()
@@ -979,9 +987,15 @@ def mark_read(user, notification_id: int, *, now: datetime | None = None) -> dic
 
 
 def mark_all_read(user, *, section: str | None = None, now: datetime | None = None) -> int:
-    """Mark every unread notification read, or every one in ``section``. Returns how many."""
+    """Mark every unread notification read, or every one in ``section``. Returns how many.
+    Security notices are left unread: each is read on its own, so one tap can't unpin an alert
+    nobody has looked at (review of P4b, 2026-10-13)."""
     now = now or _utcnow()
-    condition = and_(Notification.recipient_id == user.id, Notification.read_at.is_(None))
+    condition = and_(
+        Notification.recipient_id == user.id,
+        Notification.read_at.is_(None),
+        Notification.kind.not_in(SECURITY_KINDS),
+    )
     if section is not None:
         condition = and_(condition, _in_section(section, now, user.id))
     ids = db.session.scalars(select(Notification.id).where(condition)).all()

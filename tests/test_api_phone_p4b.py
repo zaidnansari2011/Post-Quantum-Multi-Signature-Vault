@@ -283,6 +283,30 @@ def test_a_password_change_notice_cannot_be_archived_either(team):
     assert note.archived_at is None
 
 
+def test_a_phone_cannot_clear_the_new_device_notice_about_itself(client, team):
+    # Review of P4b (2026-10-13): a phone enrolled with a stolen password must not be able to
+    # unpin the alert that names it. Brij's phone is the device that notice is about.
+    note = _security_notice(team)
+    r = client.post(f"/api/v1/notifications/{note.id}/read", headers=team["brij_phone"])
+    assert r.status_code == 200 and r.get_json()["notification"]["unread"] is True
+    r = client.post(
+        "/api/v1/notifications/read-all", json={"section": "updates"}, headers=team["brij_phone"]
+    )
+    assert r.status_code == 200
+    db.session.expire_all()
+    assert db.session.get(Notification, note.id).read_at is None
+
+
+def test_mark_all_read_leaves_security_notices_to_be_read_one_by_one(team):
+    note = _security_notice(team)
+    notification_service.mark_all_read(team["brij"])
+    db.session.expire_all()
+    assert db.session.get(Notification, note.id).read_at is None
+    notification_service.mark_read(team["brij"], note.id)
+    db.session.expire_all()
+    assert db.session.get(Notification, note.id).read_at is not None
+
+
 def test_every_notice_says_whether_it_can_be_archived(client, team):
     _raise(team)
     items = []
@@ -400,7 +424,23 @@ _HIDDEN_NAMES = [
     ("supplementary private use", f"Ada{chr(0xF0000)}"),
     ("lone surrogate", f"Ada{chr(0xD800)}"),
     ("paragraph separator", f"Ada{chr(0x2029)}phone"),
+    # Review of P4b (2026-10-13): characters in visible categories that draw nothing.
+    ("hangul filler", chr(0x3164)),
+    ("halfwidth hangul filler", f"Ada{chr(0xFFA0)}"),
+    ("braille blank", f"Ada{chr(0x2800)}phone"),
+    ("combining grapheme joiner", f"Ada{chr(0x034F)}"),
+    ("variation selector 1", f"Ada{chr(0xFE00)}"),
+    ("mongolian variation selector", f"Ada{chr(0x180B)}"),
+    ("unassigned code point", f"Ada{chr(0x0378)}"),
+    ("a noncharacter", f"Ada{chr(0xFFFE)}"),
+    ("stacked combining marks", "A" + chr(0x0301) * 5 + "da"),
 ]
+
+
+def test_a_name_with_an_emoji_style_or_an_accent_is_still_fine():
+    heart = chr(0x2764) + chr(0xFE0F)
+    assert device_service.clean_name(f"Ada {heart}") == f"Ada {heart}"
+    assert device_service.clean_name("Se" + chr(0x0301) + "an") == "Se" + chr(0x0301) + "an"
 
 
 @pytest.mark.parametrize("label, name", _HIDDEN_NAMES, ids=[label for label, _ in _HIDDEN_NAMES])
