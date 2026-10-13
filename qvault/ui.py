@@ -8,6 +8,7 @@ down without losing either end. ``register`` puts them on the Jinja environment.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 #: The closed status vocabulary (plan S6): one word per state, and the tone it always takes. A
@@ -157,12 +158,60 @@ def count_word(n: int, *, capital: bool = True) -> str:
     return str(n)
 
 
+def count_noun(n: int, one: str, many: str | None = None) -> str:
+    """``n`` and its noun, singular or plural: ``1 entry``, ``1,234 entries``, ``0 entries``.
+    Never ``entry(s)``: a sentence names the count it has."""
+    return f"{n:,} {one if n == 1 else (many or one + 's')}"
+
+
+def rule_words(m: int, n: int) -> str:
+    """A vault's approval rule in a few words: ``Any 2 of 3``. One approver is "One person
+    decides", said plainly rather than "Any 1 of 1"; a threshold above the approvers it has is
+    "Needs 2, has 1", never "Any 2 of 1" (staging smoke test 2026-10-09)."""
+    if n == 1 and m <= 1:
+        return "One person decides"
+    if m > n:
+        return f"Needs {m}, has {n}"
+    return f"Any {m} of {n}"
+
+
 def first_name(name: str | None) -> str:
     """The name people are called by in lists and sentences (screens.md: first names only)."""
     name = (name or "").strip()
     if "@" in name and " " not in name:
         return name.split("@", 1)[0]
     return name.split(" ", 1)[0] if name else "Someone"
+
+
+def short_names[K](names: Mapping[K, str | None]) -> dict[K, str]:
+    """What each person in one list, sentence or row of avatars is called: their first name, or
+    their full name when someone else in the same group shares that first name.
+
+    ``names`` maps anything (an id, a position) to a display name (or an email, for an account
+    without one). Staging smoke test 2026-10-09: "QA Ada", "QA Brij" and "QA Chen" all read "QA",
+    so the vault said "You, QA and QA". Full names rather than "Raj K.": a full name is what the
+    person typed, and an initial still collides for Raj Kumar and Raj Khan. First names are
+    compared ignoring case. Nobody's email address is shown here that wasn't their name already.
+    """
+    firsts = {key: first_name(name) for key, name in names.items()}
+    counts: dict[str, int] = {}
+    for word in firsts.values():
+        counts[word.casefold()] = counts.get(word.casefold(), 0) + 1
+    out = {}
+    for key, name in names.items():
+        word = firsts[key]
+        if counts[word.casefold()] > 1 and (name or "").strip():
+            out[key] = " ".join((name or "").split())
+        else:
+            out[key] = word
+    return out
+
+
+def short_name_list(names: list[str | None]) -> list[str]:
+    """``short_names`` for a list, in its order: for templates (``ui_short_names``). "You" (the
+    reader) stays "You"."""
+    shortened = short_names({i: n for i, n in enumerate(names) if n != "You"})
+    return [("You" if n == "You" else shortened[i]) for i, n in enumerate(names)]
 
 
 def name_list(names: list[str], *, conjunction: str = "and", limit: int = 4) -> str:
@@ -219,9 +268,16 @@ def standard_note(text: str | None) -> tuple[str, str]:
 
 
 def initials(name: str | None) -> str:
-    """One letter for an avatar: the first letter of the name, or ``?`` when there is none."""
-    name = (name or "").strip()
-    return name[:1].upper() if name else "?"
+    """The letters on an avatar: the first letters of the first and last words of the name
+    ("QA Brij" is QB, "Ada Lovelace" AL), one letter for a one-word name or an email address, or
+    ``?`` when there is none. Two letters, so "QA Brij" and "QA Chen" don't both read Q (staging
+    smoke test 2026-10-09)."""
+    words = (name or "").split()
+    if not words:
+        return "?"
+    if len(words) == 1 or "@" in words[0]:
+        return words[0][:1].upper()
+    return (words[0][:1] + words[-1][:1]).upper()
 
 
 def register(app) -> None:
@@ -238,6 +294,9 @@ def register(app) -> None:
         ui_due=due,
         ui_code=decision_code,
         ui_count_word=count_word,
+        ui_count=count_noun,
         ui_first_name=first_name,
+        ui_rule=rule_words,
+        ui_short_names=short_name_list,
         ui_names=name_list,
     )

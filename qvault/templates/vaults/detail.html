@@ -15,8 +15,9 @@
     then the tabs. The header also says who may approve their own decision (S15, R5). -#}
 {% block content %}
 {% set approvers = vault.signer_members() | map(attribute='user') | list %}
-{% set approver_names = [] %}
-{% for u in approvers %}{% set _ = approver_names.append('You' if u.id == current_user.id else ui_first_name(u.display_name or u.email)) %}{% endfor %}
+{#- First names, or full names where two approvers share one (ui.short_names). -#}
+{% set approver_full_names = [] %}{% for u in approvers %}{% set _ = approver_full_names.append('You' if u.id == current_user.id else (u.display_name or u.email)) %}{% endfor %}
+{% set approver_names = ui_short_names(approver_full_names) %}
 {% set role_word = {'owner': 'Owner', 'signer': 'Approver', 'viewer': 'Viewer, read only'}[me.member_role] %}
 {% set facts = [] %}
 {% set approvers_fact %}{%- set approver_full = [] %}{% for u in approvers %}{% set _ = approver_full.append(u.display_name or u.email) %}{% endfor %}{{ avatar_stack(approver_full, 4, 20) }}<span>{{ ui_names(approver_names) }}</span>{% endset %}
@@ -64,7 +65,7 @@
   ]) %}
   {% call data_table(columns, rows|length > 0, label='Decisions in ' ~ vault.name, stack=True,
                      empty_title='No decisions yet',
-                     empty_caption=('Raise the first: it needs ' ~ vault.policy.threshold_m ~ ' of ' ~ n_signers ~ ' approvers to pass.') if can_propose else 'Nothing has been raised in this vault.',
+                     empty_caption=(('Raise the first: its one approver decides it alone.' if n_signers == 1 and vault.policy.threshold_m <= 1 else 'Raise the first: it needs ' ~ ui_count(vault.policy.threshold_m, 'approval') ~ (' from its ' ~ n_signers ~ ' approvers' if vault.policy.threshold_m <= n_signers else '') ~ ' to pass.')) if can_propose else 'Nothing has been raised in this vault.',
                      empty_action={'label': 'New decision', 'href': url_for('vaults.new_proposal', vid=vault.id)} if can_propose else None) %}
     {%- for r in rows %}
     {%- set p = r.proposal %}
@@ -182,7 +183,7 @@
           <div><dt>Approvals</dt><dd>{{ rule(t.threshold_m, t.signer_count) }}</dd></div>
           <div><dt>Linked</dt><dd>{{ t.linked_at[:10] }}</dd></div>
           {% if treasury_status %}
-          <div><dt>Balance</dt><dd>{% if treasury_status.balance is not none %}{{ treasury_status.balance }}{% else %}{{ badge('Unavailable', 'warning') }}{% endif %}</dd></div>
+          <div><dt>Balance</dt><dd>{% if treasury_status.balance is not none %}{{ treasury_status.balance }}{% else %}{{ badge('Can’t read it now', 'warning') }}<span class="q-cap">Ethereum didn’t answer when this page asked for the treasury’s balance. Reload to try again.</span>{% endif %}</dd></div>
           <div><dt>Payouts today</dt><dd>{{ treasury_status.payouts_left_today }} of {{ treasury_status.payouts_per_day }} left</dd></div>
           {% endif %}
         </dl>
@@ -311,7 +312,7 @@
       <form class="q-panel__bd" method="post" action="{{ url_for('vaults.save_rules', vid=vault.id) }}">
         {{ threshold_form.hidden_tag() }}
         {% set choices = [] %}
-        {% for i in range(1, n_signers + 1) %}{% set _ = choices.append((i, 'Any ' ~ i ~ ' of ' ~ n_signers)) %}{% endfor %}
+        {% for i in range(1, n_signers + 1) %}{% set _ = choices.append((i, ui_rule(i, n_signers))) %}{% endfor %}
         {{ select('threshold_m', 'Approvals required', choices, threshold_form.threshold_m.data or vault.policy.threshold_m,
                   caption='Applies to decisions raised from now on. Open decisions keep the rule they were raised with.') }}
         {{ checkbox('requester_can_approve', 'The person who raises a decision can also approve it', checked=requester_can_approve, value='y', id='f-requester-can-approve',

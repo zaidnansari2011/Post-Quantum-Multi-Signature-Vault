@@ -163,22 +163,109 @@ def approve_consequence(
     return lines
 
 
-def reject_consequence(*, rejections: int, required_m: int, required_n: int) -> list[str]:
+def _joined(words: list[str], conjunction: str = "and") -> str:
+    if len(words) <= 1:
+        return "".join(words)
+    return f"{', '.join(words[:-1])} {conjunction} {words[-1]}"
+
+
+def how_it_ends(
+    *,
+    rejections: int,
+    required_m: int,
+    required_n: int,
+    could_reject: list[str],
+    withdrawer: str | None,
+    expires: str | None,
+) -> str:
+    """How an open decision that can no longer pass still ends, from the facts (owner decision
+    2026-10-09): rejections by the people who can still vote, when they are enough to close it by
+    its signed rule (rejections over N minus M); a withdrawal by whoever raised it, when they still
+    can; and its deadline. ``could_reject`` are their names ("you" for the reader),
+    ``withdrawer`` the raiser's ("you", or None when they can't withdraw it), ``expires`` its
+    deadline as written."""
+    parts = []
+    left = required_n - required_m + 1 - rejections
+    k = len(could_reject)
+    if 0 < left <= k:
+        if left == k:
+            single = k == 1 and could_reject[0] != "you"
+            parts.append(f"when {_joined(could_reject)} {'rejects' if single else 'reject'} it")
+        else:
+            parts.append(f"when any {left} of {_joined(could_reject)} reject it")
+    if withdrawer:
+        parts.append(f"when {withdrawer} {'withdraws' if withdrawer != 'you' else 'withdraw'} it")
+    if expires:
+        parts.append(f"when it expires on {expires}")
+    if not parts:
+        return (
+            "It has no deadline, nobody left can withdraw it, and too few can still vote to reject "
+            "it, so it stays open."
+        )
+    if len(parts) == 1:
+        return f"It ends {parts[0]}."
+    return f"It ends {', '.join(parts[:-1])}, or {parts[-1]}."
+
+
+def reject_consequence(
+    *,
+    rejections: int,
+    required_m: int,
+    required_n: int,
+    approvals: int | None = None,
+    others: list[str] | None = None,
+    withdrawer: str | None = None,
+    expires: str | None = None,
+) -> list[str]:
     """What rejecting does. A decision is rejected once rejections exceed N minus M, because the
     approvals it needs can then no longer be reached (``approval_service._finalize_if_decided``).
     So "Rejecting ends this decision for everyone" is only true when this rejection crosses that
     line; in a 2 of 4 vault one rejection changes nothing on its own (style tile finding 1).
+
+    ``others`` are the names of the other people who can still vote on it (eligible, not yet
+    voted), with ``approvals`` its approvals so far: the sentences then count the people who can
+    actually vote, not its signed N (staging smoke test 2026-10-09: under separation of duties
+    the raiser was counted). When this rejection leaves it unable to pass, it says so and how it
+    still ends (``how_it_ends``). Without them, the rule-only sentences.
     """
     limit = required_n - required_m
     after = rejections + 1
     if after > limit:
         lines = ["Rejecting ends this decision for everyone. It can’t be approved after this."]
-    else:
+    elif others is None or approvals is None:
         more = limit + 1 - after
         lines = [
             "Rejecting doesn’t end this decision on its own. "
             f"{more} more rejection{'' if more == 1 else 's'} would end it."
         ]
+    else:
+        more = limit + 1 - after
+        needed = max(required_m - approvals, 0)
+        k = len(others)
+        if k >= needed:
+            line = "Rejecting doesn’t end this decision on its own. "
+            if k >= more:
+                line += f"{more} more rejection{'' if more == 1 else 's'} would end it."
+            else:
+                line += (
+                    f"Rejections alone can’t end it now: only {k} other "
+                    f"{'person' if k == 1 else 'people'} can still vote on it."
+                )
+            lines = [line]
+        else:
+            who = f"only {_joined(others)} could" if others else "nobody else could"
+            lines = [
+                f"After yours it can’t pass: it needs {_approvals(needed).replace(' more', '')}, "
+                f"and {who} still give one. Nobody will be asked to approve it.",
+                how_it_ends(
+                    rejections=after,
+                    required_m=required_m,
+                    required_n=required_n,
+                    could_reject=others,
+                    withdrawer=withdrawer,
+                    expires=expires,
+                ),
+            ]
     lines.append("You can’t withdraw your rejection.")
     return lines
 

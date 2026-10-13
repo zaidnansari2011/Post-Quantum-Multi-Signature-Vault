@@ -20,6 +20,7 @@ import random
 from ..crypto import build_registry
 from ..crypto.symmetric import AESGCMProvider
 from ..services import signing
+from ..ui import count_noun
 from . import cost, shor, toy_rsa
 from .harness import CONTRAST, Attack, Run, blocked, succeeded
 
@@ -88,7 +89,8 @@ def shor_breaks_rsa(rng: random.Random) -> Run:
             f"{last.mode} simulation over a {last.t}-qubit control register; the textbook circuit "
             f"for this modulus needs {last.qubits} qubits in total",
             f"{last.amplitudes_held:,} amplitudes held, measured k={last.measured_k}, "
-            f"phase={last.phase}, order r={last.candidate_r} in {last.attempts} shot(s)",
+            f"phase={last.phase}, order r={last.candidate_r} "
+            f"in {count_noun(last.attempts, 'shot')}",
         )
     if result.redrawn_lucky_bases:
         run.step(
@@ -99,7 +101,9 @@ def shor_breaks_rsa(rng: random.Random) -> Run:
             result.redrawn_lucky_bases,
         )
     rounds = len(result.order_runs)
-    round_note = f"{rounds} order-finding round(s), {result.elapsed_ms:.0f} ms on this CPU"
+    round_note = (
+        f"{count_noun(rounds, 'order-finding round')}, {result.elapsed_ms:.0f} ms on this CPU"
+    )
     if rounds > 3:
         # Worth naming: a reader who knows Shor will wonder why it took so many attempts.
         round_note += (

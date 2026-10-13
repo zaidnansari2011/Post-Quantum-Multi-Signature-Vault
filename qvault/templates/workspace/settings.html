@@ -79,9 +79,9 @@
         <h3 class="q-danger__t">Delete the workspace</h3>
         <p>
           {% if vault_count %}
-          Not possible while it has vaults ({{ vault_count }}): their decisions and audit record must stay checkable.
+          Not possible while it has {{ ui_count(vault_count, 'vault') }}: their decisions and audit record must stay checkable.
           {% else %}
-          Not available yet.
+          Q-Vault can’t delete a workspace yet, even an empty one.
           {% endif %}
         </p>
       </div>

@@ -35,6 +35,7 @@ from qvault.models.checkpoint import LogCheckpoint, WitnessCosignature
 from qvault.models.ledger import LedgerEntry
 from qvault.services import checkpoint_service, evidence_service, ledger_service
 from qvault.transparency import entry_leaf_hash, merkle_root
+from qvault.ui import count_noun
 
 #: How old the full check of the log may be before a request runs it again.
 FULL_CHECK_EVERY = timedelta(minutes=5)
@@ -144,7 +145,8 @@ def _run_full_check() -> FullCheck:
                 False,
                 at,
                 count,
-                f"the newest signed head covers {latest.tree_size:,} entries and only "
+                f"the newest signed head covers {count_noun(latest.tree_size, 'entry', 'entries')} "
+                f"and only "
                 f"{count:,} are left",
                 "gap",
             )
@@ -406,10 +408,11 @@ def checks() -> list[Check]:
                 "Audit log",
                 "ok",
                 "Recording and signing",
-                f"{facts.size:,} entries. Newest signed head: {head}{signed}. A quiet log keeps "
+                f"{count_noun(facts.size, 'entry', 'entries')}. "
+                f"Newest signed head: {head}{signed}. A quiet log keeps "
                 "an older head, which is normal. The whole log (every entry's hash and the "
                 f"newest signed head's root and signature) was last checked {ago(checked.at)}; "
-                f"that check runs at most every {every} minutes.",
+                f"that check runs at most every {count_noun(every, 'minute')}.",
             )
         )
 
@@ -464,7 +467,8 @@ def checks() -> list[Check]:
                 "ok",
                 "Current",
                 f"Last co-signed {ago(facts.witnessed_at)}, at #{facts.witnessed_size:,}. "
-                f"Entries wait at most {int(witness_grace().total_seconds() // 60)} minutes "
+                f"Entries wait at most "
+                f"{count_noun(int(witness_grace().total_seconds() // 60), 'minute')} "
                 f"before this turns amber.{key}",
             )
         )

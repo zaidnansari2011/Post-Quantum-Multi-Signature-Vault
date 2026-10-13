@@ -73,6 +73,7 @@ from qvault.services.treasury_service import (
     recorded_verifier,
     schema_problems,
 )
+from qvault.ui import count_noun
 
 #: How long the current signers have to approve (D18); the same window as a payment.
 APPROVAL_WINDOW = timedelta(hours=72)
@@ -208,7 +209,9 @@ def request(
     problems.extend(key_problems)
     threshold = vault.policy.threshold_m
     if not 1 <= threshold <= min(MAX_THRESHOLD, len(targets) or 1):
-        problems.append(f"a threshold of {threshold} cannot be met by {len(targets)} signers")
+        problems.append(
+            f"a threshold of {threshold} cannot be met by " f"{count_noun(len(targets), 'signer')}"
+        )
     change = pending_change(vault)
     if change is not None and change.empty:
         problems.append(f"{vault.name}'s treasury already matches the vault; nothing to change")
@@ -240,7 +243,8 @@ def request(
         ).count()
         if ahead:
             problems.append(
-                f"{ahead} payment decision(s) name a treasury configuration that does not exist "
+                f"{count_noun(ahead, 'payment decision')} {'names' if ahead == 1 else 'name'} "
+                "a treasury configuration that does not exist "
                 "yet; an administrator must look at this before any change"
             )
 
@@ -318,7 +322,7 @@ def _warnings(vault: Vault, treasury, change: Change | None) -> list[str]:
         warnings.append(f"{user.email} will no longer be able to approve this treasury's payments")
     if change.threshold_to < change.threshold_from:
         warnings.append(
-            f"payments will need {change.threshold_to} approvals instead of "
+            f"payments will need {count_noun(change.threshold_to, 'approval')} instead of "
             f"{change.threshold_from}"
         )
     return warnings

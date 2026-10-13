@@ -21,6 +21,7 @@ from qvault.chain.evm import checksum_address, keccak256
 from qvault.chain.key_storage import KeyStorage, read_back
 from qvault.chain.rpc import EthRpc, RpcResponseError, call_request
 from qvault.chain.treasury_artifact import TreasuryArtifact
+from qvault.ui import count_noun
 
 _READER = "0x0000000000000000000000000000000000000000"
 
@@ -131,10 +132,13 @@ def check_treasury(
     if threshold != expected.threshold:
         problems.append(f"the treasury's threshold is {threshold}, not {expected.threshold}")
     if count != len(expected.signers):
-        problems.append(f"the treasury has {count} signers, not {len(expected.signers)}")
+        problems.append(
+            f"the treasury has {count_noun(count, 'signer')}, " f"not {len(expected.signers)}"
+        )
     if onchain_nonce != config_nonce:
         problems.append(
-            f"the treasury has been reconfigured {onchain_nonce} time(s); a new link needs a "
+            f"the treasury has been reconfigured {count_noun(onchain_nonce, 'time')}; "
+            "a new link needs a "
             "treasury exactly as deployed"
             if config_nonce == 0
             else f"the treasury is at configuration {onchain_nonce}, not {config_nonce}"

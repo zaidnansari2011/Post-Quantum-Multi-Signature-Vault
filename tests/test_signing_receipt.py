@@ -200,3 +200,35 @@ def test_receipt_absent_when_not_requested(client, app):
     client.post("/login", data={"email": "plain@e.com", "password": PASSWORD})
     body = client.get(f"/vaults/{vid}/proposals/{pid}").get_data(as_text=True)
     assert "Approval signed" not in body
+
+
+def test_entries_after_yours_counts_only_the_entries_that_joined_later(decision):
+    """Staging smoke test 2026-10-09: the receipt said "16 entries after yours" for entry #15 of a
+    16-entry log, because it printed the tree's size. Entries after = size now - (seq + 1)."""
+    proposal, first, (_, bob) = decision
+    size = LedgerEntry.query.count()
+    receipt = receipt_service.for_signature(first)
+    assert receipt["entries_after"] == size - (receipt["ledger_seq"] + 1)
+
+    # Bob's approval decides it: his vote and the approval join the log after Ada's entry.
+    approval_service.cast_vote(proposal, bob, PASSWORD, "approve")
+    later = receipt_service.for_signature(first)
+    assert later["entries_after"] == LedgerEntry.query.count() - (later["ledger_seq"] + 1)
+    assert later["entries_after"] >= receipt["entries_after"] + 2
+    newest = receipt_service.for_signature(proposal.signatures[-1])
+    assert newest["ledger_seq"] + 1 + newest["entries_after"] == LedgerEntry.query.count()
+
+
+def test_the_receipt_writes_its_count_in_words_a_person_reads(client, app):
+    ada = auth_service.register_user("count-ada@e.com", "Ada", PASSWORD)
+    vault = vault_service.create_vault(ada, "Ops", "", 1)
+    proposal = proposal_service.create_proposal(vault, ada, "Ship it", "Deploy release 4.3.")
+    vid, pid = vault.id, proposal.proposal_uuid
+    client.post("/login", data={"email": "count-ada@e.com", "password": PASSWORD})
+    resp = client.post(
+        f"/vaults/{vid}/proposals/{pid}/vote", data={"password": PASSWORD, "approve": "Approve"}
+    )
+    body = client.get(resp.headers["Location"]).get_data(as_text=True)
+    # A one-of-one approval: the "approved" entry is the only one after the vote.
+    assert "1 entry after yours." in body
+    assert "entries after yours" not in body

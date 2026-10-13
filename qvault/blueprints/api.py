@@ -74,7 +74,7 @@ from qvault.services.proposal_service import (
 from qvault.services.signing import signing_bytes_for
 from qvault.services.treasury_service import LinkRefused
 from qvault.services.vault_service import MembershipError, PolicyError
-from qvault.ui import status_of
+from qvault.ui import count_noun, status_of
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
@@ -319,6 +319,7 @@ def _vault_summary(vault: Vault, user) -> dict:
             signing_here
             and user.id in set(json.loads(p.authorized_signers_snapshot))
             and not eligibility.own_decision_blocked(p, user.id)
+            and not eligibility.cannot_pass(p)
         ):
             awaiting += 1
     return {
@@ -424,7 +425,8 @@ def create_vault():
     if threshold_m > len(emails) + 1:
         return _error(
             "threshold_too_high",
-            f"{threshold_m} signatures cannot be required from {len(emails) + 1} signer(s).",
+            f"{count_noun(threshold_m, 'signature')} cannot be required from "
+            f"{count_noun(len(emails) + 1, 'signer')}.",
             422,
         )
 
@@ -911,6 +913,15 @@ def _proposal_summary(proposal, user) -> dict:
         # Whether the vote endpoint would let this user sign: the frozen signer set AND an
         # approver of the vault now, in good standing (``eligibility``, owner decision 2026-10-08).
         "can_sign": user.id in eligible,
+        # Additive (owner decision 2026-10-09): whether it would take an APPROVAL from this user.
+        # False while it can't pass: a rejection is still taken (``can_sign``), an approval isn't,
+        # and it is not in this user's awaiting list.
+        "can_approve": (
+            user.id in eligible
+            and can_still_pass
+            and inbox_service.effective_status(proposal) == "open"
+            and approval_service.vote_of(proposal, user.id) is None
+        ),
         # Additive (R5): who can still approve it, and whether they are enough to decide it. An
         # open decision whose approvers were demoted, removed or suspended can stop being able to
         # pass; it stays open until its deadline rather than being rejected for them.
@@ -1078,6 +1089,8 @@ def _summary_facts(
         status == "open"
         and user.id in eligible
         and approval_service.vote_of(proposal, user.id) is None
+        # Owner decision 2026-10-09: a decision that can no longer pass needs nobody's signature.
+        and can_still_pass
     )
     payout = payout_service.payout_of(proposal) if proposal.action is not None else None
     key, n = inbox_service.status_key(
@@ -1167,6 +1180,10 @@ def list_proposals():
     for p in proposals:
         summary = _proposal_summary(p, user)
         if state == "awaiting" and (summary["signed_by_me"] or not summary["can_sign"]):
+            continue
+        if state == "awaiting" and not summary["can_still_pass"]:
+            # Owner decision 2026-10-09: a decision that can no longer pass asks nobody to approve
+            # it, so it waits on no one; it stays in the other lists, reading "Can't pass".
             continue
         if state == "awaiting" and inbox_service.effective_status(p) != "open":
             # Its deadline passed and the sweep has not run yet: it can no longer take a
@@ -1324,6 +1341,8 @@ _VOTE_STATUS = {
     "already_voted": 409,
     "not_a_signer": 403,
     "own_decision": 403,
+    # Owner decision 2026-10-09: an approval of a decision that can no longer pass.
+    "cannot_pass": 409,
     "reason_required": 422,
     "proposal_closed": 422,
     "signature_invalid": 422,
@@ -1348,6 +1367,9 @@ def _vote_code(message: str) -> str:
     # Plan S15, before the generic "approve ... reject" test below, which its sentence would match.
     if "you raised this" in lowered:
         return "own_decision"
+    # Before the same generic test: its sentence says "approvals" and "reject" too.
+    if "can no longer pass" in lowered:
+        return "cannot_pass"
     # Plan S16 (A16): a rejection without a reason, or with one too long.
     if "add a reason" in lowered or "keep the reason" in lowered:
         return "reason_required"

@@ -28,7 +28,7 @@ from qvault.services import (
     notification_service,
 )
 from qvault.services.signing import format_wei, proposal_signing_bytes
-from qvault.ui import first_name
+from qvault.ui import count_noun, first_name, short_names
 
 
 class ProposalError(ValueError):
@@ -252,8 +252,9 @@ def create_proposal(
     required_m = vault.policy.threshold_m
     if required_m > required_n:
         raise ProposalError(
-            f"This vault's policy requires {required_m} signatures but only {required_n} "
-            "eligible signer(s) exist. Add more signer members first."
+            f"This vault's policy requires {count_noun(required_m, 'signature')} but only "
+            f"{count_noun(required_n, 'eligible signer')} "
+            f"{'exists' if required_n == 1 else 'exist'}. Add more signer members first."
         )
     # Plan S15, frozen with the decision (``eligibility``): whether its requester may approve it.
     requester_can_approve = eligibility.vault_allows_requester(vault)
@@ -452,7 +453,8 @@ def _payment_action(vault, payment, required_m, required_n, action_text, now, de
     if treasury.threshold_m != required_m:
         # Otherwise the web would say M-of-N while the contract enforced another threshold.
         raise ProposalError(
-            f"This vault now requires {required_m} approvals but its treasury requires "
+            f"This vault now requires {count_noun(required_m, 'approval')} but its treasury "
+            "requires "
             f"{treasury.threshold_m}. Reconfigure the treasury before raising a payment."
         )
     registered = sorted(row.user_id for row in treasury.signers)
@@ -501,9 +503,16 @@ def who_approves(vault: Vault, user) -> dict:
     ids = vault.signer_ids()
     people = {u.id: u for u in User.query.filter(User.id.in_(ids)).all()} if ids else {}
 
+    # First names, or full names where two of the vault's other approvers share one
+    # (``ui.short_names``); the reader is "you" here, so their own name collides with nobody's.
+    short = short_names(
+        {uid: (u.display_name or u.email) for uid, u in people.items() if uid != user.id}
+    )
+
     def name(uid: int) -> str:
-        person = people.get(uid)
-        return first_name(person.display_name or person.email) if person else "Someone"
+        if uid == user.id and uid in people:
+            return first_name(people[uid].display_name or people[uid].email)
+        return short.get(uid, "Someone")
 
     separation = not eligibility.vault_allows_requester(vault)
     able = eligibility.able_to_approve(vault, user.id)

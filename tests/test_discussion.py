@@ -259,7 +259,43 @@ def test_the_handles_offered_are_the_readers_only(app):
     assert {p["user_id"] for p in people} == {ada.id, chen.id}
     assert dev.id not in {p["user_id"] for p in people}
     ada_handles = next(p["handles"] for p in people if p["user_id"] == ada.id)
-    assert ada_handles == ["ada", "offered-ada"]
+    assert ada_handles == ["ada", "ada.lovelace"]
+
+
+def test_no_handle_is_ever_made_from_an_email_address(client):
+    """Staging smoke test 2026-10-09: the composer offered "@deliveredqa-brij", the part of
+    Brij's address before the @, to everyone in the vault. Handles come from names only, so the
+    page never shows an address's local part, and typing one names nobody."""
+    ada, brij, _chen, _dev, vault, proposal = _team("nomail")
+    people = discussion_service.directory(proposal)
+    assert all("nomail" not in handle for p in people for handle in p["handles"])
+    comment = discussion_service.post(proposal, ada, "@nomail-brij and @nomail-chen?")
+    assert comment.mentions is None
+    assert _mentions(brij) == []
+    _login(client, ada)
+    page = client.get(f"/vaults/{vault.id}/proposals/{proposal.proposal_uuid}").get_data(
+        as_text=True
+    )
+    caption = page.split('id="f-comment"', 1)[1].split("Not signed", 1)[0]
+    assert "@brij" in caption and "@chen" in caption
+    assert "nomail-" not in caption
+
+
+def test_people_who_share_a_first_name_are_mentioned_by_their_full_name(app):
+    """QA Ada, QA Brij and QA Chen all have the first name "QA", so "@qa" names nobody; each keeps
+    their full name as a handle, "@qa.brij", which is what the composer offers."""
+    ada = auth_service.register_user("qa-a@e.com", "QA Ada", PASSWORD)
+    brij = auth_service.register_user("qa-b@e.com", "QA Brij", PASSWORD)
+    chen = auth_service.register_user("qa-c@e.com", "QA Chen", PASSWORD)
+    vault = vault_service.create_vault(ada, "qa", "", 1)
+    for user in (brij, chen):
+        vault_service.add_member(vault, user.email, "signer", actor_id=ada.id)
+    proposal = proposal_service.create_proposal(vault, ada, "Renew", "Renew the lease.")
+    people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
+    assert people == {ada.id: ["qa.ada"], brij.id: ["qa.brij"], chen.id: ["qa.chen"]}
+    comment = discussion_service.post(proposal, ada, "@QA.Brij, and @qa?")
+    assert json.loads(comment.mentions) == {"qa.brij": brij.id}
+    assert len(_mentions(brij)) == 1 and _mentions(chen) == []
 
 
 def test_a_suspended_member_is_not_mentionable_or_told(app):
@@ -272,32 +308,32 @@ def test_a_suspended_member_is_not_mentionable_or_told(app):
     assert _mentions(chen) == []
 
 
-def test_a_shared_first_name_names_nobody_but_the_email_handle_still_does(app):
+def test_a_shared_first_name_names_nobody_but_the_full_name_still_does(app):
     ada, brij, _chen, _dev, vault, proposal = _team("twins")
     other = auth_service.register_user("twins-ada2@e.com", "Ada Byron", PASSWORD)
     vault_service.add_member(vault, other.email, "viewer", actor_id=ada.id)
-    comment = discussion_service.post(proposal, brij, "@ada or @twins-ada2?")
-    assert json.loads(comment.mentions) == {"twins-ada2": other.id}
+    comment = discussion_service.post(proposal, brij, "@ada or @ada.byron?")
+    assert json.loads(comment.mentions) == {"ada.byron": other.id}
     assert _mentions(ada) == []
     assert len(_mentions(other)) == 1
 
 
-def test_a_handle_that_is_one_readers_first_name_and_anothers_email_names_neither(app):
-    """Brij Patel's first name and Zed Quinn's email name are both "brij": offered as Brij's, it
-    resolved to Zed and told Zed. Now it names nobody, and each keeps a handle of their own."""
+def test_a_handle_that_is_one_readers_first_name_and_anothers_full_name_names_neither(app):
+    """Brij Patel's first name is "brij", and so is the whole of a one-word name "Brij": a handle
+    two readers could own names neither, and each keeps the handle only they have."""
     ada, brij, _chen, _dev, vault, proposal = _team("cross")
-    zed = auth_service.register_user("brij@cross.example", "Zed Quinn", PASSWORD)
-    vault_service.add_member(vault, zed.email, "viewer", actor_id=ada.id)
+    other = auth_service.register_user("zq@cross.example", "Brij", PASSWORD)
+    vault_service.add_member(vault, other.email, "viewer", actor_id=ada.id)
 
     people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
-    assert "brij" not in people[brij.id] and "brij" not in people[zed.id]
-    assert people[brij.id] == ["cross-brij"] and people[zed.id] == ["zed"]
+    assert people[brij.id] == ["brij.patel"]
+    assert other.id not in people  # "Brij" is their only name, and it names two people
 
     comment = discussion_service.post(proposal, ada, "Thoughts @brij?")
     assert comment.mentions is None
-    assert _mentions(zed) == [] and _mentions(brij) == []
-    comment = discussion_service.post(proposal, ada, "Thoughts @zed and @cross-brij?")
-    assert json.loads(comment.mentions) == {"cross-brij": brij.id, "zed": zed.id}
+    assert _mentions(other) == [] and _mentions(brij) == []
+    comment = discussion_service.post(proposal, ada, "Thoughts @brij.patel?")
+    assert json.loads(comment.mentions) == {"brij.patel": brij.id}
 
 
 def test_a_name_with_an_accent_gives_its_plain_handle_and_never_a_mangled_one(app):
@@ -307,9 +343,30 @@ def test_a_name_with_an_accent_gives_its_plain_handle_and_never_a_mangled_one(ap
     for user in (elif_, lukasz):
         vault_service.add_member(vault, user.email, "viewer", actor_id=ada.id)
     people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
-    assert people[elif_.id] == ["elif", "accent-e1"]
+    assert people[elif_.id] == ["elif", "elif.kaya"]
     # L with a stroke has no accent to drop: written as the plain letter, never dropped ("@ukasz").
-    assert people[lukasz.id] == ["lukasz", "accent-l1"]
+    assert people[lukasz.id] == ["lukasz", "lukasz.nowak"]
+
+
+def test_an_apostrophe_is_left_out_of_a_handle(app):
+    ada, _brij, _chen, _dev, vault, proposal = _team("apos")
+    sean = auth_service.register_user("apos-s1@e.com", "Seán O’Brien", PASSWORD)
+    vault_service.add_member(vault, sean.email, "viewer", actor_id=ada.id)
+    people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
+    assert people[sean.id] == ["sean", "sean.obrien"]
+
+
+def test_a_handle_is_only_made_where_a_mention_can_reach_it():
+    # Review of rework/staging-fixes: MENTION can't start on "_", ".", "-", and _resolve strips a
+    # trailing full stop, so neither kind of handle could ever be typed.
+    from qvault.services.discussion_service import MENTION, _name_handles
+
+    assert _name_handles("_ada lovelace") == []
+    long_name = "a" * 63 + " b"  # joined and cut to 64 characters, it would end in "."
+    handles = _name_handles(long_name)
+    assert handles and not any(h.endswith(".") for h in handles)
+    for handle in handles:
+        assert MENTION.search(f"hi @{handle}").group(1) == handle
 
 
 def test_a_mention_typed_as_the_name_is_spelled_reaches_its_plain_handle(app):
@@ -341,8 +398,9 @@ def test_a_handle_two_spellings_share_names_neither_and_another_script_gets_none
     for user in (plain, accented, cyrillic):
         vault_service.add_member(vault, user.email, "viewer", actor_id=ada.id)
     people = {p["user_id"]: p["handles"] for p in discussion_service.directory(proposal)}
-    assert people[plain.id] == ["fold-e1"] and people[accented.id] == ["fold-e2"]
-    assert people[cyrillic.id] == ["fold-c1"]
+    assert people[plain.id] == ["elif.demir"] and people[accented.id] == ["elif.kaya"]
+    # No plain form, so no handle at all: never one made from the email address instead.
+    assert cyrillic.id not in people
 
     comment = discussion_service.post(proposal, ada, "@Elif, @Élif and @\u0410da?")
     assert comment.mentions is None

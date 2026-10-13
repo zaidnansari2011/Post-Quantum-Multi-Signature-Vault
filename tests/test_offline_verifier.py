@@ -867,7 +867,7 @@ def test_the_payment_authorisations_travel_with_the_record_and_verify(app, page,
     report = agree(app, page, payment_bundle)
     check = _check(report, "execution")
     assert check["ok"] and not check["skipped"], check["detail"]
-    assert "2 authorisation(s) over this payment" in check["detail"]
+    assert "2 authorisations over this payment" in check["detail"]
 
 
 def test_the_verifier_derives_the_digest_the_treasury_checks(app, payment_bundle):

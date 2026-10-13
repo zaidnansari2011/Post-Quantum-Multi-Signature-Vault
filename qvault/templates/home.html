@@ -47,7 +47,7 @@
   {% call menu('New decision', 'plus', trigger='primary') %}
     {{ menu_head('Raise a decision in') }}
     {%- for v in proposable %}
-    {{ menu_item(v.name, url_for('vaults.new_proposal', vid=v.id), caption='Any ' ~ v.policy.threshold_m ~ ' of ' ~ v.signer_ids()|length) }}
+    {{ menu_item(v.name, url_for('vaults.new_proposal', vid=v.id), caption=ui_rule(v.policy.threshold_m, v.signer_ids()|length)) }}
     {%- endfor %}
   {% endcall %}
   {%- endif %}

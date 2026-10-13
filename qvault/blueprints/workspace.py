@@ -16,9 +16,10 @@ same-site paths only.
 
 from __future__ import annotations
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user
 
+from qvault.crypto import sha256_hex
 from qvault.extensions import db
 from qvault.forms import InviteRegisterForm
 from qvault.models.user import User
@@ -500,11 +501,35 @@ def _leaving(invitation: Invitation):
     return found[0].workspace if found is not None else None
 
 
+#: A refused invitation sign-up, held across the redirect back to the link's page (staging smoke
+#: test 2026-10-09): the POST used to answer with the page itself, so refreshing it sent the form
+#: again. What is held is the name typed and the errors, never a password, and the link only as a
+#: hash, so the session cookie never carries a working invitation.
+_REFUSED_SIGN_UP = "invite_sign_up_refused"
+
+
+def _link_ref(token: str) -> str:
+    return sha256_hex(token.encode("utf-8"))
+
+
+def _refused_sign_up_form(token: str):
+    """The sign-up form as it was refused for this link, once; None when nothing is held for it."""
+    held = session.pop(_REFUSED_SIGN_UP, None)
+    if not isinstance(held, dict) or held.get("link") != _link_ref(token):
+        return None
+    form = InviteRegisterForm(formdata=None, display_name=held.get("display_name") or "")
+    for name, messages in (held.get("errors") or {}).items():
+        if name in form._fields and isinstance(messages, list):
+            form[name].errors = [str(m) for m in messages]
+    return form
+
+
 def _render_acceptance(token: str, *, form=None, status=None):
     invitation = ws.invitation_for_token(token)
     state = _acceptance_state(invitation)
+    refused = _refused_sign_up_form(token)
     if form is None and state == "sign_up":
-        form = InviteRegisterForm()
+        form = refused or InviteRegisterForm()
     body = render_template(
         "workspace/accept.html",
         state=state,
@@ -544,7 +569,20 @@ def register(token: str):
         return redirect(url_for("workspace.accept_page", token=token))
     form = InviteRegisterForm()
     if not form.validate_on_submit():
-        return _render_acceptance(token, form=form, status=400)
+        # Post/Redirect/Get: the errors are shown by the link's own page, so a refresh reloads it
+        # rather than sending the form again.
+        if "csrf_token" in form.errors:  # no such field at all when CSRF is off
+            flash("That form had expired. Fill it in again.", "error")
+        session[_REFUSED_SIGN_UP] = {
+            "link": _link_ref(token),
+            "display_name": (form.display_name.data or "")[:255],
+            "errors": {
+                name: list(field.errors)
+                for name, field in form._fields.items()
+                if field.errors and name != "csrf_token"
+            },
+        }
+        return redirect(url_for("workspace.accept_page", token=token), 303)
     try:
         user = ws.register_through_invitation(token, form.display_name.data, form.password.data)
     except InvitationError as exc:

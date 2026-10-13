@@ -75,7 +75,7 @@
       <form method="post" action="{{ url_for('account.change_password') }}">
         {{ password_form.hidden_tag() }}
         {{ field('current_password', 'Current password', type='password', required=True, error=password_form.current_password.errors, attrs={'autocomplete': 'current-password'}) }}
-        {{ field('new_password', 'New password', type='password', required=True, caption='At least 8 characters.', error=password_form.new_password.errors, attrs={'autocomplete': 'new-password'}) }}
+        {{ field('new_password', 'New password', type='password', required=True, caption=password_rule, error=password_form.new_password.errors, attrs={'autocomplete': 'new-password'}) }}
         {{ field('confirm', 'Confirm new password', type='password', required=True, error=password_form.confirm.errors, attrs={'autocomplete': 'new-password'}) }}
         <p class="q-cap q-gap">Your password also unlocks your signing key, so changing it re-encrypts your keys. You’ll be signed out.</p>
         {{ button('Change password', 'secondary', type='submit', name='submit', value='Change password') }}
@@ -84,7 +84,7 @@
   </section>
 
   <section class="q-panel" aria-labelledby="rc-t">
-    <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery</h2>{{ badge('Not available') }}</div>
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery</h2>{{ badge('No password reset') }}</div>
     <div class="q-panel__bd">
       <p>There is no password reset. If you forget your password, your password key can’t be unlocked, and Q-Vault can’t unlock it for you. A paired phone keeps its own key and can still sign until its pairing ends.</p>
     </div>

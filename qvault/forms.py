@@ -28,6 +28,18 @@ from wtforms.validators import (
 
 from qvault.security import text
 
+#: The password rule, said before anyone types (``PASSWORD_RULE`` under the field) and in the
+#: same words when it is broken. Staging smoke test 2026-10-09: sign-up said nothing until the
+#: generic "Field must be between 8 and 1024 characters long."
+PASSWORD_MIN = 8
+PASSWORD_MAX = 1024
+PASSWORD_RULE = f"At least {PASSWORD_MIN} characters."
+_PASSWORD_LENGTH = Length(
+    min=PASSWORD_MIN,
+    max=PASSWORD_MAX,
+    message=f"Use at least {PASSWORD_MIN} characters, and at most {PASSWORD_MAX:,}.",
+)
+
 
 def _visible_only(form, field) -> None:
     """A name other people see may not hide characters (plan R8 review, F6)."""
@@ -43,7 +55,7 @@ class _PasswordStep(FlaskForm):
     made; ``templates/_password_step.html`` draws it.
     """
 
-    password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=1024)])
+    password = PasswordField("Password", validators=[DataRequired(), _PASSWORD_LENGTH])
     confirm = PasswordField(
         "Confirm password",
         validators=[DataRequired(), EqualTo("password", message="Passwords must match")],
@@ -156,9 +168,7 @@ class ChangePasswordForm(FlaskForm):
     it is the only thing that can unwrap them (see key_service.change_password)."""
 
     current_password = PasswordField("Current password", validators=[DataRequired()])
-    new_password = PasswordField(
-        "New password", validators=[DataRequired(), Length(min=8, max=1024)]
-    )
+    new_password = PasswordField("New password", validators=[DataRequired(), _PASSWORD_LENGTH])
     confirm = PasswordField(
         "Confirm new password",
         validators=[DataRequired(), EqualTo("new_password", message="Passwords must match")],

@@ -430,7 +430,8 @@ def test_the_invitation_sign_up_states_the_password_truth_and_needs_the_acknowle
 
     r = _accept_by_sign_up(client, token, understood="")
 
-    assert r.status_code == 400
+    assert r.status_code == 303  # back to the link's page, which shows the refusal
+    assert "Tick the box" in _text(client.get(f"/invite/{token}"))
     assert User.query.filter_by(email="sam@kestrel.com").first() is None
 
 
