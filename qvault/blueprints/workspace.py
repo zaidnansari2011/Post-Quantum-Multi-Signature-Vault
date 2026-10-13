@@ -571,7 +571,7 @@ def register(token: str):
     if not form.validate_on_submit():
         # Post/Redirect/Get: the errors are shown by the link's own page, so a refresh reloads it
         # rather than sending the form again.
-        if form.csrf_token.errors:
+        if "csrf_token" in form.errors:  # no such field at all when CSRF is off
             flash("That form had expired. Fill it in again.", "error")
         session[_REFUSED_SIGN_UP] = {
             "link": _link_ref(token),

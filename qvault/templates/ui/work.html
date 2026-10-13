@@ -94,7 +94,11 @@
   {%- set needed = p.required_n - p.required_m + 1 -%}
   {#- Of the people who can vote on it: under S15 whoever raised it is in its signed N but can't. -#}
   {%- set voters = row.voters if row.voters is defined else p.required_n -%}
+  {%- if needed > voters -%}
+  <span class="q-wl__note">You rejected. Rejections alone can’t end it.</span>
+  {%- else -%}
   <span class="q-wl__note">You rejected. It’s rejected only if {{ needed }} of {{ voters }}{{ ' who can vote' if voters != p.required_n }} reject.</span>
+  {%- endif -%}
   {%- elif row.can_still_pass is false -%}
   {#- The status word already says Can’t pass: since 2026-10-09 it asks nobody to sign it. -#}
   <span class="q-wl__note">Too few approvers left</span>
