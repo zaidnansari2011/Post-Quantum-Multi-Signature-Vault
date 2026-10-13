@@ -107,6 +107,21 @@ SENTENCES = {
     "workspace_member_left": "{who} left {workspace}.",
     "workspace_renamed": "{who} renamed the workspace to {workspace}.",
     "workspace_settings_changed": "{who} changed the vault defaults for {workspace}.",
+    # Account recovery (plan R9). Recorded against the person; never the kit's code.
+    "recovery_kit_issued": "{who} made a Recovery Kit.",
+    "recovery_kit_revoked": "A Recovery Kit of {who}'s stopped working.",
+    "recovery_kit_stale": (
+        "A Recovery Kit of {who}'s could no longer be checked and stopped working."
+    ),
+    "recovery_kit_paused": (
+        "Many wrong codes were typed for {who}'s Recovery Kit. It still works; everyone who "
+        "watches over the account was told."
+    ),
+    "recovery_requested": "Someone used {who}'s Recovery Kit to start recovering the account.",
+    "recovery_waiting": "A recovery of {who}'s account started its wait.",
+    "recovery_cancelled": "{who} cancelled a recovery of an account.",
+    "recovery_rejected": "A recovery of {who}'s account was stopped when it was due.",
+    "recovery_completed": "A recovery of {who}'s account took effect.",
 }
 
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.
@@ -298,10 +313,26 @@ def narrate(entries) -> list[dict]:
     return out
 
 
+def _kit_alarm_sentence(entry: LedgerEntry, who: str) -> str | None:
+    """The wrong-codes alarm with its count (design §16 item 26). Never the codes tried."""
+    try:
+        count = json.loads(entry.payload_json).get("wrong_codes")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not isinstance(count, int):
+        return None
+    return (
+        f"{count:,} wrong codes were typed for {who}'s Recovery Kit in a day. It still works; "
+        "everyone who watches over the account was told."
+    )
+
+
 def _rule_sentence(entry: LedgerEntry, who: str, vault: str) -> str | None:
     """A vault rule change with its before and after (R5), when the entry records both. Numbers
     and yes/no only: names of members stay for ``evidence_service.describe``, which knows who
     may see them. The same sentence on screen and in the CSV."""
+    if entry.event_type == "recovery_kit_paused":
+        return _kit_alarm_sentence(entry, who)
     if entry.event_type not in ("vault_threshold_changed", "vault_rule_changed"):
         return None
     try:

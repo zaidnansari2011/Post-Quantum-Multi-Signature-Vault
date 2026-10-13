@@ -911,6 +911,28 @@ are lost when it restarts; that is staging only.
 
 *Your effort:* ten minutes to set up; the team's testing time after that.
 
+### 2.15 Rework R9: the Recovery Kit at the switch — `TODO` (added 2026-10-09)
+
+The Recovery Kit (R9 Phase 1) is built on `rework/r9-recovery-kit`. Nothing to set up before it works;
+three things to know, and two to do, when the rework goes live:
+
+1. **`PUBLIC_BASE_URL` is printed on every kit** as the one address its code may be typed at
+   (`https://project4.zaidansari.tech/recover`). Kits made before a change of address keep the
+   old one. Check it is the address you want before people make kits (R8 already needs it set).
+2. **`SERVER_MASTER_KEY` now also locks every kit.** A kit opens only with its code *and* a secret
+   derived from the master key (so a stolen database backup plus a kit opens nothing). If the
+   master key ever changes, every kit stops working: each person is told and asked to make a new
+   one. This is one more reason to keep the backup of the master key from §2.9.
+3. **Every existing account sees "Save a Recovery Kit"** on Home until it makes one (owner
+   decision ⚑3). Anyone can hide it until they next sign in; it then comes back, and for a
+   treasury signer it cannot be hidden. New accounts are shown theirs at sign-up.
+4. **To do: make your own kit** after the switch (Account, Security, Recovery Kit), print or
+   download it, and keep it offline.
+5. **To do: try it once by hand on staging** (design §15 "done when"): make a kit for a test
+   account, use it at `/recover` from a signed-out browser, check that the account's admins and
+   co-signers see the red banner with Cancel on Home and get the email, then either cancel it or
+   wait the 72 hours and sign in with the new password.
+
 ## 3. Checks only you can make
 
 ### 3.1 Look at the UI — `TODO`
@@ -1326,3 +1348,5 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-10-09 | Added §2.11 (Resend email) and §2.12 (Firebase push) for rework R8, after the owner chose both. |
 | 2026-10-09 | R8 built: §2.11 gains the switch-time settings (`RESEND_API_KEY` as a secret, `MAIL_FROM`, `PUBLIC_BASE_URL`); §2.12 gains the one EAS command for the Firebase file before the rework APK, and the handset check; §2.3's "decided against expo-notifications" is marked superseded on the rework. |
 | 2026-10-09 | R8 review fixes: §2.12 gains step 6 (switch on Expo Enhanced Push Security and set `EXPO_ACCESS_TOKEN` as a secret at the switch); §2.11 says push needs that secret. |
+| 2026-10-09 | Added §2.15: the Recovery Kit (R9 Phase 1) at the switch: the address printed on kits, the master key now also locking kits, the banner every account sees, and a hand test on staging. |
+| 2026-10-10 | R9 finishing pass: the Recovery Kit section is §2.15 (it was §2.14 on its branch, which clashed with staging's §2.14); item 3 now says the "Save a Recovery Kit" reminder can be hidden until the next sign-in, except by treasury signers. |

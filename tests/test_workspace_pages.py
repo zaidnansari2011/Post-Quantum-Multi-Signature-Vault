@@ -566,13 +566,12 @@ def test_a_new_person_creates_an_account_from_the_link_and_joins(app, client, in
         data={"display_name": "Sam", "password": PW, "confirm": PW, "understood": "y"},
     )
 
-    assert r.status_code == 302
+    assert r.status_code == 200  # the Recovery Kit, shown once (plan R9)
     sam = User.query.filter_by(email="sam@e.com").one()
     assert workspace_service.current_workspace(sam).name == "Q-Vault"
     assert vault.member_for(sam.id).member_role == "signer"
     assert key_service.active_signing_key(sam) is not None
-    home = _text(client.get("/"))
-    assert "Welcome to Q-Vault" in home
+    assert "Welcome to Q-Vault" in _text(r)  # the flash shows on the kit page, before Home
 
 
 def test_a_bad_sign_up_form_shows_its_errors_and_creates_nothing(app, client, invited):

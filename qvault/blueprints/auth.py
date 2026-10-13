@@ -6,8 +6,8 @@ which workspace or role: the way into someone else's workspace is their invitati
 (``/invite/<token>``, in ``blueprints/workspace.py``).
 
 **The forgot-password page resets nothing.** The password also unwraps the signing key, so a
-reset would lose that key (plan S18). The page says what cannot be done and what can, and has no
-form: there is no route here that pretends to recover an account.
+reset would lose that key (plan S18). The page says what cannot be done and what can: the Recovery
+Kit (``/recover``, plan R9) is the one way back built so far, and it keeps the same key.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
+from qvault.extensions import db
 from qvault.forms import LoginForm, RegisterForm, ReissueKeyForm
 from qvault.security.redirects import safe_next
 from qvault.services import auth_service, key_service, workspace_service
@@ -53,9 +54,30 @@ def register():
             f"{workspace.name} is ready. Your account and its signing key were created.",
             "success",
         )
-        # Home, where a new workspace's owner finds the getting-started checklist.
+        # The Recovery Kit, shown once, while the password that opens the key is still in hand
+        # (plan R9, ⚑3). Continuing leads Home, where the getting-started checklist is.
+        kit = issue_signup_kit(user, form.password.data)
+        if kit is not None:
+            return kit
         return redirect(url_for("core.index"))
     return render_template("register.html", form=form), 400 if request.method == "POST" else 200
+
+
+def issue_signup_kit(user, password: str):
+    """The kit page for a new account, or None if no kit could be made: the account stands
+    either way, and Home and Security then ask for one (plan R9, ⚑3)."""
+    from qvault.blueprints.recover import kit_page
+    from qvault.services import recovery_kit
+
+    try:
+        issued = recovery_kit.issue(user, password)
+    except Exception:
+        db.session.rollback()
+        if current_app.config.get("TESTING"):
+            raise
+        current_app.logger.exception("could not make a Recovery Kit at sign-up")
+        return None
+    return kit_page(issued, after_signup=True)
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -77,7 +99,8 @@ def login():
 @bp.get("/forgot-password")
 def forgot_password():
     """What can and cannot be done about a forgotten password (plan S18). Read-only, signed in or
-    out; R9 builds the recovery routes it says are coming."""
+    out. The Recovery Kit is built (R9 Phase 1); the phone and approver routes are said to be not
+    built yet."""
     return render_template(
         "forgot_password.html",
         device_days=int(current_app.config.get("DEVICE_TOKEN_MAX_AGE_DAYS", 90)),

@@ -818,6 +818,15 @@ EVENT_LABELS = {
     "decision_unpublished": "Public link revoked",
     "device_enrolled": "Phone added",
     "device_revoked": "Phone removed",
+    "recovery_kit_issued": "Recovery Kit made",
+    "recovery_kit_revoked": "Recovery Kit stopped",
+    "recovery_kit_stale": "Recovery Kit stopped",
+    "recovery_kit_paused": "Recovery Kit wrong codes",
+    "recovery_requested": "Recovery started",
+    "recovery_waiting": "Recovery waiting",
+    "recovery_cancelled": "Recovery cancelled",
+    "recovery_rejected": "Recovery stopped",
+    "recovery_completed": "Account recovered",
 }
 
 

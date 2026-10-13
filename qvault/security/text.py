@@ -34,7 +34,8 @@ _MAX_MARKS = 4
 
 
 def _drawn_nothing(ch: str) -> bool:
-    return unicodedata.category(ch) in _HIDDEN or unicodedata.category(ch) == "Cn" or ord(ch) in _BLANK
+    category = unicodedata.category(ch)
+    return category in _HIDDEN or category == "Cn" or ord(ch) in _BLANK
 
 
 def invisible_in(text: str | None) -> bool:

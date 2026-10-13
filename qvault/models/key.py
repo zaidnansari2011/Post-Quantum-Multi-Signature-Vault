@@ -36,9 +36,10 @@ class Key(db.Model):
     public_key_mac = db.Column(db.LargeBinary, nullable=True)
     secret_key_wrapped = db.Column(db.LargeBinary, nullable=True)  # AES-256-GCM ciphertext+tag
     secret_key_nonce = db.Column(db.LargeBinary(12), nullable=True)
-    wrap_domain = db.Column(
-        db.String(16), nullable=False, default="password"
-    )  # 'password'|'master'
+    # 'password' | 'master' | 'device' | 'lost'. Written once, except that account recovery turns
+    # a 'password' key it could not carry over into 'lost' (both ciphertext columns NULL, retired,
+    # still verifying): nobody can open it any more (plan R9, design §4.3).
+    wrap_domain = db.Column(db.String(16), nullable=False, default="password")
 
     status = db.Column(db.String(16), nullable=False, default="active")  # 'active' | 'retired'
     can_sign = db.Column(db.Boolean, nullable=False, default=True)

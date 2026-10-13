@@ -42,6 +42,7 @@ def init_scheduler(app):
         notification_service,
         payout_service,
         reconfiguration_service,
+        recovery_service,
         rotation_service,
         treasury_jobs,
     )
@@ -86,6 +87,15 @@ def init_scheduler(app):
         _in_context(delivery_service.run),
         IntervalTrigger(seconds=int(app.config.get("DELIVERY_TICK_SECONDS", 20))),
         id="deliveries",
+        replace_existing=True,
+    )
+    # Account recovery (plan R9): a Recovery Kit request takes effect once its 72 hours are over.
+    # Each completion is a compare-and-set, so a second scheduler, or the status page completing it
+    # at the same moment, cannot complete it twice.
+    scheduler.add_job(
+        _in_context(recovery_service.tick),
+        IntervalTrigger(seconds=int(app.config.get("RECOVERY_TICK_SECONDS", 60))),
+        id="recovery",
         replace_existing=True,
     )
     if app.extensions.get("relayer") is not None:
