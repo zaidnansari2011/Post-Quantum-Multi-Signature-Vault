@@ -106,5 +106,5 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
 }
 
 const useStyles = makeStyles((t) => ({
-  action: { paddingTop: t.space[8] },
+  action: { paddingTop: t.space[8], paddingBottom: t.space[8] },
 }));

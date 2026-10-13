@@ -23,6 +23,8 @@ export type ActivityFacts = StatusFacts & {
   vault_name: string | null;
   signed_by_me: boolean;
   can_sign: boolean;
+  /** Which way this person voted (A21, P4b); absent from an older server. */
+  my_vote?: 'approve' | 'reject' | null;
   raised_by?: { id: number; name: string | null } | null;
   signers?: Array<{ user_id: number }>;
   decided_at?: string | null;
@@ -162,11 +164,14 @@ export function outcomeOf(p: ActivityFacts, status: string, now: number): { text
 }
 
 /**
- * Line 3's right: this person's part. The list says THAT they voted, not which way, so the way is
- * said only where the counts settle it: an approved decision with no rejections was approved by
- * everyone who voted, and a rejected one with no approvals was rejected by everyone who voted.
+ * Line 3's right: this person's part. The server says which way they voted (`my_vote`, A21); an
+ * older server says only THAT they voted, and then the way is said only where the counts settle it:
+ * an approved decision with no rejections was approved by everyone who voted, and a rejected one
+ * with no approvals was rejected by everyone who voted.
  */
 export function yourPart(p: ActivityFacts, status: string, viewerId: number): string | null {
+  if (p.my_vote === 'approve') return 'You approved';
+  if (p.my_vote === 'reject') return 'You rejected';
   if (p.signed_by_me) {
     if (status === 'approved' && p.rejections === 0) return 'You approved';
     if (status === 'rejected' && p.approvals === 0) return 'You rejected';

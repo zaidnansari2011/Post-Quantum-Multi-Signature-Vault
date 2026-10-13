@@ -141,9 +141,7 @@ def enrol(
     interoperability trap — base64 has padding and alphabet variants, and a mismatch would surface
     as an unexplained proof failure.
     """
-    name = (device_name or "").strip()
-    if not name or len(name) > 64:
-        raise DeviceError("bad_request", "A device name of 1-64 characters is required.")
+    name = clean_name(device_name)
 
     _check_challenge(user, challenge)
 
@@ -308,3 +306,54 @@ def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) 
 def devices_for(user: User) -> list[Device]:
     """Every device ``user`` has enrolled, newest first — revoked ones included, so they show."""
     return Device.query.filter_by(owner_id=user.id).order_by(Device.id.desc()).all()
+
+
+#: The longest device name, in characters (code points), at enrolment and on rename.
+NAME_MAX = 64
+
+
+def clean_name(name: object) -> str:
+    """A device name as enrolment and rename both take it, or ``DeviceError``.
+
+    One rule for both doors: outer whitespace trimmed; 1 to ``NAME_MAX`` characters; and R8's rule
+    for names people type (``security.text``): a control, format (zero-width, bidi override or
+    isolate), private-use or surrogate character, or a line separator, is refused rather than
+    silently dropped, so what is stored is what the person saw. The name is shown on the web's
+    device list and in the phone's sheets, beside a key that can sign.
+    """
+    from qvault.security import text
+
+    cleaned = name.strip() if isinstance(name, str) else ""
+    if not cleaned or len(cleaned) > NAME_MAX:
+        raise DeviceError("bad_request", f"A device name of 1-{NAME_MAX} characters is required.")
+    if text.invisible_in(cleaned):
+        raise DeviceError("hidden_characters", f"The name has hidden characters. {text.MESSAGE}")
+    return cleaned
+
+
+def rename(
+    device: Device, name: str, *, actor_id: int | None = None, commit: bool = True
+) -> Device:
+    """Rename a device (phone-ux §6.18, A21). Its owner's label only: nothing signed changes.
+
+    Held to enrolment's rule (``clean_name``). A removed device keeps the name it was removed
+    under. An unchanged name writes nothing.
+    """
+    if device.revoked_at is not None:
+        raise DeviceError("already_revoked", "That device was removed, so its name can't change.")
+    cleaned = clean_name(name)
+    if cleaned == device.name:
+        return device
+    device.name = cleaned
+    ledger_service.append(
+        "device_renamed",
+        {"user_id": device.owner_id, "device_id": device.id, "renamed_by": actor_id},
+        actor=f"user:{actor_id}" if actor_id else "SYSTEM",
+        actor_id=actor_id,
+        ref_type="device",
+        ref_id=str(device.id),
+        commit=False,
+    )
+    if commit:
+        db.session.commit()
+    return device

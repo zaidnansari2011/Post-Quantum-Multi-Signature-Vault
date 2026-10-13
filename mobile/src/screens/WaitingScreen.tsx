@@ -20,6 +20,7 @@ import {
   NavBar,
   Screen,
   Scroll,
+  Text,
   TextLink,
   useToast,
 } from '../ui/index.tsx';
@@ -31,6 +32,7 @@ import { useApprovals } from '../approvals.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { keys } from '../queries.ts';
 import { whoCanAct } from '../logic/queue.ts';
+import { remindView } from '../logic/remind.ts';
 
 export default function WaitingScreen({
   onBack,
@@ -56,12 +58,14 @@ export default function WaitingScreen({
     try {
       const result = await api.remindApprovers(token, uuid);
       toast.show(result.reminded === 1 ? 'Reminder sent to 1 approver' : `Reminder sent to ${result.reminded} approvers`);
+      // The list's `remind` now says when the next may go (A12), and the row waits until then.
       void queryClient.invalidateQueries({ queryKey: keys.all });
     } catch (err) {
       // The server's own sentence for a reminder it won't send ("You sent a reminder on ..."):
-      // written for people, and the only one that knows when the next is allowed.
+      // written for people. An older server sends no `remind` state, and this is all there is.
       const text = err instanceof ApiError && err.code === 'remind_refused' ? err.message : "Couldn't send a reminder. Try again.";
       setRefused((r) => ({ ...r, [uuid]: text }));
+      void queryClient.invalidateQueries({ queryKey: keys.all });
     } finally {
       setReminding(null);
     }
@@ -94,6 +98,9 @@ export default function WaitingScreen({
                 const mine = p.raised_by?.id === identity.userId;
                 const cantPass = p.can_still_pass === false;
                 const note = cantPass ? (p.cannot_pass_why?.[0] ?? null) : whoCanAct(p, identity.userId);
+                // Sent in the last day: "Reminded at 14:02. You can remind again tomorrow." in the
+                // Remind button's place, under the row, at full width.
+                const waits = mine && !cantPass ? remindView(p.remind, q.now) : null;
                 return (
                   <DecisionRow
                     key={p.proposal_uuid}
@@ -111,7 +118,11 @@ export default function WaitingScreen({
                     now={q.now}
                     onPress={() => onOpen(p.proposal_uuid)}
                     trailing={
-                      mine && !cantPass ? (
+                      waits?.line ? (
+                        <Text role="caption" tone="muted" style={s.waits}>
+                          {waits.line}
+                        </Text>
+                      ) : mine && !cantPass ? (
                         <TextLink
                           label={reminding === p.proposal_uuid ? 'Sending…' : 'Remind'}
                           accessibilityLabel={`Remind the approvers of ${p.title}`}
@@ -133,4 +144,5 @@ export default function WaitingScreen({
 
 const useStyles = makeStyles((t) => ({
   top: { paddingTop: t.space[8] },
+  waits: { paddingTop: t.space[8], paddingBottom: t.space[8], paddingRight: t.layout.gutter },
 }));

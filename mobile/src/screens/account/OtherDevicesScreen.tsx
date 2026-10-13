@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   Banner,
@@ -36,14 +36,17 @@ import * as api from '../../api/endpoints.ts';
 import * as keystore from '../../keystore.ts';
 import { ApiError, TransportError } from '../../api/client.ts';
 import type { Device } from '../../api/schemas.ts';
-import { devicesQuery, keys } from '../../queries.ts';
+import { devicesQuery, keys, treasuryQuery, vaultsQuery } from '../../queries.ts';
+import { treasuriesHolding, type Holding } from '../../logic/seats.ts';
+import { andList } from '../../logic/words.ts';
+import { RenameDeviceSheet } from './RenameDeviceSheet.tsx';
 import { useSigningMethod } from '../../signingMethod.ts';
 import { methodButton } from '../../logic/methodLabel.ts';
 import { dayMonth, dayMonthTime } from '../../logic/words.ts';
 
 export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack: () => void; removeDeviceId?: number }) {
   const s = useStyles();
-  const { token } = useEnrolledSession();
+  const { token, identity } = useEnrolledSession();
   const queryClient = useQueryClient();
   const toast = useToast();
   const method = useSigningMethod();
@@ -52,7 +55,21 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
   const [removing, setRemoving] = useState<Device | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState<Device | null>(null);
   const [problem, setProblem] = useState<{ tone: 'neutral' | 'warning' | 'critical'; text: string } | null>(null);
+
+  // Which treasuries hold the device being removed (A20/A21): read only while its sheet is open.
+  const vaults = useQuery({ ...vaultsQuery(token), enabled: removing !== null });
+  const treasuries = useQueries({
+    queries: (vaults.data?.vaults ?? []).map((v) => ({ ...treasuryQuery(token, v.vault_id), enabled: removing !== null })),
+  });
+  const holding = treasuriesHolding(
+    vaults.data
+      ? vaults.data.vaults.map((v, i) => ({ name: v.name, treasury: treasuries[i]?.data }))
+      : [{ name: '', treasury: undefined }],
+    identity.userId,
+    removing?.fingerprint ?? null,
+  );
 
   const all = (devices.data?.devices ?? []).filter((d) => !d.is_current);
   const active = all.filter((d) => d.revoked_at === null);
@@ -181,6 +198,16 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
                 </Text>
               </View>
             ) : null}
+            <Button
+              label="Rename"
+              variant="secondary"
+              onPress={() => {
+                const d = open;
+                setOpen(null);
+                setRenaming(d);
+              }}
+              full
+            />
             <Section>
               <Button
                 label="Remove this device"
@@ -217,13 +244,34 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
             {removing.fingerprint ? <GroupedValue value={removing.fingerprint} emphasiseEnds={false} /> : null}
             <Text role="body">Its key stops signing at once. Anything it already signed stays valid.</Text>
             <Text role="body" tone="muted">
-              {"If a vault's treasury holds this device's key for you, you can't approve that vault's payments from it until an owner updates the treasury."}
+              {holdingLine(holding, removing.name)}
             </Text>
           </View>
         ) : null}
       </Sheet>
+
+      <RenameDeviceSheet device={renaming} onClose={() => setRenaming(null)} />
     </Screen>
   );
+}
+
+/**
+ * The treasury consequence of removing a device (§6.18): named where the treasury view says which
+ * key it holds (A20/A21), conditional where it does not (an older server, or a treasury that did
+ * not load).
+ */
+function holdingLine(holding: Holding, name: string): string {
+  if (holding.names.length === 1) {
+    const v = holding.names[0];
+    return `The ${v} treasury holds this device's key for you. You can't approve ${v} payments from ${name} until an owner updates the treasury.`;
+  }
+  if (holding.names.length > 1) {
+    return `The ${andList(holding.names)} treasuries hold this device's key for you. You can't approve their payments from ${name} until an owner updates them.`;
+  }
+  if (holding.unknown) {
+    return "If a vault's treasury holds this device's key for you, you can't approve that vault's payments from it until an owner updates the treasury.";
+  }
+  return "No treasury holds this device's key for you.";
 }
 
 const useStyles = makeStyles((t) => ({

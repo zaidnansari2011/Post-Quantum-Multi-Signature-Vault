@@ -23,6 +23,7 @@ import { makeStyles } from '../../theme/index.ts';
 import type { TreasuryResponse, VaultMember } from '../../api/schemas.ts';
 import { changeSummary, checkTreasuryChange, treasuryChangeStatus } from '../../logic/treasuryChange.ts';
 import { ruleSentence } from '../../logic/workspace.ts';
+import { lastSignedLine } from '../../logic/seats.ts';
 
 const ROLE_WORDS: Record<string, string> = { owner: 'Owner', signer: 'Approver', viewer: 'Viewer' };
 
@@ -38,6 +39,7 @@ export function MembersSheet({
   onWeb: () => void;
 }) {
   const [shown, setShown] = useState<number | null>(null);
+  const now = Date.now();
   // Approvers first, then viewers; you among them, by name.
   const order = (m: VaultMember) => (m.role === 'viewer' ? 1 : 0);
   const sorted = [...members].sort((a, b) => order(a) - order(b) || (a.name ?? '').localeCompare(b.name ?? ''));
@@ -54,7 +56,7 @@ export function MembersSheet({
           const role = ROLE_WORDS[m.role] ?? 'Member';
           const noKey = m.role !== 'viewer' && m.has_key === false;
           const caption = [
-            noKey ? "No key yet, so can't approve" : null,
+            noKey ? "No key yet, so can't approve" : m.role === 'viewer' ? null : lastSignedLine(m.last_signed_at, now),
             shown === m.user_id ? m.email : null,
           ]
             .filter(Boolean)

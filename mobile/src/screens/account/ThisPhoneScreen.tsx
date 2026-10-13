@@ -21,6 +21,7 @@ import {
   Sheet,
   Switch,
   Text,
+  TextLink,
 } from '../../ui/index.tsx';
 import { makeStyles } from '../../theme/index.ts';
 import { useEnrolledSession } from '../../session.tsx';
@@ -31,6 +32,7 @@ import { useSigningMethod } from '../../signingMethod.ts';
 import { dayMonth } from '../../logic/words.ts';
 import { RemoveThisPhoneSheet } from './RemoveThisPhoneSheet.tsx';
 import { canCoverSwitcher } from '../../native/screenCapture.ts';
+import { RenameDeviceSheet } from './RenameDeviceSheet.tsx';
 
 const ALGORITHMS: Record<string, string> = {
   'ML-DSA-44': 'ML-DSA-44, FIPS 204',
@@ -46,6 +48,7 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
   const devices = useQuery(devicesQuery(token));
   const [keySheet, setKeySheet] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [lockBusy, setLockBusy] = useState(false);
   const [lockProblem, setLockProblem] = useState<string | null>(null);
   // App lock asks for the phone's own lock: without one it can't ask, so the switch says so.
@@ -78,7 +81,17 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
       <Scroll>
         <View style={s.stack}>
           <List>
-            <ListRow title="Name" value={current?.name ?? identity.deviceName} />
+            <ListRow
+              title="Name"
+              value={current?.name ?? identity.deviceName}
+              trailing={
+                current ? (
+                  <View style={s.change}>
+                    <TextLink label="Change" accessibilityLabel="Change this phone's name" onPress={() => setRenaming(true)} />
+                  </View>
+                ) : null
+              }
+            />
             <ListRow title="Set up" value={dayMonth(identity.enrolledAt, now) ?? 'Unknown'} />
             <ListRow
               title="Signing confirmed by"
@@ -155,6 +168,7 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
       </Sheet>
 
       <RemoveThisPhoneSheet visible={removing} onClose={() => setRemoving(false)} />
+      <RenameDeviceSheet device={renaming && current ? current : null} onClose={() => setRenaming(false)} />
     </Screen>
   );
 }
@@ -164,6 +178,7 @@ const useStyles = makeStyles((t) => ({
   stack: { gap: t.space[24], paddingTop: t.space[8] },
   stack16: { gap: t.space[16] },
   group: { gap: t.space[8] },
+  change: { justifyContent: 'center', paddingRight: t.space[8] },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',

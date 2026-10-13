@@ -26,6 +26,8 @@ import { useIsFocused } from '@react-navigation/native';
 
 import {
   Button,
+  IconButton,
+  TextLink,
   ColdStartHint,
   CollapsedBar,
   DecisionRow,
@@ -51,6 +53,8 @@ import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx
 import { keys, meQuery, vaultsQuery } from '../queries.ts';
 import { approvalsHeadline, elsewhereSections } from '../logic/queue.ts';
 import { offersRaise } from '../proposing.ts';
+import { useNotificationsOffLine } from '../push.ts';
+import { OFF_LINE } from '../logic/push.ts';
 
 export default function HomeScreen({
   onOpen,
@@ -58,6 +62,7 @@ export default function HomeScreen({
   onRaise,
   onOpenWaiting,
   onOpenTreasuryApprovals,
+  onOpenNotifications,
 }: {
   onOpen: (uuid: string) => void;
   /** A treasury change waiting on you: its own route (§6.15). */
@@ -66,6 +71,8 @@ export default function HomeScreen({
   onOpenWaiting: () => void;
   /** Account's treasury approvals: the one-time move to this phone's key (§6.18). */
   onOpenTreasuryApprovals: () => void;
+  /** Account, Notifications: where "Notifications are off" leads (§6.3 item 5). */
+  onOpenNotifications: () => void;
 }) {
   const s = useStyles();
   const { token, identity, justEnrolled, clearJustEnrolled } = useEnrolledSession();
@@ -97,6 +104,7 @@ export default function HomeScreen({
   const failed = q.awaiting.isError && !confirmed && !showList;
   const loading = (!hasList || restoredEmpty) && !failed;
   const removed = me.data?.workspace === null;
+  const offLine = useNotificationsOffLine(me.data?.push?.available ?? false, me.data?.push?.registered ?? false);
   const coldStart = useColdStart(!confirmed && q.awaiting.isFetching);
 
   // Treasury changes this phone can sign join the decisions, by when each runs out (§6.15).
@@ -281,6 +289,18 @@ export default function HomeScreen({
                   </List>
                 </View>
               ) : null}
+
+              {offLine.show ? (
+                <View style={s.offLine}>
+                  <View style={s.offText}>
+                    <Text role="caption" tone="muted">
+                      {OFF_LINE}
+                    </Text>
+                    <TextLink label="Turn on" role="caption" onPress={onOpenNotifications} accessibilityLabel="Turn on notifications" />
+                  </View>
+                  <IconButton icon="x" label="Dismiss for 30 days" onPress={offLine.dismiss} size={20} />
+                </View>
+              ) : null}
             </>
           )}
         </Scroll>
@@ -294,4 +314,6 @@ const useStyles = makeStyles((t) => ({
   retry: { alignItems: 'flex-start' },
   after: { marginTop: t.space[24] },
   welcome: { marginTop: -t.space[8], marginBottom: t.space[16] },
+  offLine: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[8], marginTop: t.space[24] },
+  offText: { flex: 1, alignItems: 'flex-start' },
 }));

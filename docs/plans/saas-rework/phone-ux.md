@@ -2666,6 +2666,37 @@ Where P3 departs from the text above, and why:
 - **Acceptance:** each feature's parity-checklist row is ticked on a handset against its phone scope;
   the adversarial reviews in §4 of the parity checklist are closed.
 
+**P4b status (2026-10-10, stream `rework/p4b-phone-inbox`).** Built: R4's part of P4 and the A21
+gaps P3 listed. Shots: `docs/plans/saas-rework/shots/p4b/` (`tools/web-shots/p4b.py`, light and
+dark at 1.0 and 2.0, 0 target and 0 overflow findings). Probes: `tools/p4b_probe.ts` through
+`tests/test_mobile_p4b.py`; the server's side in `tests/test_api_phone_p4b.py`.
+
+- **Activity (§6.12)** is For you / Yours. For you is the server's Updates section: unread
+  security alerts pinned in the critical tone, the rest in Today, Yesterday, This week and Earlier;
+  a tap opens the screen and marks it read; a swipe left offers Mark read and Archive, which are
+  also the row's accessibility actions; "Mark all read" says so in a toast; "Not you? Remove that
+  device" opens Other devices with that device's remove sheet open, and is never offered for this
+  phone. The tab dot is For you's unread count. A push tap marks its item read before the inbox
+  refetches. Yours says "You approved" / "You rejected" from `my_vote`.
+- **Security alerts can't be archived,** on the server as well as the phone: the server refuses
+  (409 `not_archivable`; the web inbox has no Archive on one either), each notification says
+  whether it is `archivable`, and the phone never offers Archive on a security alert, whatever a
+  reply says. They can be marked read.
+- **Approvals (§6.3 item 5):** "Notifications are off" with Turn on (Account, Notifications) and
+  a dismiss that holds for 30 days; only where push could work and is off.
+- **Remind (§6.4, §6.21)** waits for the server's `next_allowed_at` and says when ("You can remind
+  again tomorrow").
+- **Account (§6.18, §6.19):** This phone's "Change" and Other devices' "Rename" (the server's
+  refusal said under the field). Device names have one rule at enrolment and rename: 1 to 64
+  characters, no control, zero-width, text-direction, private-use or surrogate character. Both
+  remove sheets name the treasury that holds the key, matched by the caller's seat fingerprint;
+  where a seat names no fingerprint or the treasury did not load, the sheet asks for consent as
+  before.
+- **Vault (§6.14):** members say "Last signed 2 Oct" from `last_signed_at`.
+- **Not done:** the swipe itself is a handset check (react-native-web turns a drag into a press;
+  OWNER-ACTIONS §3.5 item 12). "Removes this phone's key" in a treasury change still can't be said
+  as fact (A20's remaining half).
+
 ### 10.2 The rework APK (native changes, built once)
 
 **Decide its contents before the first build, to avoid a second one.** Build it with a new EAS
@@ -2760,7 +2791,7 @@ renders the fallbacks without shims.*
 | A9 | 401 reason codes (`token_expired`, `device_revoked`); device `expires_at` surfaced; **re-authenticate an existing device** (password plus a signature from the device key over a fresh challenge). It must say whether it extends `Device.expires_at` or adds a separate token expiry, list the treasury-seat consequences, and refuse revoked devices and non-active keys (§6.20) | Session ended without a new key | R7 (protocol change: adversarial review, with treasury seats in scope) |
 | A10 | Short-lived (≤ 2 min), single-use enrolment token shown as a QR on the web, confirmed on the web before the key is registered, raising a security notification (§6.2a) | Pair with the web | R6–R7 (**adversarial review**: a new way to bind a signing key without a password) |
 | A11 | `POST /proposals/<uuid>/withdraw`, `can_withdraw`, `raised_again_from` | Withdraw, raise again | R5 |
-| A12 | `POST /proposals/<uuid>/remind` returning `reminded_at` and `next_allowed_at` | Remind | R4 |
+| A12 | `POST /proposals/<uuid>/remind` returning `reminded_at` and `next_allowed_at` | Remind | R4 (done: `reminded_at` and `next_allowed_at` on the reply and its refusal, and `remind` on the requester's summary, P4b) |
 | A13 | `create_proposal {decision_type, fields, raised_again_from}`; detail `decision_type`, `fields`, `template_version` (the API names them `fields`, not `type_fields`) | Decision types | R5 (done; phone wired in P3) |
 | A14 | Comments routes | Discussion | R5 |
 | A15 | Push token register and revoke; notification preferences | Push | R8 |
@@ -2768,8 +2799,8 @@ renders the fallbacks without shims.*
 | A17 | `seat` (`this_device`, `password`, `other_device`, null) on awaiting payment summaries; the reconfigurations waiting on you listed with the awaiting decisions; **on the web,** the treasury-change view shows the same 8-character code from the digest | "Approve on the web" grouping and the badge (§6.3); treasury changes in Approvals (§6.15); a code on treasury changes | R2 (code: R7 web) |
 | A18 | Security events for device added, device removed and device re-authenticated, delivered to the account's other devices | Security items and pushes (§6.12, §6.18, §6.23) | R4 |
 | A19 | *(Optional, owner's call, §12 Q8)* a decline for a treasury reconfiguration | Rejecting a treasury change | — |
-| A20 | A treasury identity the phone can check against a key it can fingerprint (or the key itself in the reconfiguration view) | Naming whose key a change adds or removes as fact, and "Removes this phone's key" (§6.15; P3 review A3) | R7 or later (adversarial review: it changes what an approval can be shown to mean) |
-| A21 | `my_vote` on summaries; `next_allowed_at` on Remind; `last_signed_at` per vault member; a device rename route; seat fingerprints in the treasury view | "You approved" in Activity; "You can remind again tomorrow"; "Last signed 2 Oct"; This phone's "Change"; which treasury a removed device leaves | Any (additive) |
+| A20 | A treasury identity the phone can check against a key it can fingerprint (or the key itself in the reconfiguration view) | Naming whose key a change adds or removes as fact, and "Removes this phone's key" (§6.15; P3 review A3) | R7 or later (adversarial review: it changes what an approval can be shown to mean). *Partly, P4b: the treasury view gives the caller's own seat's key fingerprint, so a remove sheet can name the treasury that holds a device's key. Naming whose key a change adds or removes, and "Removes this phone's key", still need the on-chain key blob tied to a key the phone can fingerprint.* |
+| A21 | `my_vote` on summaries; `next_allowed_at` on Remind; `last_signed_at` per vault member; a device rename route; seat fingerprints in the treasury view | "You approved" in Activity; "You can remind again tomorrow"; "Last signed 2 Oct"; This phone's "Change"; which treasury a removed device leaves | Any (additive). *Done, P4b (`POST`/`PUT /devices/<id>/name`, own active devices only, enrolment's name rule)* |
 
 ---
 
