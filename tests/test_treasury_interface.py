@@ -164,7 +164,9 @@ def test_a_balance_ethereum_will_not_give_is_shown_as_unavailable(pw, monkeypatc
 
     monkeypatch.setattr(pw.relayer.rpc, "get_balance", down)
     _login(pw, pw.users[0])
-    assert "Unavailable" in _get(pw, f"/vaults/{pw.vault.id}?tab=treasury")
+    page = _get(pw, f"/vaults/{pw.vault.id}?tab=treasury")
+    # staging-fixes reworded the badge and says what happened instead of "Unavailable"
+    assert "Can’t read it now" in page and "Ethereum didn’t answer" in page
 
 
 def test_payouts_sent_today_count_against_the_limit(pw):
