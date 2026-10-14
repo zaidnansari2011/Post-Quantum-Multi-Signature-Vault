@@ -656,6 +656,37 @@ def _send_recovery(
     return created
 
 
+def _phone_name(request) -> dict:
+    """For a phone reset, the name of the phone that vouched (review H1): the person can tell
+    which phone to remove. In-app words only; emails and pushes name no device (F1)."""
+    if request.route != "phone":
+        return {}
+    from qvault.services import recovery_phone
+
+    name = recovery_phone.vouching_device_name(request)
+    return {"device_name": name} if name else {}
+
+
+def recovery_phone_codes(
+    user, request, *, device_name: str | None, purpose: str, now: datetime | None = None
+) -> None:
+    """Five wrong codes ended an approval a phone of the person's showed (review M1): someone who
+    saw part of that phone's screen kept guessing. Told to the person alone (the approval, and any
+    reset it started, has ended, so nothing is waiting for anyone else to cancel). Never capped."""
+    data = {"change": "phone_codes", "purpose": purpose}
+    if device_name:
+        data["device_name"] = device_name
+    _send_recovery(
+        "recovery_kit_changed",
+        user,
+        {},
+        key=f"recovery_phone_codes:{request.request_uuid}:{purpose}",
+        now=now or _utcnow(),
+        data=data,
+        capped=False,
+    )
+
+
 def _completes(request) -> str | None:
     moment = request.completes_at
     if moment is None:
@@ -664,17 +695,31 @@ def _completes(request) -> str | None:
     return moment.isoformat()
 
 
-def recovery_waiting(request, watchers: dict[int, str], *, now: datetime | None = None) -> None:
-    """Someone used the person's kit: the wait has started, and can be cancelled until it ends.
-    Never capped (design §16 item 19): this is the notice about the request that may complete."""
+def recovery_waiting(
+    request,
+    watchers: dict[int, str],
+    *,
+    now: datetime | None = None,
+    shortened: bool = False,
+) -> None:
+    """Someone used the person's kit, or their paired phone approved a new web password: the wait
+    has started, and can be cancelled until it ends. ``shortened``: a paired phone has confirmed a
+    kit request, which now takes effect sooner (Phase 2, design §6.3), so everyone hears the new
+    time. Never capped (design §16 item 19): this is the notice about the request that may
+    complete."""
     _send_recovery(
         "recovery_waiting",
         request.user,
         watchers,
-        key=f"recovery_waiting:{request.request_uuid}",
+        key=f"recovery_waiting:{request.request_uuid}" + (":phone" if shortened else ""),
         now=now or _utcnow(),
         request=request,
-        data={"completes_at": _completes(request)},
+        data={
+            "completes_at": _completes(request),
+            "route": request.route,
+            "shortened": bool(shortened),
+            **_phone_name(request),
+        },
         capped=False,
     )
 
@@ -693,6 +738,8 @@ def recovery_cancelled(request, watchers: dict[int, str], *, now: datetime | Non
             "by_role": request.cancelled_as or "system",
             "kit_burned": bool(request.kit_burned),
             "failed": request.state == "failed",
+            "route": request.route,
+            **_phone_name(request),
         },
     )
 
@@ -706,6 +753,7 @@ def recovery_completed(request, watchers: dict[int, str], *, now: datetime | Non
         key=f"recovery_completed:{request.request_uuid}",
         now=now or _utcnow(),
         request=request,
+        data={"route": request.route},
         capped=False,
     )
 

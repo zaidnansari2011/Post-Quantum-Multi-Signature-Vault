@@ -62,6 +62,10 @@ def _render(report, *, colour: bool) -> str:
             lines.append(f"  {paint(CROSS, '31')}  {check.title}")
         lines.append(f"        {paint(check.detail, '90')}")
 
+    # Key lineage (plan R9): informational, never a verdict.
+    for line in facts.get("lineage") or []:
+        lines.append(f"  {paint('note', '36')}  {line}")
+
     lines.append("")
     if report.ok:
         lines.append(f"  {paint(report.summary.upper(), '1;32')}")

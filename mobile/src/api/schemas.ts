@@ -694,3 +694,74 @@ export const notificationSettingsResponse = z.object({
   email: z.object({ available: z.boolean() }),
 });
 export type NotificationSettings = z.infer<typeof notificationSettingsResponse>;
+
+// --- Account recovery by phone (plan R9 Phase 2, design §6). ------------------------------------
+//
+// One recovery as the phone shows it: whose, which way, until when, and what this person may do.
+// The server works out `viewer_as` from the same rule as the web's Home banner: the person
+// themself, or an owner, admin or fellow approver watching over them.
+
+export const recoveryRequestSchema = z.object({
+  request_uuid: z.string(),
+  route: z.enum(['kit', 'phone', 'quorum']),
+  state: z.string(),
+  subject: z.object({ id: z.number().int(), display_name: z.string().nullable() }),
+  viewer_as: z.enum(['self', 'manager', 'cosigner']),
+  created_at: z.string().nullable(),
+  completes_at: z.string().nullable(),
+  request_code: z.string().nullable(),
+  confirmed_by_phone: z.boolean(),
+  // Review fixes (H1, M3): absent from a server before them.
+  device_name: z.string().nullable().optional(),
+  can_cancel: z.boolean(),
+  can_confirm: z.boolean(),
+  confirm_would_complete_at: z.string().nullable().optional(),
+});
+export type RecoveryRequest = z.infer<typeof recoveryRequestSchema>;
+
+export const phoneResetState = z.object({
+  allowed: z.boolean(),
+  code: z.string().nullable(),
+  reason: z.string().nullable(),
+  available_at: z.string().nullable(),
+  treasury_notes: z.array(z.string()),
+  wait_hours: z.number().int(),
+});
+export type PhoneResetState = z.infer<typeof phoneResetState>;
+
+export const recoveryOverviewResponse = z.object({
+  ok: z.literal(true),
+  requests: z.array(recoveryRequestSchema),
+  phone_reset: phoneResetState,
+});
+export type RecoveryOverview = z.infer<typeof recoveryOverviewResponse>;
+
+/** The RECOVERY bytes' fields, which the phone checks and then signs itself (src/flows.ts). */
+export const recoverySigningResponse = z.object({
+  ok: z.literal(true),
+  request_uuid: z.string(),
+  inputs: z.object({
+    purpose: z.enum(['web_reset', 'kit_confirm']),
+    request_uuid: z.string(),
+    user_id: z.number().int(),
+    device_id: z.number().int(),
+    key_id: z.number().int(),
+    deployment: z.string(),
+    expires_at: z.string(),
+  }),
+  expires_at: z.string(),
+});
+
+/** The code the signature earned: 12 symbols in 3 groups, shown on this phone once, never stored. */
+export const recoveryApproveResponse = z.object({
+  ok: z.literal(true),
+  code: z.string().regex(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/),
+  expires_at: z.string(),
+  purpose: z.enum(['web_reset', 'kit_confirm']),
+});
+
+export const recoveryCancelResponse = z.object({
+  ok: z.literal(true),
+  request_uuid: z.string(),
+  state: z.string(),
+});

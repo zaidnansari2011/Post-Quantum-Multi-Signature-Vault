@@ -3,7 +3,8 @@
 // The profile leads: name, email, and the role in the workspace ("Admin in Northwind"); an owner or
 // admin gets one row to manage the workspace on the web. Then one row per page: This phone, Other
 // devices (only when there are any), Notifications, Treasury approvals (only on a server with
-// treasuries), Help and about. The fingerprint, the algorithm and "Remove this phone" are one level
+// treasuries), Help and about; then Security, with "Set a new web password" (R9 Phase 2, design
+// §6.2). The fingerprint, the algorithm and "Remove this phone" are one level
 // down, on This phone: a destructive action does not belong on a tab root people visit to check
 // things (D14). The footer is the version only.
 
@@ -24,7 +25,13 @@ import { parseInstant } from '../time.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-export type AccountPage = 'ThisPhone' | 'OtherDevices' | 'NotificationSettings' | 'TreasuryApprovals' | 'Help';
+export type AccountPage =
+  | 'ThisPhone'
+  | 'OtherDevices'
+  | 'NotificationSettings'
+  | 'TreasuryApprovals'
+  | 'Help'
+  | 'WebPassword';
 
 export default function AccountScreen({ onOpen }: { onOpen: (page: AccountPage) => void }) {
   const s = useStyles();
@@ -107,6 +114,18 @@ export default function AccountScreen({ onOpen }: { onOpen: (page: AccountPage) 
               />
             ) : null}
             <ListRow icon="help" title="Help and about" onPress={() => onOpen('Help')} />
+          </List>
+        </Section>
+
+        {/* R9 Phase 2: the phone's way back to the web for someone who forgot their password. */}
+        <Section title="Security">
+          <List>
+            <ListRow
+              icon="shield"
+              title="Set a new web password"
+              caption="If you forgot it. This phone vouches for you."
+              onPress={() => onOpen('WebPassword')}
+            />
           </List>
         </Section>
 

@@ -61,6 +61,7 @@ from qvault.extensions import db
 from qvault.models.key import Key
 from qvault.models.recovery import (
     OPEN_STATES,
+    PHONE_PRECLAIM_STATES,
     CredentialEpoch,
     RecoveryKitFailure,
     RecoveryKitPause,
@@ -489,7 +490,8 @@ def start_with_kit(
         # It was not a wrong code after all.
         db.session.delete(attempt)
         db.session.commit()
-        if open_request(user) is not None:
+        under_way = open_request(user)
+        if under_way is not None and under_way.route != "phone":
             raise RecoveryRefused(
                 "under_way",
                 "A recovery of this account is already under way, so nothing new was started. "
@@ -519,6 +521,14 @@ def start_with_kit(
                 "before a change it couldn't follow), so nothing was changed. Use one of the "
                 "other ways back on the forgotten-password page.",
             )
+
+        # A valid kit supersedes an open phone reset (design §4.2, review L13): an attacker's
+        # phone request must not block the person's own kit. Everyone is told it was cancelled.
+        # A reset still waiting for its code is left alone: if that code is typed while this kit
+        # request waits, the one-open-request index refuses it.
+        if under_way is not None:
+            cancel(under_way, by=user, as_role="kit", reason="superseded", burn=False, now=now)
+            db.session.flush()
 
         token, token_hash = _new_status_token()
         salt = new_salt()
@@ -650,35 +660,50 @@ def cancel(
     burn: bool,
     now: datetime | None = None,
 ) -> bool:
-    """Cancel ``request`` if it is still waiting and its time has not come; True if this call did.
+    """Cancel ``request`` if it is still waiting and its time has not come, or if it is a phone
+    reset still waiting for its code (Phase 2); True if this call did.
 
     Compare-and-set: one conditional UPDATE, so a cancel at ``completes_at - 1 s`` wins and one at
-    ``completes_at`` loses to completion, whichever process gets there. Does not commit.
+    ``completes_at`` loses to completion, whichever process gets there; and a phone reset's code
+    typed at the same moment either claims it first or finds it cancelled. Does not commit.
     """
-    from qvault.services import ledger_service, notification_service
+    from qvault.services import ledger_service, notification_service, recovery_phone
 
     now = now or _now()
-    changed = db.session.execute(
-        update(RecoveryRequest)
-        .where(
-            RecoveryRequest.id == request.id,
-            RecoveryRequest.state == "waiting",
-            RecoveryRequest.completes_at > now,
-        )
-        .values(
-            state="cancelled",
-            finished_at=now,
-            cancelled_by_id=by.id if by is not None else None,
-            cancelled_as=as_role,
-            cancel_reason=reason,
-            kit_burned=bool(burn and request.route == "kit"),
-        )
-        .execution_options(synchronize_session=False)
-    ).rowcount
-    if changed != 1:
+    was = None
+    for _attempt in range(2):
+        observed = request.state
+        if observed == "waiting":
+            still = (RecoveryRequest.state == "waiting", RecoveryRequest.completes_at > now)
+        elif observed in PHONE_PRECLAIM_STATES:
+            still = (RecoveryRequest.state == observed,)
+        else:
+            return False
+        changed = db.session.execute(
+            update(RecoveryRequest)
+            .where(RecoveryRequest.id == request.id, *still)
+            .values(
+                state="cancelled",
+                finished_at=now,
+                cancelled_by_id=by.id if by is not None else None,
+                cancelled_as=as_role,
+                cancel_reason=reason,
+                kit_burned=bool(burn and request.route == "kit"),
+            )
+            .execution_options(synchronize_session=False)
+        ).rowcount
+        if changed == 1:
+            was = observed
+            break
+        # The state moved under us (a phone reset claimed a moment ago, say): look again, once.
+        db.session.refresh(request)
+    if was is None:
         return False
     db.session.refresh(request)
     _erase_pending(request)
+    recovery_phone.end_live_approvals(request)
+    if was == "phone_pending":
+        return True  # nothing was signed, logged or told about it
     if request.kit is not None and request.kit_burned:
         recovery_kit.revoke(request.kit, "burned", now=now)
     ledger_service.append(
@@ -696,7 +721,9 @@ def cancel(
         ref_id=str(request.user_id),
         commit=False,
     )
-    notification_service.recovery_cancelled(request, watchers(request.user_id), now=now)
+    if was == "waiting":
+        # A phone reset nobody claimed was never told to anyone, so its end is not told either.
+        notification_service.recovery_cancelled(request, watchers(request.user_id), now=now)
     return True
 
 
@@ -761,14 +788,20 @@ def password_proven(user: User, *, via: str, now: datetime | None = None) -> Non
     for. In a request it is also remembered, and ``settle_password_proofs`` makes it again in a
     transaction of its own after the view, in case the view rolled back or never committed (a
     sign-in commits nothing, nor does a vote that failed after the password opened the key)."""
+    from qvault.services import recovery_phone
+
     if user is None or user.id is None:
         return
-    request = open_request(user)
-    if request is None:
+    # The open request, and any phone reset still waiting for its code (Phase 2).
+    requests = recovery_phone.cancellable(user.id)
+    if not requests:
         return
     if has_request_context():
         g.setdefault(_PROOFS, []).append((user.id, via))
-    cancel(request, by=user, as_role="password", reason=f"password_used:{via}", burn=True, now=now)
+    for request in requests:
+        cancel(
+            request, by=user, as_role="password", reason=f"password_used:{via}", burn=True, now=now
+        )
 
 
 def settle_password_proofs(exc: BaseException | None = None) -> None:
@@ -777,12 +810,13 @@ def settle_password_proofs(exc: BaseException | None = None) -> None:
     proofs = g.pop(_PROOFS, None) if has_request_context() else None
     if not proofs:
         return
+    from qvault.services import recovery_phone
+
     try:
         db.session.rollback()
         for user_id, via in proofs:
             user = db.session.get(User, user_id)
-            request = open_request(user_id) if user is not None else None
-            if request is not None:
+            for request in recovery_phone.cancellable(user_id) if user is not None else []:
                 cancel(
                     request,
                     by=user,
@@ -811,11 +845,12 @@ def _completion_problem(request: RecoveryRequest) -> str | None:
         return "the account no longer exists"
     if not request.pending_password_hash or not request.pending_kek_salt:
         return "the new password was not kept"
-    if request.route != "kit":
-        return "only the Recovery Kit route is built"
-    kit = request.kit
-    if kit is None or kit.state != "active":
-        return "the Recovery Kit it used stopped working"
+    if request.route not in ("kit", "phone"):
+        return "this way back is not built"
+    if request.route == "kit":
+        kit = request.kit
+        if kit is None or kit.state != "active":
+            return "the Recovery Kit it used stopped working"
     snapshot = {wrap.key_id: wrap for wrap in request.wraps}
     current = {key.id: key for key in key_service.password_wrapped_keys(user)}
     if set(snapshot) != set(current):
@@ -823,16 +858,21 @@ def _completion_problem(request: RecoveryRequest) -> str | None:
     for key_id, key in current.items():
         if recovery_kit.wrapped_digest(key) != snapshot[key_id].wrapped_sha256:
             return "the account's keys changed while it waited"
-    active = key_service.active_signing_key(user)
-    if active is None or snapshot.get(active.id) is None or snapshot[active.id].new_wrapped is None:
-        return "the kit no longer holds the account's signing key"
+    if request.route == "kit":
+        active = key_service.active_signing_key(user)
+        if (
+            active is None
+            or snapshot.get(active.id) is None
+            or snapshot[active.id].new_wrapped is None
+        ):
+            return "the kit no longer holds the account's signing key"
     return None
 
 
 def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
     """Complete ``request`` if its time has come; True if this call ended it (completed, or
     refused at the re-check). Commits."""
-    from qvault.services import key_service, ledger_service, notification_service
+    from qvault.services import ledger_service, notification_service
 
     now = now or _now()
     subject = db.session.get(User, request.user_id)
@@ -857,7 +897,17 @@ def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
     db.session.refresh(request)
     user = request.user
     problem = _completion_problem(request)
-    if problem is None and not recovery_kit.revoke(request.kit, "used", now=now, only_active=True):
+    if problem is None:
+        # The phone that vouched (a phone reset, or a kit confirmed by phone) can still sign in
+        # at this moment, and a phone reset still locks no treasury (design §7).
+        from qvault.services import recovery_phone
+
+        problem = recovery_phone.completion_problem(request, now=now)
+    if (
+        problem is None
+        and request.route == "kit"
+        and not recovery_kit.revoke(request.kit, "used", now=now, only_active=True)
+    ):
         # Compare-and-set on the kit: a new kit committed after the re-check read this one as
         # active. The kit that started this request no longer works, so neither does the request.
         problem = "the Recovery Kit it used stopped working"
@@ -878,6 +928,37 @@ def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
         db.session.commit()
         return True
 
+    from qvault.services import recovery_phone
+
+    if request.route == "phone":
+        facts = recovery_phone.apply_completion(request, now)
+    else:
+        facts = _apply_kit_completion(request, user, now)
+    user.password_hash = request.pending_password_hash
+    user.kek_salt = request.pending_kek_salt
+    user.kdf_params = request.pending_kdf_params
+    bump_epoch(user.id)
+    ledger_service.append(
+        "recovery_completed",
+        {"request_uuid": request.request_uuid, "user_id": user.id, "route": request.route, **facts},
+        actor=f"user:{user.id}",
+        actor_id=user.id,
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
+    _erase_pending(request)
+    recovery_phone.end_live_approvals(request)
+    notification_service.recovery_completed(request, watchers(user), now=now)
+    db.session.commit()
+    return True
+
+
+def _apply_kit_completion(request: RecoveryRequest, user: User, now: datetime) -> dict:
+    """The kit's keys swapped in under the new password; keys it did not hold become 'lost'
+    (design §5.3 step 5). Returns the ledger facts."""
+    from qvault.services import key_service
+
     active = key_service.active_signing_key(user)
     rewrapped: list[int] = []
     lost: list[int] = []
@@ -897,39 +978,32 @@ def complete(request: RecoveryRequest, *, now: datetime | None = None) -> bool:
             key.can_verify = True
             key.retired_at = key.retired_at or now
             lost.append(key.id)
-    user.password_hash = request.pending_password_hash
-    user.kek_salt = request.pending_kek_salt
-    user.kdf_params = request.pending_kdf_params
-    bump_epoch(user.id)
     digest = sha256_hex(active.public_key)
-    ledger_service.append(
-        "recovery_completed",
-        {
-            "request_uuid": request.request_uuid,
-            "user_id": user.id,
-            "route": request.route,
-            "old_key_ids": [active.id],
-            "new_key_id": active.id,
-            "old_public_key_sha256": digest,
-            "new_public_key_sha256": digest,
-            "keys_rewrapped": len(rewrapped),
-            "keys_lost": lost,
-        },
-        actor=f"user:{user.id}",
-        actor_id=user.id,
-        ref_type="user",
-        ref_id=str(user.id),
-        commit=False,
-    )
-    _erase_pending(request)
-    notification_service.recovery_completed(request, watchers(user), now=now)
-    db.session.commit()
-    return True
+    return {
+        "old_key_ids": [active.id],
+        "new_key_id": active.id,
+        "old_public_key_sha256": digest,
+        "new_public_key_sha256": digest,
+        "keys_rewrapped": len(rewrapped),
+        "keys_lost": lost,
+    }
 
 
 def tick(*, now: datetime | None = None) -> int:
-    """The scheduled job: complete every kit request whose wait is over. Returns how many ended."""
+    """The scheduled job: end phone resets nobody claimed and requests whose vouching phone can no
+    longer sign in (Phase 2), then complete every request whose wait is over. Returns how many
+    ended."""
+    from qvault.services import recovery_phone
+
     now = now or _now()
+    try:
+        swept = recovery_phone.sweep(now=now)
+    except Exception:
+        db.session.rollback()
+        if current_app.config.get("TESTING"):
+            raise
+        current_app.logger.exception("could not sweep phone recoveries")
+        swept = 0
     due = db.session.scalars(
         select(RecoveryRequest.id)
         .where(RecoveryRequest.state == "waiting", RecoveryRequest.completes_at <= now)
@@ -946,7 +1020,7 @@ def tick(*, now: datetime | None = None) -> int:
             if current_app.config.get("TESTING"):
                 raise
             current_app.logger.exception("could not complete recovery %s", request_id)
-    return done
+    return done + swept
 
 
 def settle(request: RecoveryRequest, *, now: datetime | None = None) -> RecoveryRequest:
@@ -969,6 +1043,8 @@ class Banner:
     completes_at: datetime
     #: self, manager or cosigner: whose eyes it is for, which sets its words.
     viewer_as: str
+    #: For a phone reset, the vouching phone's name (review H1): which phone to remove.
+    device_name: str | None = None
 
 
 def _possibly_watched(viewer_id: int):
@@ -1022,7 +1098,12 @@ def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
             # requests to those of people the viewer could be watching.
             role = watchers(request.user_id).get(viewer.id)
         if role is not None and request.user is not None:
-            found.append(Banner(request, request.user, _aware(request.completes_at), role))
+            phone = None
+            if request.route == "phone":
+                from qvault.services import recovery_phone
+
+                phone = recovery_phone.vouching_device_name(request)
+            found.append(Banner(request, request.user, _aware(request.completes_at), role, phone))
     return found
 
 

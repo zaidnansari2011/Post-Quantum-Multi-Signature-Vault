@@ -13,8 +13,8 @@ proposal_lifecycle (decision depth, plan R5); decision_comment (a decision's uns
 discussion, R5); decision_fields (a typed decision's unsigned fields, R5); delivery and
 push_token (the email and push outbox, plan R8); recovery_kit, recovery_kit_wrap,
 recovery_request, recovery_request_wrap, credential_epoch, recovery_notice and the kit throttle's
-two tables (account recovery, plan R9); device_pairing (pairing a phone by a code
-shown on the web, A10).
+two tables (account recovery, plan R9); recovery_phone_approval (its phone route, R9 Phase 2);
+device_pairing (pairing a phone by a code shown on the web, A10).
 Added in later phases: rotation_event.
 """
 
@@ -45,6 +45,7 @@ from .recovery import (
     RecoveryKitPause,
     RecoveryKitWrap,
     RecoveryNotice,
+    RecoveryPhoneApproval,
     RecoveryRequest,
     RecoveryRequestWrap,
 )
@@ -108,4 +109,5 @@ __all__ = [
     "RecoveryNotice",
     "RecoveryKitFailure",
     "RecoveryKitPause",
+    "RecoveryPhoneApproval",
 ]

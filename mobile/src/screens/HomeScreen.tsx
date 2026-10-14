@@ -55,6 +55,7 @@ import { approvalsHeadline, elsewhereSections } from '../logic/queue.ts';
 import { offersRaise } from '../proposing.ts';
 import { useNotificationsOffLine } from '../push.ts';
 import { OFF_LINE } from '../logic/push.ts';
+import { RecoveryBanners } from './recovery/RecoveryBanners.tsx';
 
 export default function HomeScreen({
   onOpen,
@@ -64,6 +65,7 @@ export default function HomeScreen({
   onOpenWaiting,
   onOpenTreasuryApprovals,
   onOpenNotifications,
+  onOpenKitConfirm,
 }: {
   onOpen: (uuid: string) => void;
   /** A treasury change waiting on you: its own route (§6.15). */
@@ -76,6 +78,8 @@ export default function HomeScreen({
   onOpenTreasuryApprovals: () => void;
   /** Account, Notifications: where "Notifications are off" leads (§6.3 item 5). */
   onOpenNotifications: () => void;
+  /** A recovery banner's "Open": confirm the person's own Recovery Kit request (R9 Phase 2). */
+  onOpenKitConfirm: (requestUuid: string) => void;
 }) {
   const s = useStyles();
   const { token, identity, justEnrolled, clearJustEnrolled } = useEnrolledSession();
@@ -235,6 +239,9 @@ export default function HomeScreen({
               {welcome}
             </Text>
           ) : null}
+
+          {/* An open recovery outranks the queue: someone may be taking over an account (R9). */}
+          <RecoveryBanners onOpenKitConfirm={onOpenKitConfirm} />
 
           {removed ? null : <ColdStartHint stage={coldStart} onRetry={refresh} />}
 

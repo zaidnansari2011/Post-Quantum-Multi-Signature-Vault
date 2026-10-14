@@ -504,7 +504,10 @@ def test_the_forgot_page_offers_the_kit_and_is_honest_about_what_is_not_built(ap
     text = _text(client.get("/forgot-password"))
     assert 'href="/recover"' in client.get("/forgot-password").get_data(as_text=True)
     assert "Use your Recovery Kit" in text and "takes 72 hours" in text
-    assert "Coming, not built yet" in text and "Neither is built yet." in text
+    # R9 Phase 2 built the phone's reset; only the approvers' route (Phase 3, deferred) is not.
+    assert 'href="/recover/phone"' in client.get("/forgot-password").get_data(as_text=True)
+    assert "Set a new web password from your phone" in text and "24 hours later" in text
+    assert "Coming, not built yet" in text and "It isn't built yet." in text
     assert "Key replacement by your approvers" in text
 
 

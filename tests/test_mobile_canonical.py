@@ -35,6 +35,7 @@ from qvault.crypto import canonical_json, sha256_hex
 from qvault.services.signing import (
     device_enrolment_bytes,
     proposal_signing_bytes,
+    recovery_signing_bytes,
     vote_signing_bytes,
 )
 
@@ -146,6 +147,19 @@ ENROLMENT_CASES = {
 }
 
 
+# The RECOVERY format (plan R9 Phase 2): hand-written vectors both implementations must reach.
+RECOVERY_VECTORS = json.loads(
+    (Path(__file__).resolve().parent / "vectors" / "recovery_signing.json").read_text(
+        encoding="utf-8"
+    )
+)
+RECOVERY_CASES = {f"recovery_{c['name']}": c for c in RECOVERY_VECTORS["cases"]}
+RECOVERY_REFUSED = {
+    f"recovery_refused_{i}": {**RECOVERY_VECTORS["cases"][0]["inputs"], **r["change"]}
+    for i, r in enumerate(RECOVERY_VECTORS["refused"])
+}
+
+
 @pytest.fixture(scope="module")
 def js_output(tmp_path_factory) -> dict:
     """Run the app's own TypeScript through Node and return what it produced."""
@@ -158,6 +172,10 @@ def js_output(tmp_path_factory) -> dict:
                 "proposals": [{"name": n, "inputs": v} for n, v in PROPOSAL_CASES.items()],
                 "votes": [{"name": n, **v} for n, v in VOTE_CASES.items()],
                 "enrolments": [{"name": n, **v} for n, v in ENROLMENT_CASES.items()],
+                "recoveries": [
+                    *({"name": n, "inputs": c["inputs"]} for n, c in RECOVERY_CASES.items()),
+                    *({"name": n, "inputs": v} for n, v in RECOVERY_REFUSED.items()),
+                ],
             },
             ensure_ascii=False,
         ),
@@ -224,12 +242,31 @@ def test_enrolment_bytes_match_javascript(name, js_output):
     assert js_output[name]["hex"] == expected.hex()
 
 
+@pytest.mark.parametrize("name", sorted(RECOVERY_CASES))
+def test_recovery_bytes_match_the_hand_written_vectors_in_both_implementations(name, js_output):
+    case = RECOVERY_CASES[name]
+    expected = case["message"].encode("utf-8")
+    assert recovery_signing_bytes(**case["inputs"]) == expected
+    assert js_output[name]["hex"] == expected.hex()
+
+
+@pytest.mark.parametrize("name", sorted(RECOVERY_REFUSED))
+def test_a_malformed_recovery_input_is_refused_by_both_implementations(name, js_output):
+    with pytest.raises(ValueError):
+        recovery_signing_bytes(**RECOVERY_REFUSED[name])
+    assert "error" in js_output[name] and "hex" not in js_output[name]
+
+
 def test_domain_tags_are_distinct_in_both_implementations(js_output):
-    """A vote must never be reinterpretable as an enrolment proof, in either implementation."""
+    """A vote must never be reinterpretable as an enrolment proof, in either implementation, nor
+    either of them as a recovery approval."""
     vote = bytes.fromhex(js_output["approve"]["hex"])
     enrol = bytes.fromhex(js_output["basic"]["hex"])
     proposal = bytes.fromhex(js_output["plain"]["hex"])
+    recovery = bytes.fromhex(js_output["recovery_web_reset"]["hex"])
     assert vote.startswith(b"QVAULT-SIG-v1:VOTE|")
     assert enrol.startswith(b"QVAULT-SIG-v1:DEVICE-ENROL|")
     assert proposal.startswith(b"QVAULT-SIG-v1:PROPOSAL|")
-    assert len({vote[:20], enrol[:20], proposal[:20]}) == 3
+    assert recovery.startswith(b"QVAULT-SIG-v1:RECOVERY|")
+    tags = {m[: m.index(b"|")] for m in (vote, enrol, proposal, recovery)}
+    assert len(tags) == 4

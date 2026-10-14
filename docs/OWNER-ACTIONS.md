@@ -914,7 +914,7 @@ are lost when it restarts; that is staging only.
 ### 2.15 Rework R9: the Recovery Kit at the switch — `TODO` (added 2026-10-09)
 
 The Recovery Kit (R9 Phase 1) is built on `rework/r9-recovery-kit`. Nothing to set up before it works;
-three things to know, and two to do, when the rework goes live:
+three things to know, and three to do, when the rework goes live (the third is R9 Phase 2, the phone route):
 
 1. **`PUBLIC_BASE_URL` is printed on every kit** as the one address its code may be typed at
    (`https://project4.zaidansari.tech/recover`). Kits made before a change of address keep the
@@ -932,6 +932,14 @@ three things to know, and two to do, when the rework goes live:
    account, use it at `/recover` from a signed-out browser, check that the account's admins and
    co-signers see the red banner with Cancel on Home and get the email, then either cancel it or
    wait the 72 hours and sign in with the new password.
+6. **To do: try the phone route once by hand on staging** (R9 Phase 2, with the next APK). It
+   needs a phone **paired at least 7 days earlier**, so pair one a week ahead. On the phone, open
+   Account, Security, "Set a new web password", approve with the phone's lock, and type the code it
+   shows at `/recover/phone` from a signed-out browser, with a new password. Check that the
+   account's admins and co-signers see the banner on the web and in the app, that Cancel works from
+   another person's phone, and that removing any phone of the account cancels it. Then try a
+   Recovery Kit request and "Shorten the wait with your phone" on its status page: it should then
+   take effect 24 hours after the kit was used.
 
 ## 3. Checks only you can make
 
@@ -1366,3 +1374,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-10-09 | R8 review fixes: §2.12 gains step 6 (switch on Expo Enhanced Push Security and set `EXPO_ACCESS_TOKEN` as a secret at the switch); §2.11 says push needs that secret. |
 | 2026-10-09 | Added §2.15: the Recovery Kit (R9 Phase 1) at the switch: the address printed on kits, the master key now also locking kits, the banner every account sees, and a hand test on staging. |
 | 2026-10-10 | R9 finishing pass: the Recovery Kit section is §2.15 (it was §2.14 on its branch, which clashed with staging's §2.14); item 3 now says the "Save a Recovery Kit" reminder can be hidden until the next sign-in, except by treasury signers. |
+| 2026-10-14 | R9 Phase 2: §2.15 item 6, a hand test of the phone route (a phone paired at least 7 days before, "Set a new web password", Cancel, and a kit request shortened by the phone). |

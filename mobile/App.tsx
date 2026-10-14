@@ -41,6 +41,8 @@ import OtherDevicesScreen from './src/screens/account/OtherDevicesScreen.tsx';
 import TreasuryApprovalsScreen from './src/screens/account/TreasuryApprovalsScreen.tsx';
 import NotificationSettingsScreen from './src/screens/account/NotificationSettingsScreen.tsx';
 import HelpScreen from './src/screens/account/HelpScreen.tsx';
+import WebPasswordScreen from './src/screens/account/WebPasswordScreen.tsx';
+import KitConfirmScreen from './src/screens/recovery/KitConfirmScreen.tsx';
 import DecisionScreen from './src/screens/DecisionScreen.tsx';
 import DiscussionScreen from './src/screens/DiscussionScreen.tsx';
 import VaultsScreen from './src/screens/VaultsScreen.tsx';
@@ -78,6 +80,9 @@ export type RootStackParamList = {
   // `getId` is the change's id (§6.15).
   TreasuryChange: { vaultId: number; changeId: number; opened?: 'queue' };
   Discussion: { uuid: string; title?: string };
+  // Confirming the person's own Recovery Kit request with this phone (R9 Phase 2, design §6.3):
+  // above the tabs, like a decision, because it signs.
+  KitConfirm: { requestUuid: string };
   // Undefined params: reached from the queue, where no vault is chosen yet.
   NewDecision: { vaultId?: number; vaultName?: string; again?: AgainFrom } | undefined;
   NewVault: undefined;
@@ -101,6 +106,8 @@ export type AccountStackParamList = {
   NotificationSettings: undefined;
   TreasuryApprovals: { fromPayment?: boolean } | undefined;
   Help: undefined;
+  // Security: a new web password from this phone (R9 Phase 2, design §6.2).
+  WebPassword: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -150,6 +157,8 @@ type Open = {
   onOpenChange: (vaultId: number, changeId: number, queued?: boolean) => void;
   onRaise: (vaultId?: number, vaultName?: string) => void;
   onCreateVault: () => void;
+  /** A recovery banner's "Open": this phone confirms the person's own kit request (R9 Phase 2). */
+  onOpenKitConfirm: (requestUuid: string) => void;
 };
 
 /** The Approvals tab's own stack: the queue, and Waiting on others under it, tab bar kept (§2.1). */
@@ -175,6 +184,7 @@ function ApprovalsTab({
             onOpenWaiting={() => navigation.navigate('Waiting')}
             onOpenTreasuryApprovals={onOpenTreasuryApprovals}
             onOpenNotifications={onOpenNotifications}
+            onOpenKitConfirm={open.onOpenKitConfirm}
           />
         )}
       </ApprovalsStack.Screen>
@@ -251,6 +261,9 @@ function AccountTab() {
       </AccountStack.Screen>
       <AccountStack.Screen name="Help">
         {({ navigation }) => <HelpScreen onBack={() => navigation.goBack()} />}
+      </AccountStack.Screen>
+      <AccountStack.Screen name="WebPassword">
+        {({ navigation }) => <WebPasswordScreen onBack={() => navigation.goBack()} />}
       </AccountStack.Screen>
     </AccountStack.Navigator>
   );
@@ -354,6 +367,7 @@ function Routes() {
                   navigation.navigate('TreasuryChange', { vaultId, changeId, opened: queued ? 'queue' : undefined }),
                 onRaise: (vaultId, vaultName) => navigation.navigate('NewDecision', vaultId ? { vaultId, vaultName } : undefined),
                 onCreateVault: () => navigation.navigate('NewVault'),
+                onOpenKitConfirm: (requestUuid) => navigation.navigate('KitConfirm', { requestUuid }),
               }}
             />
           )}
@@ -394,6 +408,11 @@ function Routes() {
         <Stack.Screen name="Discussion">
           {({ navigation, route }) => (
             <DiscussionScreen uuid={route.params.uuid} title={route.params.title} onBack={() => navigation.goBack()} />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="KitConfirm">
+          {({ navigation, route }) => (
+            <KitConfirmScreen requestUuid={route.params.requestUuid} onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
         <Stack.Group screenOptions={{ presentation: 'modal' }}>
