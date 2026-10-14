@@ -1991,8 +1991,10 @@ the web." The native `Alert.alert` goes with it.
 4. **Fields by type:**
    - **General:**
      - Title (`Field`, placeholder "Rotate the on-call paging credentials").
-     - "What everyone signs" (`TextArea`, serif), caption "Signed exactly as written. It can't be
-       edited once anyone has signed."
+     - "What everyone signs" (`TextArea`, serif), no caption: the action bar's one line, "Once
+       raised, the text can't be changed.", is the rule the server applies (no route edits a
+       raised decision; it can only be withdrawn). The old caption said "once anyone has signed",
+       which was not true, and two notices disagreed (handset audit, 14 Oct).
    - **Payment:**
      - **Amount:** `figure`-sized input with "ETH" as a suffix and a `decimal-pad` keyboard. Comma
        decimals are accepted and normalised (check `parseEth`).

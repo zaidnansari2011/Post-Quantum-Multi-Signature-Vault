@@ -517,7 +517,9 @@ const useStyles = makeStyles((t) => ({
   },
   // minWidth 0: a web <input> has an intrinsic width that grows with the text size and would push
   // the whole form past the screen at 2.0 text (P3 review B1); flex alone does not shrink it.
-  input: { flex: 1, minWidth: 0, paddingVertical: t.space[12], minHeight: 46 },
+  // paddingHorizontal 0: the box's own padding is the inset. Android's TextInput adds about 4 of
+  // its own otherwise, so a Field's text sat further in than a TextArea's (handset audit, 14 Oct).
+  input: { flex: 1, minWidth: 0, paddingVertical: t.space[12], paddingHorizontal: 0, minHeight: 46 },
   under: { minHeight: 18 },
   underRow: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
   underStacked: { gap: t.space[4] },
