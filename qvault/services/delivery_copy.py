@@ -52,6 +52,8 @@ PUSH_KINDS = (
     "payout_failed",
     "device_enrolled",
     "password_changed",
+    "device_removed",
+    "device_pairing_refused",
     "recovery_waiting",
     "recovery_cancelled",
     "recovery_completed",
@@ -76,7 +78,17 @@ PUSH_GROUPS = (
         "Updates",
         ("decision_approved", "decision_rejected", "payout_paid", "payout_failed"),
     ),
-    ("security", "Security", ("device_enrolled", "password_changed", *RECOVERY_KINDS)),
+    (
+        "security",
+        "Security",
+        (
+            "device_enrolled",
+            "password_changed",
+            "device_removed",
+            "device_pairing_refused",
+            *RECOVERY_KINDS,
+        ),
+    ),
 )
 _CHANNEL = {kind: group for group, _label, kinds in PUSH_GROUPS for kind in kinds}
 
@@ -186,10 +198,25 @@ def push_for(
             if match
             else {"type": "activity", **extra}
         )
+        how = " from the web" if stored.get("via") == "web_qr" else ""
         return copy(
             "New device added",
-            "A phone was added to your account. If this wasn't you, tap to review your devices.",
+            f"A phone was added to your account{how}. If this wasn't you, tap to review your "
+            "devices.",
             opens,
+        )
+    if kind == "device_removed":
+        return copy(
+            "Device removed",
+            "A phone was removed from your account. If this wasn't you, change your password and "
+            "check your devices.",
+            {"type": "activity", **extra},
+        )
+    if kind == "device_pairing_refused":
+        return copy(
+            "A phone wasn't added",
+            "A phone was stopped from being added to your account. Open Q-Vault to see why.",
+            {"type": "activity", **extra},
         )
     if kind == "password_changed":
         return copy(
@@ -465,6 +492,31 @@ def email_for(
             "This is a security alert, which can't be switched off.",
             preferences=False,
         )
+    if kind == "device_removed":
+        return EmailCopy(
+            "A device was removed from your Q-Vault account",
+            "A device was removed",
+            (
+                "A phone was removed from your Q-Vault account and can no longer sign for you. "
+                "Its past signatures still count.",
+                "If this wasn't you, change your password now and check your devices: someone "
+                "else was signed in as you.",
+            ),
+            "Review your devices",
+            account,
+            "This is a security alert, which can't be switched off.",
+            preferences=False,
+        )
+    if kind == "device_pairing_refused":
+        return EmailCopy(
+            "A phone was stopped from being added to your Q-Vault account",
+            "A phone wasn't added",
+            (_pairing_refused_line(stored.get("change")), "Nothing was added to your account."),
+            "Review your devices",
+            account,
+            "This is a security alert, which can't be switched off.",
+            preferences=False,
+        )
     if kind in RECOVERY_KINDS:
         return _recovery_email(kind, stored, now)
     if kind == "password_changed":
@@ -482,6 +534,20 @@ def email_for(
             preferences=False,
         )
     return None
+
+
+def _pairing_refused_line(reason: object) -> str:
+    """Why a pairing by code stopped, in the email's words (A10)."""
+    return {
+        "contested": "Two phones scanned the pairing code shown on your Q-Vault web page, so "
+        "neither was added. If one wasn't yours, someone may have seen your screen.",
+        "declined": "You said your phone didn't scan the pairing code shown on your Q-Vault web "
+        "page. Someone else's phone did: they may have seen your screen.",
+        "wrong_password": "Someone signed in as you on the web tried to add a phone and didn't "
+        "know your password. Change your password now, which signs out every other browser.",
+        "reused_after_confirm": "A pairing code that already added a phone was scanned again. If "
+        "you didn't scan it with another phone of yours, remove the phone it added.",
+    }.get(str(reason), "A phone was stopped from being added to your account.")
 
 
 def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:

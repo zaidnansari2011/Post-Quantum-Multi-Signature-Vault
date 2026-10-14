@@ -62,6 +62,24 @@ def _guard_password(user: User) -> None:
         raise PasswordLockedError(refusal)
 
 
+def prove_password(user: User, password: str, *, via: str) -> None:
+    """Check ``user``'s password for a signed-in door that unlocks no key (A10: confirming a phone
+    paired by code, removing a phone on the web). Raises ``PasswordLockedError`` while this session
+    or the account is locked, before any Argon2id work, or ``KeyUnlockError`` for a wrong one.
+
+    The one way those doors check a password, kept here rather than in a view so none can skip the
+    limit (A10 review H1). A correct password is a proof of it (plan R9, ⚑5): any open recovery of
+    the account is cancelled and its kit burned, in the caller's transaction."""
+    _guard_password(user)
+    from qvault.services import recovery_service
+
+    if not verify_password(user.password_hash, password or ""):
+        password_attempts.record(user.id, ok=False)
+        raise KeyUnlockError("incorrect password")
+    password_attempts.record(user.id, ok=True)
+    recovery_service.password_proven(user, via=via)
+
+
 class SignFaultError(Exception):
     """Raised when a freshly-produced signature fails to verify under its own public key.
 

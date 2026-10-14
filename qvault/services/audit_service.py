@@ -78,6 +78,7 @@ SENTENCES = {
     "device_enrolled": "{who} enrolled a device that signs with a key this server cannot open.",
     "device_revoked": "{who} revoked a device; its past signatures still verify.",
     "device_renamed": "{who} renamed one of their devices.",
+    "device_pairing_refused": "A phone was stopped from being added by a pairing code.",
     # Making a confidential decision world-readable is a security-relevant act, so it is narrated
     # in the same voice as any other. "Revoked the public record" rather than "unpublished": the
     # sentence must not suggest that copies already downloaded were recalled, because they cannot
@@ -222,6 +223,9 @@ def _scope(user: User):
         # their own workspace, never another's (R6 review).
         and_(LedgerEntry.actor == "SYSTEM", LedgerEntry.vault_id.in_(_audited_vault_ids(user))),
         and_(LedgerEntry.ref_type == "workspace", LedgerEntry.ref_id.in_(audited_workspaces)),
+        # Entries about this person that someone else caused (A10: a phone that contested their
+        # pairing code is the actor, as ``pairing:<uuid>``, never the person).
+        and_(LedgerEntry.ref_type == "user", LedgerEntry.ref_id == str(user.id)),
     )
 
 

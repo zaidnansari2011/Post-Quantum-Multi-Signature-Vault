@@ -75,6 +75,8 @@ INVITATION_EMAILS_PER_ADDRESS = 3
 _SECURITY = (
     "device_enrolled",
     "password_changed",
+    "device_removed",
+    "device_pairing_refused",
     "recovery_waiting",
     "recovery_cancelled",
     "recovery_completed",
@@ -84,6 +86,8 @@ _SECURITY = (
 #: never a rejection's reason, an amount or an address (F8).
 _COPY_FACTS = (
     "by_name",
+    # A10: which way a phone was added, and why a pairing by code stopped.
+    "via",
     "asked",
     "stage",
     "role",
@@ -209,12 +213,16 @@ def enqueue_notification(
     actor_id: int | None,
     data: str | None,
     notifications: dict[int, int] | None = None,
+    strict: bool = False,
 ) -> list[Delivery]:
     """Queue the email and pushes for one notification event, to whoever wants them.
 
     ``recipients`` are everyone the event is for, whatever their in-app setting: email and push
     have switches of their own. ``notifications`` maps a recipient to the in-app notification
     written for them, when there is one, so a tap on the push can mark it read.
+
+    ``strict`` (A10): no best-effort savepoint. A failure to queue raises into the caller's
+    transaction, so the event that needed telling does not happen untold.
     """
     from qvault.services import notification_service  # it imports this module
 
@@ -223,7 +231,7 @@ def enqueue_notification(
     pushing = channel_ready("push")
     if not recipients or not (email or pushing):
         return []
-    with _best_effort(f"email and push for {kind}"):
+    with _strict_or_best_effort(strict, f"email and push for {kind}"):
         notifications = notifications or {}
         common = {
             "kind": kind,
@@ -268,6 +276,13 @@ def enqueue_notification(
                 )
         return _insert(rows)
     return []
+
+
+def _strict_or_best_effort(strict: bool, what: str):
+    """``_best_effort``, or for a strict caller a savepoint whose failure is never swallowed."""
+    if not strict:
+        return _best_effort(what)
+    return db.session.begin_nested()
 
 
 def _copy_facts(data: str | None) -> str | None:

@@ -16,7 +16,7 @@ Additive fields and one new route, each scoped to what the caller may already se
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from test_device_api import _enrol_over_http
@@ -302,7 +302,13 @@ def test_mark_all_read_leaves_security_notices_to_be_read_one_by_one(team):
     notification_service.mark_all_read(team["brij"])
     db.session.expire_all()
     assert db.session.get(Notification, note.id).read_at is None
-    notification_service.mark_read(team["brij"], note.id)
+    # A "new device" notice can't be marked read by anyone for 72 hours (A10, ⚑8); after that, on
+    # its own.
+    created = note.created_at if note.created_at.tzinfo else note.created_at.replace(tzinfo=UTC)
+    notification_service.mark_read(team["brij"], note.id, now=created + timedelta(hours=71))
+    db.session.expire_all()
+    assert db.session.get(Notification, note.id).read_at is None
+    notification_service.mark_read(team["brij"], note.id, now=created + timedelta(hours=72))
     db.session.expire_all()
     assert db.session.get(Notification, note.id).read_at is not None
 
