@@ -154,3 +154,26 @@ def test_register_endpoint_logs_user_in(client):
     assert "Get Test workspace started" in client.get("/").get_data(as_text=True)
     user = User.query.filter_by(email="dana@e.com").one()
     assert active_signing_key(user).alg_id.startswith("ML-DSA")
+
+
+# Ported from the live branch (onchain-execution 0530720) before the switch; the sign-up form here
+# also asks for the workspace's name and the Recovery Kit acknowledgement.
+def test_signing_in_lands_on_home(client):
+    client.post(
+        "/register",
+        data={
+            "display_name": "Erin",
+            "email": "erin@e.com",
+            "password": "a-strong-password",
+            "confirm": "a-strong-password",
+            "workspace_name": "Erin's workspace",
+            "understood": "y",
+        },
+    )
+    client.post("/logout")
+    resp = client.post("/login", data={"email": "erin@e.com", "password": "a-strong-password"})
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
+    # Already signed in: /login and /register go to Home too.
+    assert client.get("/login").headers["Location"] == "/"
+    assert client.get("/register").headers["Location"] == "/"
