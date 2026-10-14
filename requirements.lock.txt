@@ -64,6 +64,7 @@ regex==2026.9.10
 rich==15.0.0
 rlp==5.0.0
 ruff==0.16.1
+segno==1.6.6
 shellingham==1.5.4
 SQLAlchemy==2.0.51
 toolz==1.1.0

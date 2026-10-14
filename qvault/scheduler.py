@@ -40,6 +40,7 @@ def init_scheduler(app):
         checkpoint_service,
         delivery_service,
         notification_service,
+        pairing_service,
         payout_service,
         reconfiguration_service,
         recovery_service,
@@ -96,6 +97,14 @@ def init_scheduler(app):
         _in_context(recovery_service.tick),
         IntervalTrigger(seconds=int(app.config.get("RECOVERY_TICK_SECONDS", 60))),
         id="recovery",
+        replace_existing=True,
+    )
+    # Pairing by a code (A10): live codes past their deadline are marked expired (every reader
+    # already treats them so) and ended rows older than 30 days are deleted; the ledger keeps them.
+    scheduler.add_job(
+        _in_context(pairing_service.sweep),
+        IntervalTrigger(minutes=15),
+        id="pairing_sweep",
         replace_existing=True,
     )
     if app.extensions.get("relayer") is not None:

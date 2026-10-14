@@ -8,10 +8,23 @@ path below either completes that operation or leaves the account exactly as it w
 
 from __future__ import annotations
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required, logout_user
 from flask_wtf import FlaskForm
+from markupsafe import Markup
 
+from qvault.extensions import db
 from qvault.forms import ChangePasswordForm, IssueKitForm, ProfileForm
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.device import Device
@@ -63,6 +76,7 @@ def _render(profile_form=None, password_form=None, tab="profile"):
         kit_short_id=recovery_kit.short_id,
         kit_form=IssueKitForm(),
         open_recoveries=recovery_service.banners_for(current_user),
+        **_phone_facts(),
     )
 
 
@@ -150,3 +164,164 @@ def change_password():
         "success",
     )
     return redirect(url_for("auth.login"))
+
+
+# -- phones: pairing by a code, and removing one (A10, pairing-design §3.3, §3.7) -----------------
+
+
+def _phone_facts() -> dict:
+    """What the Phones panel needs beyond the list (A10): whether pairing by code is set up here,
+    whether anyone else would be told of a new phone, which phone's Remove form to open, and the
+    treasuries each phone's key holds a seat on."""
+    from qvault.models.treasury import Treasury, TreasurySigner
+    from qvault.services import delivery_service, pairing_service
+
+    devices = Device.query.filter_by(owner_id=current_user.id).all()
+    usable = [d for d in devices if d.is_usable()]
+    seats: dict[int, list[str]] = {}
+    for d in usable:
+        rows = (
+            Treasury.query.join(TreasurySigner, TreasurySigner.treasury_id == Treasury.id)
+            .filter(TreasurySigner.key_id == d.key_id, Treasury.status == "linked")
+            .all()
+        )
+        if rows:
+            seats[d.id] = sorted({row.vault.name for row in rows})
+    return {
+        "pairing_available": pairing_service.available(),
+        "nobody_else_told": not delivery_service.channel_ready("email") and not usable,
+        "open_remove": request.args.get("remove", type=int),
+        "device_seats": seats,
+    }
+
+
+def _no_store(response):
+    """A page that draws a pairing code must never be cached, by the browser or anything between."""
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@bp.post("/devices/pair")
+@login_required
+def pair_start():
+    """Show a new pairing code for this web session (cancels this account's previous one)."""
+    from qvault.services import pairing_service
+    from qvault.services.pairing_service import PairingError
+
+    try:
+        pairing = pairing_service.create(current_user)
+    except PairingError as exc:
+        flash(exc.message, "error")
+        return redirect(url_for("account.security"))
+    return redirect(url_for("account.pair_page", pairing_uuid=pairing.uuid))
+
+
+def _pairing_or_404(pairing_uuid: str):
+    from qvault.services import pairing_service
+
+    pairing = pairing_service.for_session(current_user, pairing_uuid)
+    if pairing is None:
+        abort(404)
+    return pairing
+
+
+@bp.get("/devices/pair/<pairing_uuid>")
+@login_required
+def pair_page(pairing_uuid: str):
+    """The code while it waits for a phone, the confirm card once one has claimed it, and the
+    outcome after. Only the web session that showed the code can see it."""
+    from qvault.services import pairing_service
+
+    pairing = _pairing_or_404(pairing_uuid)
+    view = pairing_service.view(pairing)
+    if request.accept_mimetypes.best == "application/json":
+        return _no_store(jsonify(view))
+    svg = pairing_service.qr_svg(pairing) if view["state"] == "open" else None
+    response = make_response(
+        render_template(
+            "account/pair.html",
+            pairing=pairing,
+            view=view,
+            qr_svg=Markup(svg) if svg else None,
+        )
+    )
+    return _no_store(response)
+
+
+@bp.post("/devices/pair/<pairing_uuid>/confirm")
+@login_required
+def pair_confirm(pairing_uuid: str):
+    """Add the phone: the key shown, the code from that phone, and the password (§3.5)."""
+    from qvault.services import pairing_service
+    from qvault.services.pairing_service import PairingError
+
+    pairing = _pairing_or_404(pairing_uuid)
+    try:
+        device = pairing_service.confirm(
+            current_user,
+            pairing,
+            public_key_sha256=request.form.get("public_key_sha256"),
+            check_code=request.form.get("check_code"),
+            password=request.form.get("password"),
+        )
+    except PasswordLockedError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account.pair_page", pairing_uuid=pairing_uuid))
+    except PairingError as exc:
+        flash(exc.message, "error")
+        return redirect(url_for("account.pair_page", pairing_uuid=pairing_uuid))
+    flash(f"{device.name} was added. It can approve for you from now on.", "success")
+    return redirect(url_for("account.security"))
+
+
+@bp.post("/devices/pair/<pairing_uuid>/decline")
+@login_required
+def pair_decline(pairing_uuid: str):
+    """"My phone didn't scan this": nothing is added, and it is logged and told (⚑9)."""
+    from qvault.services import pairing_service
+    from qvault.services.pairing_service import PairingError
+
+    pairing = _pairing_or_404(pairing_uuid)
+    try:
+        pairing_service.decline(current_user, pairing)
+    except PairingError as exc:
+        flash(exc.message, "error")
+    return redirect(url_for("account.pair_page", pairing_uuid=pairing_uuid))
+
+
+@bp.post("/devices/pair/<pairing_uuid>/cancel")
+@login_required
+def pair_cancel(pairing_uuid: str):
+    from qvault.services import pairing_service
+
+    pairing_service.cancel(_pairing_or_404(pairing_uuid))
+    flash("The pairing code was cancelled. Nothing was added.", "info")
+    return redirect(url_for("account.security"))
+
+
+@bp.post("/devices/<int:device_id>/remove")
+@login_required
+def remove_device(device_id: int):
+    """Remove a phone from the web, with the password (⚑4; limited and a password proof, §3.7)."""
+    from qvault.services import device_service
+    from qvault.services.device_service import DeviceError
+
+    device = db.session.get(Device, device_id)
+    try:
+        removed = device_service.remove_with_password(
+            current_user, device, request.form.get("password") or ""
+        )
+    except LookupError:
+        abort(404)
+    except DeviceError as exc:
+        flash(exc.message, "error")
+        return redirect(url_for("account.security"))
+    except PasswordLockedError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account.security", remove=device_id))
+    except KeyUnlockError:
+        db.session.rollback()
+        flash("That isn't your password. Nothing was removed.", "error")
+        return redirect(url_for("account.security", remove=device_id))
+    flash(f"{removed.name} was removed. It can no longer approve for you.", "success")
+    return redirect(url_for("account.security"))

@@ -84,7 +84,14 @@ MAX_DEADLINE_HOURS = 24 * 366 * 10
 
 # The only two endpoints reachable without a bearer token. Both authenticate with email+password
 # and read no session, so neither depends on ambient browser authority.
-_UNAUTHENTICATED = {"api.request_challenge", "api.enrol_device"}
+_UNAUTHENTICATED = {
+    "api.request_challenge",
+    "api.enrol_device",
+    # Pairing by a code shown on the web (A10): the code is the credential, read by a phone
+    # that has no token yet. Neither reads a session.
+    "api.pairing_inspect",
+    "api.pairing_claim",
+}
 
 
 @bp.before_request
@@ -218,6 +225,104 @@ _ENROL_STATUS = {
 }
 
 
+# -- pairing by a code shown on the web (A10, pairing-design §3.3) ---------------------------------
+
+
+_PAIRING_STATUS = {
+    "pairing_invalid": 404,
+    "pairing_contested": 409,
+    "public_key_already_enrolled": 409,
+    "pop_invalid": 422,
+}
+
+
+def _pairing_error(exc):
+    return _error(exc.code, exc.message, _PAIRING_STATUS.get(exc.code, 400))
+
+
+@bp.post("/pairing/inspect")
+def pairing_inspect():
+    """A phone read a code: whose account it pairs with. ``{"token": "<43 characters>"}``."""
+    from qvault.services import pairing_service
+    from qvault.services.pairing_service import PairingError
+
+    try:
+        pairing, user = pairing_service.inspect(_body().get("token"))
+    except PairingError as exc:
+        return _pairing_error(exc)
+    workspace = _workspace_json(user)
+    return jsonify(
+        ok=True,
+        pairing_uuid=pairing.uuid,
+        user={"id": user.id, "email": user.email, "display_name": user.display_name},
+        workspace={"name": workspace["name"]} if workspace else None,
+        server=delivery_service.public_base_url(),
+        claim_deadline=pairing.claim_deadline.isoformat(),
+        eligible_algorithms=list(key_service.DEVICE_ELIGIBLE_SIG_ALGS),
+        default_algorithm=key_service.DEVICE_ELIGIBLE_SIG_ALGS[0],
+    )
+
+
+@bp.post("/pairing/claim")
+def pairing_claim():
+    """The phone claims a code with its key and the digest of the bearer token it chose."""
+    from qvault.services import pairing_service
+    from qvault.services.pairing_service import PairingError
+
+    body = _body()
+    try:
+        pairing = pairing_service.claim(
+            body.get("token"),
+            device_name=body.get("device_name"),
+            alg_id=body.get("alg_id"),
+            public_key_b64=body.get("public_key_b64"),
+            pending_token_digest=body.get("pending_token_digest"),
+            pop_signature_b64=body.get("pop_signature_b64"),
+        )
+    except PairingError as exc:
+        return _pairing_error(exc)
+    return (
+        jsonify(
+            ok=True,
+            pairing_uuid=pairing.uuid,
+            confirm_deadline=pairing.confirm_deadline.isoformat(),
+            fingerprint=(pairing.public_key_sha256 or "")[:16],
+        ),
+        201,
+    )
+
+
+@bp.get("/pairing/status")
+def pairing_status():
+    """What the phone polls with the bearer token it chose, until the web confirms. Authenticated
+    against the pairing, never as a device: the token is not a device token until confirmed."""
+    from qvault.services import pairing_service
+
+    header = request.headers.get("Authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    found = pairing_service.status(token)
+    if found is None:
+        return _error("pairing_invalid", pairing_service.INVALID[1], 401)
+    pairing, state = found
+    out = {
+        "ok": True,
+        "state": state,
+        "confirm_deadline": (
+            pairing.confirm_deadline.isoformat() if pairing.confirm_deadline else None
+        ),
+    }
+    if state == "confirmed":
+        device = pairing.device
+        user = device.owner
+        out.update(
+            device=_device_json(device, current_id=device.id),
+            expires_at=device.expires_at.isoformat() if device.expires_at else None,
+            user={"id": user.id, "email": user.email, "display_name": user.display_name},
+            workspace=_workspace_json(user),
+        )
+    return jsonify(out)
+
+
 # -- session --------------------------------------------------------------------------------------
 
 
@@ -279,7 +384,7 @@ def revoke_device(device_id: int):
     if device is None or device.owner_id != g.api_user.id:
         return _error("unknown_device", "No such device.", 404)
     try:
-        device_service.revoke(device, actor_id=g.api_user.id)
+        device_service.revoke(device, actor_id=g.api_user.id, by_device=g.api_device)
     except DeviceError as exc:
         return _error(exc.code, exc.message, 409)
     return jsonify(ok=True, device=_device_json(device, current_id=g.api_device.id))
