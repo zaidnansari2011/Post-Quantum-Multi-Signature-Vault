@@ -742,3 +742,27 @@ screens; `pairWithWeb` in `flows.ts`; in-flight record; status polling; schemas;
 | Misstatement 5 (10/15 per account) | §2 corrected; ⚑10 | §2, §3.6 |
 | Misstatement 6 (password change proof label) | §2 corrected; recovery-design §4.2 list updated | §2, §11 |
 | Misstatement 7 (fresh challenge) | Challenge dropped; `pairing_uuid` is the freshness | §3.8 |
+
+## 15. Build review response
+
+The build was reviewed adversarially (`rework-handoff/reviews/review-a10-build.md`: 0 critical,
+0 high, 3 medium, 5 low). Each finding is now a regression test that runs its attack and shows it
+failing (`tests/test_pairing_build_review.py`, and `tests/test_mobile_pairing.py` for the phone).
+
+| Finding | Change | Test |
+| --- | --- | --- |
+| F1 strangers at the owner's address could 429 the web Remove (and confirm) | The per-address `signed_in_password` bucket is gone: it counted before sign-in, by address alone. Those doors are limited per session and per account by `password_attempts`. | `test_f1_…`, `test_17_…` |
+| F2 the phone forgot its key on a lost claim answer, so the retry contested itself | `claimPairing` throws `ClaimNotAnsweredError` on a transport error or 5xx and keeps the key, the pending token and the signature; "Try again" resends the byte-identical claim (idempotent on the server). Forgets only on a definite refusal. | `test_a_lost_claim_answer_is_retried_identically_…` |
+| F3 four wrong passwords per code, forever, never told; re-signing kept the cookie alive | `password_attempts`: (1) a per-account count over 24 h raises a `password_guessed` security notice (email and push) at 5, 20 and 50, whatever the door; pairing's `wrong_password` is logged but told by this alarm; (2) a session's tenth wrong password ends it, recorded server-side in `ended_web_sessions` so a replayed cookie stays dead; (3) a session lives 30 days from sign-in (`qv_since`), however often it is re-signed. | `test_f3_…` (three), `test_09b_…`, `test_33_…` |
+| F4 a notice-write failure aborted the revoke | `device_removed` is written in a savepoint; on failure the revoke commits anyway and the notice is owed: `device_service.send_owed_removal_notices` (scheduler, every 15 min) sends it for any device removed in the last week that has none. Confirm's `device_enrolled` stays strict (failing closed is right there). | `test_f4_…` (three) |
+| F5 a pre-A10 cookie got a fresh count per replay and could lock the owner | No session id is ever minted on use. A session without `qv_sid` and `qv_since` is signed out by `load_user` (everyone signs in once after the deploy, ⚑12). | `test_f5_…` |
+| F6 the phone's Cancel left the pairing confirmable | `POST /api/v1/pairing/withdraw` (pending token) ends a claimed pairing as `cancelled`/`withdrawn`; the phone calls it before forgetting, on the code screen and after an unanswered claim. | `test_f6_…`, `test_cancel_on_the_phone_withdraws_…` |
+| F7 a cookie thief could cancel the owner's code and use up the hour's budget | Codes are budgeted per web session (10 an hour) under an account ceiling (30), and a new code supersedes only its own session's (`session_tag`; the live-code index is per session). | `test_f7_…` |
+| F8 `set_signing_choice` needed no password | The web form now needs the password through `prove_password(via="signing_choice")`. The phone's API door stays as it is: it needs the phone's token, and the phone asks for its lock in its own sheet. | `test_f8_…` (two) |
+
+**New owner flags from this review, built as recommended:**
+
+| # | Question | Recommendation |
+| --- | --- | --- |
+| ⚑12 | Sign out every web session from before this deploy once, and end any web session 30 days after its sign-in. | **Yes.** It is the only way a cookie copied before the deploy can't bypass the per-session limit, and it stops a re-signed cookie living for ever. The cost is one sign-in each, once. |
+| ⚑13 | End a web session at its tenth wrong password, and alarm the person at 5, 20 and 50 wrong passwords a day. | **Yes.** A stolen cookie is then worth ten guesses in total, and the owner hears of guessing at any door. |
