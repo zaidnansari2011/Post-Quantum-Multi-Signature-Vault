@@ -272,7 +272,7 @@ def test_the_server_address_comes_from_the_build_and_defaults_to_the_live_domain
 
 @needs_node
 def test_a_local_build_names_its_update_channel_and_an_eas_build_leaves_it_to_the_profile():
-    """A Gradle build gets no channel injected; without one the APK would never receive an update."""
+    """A Gradle build gets no channel injected; without one the APK would never get an update."""
     assert "requestHeaders" not in _config({})["updates"]
     local = _config({"QVAULT_UPDATE_CHANNEL": "rework"})["updates"]
     assert local["requestHeaders"] == {"expo-channel-name": "rework"}
