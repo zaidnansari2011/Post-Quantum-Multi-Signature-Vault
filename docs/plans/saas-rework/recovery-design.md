@@ -705,9 +705,11 @@ runs the review's attack and asserts it now fails.
     be used to spam. The cap applies only to repeat cancel notices, and only they count towards
     it (the wrong-codes alarm was also capped until item 26). Burning the kit on that cancel was rejected: it would leave a
     person who mistyped their new password with no way back at all. A cancel by a manager or
-    co-signer starts no wait, so a malicious colleague cannot slow the person's restart (Phase 2's
-    phone cool-down, §17 item 17, is the same idea for a phone, and §17 item 19 says why a phone's
-    cancel of a kit request starts none); a kit
+    co-signer starts no wait, so a malicious colleague cannot slow the person's restart (Phase 2
+    differs on purpose: a manager's or co-signer's cancel of a *phone* reset holds that phone 24
+    hours, because against a phone thief the watchers' cancel is the main defence and a phone
+    could otherwise restart at once; only the person's own rejection holds it 7 days, §17 items 17
+    and 28. A phone's cancel of a *kit* request holds that kit 7 days, §17 item 27); a kit
     thief could already hold the account's one open request, so the day's wait gives them nothing
     new. The status page says so beside its Cancel button.
 20. **Wrong codes raise an alarm; they never refuse the right code** (review M1). Ten well-formed
@@ -873,7 +875,8 @@ review can disagree with it.
 regression test in `tests/test_recovery_phone.py` (`test_review_*`) that runs the review's attack
 and asserts it now fails.
 
-17. **A cancelled phone waits 7 days before it may start another web reset** (review H1). The
+17. **A cancelled phone waits before it may start another web reset** (review H1; *how long, and
+    after which cancels, was changed by items 27 to 29*). The
     attack: a thief with the phone and its PIN starts a reset, the owner cancels it by signing in,
     and the thief starts the next one at once, for as long as the 90-day token lasts. One missed
     24-hour wait hands over the web account. Now, once a reset is cancelled by the person (Home or
@@ -903,7 +906,8 @@ and asserts it now fails.
     (`recovery_kit_changed`, change `phone_codes`), naming the phone; this is the spirit of §16
     item 26's alarm. There is no lockout to bound, because a guesser who never saw the screen can
     no longer end anything.
-19. **A phone's cancel never burns a kit** (review M2). The attack: the bearer token alone
+19. **A phone's cancel never burns a kit** (review M2; *its "no restart rule" is reversed by item
+    27*). The attack: the bearer token alone
     cancelled the owner's kit request and burned the kit. The presence check is on the phone only,
     and a leaked token is enough. Of the two fixes offered (a signed cancel, or no burn), this is
     the safer: a signature stops only a leaked token, never a thief holding the phone and its PIN,
@@ -951,3 +955,66 @@ and asserts it now fails.
 Also noted from the review, unchanged: item 4's `deployment` does not tell a database *clone* (a
 restored snapshot, carrying the same anchor) from its original. Replay between them is still
 stopped by the random request uuid and the bearer token, so the binding is defence in depth.
+
+**The re-review of those fixes (2026-10-14)** (`rework-handoff/reviews/review-r9-phase2-fixes.md`)
+found all ten closed and 1 medium and 3 low new ones. Items 27 to 30 fix them, each with a
+`test_rereview_*` regression. Item 31 is the integration merge's request.
+
+27. **A kit superseding a phone reset holds no phone; a phone cancelling a kit request holds that
+    kit 7 days** (re-review N1). The attack: an owner who has forgotten the password and has only
+    the phone, against a thief who has the kit. The kit superseded the owner's reset (role `kit`),
+    which held the *owner's* phone for 7 days. The owner's phone could cancel the kit request but
+    no longer burn the kit (item 19), and no wait followed, so the thief restarted at once,
+    forever. The owner could never finish, and the notice told them "someone has that phone".
+    Q-Vault cannot tell which of the two holds the genuine factor, so neither side may loop
+    cheaply, and the two directions are weighed as follows.
+    - **Kit thief against phone owner.** Superseding is no longer evidence against the phone (no
+      cool-down). The owner's phone cancel holds that kit back for 7 days, the same length the
+      phone gets, and the owner's own reset then runs its 24 hours. The kit thief cannot cut in,
+      so the owner finishes unless a watcher cancels the reset.
+    - **Phone thief against kit owner.** The thief's phone cancels the owner's kit request, and the
+      kit is held back for 7 days while the thief's resets run. Each of those resets is told to
+      the owner's admins and co-signers, uncapped, with Cancel. A watcher's cancel holds the
+      thief's phone for a day (item 28), and Cancel on Home or a password sign-in, if the owner can
+      reach either, holds it for 7. So the thief needs every watcher to miss a 24-hour window.
+      That is the same reliance on watchers as every other phone-thief case (§3). The owner's
+      kit is never destroyed (item 19).
+    - **Why favour the phone.** Both outcomes depend on watchers. The phone at least took a device
+      paired 7 days ago plus its screen lock, against a single printed sheet. The alternative,
+      holding back both the kit and the phone after a phone's cancel, ends in a stalemate in which
+      an honest phone-only owner can never finish either.
+    The notice for a reset a kit superseded now says "if you didn't use your Recovery Kit, someone
+    else has it: cancel that recovery from your phone or on Home", never "someone has that phone".
+    The kit's refusal (`too_soon`) is said only once the code has opened it, as before.
+28. **Only the person's rejection holds a phone for 7 days; a doubt holds it for a day**
+    (re-review N2). The attack: one watcher's cancel, or the bearer token of any other phone of
+    the person's, cost the owner's own phone a week. Now 7 days follow a proof of the password,
+    Cancel on Home (a signed-in session), the vouching phone's own cancel, or a removal or expiry
+    of the vouching phone. 24 hours (`RESTART_AFTER_DOUBT`) follow a manager's or co-signer's
+    cancel, or a cancel by another of the person's phones (`cancel_reason`
+    `cancelled_from_other_phone`). That last is the leaked-token case: the bearer token alone
+    cannot hold a phone for a week. A watcher can still delay a phone reset by a day per click.
+    That is the deliberate difference from the kit's §16 item 19, because against a phone thief
+    the watchers' cancel must not be undone by an immediate restart.
+29. **The banner names a phone by more than its name, and removing another phone still holds the
+    vouching one** (re-review N3). The attack: the thief renames the stolen phone after the
+    owner's other phone, the banner then "names" the good phone, and removing it from the phone
+    API (lock only) ended the thief's reset with no cool-down. Now a removal or expiry of the
+    vouching phone (`device_revoked`, `system`) holds it 7 days. That is harmless when it is the
+    phone removed, since it can start nothing. Wherever the vouching phone is named (the web
+    banner, in-app notices, the phone API and the app's banner), its pairing day and the first 8
+    hex of its key's fingerprint follow the name: "The phone "Ada's Pixel" (paired 4 Oct 2026, key
+    9f38 c198)". The web Security page and the phone's Other devices list already show both, and
+    the holder cannot change them. Emails and pushes still name no device (F1).
+30. **A code made before a cool-down cannot start a reset after it** (re-review N4). The attack: a
+    phone holds up to three codes, and a cancel ends one request, so codes made before it still
+    worked. `claim` now re-checks `cooling_off` beside the device rules. A code it refuses ends its
+    reset as `rejected`, which is a refusal and not a cancel, so it starts no cool-down of its own.
+31. **A removal never fails because of a recovery's notice** (integration merge, A10's rule).
+    `on_device_revoked` cancels in the removal's transaction (`notice_best_effort`). The cancel
+    and its ledger entry commit with the removal, but the `recovery_cancelled` notice is written
+    in a savepoint. If that fails, the request is marked `end_reason = 'notice_owed'`, and the
+    scheduler's `recovery_service.tick` sends it later (`send_owed_notices`, for up to 7 days) and
+    clears the mark. The banner could not carry this, because a cancelled request has none. Other
+    cancels keep their notice in the cancel's own transaction (§4.5: not best-effort).
+
