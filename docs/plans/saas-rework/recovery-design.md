@@ -890,7 +890,8 @@ and asserts it now fails.
     **The web "Remove phone"** (H1's other half) is built on `rework/a10-pair`
     (`POST /account/devices/<id>/remove` with the password). Every phone banner and notice here
     now names the vouching phone and says "remove it on the Security page, with your password",
-    which is true once A10 is merged. The phone's name is in the banner, the in-app
+    which is true once A10 is merged (checked at the integration merge, 2026-10-14: Account,
+    Security, the Phones panel, "Remove <name>" with the password). The phone's name is in the banner, the in-app
     `recovery_waiting` and `recovery_cancelled` notices and the phone API (`device_name`); emails
     and pushes name no device, as rule F1 requires.
 18. **A code names its approval; a guess spends tries only there** (review M1). The attack:
