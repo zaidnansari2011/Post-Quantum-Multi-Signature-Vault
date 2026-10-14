@@ -317,6 +317,7 @@ def test_the_pre_check_refuses_what_must_not_be_stamped(tmp_path):
         "table recovery_kit_wraps is not in the baseline",
         "table recovery_kits is not in the baseline",
         "table recovery_notices is not in the baseline",
+        "table recovery_phone_approvals is not in the baseline",
         "table recovery_request_wraps is not in the baseline",
         "table recovery_requests is not in the baseline",
         "table user_settings is not in the baseline",

@@ -48,7 +48,10 @@ from qvault.verify import BUNDLE_FORMAT, PAYMENT_BUNDLE_FORMAT
 
 def _entries_for(proposal: Proposal, signer_ids: list[int]) -> list[LedgerEntry]:
     """Every ledger entry a verifier needs: this decision's events, plus each signer's
-    registration so identities are bound by the log and not by this file's own labelling."""
+    registration so identities are bound by the log and not by this file's own labelling, plus
+    each signer's completed recoveries (plan R9, design §9), so a verifier can say when a vote
+    used a key a recovery introduced. Additive: a verifier that ignores them is unaffected."""
+    ids = [str(i) for i in signer_ids]
     return list(
         db.session.execute(
             select(LedgerEntry)
@@ -56,8 +59,10 @@ def _entries_for(proposal: Proposal, signer_ids: list[int]) -> list[LedgerEntry]
                 or_(
                     (LedgerEntry.ref_type == "proposal")
                     & (LedgerEntry.ref_id == proposal.proposal_uuid),
-                    (LedgerEntry.event_type == "user_registered")
-                    & (LedgerEntry.ref_id.in_([str(i) for i in signer_ids])),
+                    (LedgerEntry.event_type == "user_registered") & (LedgerEntry.ref_id.in_(ids)),
+                    (LedgerEntry.event_type == "recovery_completed")
+                    & (LedgerEntry.ref_type == "user")
+                    & (LedgerEntry.ref_id.in_(ids)),
                 )
             )
             .order_by(LedgerEntry.seq)

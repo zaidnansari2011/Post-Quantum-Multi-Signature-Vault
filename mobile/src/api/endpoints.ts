@@ -35,6 +35,10 @@ import {
   withdrawResponse,
   commentsResponse,
   remindResponse,
+  recoveryApproveResponse,
+  recoveryCancelResponse,
+  recoveryOverviewResponse,
+  recoverySigningResponse,
 } from './schemas.ts';
 import type { Decision } from '../crypto/signing.ts';
 
@@ -450,6 +454,51 @@ export function archiveNotification(token: string, notificationId: number) {
   return request(notificationResponse, {
     method: 'POST',
     path: `/api/v1/notifications/${notificationId}/archive`,
+    token,
+  });
+}
+
+// -- Account recovery by phone (plan R9 Phase 2) --------------------------------------------------
+
+/** Every recovery this person should see, and whether this phone may start a web reset now. */
+export function fetchRecovery(token: string, signal?: AbortSignal) {
+  return request(recoveryOverviewResponse, { path: '/api/v1/recovery', token, signal });
+}
+
+/** "Set a new web password": makes the request; returns the fields to check and sign. */
+export function startPhoneReset(token: string) {
+  return request(recoverySigningResponse, { method: 'POST', path: '/api/v1/recovery/phone-reset', token });
+}
+
+/** Confirm this person's own Recovery Kit request; returns the fields to check and sign. */
+export function startKitConfirm(token: string, requestUuid: string) {
+  return request(recoverySigningResponse, {
+    method: 'POST',
+    path: `/api/v1/recovery/requests/${encodeURIComponent(requestUuid)}/kit-confirm`,
+    token,
+  });
+}
+
+/** The phone's signature over the RECOVERY bytes; returns the code to show here, once. */
+export function approveRecovery(args: {
+  token: string;
+  requestUuid: string;
+  purpose: 'web_reset' | 'kit_confirm';
+  signatureB64: string;
+}) {
+  return request(recoveryApproveResponse, {
+    method: 'POST',
+    path: `/api/v1/recovery/requests/${encodeURIComponent(args.requestUuid)}/approve`,
+    token: args.token,
+    body: { purpose: args.purpose, signature_b64: args.signatureB64 },
+  });
+}
+
+/** Cancel a recovery, after the phone's presence check. */
+export function cancelRecovery(token: string, requestUuid: string) {
+  return request(recoveryCancelResponse, {
+    method: 'POST',
+    path: `/api/v1/recovery/requests/${encodeURIComponent(requestUuid)}/cancel`,
     token,
   });
 }

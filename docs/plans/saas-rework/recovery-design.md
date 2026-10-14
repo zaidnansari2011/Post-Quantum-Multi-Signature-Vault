@@ -28,6 +28,14 @@ attempt is counted before its derivation (L3); and "Do this later" ends a reques
 A re-review of that fix pass found that the M1 fix left only the per-address limit on guessing a
 partly seen kit; the alarm now rises at 10, 100 and 1,000 wrong codes a day with the count, and
 tells the owner to replace the kit (item 26).
+**Phase 2, the phone route, is built (2026-10-14)** on `rework/r9-phase2` (Alembic
+`0012_recovery_phone`, one new table), not yet reviewed: the phone starts a web reset and a code
+typed on the web starts a 24-hour wait for a new web key; a kit request can be confirmed by the
+phone (24 hours from the kit's use, never sooner); the 7-day rule, device-revocation cancels, the
+§7 lock-out check, the supersede rule, phone banners with Cancel, and lineage in exports and the
+verifier. Choices where this design was silent are in §17. Phase 3 is deferred past the switch.
+**Its adversarial review (2026-10-14)** found 1 high, 3 medium and 6 low. All are fixed except the
+web "Remove phone", which is built on `rework/a10-pair` (§17 items 17 to 26).
 **Deferred to Phases 2 and 3 (review findings not closed by Phase 1 code):** C1, M5, M6, L2, L3
 (route b, Phase 3); H2, H3 items 2 to 5, M4, M7 item 3, M8, L4, L7, L13's supersede rule (phones
 and the kit-plus-phone path, Phase 2); M3's lineage in exports and the verifier line (Phase 2;
@@ -699,7 +707,9 @@ runs the review's attack and asserts it now fails.
     be used to spam. The cap applies only to repeat cancel notices, and only they count towards
     it (the wrong-codes alarm was also capped until item 26). Burning the kit on that cancel was rejected: it would leave a
     person who mistyped their new password with no way back at all. A cancel by a manager or
-    co-signer starts no wait, so a malicious colleague cannot slow the person's restart; a kit
+    co-signer starts no wait, so a malicious colleague cannot slow the person's restart (Phase 2's
+    phone cool-down, §17 item 17, is the same idea for a phone, and §17 item 19 says why a phone's
+    cancel of a kit request starts none); a kit
     thief could already hold the account's one open request, so the day's wait gives them nothing
     new. The status page says so beside its Cancel button.
 20. **Wrong codes raise an alarm; they never refuse the right code** (review M1). Ten well-formed
@@ -775,3 +785,171 @@ runs the review's attack and asserts it now fails.
     which is the lockout item 20 removed. (One-at-a-time would also hold a lock across Argon2id,
     which on SQLite holds the whole database's writer.) The defence is the escalating alarm, the
     owner replacing a kit that may have been seen, and the loud 72-hour wait.
+
+## 17. Phase 2 as built: the phone route, and choices where this design was silent
+
+Built 2026-10-14 on `rework/r9-phase2` (from `saas-rework` `510d6c6`; Alembic
+`0012_recovery_phone`, one new table only). Not yet reviewed. Phase 3 (route (b)) is deferred past
+the switch by the owner and is not built. Each choice below is the safer reading, recorded so the
+review can disagree with it.
+
+1. **A phone reset's life before the web.** The phone asks (`phone_pending`: the request row and
+   an approval waiting for its signature, logged nowhere, told to nobody); its RECOVERY signature
+   verifies (`phone_approved`: `recovery_requested` with `route: phone` and `device_id`, and
+   `recovery_phone_approved`, are logged); the code is typed on the web (`waiting`, with
+   `recovery_claimed` and `recovery_waiting`, and §4.5's notices). Neither early state is in the
+   one-open-request index, so several resets may wait for their codes at once (§6.4) and starting
+   one never kills another. Their approvals live in `recovery_phone_approvals` (purpose, phone,
+   key, signed `expires_at`, the code's tag, tries, the signature's SHA-256).
+2. **The code.** *Superseded by item 18 (12 symbols with a selector).* 8 symbols of the kit's alphabet (40 bits) from `secrets`, made only after the
+   signature verifies and returned only in that response, shown on that phone once. Stored as
+   `master_key.phone_code_tag` (its own domain tag) over the approval id, the request uuid and the
+   code, so a database copy can neither read it nor test guesses offline, and a tag opens no other
+   approval. Five wrong codes end an approval (and a reset it started, `expired`, logged with
+   `reason: wrong_codes`). A wrong code costs a try on *every* live approval of that email, so
+   spreading guesses across several resets gains nothing; each try is committed before any
+   comparison, so codes typed side by side are all counted. The web reads codes like kit codes
+   (case, spaces, hyphens, I/L/O). A known email with live approvals does a few more database
+   writes than an unknown one; the words are identical (as §16 item 22 noted for the kit).
+3. **At most three approvals waiting per phone**, of either purpose, so a phone (or its thief)
+   cannot flood the table; ten minutes later they are spent and it may ask again.
+4. **`deployment` is the SHA-256 of the active SYSTEM anchor public key, recomputed when the
+   signature arrives**, never stored with the approval. A demo snapshot that copied an approval row
+   still fails, because its own anchor differs. If the anchor is rotated inside the ten minutes,
+   that approval is refused and the phone starts again.
+5. **The phone checks before it signs** (`mobile/src/logic/recovery.ts`): the purpose the person
+   chose, the request they opened, their own account and this phone, a deployment shaped like a
+   hash, and an end in the future and at most ten minutes (plus two of clock slack) away. A server
+   that tried to turn "confirm my kit" into "start a web reset" is refused before the prompt. The
+   prompt names the act ("Set a new web password", "Confirm your account recovery").
+6. **Removing any device of the person ends every phone-assisted recovery of theirs** (a phone
+   reset at any stage, or a kit request a phone confirmed) and every approval still waiting, in the
+   revocation's transaction (`cancelled_as = device_revoked`, never burning a kit). A kit request no
+   phone confirmed is left alone: removing a phone says nothing about the kit.
+7. **A token expiring cancels** from the scheduler (`recovery_phone.sweep`, as `system`, reason
+   `device_unusable`), and completion re-checks the vouching phone at the completion moment, so a
+   request whose phone expired before the sweep ran still fails.
+8. **A proof of the password also ends resets still waiting for their code**, not only the open
+   request.
+9. **A kit supersedes only an open phone reset** (`waiting`): cancelled `as kit`, reason
+   `superseded`, told to everyone, never burning anything. A reset still waiting for its code is
+   left; if that code is typed while the kit request waits, the one-open-request index refuses it
+   cleanly and nothing changes. Starting a reset from the phone while any request is open is
+   refused at once (the phone can see and cancel the open one).
+10. **Cancelling from a phone.** *Superseded by item 19: a phone's cancel never burns a kit.* As first built it followed §4.2: the person's own phone burns a kit their kit request
+    used; a manager or co-signer's phone does not. The app asks for the phone's lock before it
+    cancels (a phone left unlocked must not cancel its owner's recovery); the server cannot see
+    that check, as it cannot for removing a device. Watchers never see, and cannot cancel, a reset
+    still waiting for its code.
+11. **Kit confirmed by phone.** *Amended by item 20 (a 6-hour floor after the confirmation).* The kit request then completes at the later of now and 24 hours
+    after the kit was used, by compare-and-set, never later than it already would, and only once
+    (a second confirmation is refused). `recovery_waiting` is logged again with
+    `confirmed_by_device`, and everyone in §4.5 is told the new time (uncapped, as every start
+    is). Revoking the confirming phone, or any phone of the person, then cancels it (item 6).
+12. **A phone reset's completion** turns the pending columns into the new active ML-DSA-65 password
+    key (pinned, §7), makes every password key the snapshot named `'lost'`, revokes the person's kit
+    (`superseded`: it held only keys that are now lost, and must not look as if it could restore
+    anything), swaps the credential, bumps the epoch, and logs `recovery_completed` with the old and
+    new public-key hashes. Before it is kept the new key signs and verifies
+    `QVAULT-SIG-v1:RECOVERY-SELFTEST|<request_uuid>` once (ADR-0010).
+13. **The §7 check runs at the start, at the signature, at the claim and at completion**; a reset
+    that would now lock a treasury fails at completion with the sentence that says so. When it only
+    narrows the margin, the phone's screen and the web status page say so. A seat on a phone key is
+    untouched by a web reset and is not counted against the person.
+14. **The request code (§8.2's formula) is made for phone resets too**, logged in
+    `recovery_claimed` and shown on the status page, so a reset can be named aloud.
+15. **Lineage** (§9, M3): an export carries each signer's `recovery_completed` entries; the
+    verifier (Python, its command line, and the browser twin, word for word) adds one informational
+    sentence per vote whose key a recovery introduced ("… introduced by recovery (paired phone) on
+    2026-10-12, replacing key …") or, for the kit, restored ("… the same key, under a new
+    password"). It is a fact, never a check: old bundles verify with the same checks and no line.
+16. **Phone screens** (phone-ux): Account gains a Security group with "Set a new web password"
+    (leads with what whoever types the code gets; the reason replaces the button when the phone may
+    not; the code fills the screen with its time left); Approvals shows one critical banner per
+    open recovery the person should see, with Cancel (and Open for their own kit request), from the
+    server's rule for Home's banners; Open leads to the kit-confirm screen, above the tabs because it
+    signs, with "It isn't me: cancel it". Codes live only in the screen's memory.
+
+**The Phase 2 adversarial review (2026-10-14)** found 1 high, 3 medium and 6 low
+(`rework-handoff/reviews/review-r9-phase2.md`). Items 17 to 26 are the fixes. Each has a
+regression test in `tests/test_recovery_phone.py` (`test_review_*`) that runs the review's attack
+and asserts it now fails.
+
+17. **A cancelled phone waits 7 days before it may start another web reset** (review H1). The
+    attack: a thief with the phone and its PIN starts a reset, the owner cancels it by signing in,
+    and the thief starts the next one at once, for as long as the 90-day token lasts. One missed
+    24-hour wait hands over the web account. Now, once a reset is cancelled by the person (Home or
+    their phone), a proof of their password, a manager, a co-signer or their kit (superseding it),
+    the phone that vouched (`recovery_phone_approvals.device_id`) cannot start another web reset
+    for `RESTART_AFTER_CANCEL` (7 days). The person's other phones are unaffected, and so are kit
+    confirmations, which hand over nothing new. Cancels by whoever typed the code (the status
+    page), by a device removal and by Q-Vault itself start no cool-down. 7 days, not "until the
+    owner re-confirms": the person who would re-confirm has, by definition, forgotten the
+    password, so there is no proof to ask them for. A person who cancelled their own reset by
+    mistake still has their kit.
+    **The web "Remove phone"** (H1's other half) is built on `rework/a10-pair`
+    (`POST /account/devices/<id>/remove` with the password). Every phone banner and notice here
+    now names the vouching phone and says "remove it on the Security page, with your password",
+    which is true once A10 is merged. The phone's name is in the banner, the in-app
+    `recovery_waiting` and `recovery_cancelled` notices and the phone API (`device_name`); emails
+    and pushes name no device, as rule F1 requires.
+18. **A code names its approval; a guess spends tries only there** (review M1). The attack:
+    someone who knew only the email address sent five wrong codes and ended every live reset of
+    that account, silently. Without a selector, every guess could be aimed at every reset. Codes
+    are now 12 symbols: a 4-symbol selector, stored in clear (`code_selector`, unique among live
+    approvals when made), then 8 secret symbols (40 bits) under the HMAC. A typed code is looked up
+    by its selector alone. Only that approval's tries are spent, and only when the email matches
+    its account. A guess at random hits a live selector with odds of about 1 in 2^20, and spends
+    nothing anywhere when it misses. "Five wrong codes end it" now applies only to someone who saw
+    the phone's screen. When it happens the person is told as a security notice
+    (`recovery_kit_changed`, change `phone_codes`), naming the phone; this is the spirit of §16
+    item 26's alarm. There is no lockout to bound, because a guesser who never saw the screen can
+    no longer end anything.
+19. **A phone's cancel never burns a kit** (review M2). The attack: the bearer token alone
+    cancelled the owner's kit request and burned the kit. The presence check is on the phone only,
+    and a leaked token is enough. Of the two fixes offered (a signed cancel, or no burn), this is
+    the safer: a signature stops only a leaked token, never a thief holding the phone and its PIN,
+    while not burning stops both. The kit, the person's only way back without the password,
+    cannot be destroyed from a phone at all. No 24-hour restart rule follows a phone's cancel
+    either. With one, a thief could cancel the owner's kit request and then run their own phone
+    reset unopposed for a day. Without it, the owner uses the kit again at once, which supersedes
+    the thief's reset and starts that phone's cool-down (item 17). The person still burns a stolen
+    kit by using their password, by Cancel on Home, or by making a new kit. Cancelling, which is
+    the safe direction, stays token-only for the person and their watchers alike.
+20. **A confirmation always leaves 6 hours** (review M3). The attack: a confirmation more than 24
+    hours after the kit was used made the request complete at once, so the "sooner" notice and the
+    completion arrived together. Now `completes_at = max(kit use + 24 h, confirmation + 6 h)`, and
+    it is never later than it already was. A confirmation that would not make it sooner is refused
+    (`already_short`). The status page, the kit-confirm screen and the phone API
+    (`confirm_would_complete_at`) all give the time.
+21. **Two co-signers' resets cannot both pass the treasury check** (review L1). A seat whose
+    holder has a phone reset waiting now counts as unusable to everyone else's check. So the second
+    co-signer's claim is refused if the two together would lock a treasury. Claim and completion
+    also hold the rows of the person's linked treasuries (`lock_treasuries`, in id order, re-read
+    afresh) before checking. On SQLite the claim takes these rows only after the Argon2id work, so
+    the whole database's writer is never held across it.
+22. **A miss does the same work for any email** (review L2). The claim reads the account's id
+    only (an ORM row already in the session can cost a refresh) and looks the approval up by
+    selector, the same two queries whoever is asking. Writes happen only when the selector and the
+    email both match, which needs the phone's screen.
+23. **Ending approvals is compare-and-set** (review L3). `state = 'ended'` is written only
+    `WHERE state IN ('pending', 'approved')`, so a `used` committed a moment earlier is never
+    overwritten. A device revocation now ends the waiting approvals first and only then asks
+    whether the request is phone-assisted, so a confirmation that slipped in between is seen and
+    the request cancelled.
+24. **A phone whose sign-in ends inside the wait cannot start** (review L4). A web reset needs the
+    phone's token to last past `now + 10 minutes + 24 hours`, and a kit confirmation needs it to
+    last past the time it would set. Otherwise the request is refused with "Pair it again first"
+    (`expires_soon`), and the phone's Security screen says so before anyone tries.
+25. **The phone's signature is kept** (review L5): it is stored on the approval (`signature`), and
+    the `recovery_phone_approved` ledger entry now carries the signed fields and the signature in
+    base64. With the phone's public key from its `device_enrolled` entry, anyone can check offline
+    that the phone really vouched. The verifier does not yet check it (its lineage line stays
+    informational); that would need the export to carry those two entries too.
+26. **A lineage line from an entry not proven to be in the log says so** (review L6): "(This log
+    entry is not proven to be in the published log.)", word for word in the Python verifier, its
+    command line and the browser twin. The line is worked out after the inclusion step.
+
+Also noted from the review, unchanged: item 4's `deployment` does not tell a database *clone* (a
+restored snapshot, carrying the same anchor) from its original. Replay between them is still
+stopped by the random request uuid and the bearer token, so the binding is defence in depth.

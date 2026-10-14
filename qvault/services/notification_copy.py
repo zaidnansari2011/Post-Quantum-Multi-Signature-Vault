@@ -333,7 +333,21 @@ _CANCELLED_BY = {
     "self": "by you",
     "status_holder": "by whoever started it",
     "system": "by Q-Vault",
+    "device_revoked": "because a paired phone was removed",
+    "kit": "because your Recovery Kit was used, which replaces a reset from a phone",
 }
+
+
+#: Where a phone is removed once the web can do it (A10): the Security page, with the password.
+REMOVE_PHONE = "remove it on the Security page, with your password"
+
+
+def _phone(stored: dict) -> str:
+    """The phone that vouched for a reset, by the name its owner gave it, or "a phone"."""
+    name = stored.get("device_name")
+    if isinstance(name, str) and name.strip():
+        return f"the phone \u201c{_clip(name.strip())}\u201d"
+    return "a phone"
 
 
 def _recovery(notification, stored: dict, now: datetime) -> Copy:
@@ -359,6 +373,40 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
     if kind == "recovery_waiting":
         due = _moment(stored.get("completes_at"))
         at = when(due, now=now) if due is not None else "in 72 hours"
+        if stored.get("route") == "phone":
+            phone = _phone(stored)
+            if me:
+                return Copy(
+                    "Someone is setting a new web password for your account",
+                    f"{phone[:1].upper()}{phone[1:]} paired to your account approved a new web "
+                    f"password and a new web signing key. Unless it is cancelled, they take effect "
+                    f"on {at}. If this wasn't you, sign in (using your password cancels it), "
+                    f"then {REMOVE_PHONE}.",
+                    home,
+                )
+            return Copy(
+                f"{name}'s account is being recovered",
+                f"{phone[:1].upper()}{phone[1:]} paired to {name}'s account approved a new web "
+                f"password. Unless it is cancelled, on {at} the account gets a new web signing "
+                f"key. If {name} didn't start it, cancel it on Home.",
+                home,
+            )
+        if stored.get("shortened"):
+            if me:
+                return Copy(
+                    "A phone confirmed the recovery of your account",
+                    "A phone paired to your account confirmed the recovery that used your Recovery "
+                    f"Kit, so it now takes effect on {at}. If this wasn't you, cancel it on Home "
+                    "or in the app now.",
+                    home,
+                )
+            return Copy(
+                f"{name}'s recovery now takes effect sooner",
+                f"A phone paired to {name}'s account confirmed the recovery that used their "
+                f"Recovery Kit. Unless it is cancelled, on {at} they get {name}'s signing key, "
+                f"including any place on a treasury. If {name} didn't start it, cancel it on Home.",
+                home,
+            )
         if me:
             return Copy(
                 "Someone is recovering your account",
@@ -400,16 +448,30 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
             by = f"by {name}"
         elif not me and role == "password":
             by = f"by someone using {name}'s password"
+        elif not me and role == "kit":
+            by = f"because {name}'s Recovery Kit was used, which replaces a reset from a phone"
         else:
             by = _CANCELLED_BY.get(role, "")
         if me:
-            then = (
-                " Your Recovery Kit no longer works, because someone else had it. Make a new one "
-                "on the Security page."
-                if stored.get("kit_burned")
-                else " If you didn't start it, someone else has your Recovery Kit: make a new one "
-                "on the Security page now."
-            )
+            if stored.get("route") == "phone":
+                phone = _phone(stored)
+                then = (
+                    ""
+                    if role in ("device_revoked", "system", "status_holder")
+                    else f" {phone[:1].upper()}{phone[1:]} can't start another for 7 days. If "
+                    f"you didn't start it, someone has that phone and can unlock it: "
+                    f"{REMOVE_PHONE}."
+                )
+            elif stored.get("kit_burned"):
+                then = (
+                    " Your Recovery Kit no longer works, because someone else had it. Make a new "
+                    "one on the Security page."
+                )
+            else:
+                then = (
+                    " If you didn't start it, someone else has your Recovery Kit: make a new one "
+                    "on the Security page now."
+                )
             return Copy(
                 "The recovery of your account was cancelled",
                 f"It was cancelled {by}. Nothing about your account changed.{then}",
@@ -418,6 +480,23 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
         return Copy(
             f"The recovery of {name}'s account was cancelled",
             f"It was cancelled {by}. Nothing about the account changed.",
+            home,
+        )
+
+    if kind == "recovery_completed" and stored.get("route") == "phone":
+        if me:
+            return Copy(
+                "Your account was recovered",
+                "Your new web password works now, with a new web signing key, and every other "
+                "sign-in was ended. Your paired phone keeps working. Votes you made before still "
+                "count. Make a new Recovery Kit on the Security page.",
+                security,
+            )
+        return Copy(
+            f"{name}'s account was recovered",
+            f"{name} has a new web password and a new web signing key, set from their paired "
+            f"phone. If {name} holds a seat on a treasury, its vault's owner must move it. If you "
+            f"don't think {name} did this, call them on a number you already have.",
             home,
         )
 
@@ -439,6 +518,20 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
 
     if kind == "recovery_kit_changed":
         change = stored.get("change")
+        if change == "phone_codes":
+            phone = _phone(stored)
+            what = (
+                "a new web password"
+                if stored.get("purpose") == "web_reset"
+                else "your recovery's shorter wait"
+            )
+            return Copy(
+                "Wrong codes stopped a code from your phone",
+                f"Five wrong codes were typed for the code {phone} showed for {what}, so that "
+                "code no longer works and nothing changed. If you were typing it, start again "
+                f"on the phone. If you weren't, someone saw that phone's screen: {REMOVE_PHONE}.",
+                security,
+            )
         if change == "paused":
             # The stored name is historical: since design §16 item 20 nothing is paused.
             count = wrong_code_count(stored)
