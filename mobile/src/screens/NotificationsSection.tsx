@@ -64,7 +64,7 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
   return (
     <Section title={titled ? 'Notifications' : undefined} first={!titled}>
       <List>
-        <ListRow title="On this phone" value={settings.isLoading ? null : line.value} caption={line.caption} />
+        <ListRow title="On this phone" value={settings.isLoading ? null : line.value} caption={line.caption} captionLines={0} />
         {(state === 'on' || state === 'registering') && push
           ? push.groups.map((group) => (
               <ListRow
@@ -94,7 +94,7 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
       {toggle.error ? (
         <Banner tone="critical" title={toggle.error instanceof Error ? toggle.error.message : 'Could not change it.'} />
       ) : null}
-      <Text role="caption" tone="muted">
+      <Text role="caption" tone="muted" style={s.footnote}>
         Notifications never show an amount or who is paid, and nothing can be approved from one. Email and
         other settings are on the web.
       </Text>
@@ -104,4 +104,5 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
 
 const useStyles = makeStyles((t) => ({
   action: { paddingTop: t.space[8], paddingBottom: t.space[8] },
+  footnote: { marginTop: t.space[12] },
 }));

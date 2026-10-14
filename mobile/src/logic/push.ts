@@ -65,8 +65,10 @@ export function accountLine(state: PushState): AccountLine {
     case 'on':
       return { value: 'On', caption: null, action: null, actionLabel: null };
     case 'registering':
+      // Allowed, but nothing reaches this phone until the server holds its token: never "On" over a
+      // caption that says it is still connecting (handset audit, 14 Oct).
       return {
-        value: 'On',
+        value: 'Connecting',
         caption: 'Connecting this phone to Q-Vault. It tries again each time the app opens.',
         action: null,
         actionLabel: null,
