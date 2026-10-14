@@ -217,8 +217,8 @@ def push_for(
     if kind == "password_guessed":
         return copy(
             "Wrong passwords",
-            "Wrong passwords were typed on your account today. If this wasn't you, change your "
-            "password.",
+            "A wrong password was typed on your account today. If it was you, ignore this; if not, "
+            "change your password.",
             {"type": "activity", **extra},
         )
     if kind == "device_pairing_refused":
@@ -521,10 +521,10 @@ def email_for(
             "Wrong passwords were typed on your Q-Vault account",
             "Wrong passwords on your account",
             (
-                f"Someone signed in to your Q-Vault account has typed a wrong password "
-                f"{stored.get('count', 'several')} times today.",
-                "If this wasn't you, change your password now: it signs out every other browser. "
-                "A browser is signed out by itself after ten wrong tries.",
+                f"A wrong password was typed {stored.get('count', 'several')} times today on your "
+                "Q-Vault account, while signed in, and not followed by the right one.",
+                "If it was you, you can ignore this. If not, change your password now: it signs "
+                "out every other browser.",
             ),
             "Open your account",
             account,

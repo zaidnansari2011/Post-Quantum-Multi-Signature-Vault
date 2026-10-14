@@ -85,6 +85,8 @@
   {{ banner('critical', 'Two phones scanned this code, so nothing was added.', "If one of them wasn't yours, someone may have seen your screen. Show a new code somewhere private.") }}
   {%- elif st == 'declined' %}
   {{ banner('warning', "A phone you don't have scanned your code.", 'Someone may have seen your screen. Nothing was added, and you have been sent a security notice about it.') }}
+  {%- elif st == 'cancelled' and view.finish_reason == 'withdrawn' %}
+  {{ banner('warning', 'The phone that scanned this code cancelled. Nothing was added.', "If that wasn't your phone, someone saw your screen. Show a new code somewhere private.") }}
   {%- elif st == 'confirmed' %}
   {{ banner('success', 'The phone was added.', 'It can approve for you from now on. Every other device of yours has been told.') }}
   {%- endif %}

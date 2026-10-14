@@ -252,9 +252,9 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
     if kind == "password_guessed":
         return Copy(
             "Wrong passwords on your account",
-            f"Someone signed in as you has typed a wrong password {stored.get('count', 'several')} "
-            "times today. If this wasn't you, change your password now: it signs out every other "
-            "browser. A browser is signed out by itself after ten wrong tries.",
+            f"A wrong password was typed {stored.get('count', 'several')} times today on your "
+            "account and not followed by the right one. If it was you, you can ignore this. If "
+            "not, change your password now: it signs out every other browser.",
             _path("account.security"),
         )
     if kind == "device_pairing_refused":

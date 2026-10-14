@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Index, text
-
 from qvault.extensions import db
 from qvault.models._types import AwareDateTime
 
@@ -24,7 +22,6 @@ from qvault.models._types import AwareDateTime
 LIVE_STATES = ("open", "claimed")
 END_STATES = ("confirmed", "contested", "declined", "cancelled", "expired")
 
-_LIVE_SQL = "state IN ('open', 'claimed')"
 
 
 def _utcnow() -> datetime:
@@ -33,19 +30,8 @@ def _utcnow() -> datetime:
 
 class DevicePairing(db.Model):
     __tablename__ = "device_pairings"
-    __table_args__ = (
-        # One live code per person: showing a new one cancels the old in the same transaction.
-        # One live code per web session (build review F7: one session's code never cancels
-        # another's, so a cookie thief can't keep cancelling the owner's code).
-        Index(
-            "uq_device_pairing_live_session",
-            "user_id",
-            "session_tag",
-            unique=True,
-            sqlite_where=text(_LIVE_SQL),
-            postgresql_where=text(_LIVE_SQL),
-        ),
-    )
+    # No "one live code" index (fixes review N2): a new code ends only the code its own browser
+    # is showing (the binding it holds): a copied cookie can't end a code shown after the copy.
 
     id = db.Column(db.Integer, primary_key=True)
     uuid = db.Column(db.String(36), nullable=False, unique=True)
@@ -88,3 +74,16 @@ class DevicePairing(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<DevicePairing {self.uuid} {self.state}>"
+
+
+class OwedDeviceNotice(db.Model):
+    """A device removed while its ``device_removed`` notice could not be written (A10 build review
+    F4, fixes review N4). Recorded at the revoke, so only those are owed, never a removal from
+    before A10; ``device_service.send_owed_removal_notices`` sends each and deletes its row."""
+
+    __tablename__ = "owed_device_notices"
+
+    device_id = db.Column(db.Integer, db.ForeignKey("devices.id"), primary_key=True)
+    #: Who removed it, as the notice says it: "web", "itself", a device's name, or "".
+    by_label = db.Column(db.String(64), nullable=False, default="")
+    created_at = db.Column(AwareDateTime, nullable=False)

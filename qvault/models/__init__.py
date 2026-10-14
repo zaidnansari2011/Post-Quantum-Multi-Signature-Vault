@@ -31,7 +31,7 @@ from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
 from .notification import Notification, NotificationPreference
-from .pairing import DevicePairing
+from .pairing import DevicePairing, OwedDeviceNotice
 from .proposal import DecisionFields, Proposal, ProposalLifecycle
 from .reconfiguration import (
     Reconfiguration,
@@ -55,12 +55,14 @@ from .treasury_job import TreasuryJob, TreasuryJobTransaction
 from .user import User
 from .user_setting import UserSetting
 from .vault import Vault, VaultMember, VaultPolicy, VaultRule
-from .web_session import EndedWebSession
+from .web_session import EndedWebSession, PasswordFailure
 from .workspace import Invitation, Workspace, WorkspaceMember
 
 __all__ = [
     "DevicePairing",
     "EndedWebSession",
+    "OwedDeviceNotice",
+    "PasswordFailure",
     "User",
     "Key",
     "AlgorithmConfig",
