@@ -299,10 +299,16 @@ def create(user: User, *, now: datetime | None = None) -> DevicePairing:
     ) or 0
     if session_count >= CREATE_PER_HOUR or account >= CREATE_PER_HOUR_ACCOUNT:
         raise PairingError(
-            "too_many", "You've shown too many pairing codes this hour. Try again later."
+            "too_many",
+            "Too many pairing codes were shown from this browser this hour. If you didn't show "
+            "them, sign out, sign in again (which starts a new count) and change your password.",
         )
-    # A new code ends only this session's previous one: never a code another session is showing.
-    cancel_live(user.id, "superseded", now=now, session_tag=tag)
+    # A new code ends only the code this browser is showing, by the binding it holds (fixes review
+    # N2): a copied cookie holds the binding of the moment it was copied, so it can't end a code
+    # shown after the copy, nor any other session's.
+    held = session.get(SESSION_BINDING) if has_request_context() else None
+    if isinstance(held, str) and held:
+        cancel_bound(user.id, held, "superseded", now=now)
     db.session.flush()
 
     binding = secrets.token_urlsafe(32)
@@ -409,8 +415,34 @@ def withdraw(pending_token: str, *, now: datetime | None = None) -> bool:
     if pairing is None or state_of(pairing, now) != "claimed":
         return False
     ended = _end(pairing, "cancelled", "withdrawn", now)
+    if ended:
+        # Logged, never told by itself (the person's own phone cancels the same way); a later scan
+        # of this code within its confirm window is told as a contest (fixes review N5).
+        _refused(pairing, "withdrawn", now)
     db.session.commit()
     return ended
+
+
+def _withdrawn_recently(pairing: DevicePairing, now: datetime) -> bool:
+    deadline = _aware(pairing.confirm_deadline)
+    return (
+        pairing.state == "cancelled"
+        and pairing.finish_reason == "withdrawn"
+        and deadline is not None
+        and now < deadline
+    )
+
+
+def _contest_withdrawn(pairing: DevicePairing, now: datetime) -> None:
+    """A code a phone claimed and then withdrew is scanned again: someone else read it (N5)."""
+    if pairing.reuse_reported_at is None:
+        pairing.reuse_reported_at = now
+        _refused(pairing, "contested", now)
+        db.session.commit()
+    raise PairingError(
+        "pairing_contested",
+        "Another phone scanned this code. Nothing was added. Tell the person at the computer.",
+    )
 
 
 def cancel_for_session(user: User, *, now: datetime | None = None) -> None:
@@ -483,6 +515,8 @@ def inspect(token: object, *, now: datetime | None = None) -> tuple[DevicePairin
         _contest(pairing, now)
     if state == "confirmed":
         _report_reuse(pairing, now)
+    if _withdrawn_recently(pairing, now):
+        _contest_withdrawn(pairing, now)
     if state != "open":
         raise _invalid()
     user = db.session.get(User, pairing.user_id)
@@ -560,6 +594,8 @@ def claim(
         )
     if state == "confirmed":
         _report_reuse(pairing, now)
+    if _withdrawn_recently(pairing, now):
+        _contest_withdrawn(pairing, now)
     if state != "open":
         raise _invalid()
     user = db.session.get(User, pairing.user_id)

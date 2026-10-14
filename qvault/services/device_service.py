@@ -338,6 +338,13 @@ def revoke(
             notification_service.device_removed(device, by=by_label)
     except Exception:  # noqa: BLE001 - logged; the revoke must commit whatever happened here
         current_app.logger.exception("device %s removed; its notice is owed", device.id)
+        # Owed explicitly, with who did it (fixes review N4): only a removal made here is owed.
+        from qvault.models.pairing import OwedDeviceNotice
+
+        if db.session.get(OwedDeviceNotice, device.id) is None:
+            db.session.add(
+                OwedDeviceNotice(device_id=device.id, by_label=by_label[:64], created_at=_now())
+            )
 
     device.revoked_at = _now()
     key = device.key
@@ -374,26 +381,31 @@ OWED_NOTICE_WINDOW = timedelta(days=7)
 
 
 def send_owed_removal_notices(*, now: datetime | None = None) -> int:
-    """Send the ``device_removed`` notice for every device removed in the last week that has none
-    (its revoke committed while the notice could not be written, build review F4). Returns how many
-    were sent. The scheduler runs it; each is deduplicated by its key, so a rerun sends none."""
+    """Send each ``device_removed`` notice recorded as owed at its revoke (its revoke committed
+    while the notice could not be written, build review F4), and forget the record. Only removals
+    recorded so are owed, never one from before A10 (fixes review N4). Returns how many were sent;
+    one owed for longer than ``OWED_NOTICE_WINDOW`` is dropped with a log line."""
     from qvault.models.notification import Notification
+    from qvault.models.pairing import OwedDeviceNotice
 
     now = now or _now()
     sent = 0
-    removed = Device.query.filter(
-        Device.revoked_at.is_not(None), Device.revoked_at > now - OWED_NOTICE_WINDOW
-    ).all()
-    for device in removed:
+    for owed in OwedDeviceNotice.query.order_by(OwedDeviceNotice.created_at).all():
+        device = db.session.get(Device, owed.device_id)
+        created = owed.created_at if owed.created_at.tzinfo else owed.created_at.replace(tzinfo=UTC)
+        if device is None or created < now - OWED_NOTICE_WINDOW:
+            current_app.logger.error("owed notice for device %s dropped", owed.device_id)
+            db.session.delete(owed)
+            continue
         told = Notification.query.filter_by(
             recipient_id=device.owner_id, dedupe_key=f"device_removed:{device.id}"
         ).first()
-        if told is not None:
-            continue
         try:
             with db.session.begin_nested():
-                notification_service.device_removed(device, by="", now=now)
-            sent += 1
+                if told is None:
+                    notification_service.device_removed(device, by=owed.by_label, now=now)
+                    sent += 1
+                db.session.delete(owed)
         except Exception:  # noqa: BLE001 - tried again on the next pass
             current_app.logger.exception("owed notice for device %s still not sent", device.id)
     db.session.commit()
