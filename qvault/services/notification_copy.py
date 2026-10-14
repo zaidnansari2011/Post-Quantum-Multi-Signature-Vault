@@ -180,9 +180,12 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
             if stored.get("role") == "viewer":
                 consequence = "You can see its decisions but not approve them."
             else:
+                # The threshold, not "of N": N grows as others are added, so a count frozen when
+                # each was added told two people two rules for one vault (staging QA F7).
+                m = int(stored.get("m") or 0)
                 consequence = (
-                    f"You can approve decisions raised from now on. Any {stored.get('m')} of "
-                    f"{_approvers(int(stored.get('n', 0)))} decide."
+                    "You can approve decisions raised from now on. Each needs "
+                    f"{m} approval{'' if m == 1 else 's'}."
                 )
             return Copy(f"{_name(actor)} added you to {_clip(vault.name)}", consequence, vault_path)
         if kind == "vault_rule_changed" and stored.get("change") == "threshold":

@@ -145,7 +145,7 @@ def new_vault():
                 form=form,
                 separated=vault_service.new_vault_separates(current_user),
             )
-        flash("Vault created — its ML-KEM keypair was generated.", "success")
+        flash("Vault created.", "success")
         return redirect(url_for("vaults.vault_detail", vid=vault.id))
     return render_template(
         "vaults/new.html", form=form, separated=vault_service.new_vault_separates(current_user)
@@ -603,7 +603,12 @@ def _new_typed(vault, kind: str, again=None, prefill=None):
             getattr(form, key).data = prefill["fields"].get(key)
         form.raised_again_from.data = again.proposal_uuid
     errors: dict[str, str] = {}
-    if form.validate_on_submit():
+    valid = form.validate_on_submit()
+    if form.is_submitted():
+        # Every field's own problem at once, beside the title's (staging QA F9), rather than one
+        # refusal per submit from ``create_proposal``.
+        errors = decision_types.field_problems(kind, {key: getattr(form, key).data for key in keys})
+    if valid and not errors:
         file_bytes, filename = _upload(form) if kind == "contract" else (None, None)
         deadline = _due(form)
         if deadline is False:
