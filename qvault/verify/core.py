@@ -552,6 +552,15 @@ def _verify_into(
     )
 
     # ---------------------------------------------------------------------------------------
+    # 6b'. Key lineage (plan R9, design §9). Informational, never a check: a vote under a key a
+    #      recovery introduced or restored says so, from the log's own recovery_completed entry
+    #      (whose hash recomputed above, and whose inclusion step 7 proves). It cannot say whether
+    #      the recovery was right (design §13 item 7). A bundle without such entries reads as
+    #      before.
+    # ---------------------------------------------------------------------------------------
+    report.facts["lineage"] = lineage_lines(verified, payloads, registrations)
+
+    # ---------------------------------------------------------------------------------------
     # 6c. Payment authorisations (plan Phase 9). The treasury pays only on signatures over its
     #     execution digest; each one here must be over the digest THIS verifier derives from the
     #     signed payment, verify, and be the exact bytes the log recorded beside an approval. A
@@ -724,6 +733,38 @@ def _verify_into(
                 good_witness_sha,
             )
         )
+
+
+#: How the verifier names each recovery route in a lineage line; the browser's twin is the same.
+LINEAGE_ROUTES = {"kit": "Recovery Kit", "phone": "paired phone", "quorum": "approvers"}
+
+
+def lineage_lines(verified: list[dict], payloads: list, registrations: dict) -> list[str]:
+    """One sentence for each verified vote whose key a completed recovery introduced (a new key)
+    or restored (the same key, under a new password), matched on the key's SHA-256 and the
+    signer's id. The browser verifier writes the same sentences."""
+    lines: list[str] = []
+    for s in verified:
+        key_sha = sha256_hex(s["_public_key"])
+        who = registrations.get(s["signer_id"]) or f"signer {s['signer_id']}"
+        for raw, p in payloads:
+            if raw["event_type"] != "recovery_completed" or p.get("user_id") != s["signer_id"]:
+                continue
+            if p.get("new_public_key_sha256") != key_sha:
+                continue
+            route = LINEAGE_ROUTES.get(p.get("route"), str(p.get("route")))
+            day = str(raw.get("timestamp", ""))[:10]
+            if p.get("old_public_key_sha256") == key_sha:
+                lines.append(
+                    f"{who}'s vote used a key restored by recovery ({route}) on {day}: the same "
+                    "key, under a new password."
+                )
+            else:
+                lines.append(
+                    f"{who}'s vote used a key introduced by recovery ({route}) on {day}, "
+                    f"replacing key {str(p.get('old_public_key_sha256'))[:16]}."
+                )
+    return lines
 
 
 def _strict_b64(value: Any) -> bytes | None:

@@ -122,9 +122,9 @@ def agree(app, page, bundle, pins=None):
     js_failed = {c["key"] for c in js["checks"] if not c["ok"] and not c["skipped"]}
     py_failed = {c.key for c in py.failures}
     assert js["ok"] == py.ok, f"verdicts differ: browser={js['ok']} python={py.ok}\n{js['summary']}"
-    assert (
-        js_failed == py_failed
-    ), f"different checks failed: browser={js_failed} python={py_failed}"
+    assert js_failed == py_failed, (
+        f"different checks failed: browser={js_failed} python={py_failed}"
+    )
     return js
 
 
@@ -140,9 +140,9 @@ def test_the_committed_verifier_matches_its_sources():
     sys.path.insert(0, str(ROOT / "scripts"))
     from build_verifier import render
 
-    assert (
-        VERIFIER.read_text(encoding="utf-8") == render()
-    ), "qvault/static/verifier.html is out of date — run scripts/build_verifier.py"
+    assert VERIFIER.read_text(encoding="utf-8") == render(), (
+        "qvault/static/verifier.html is out of date — run scripts/build_verifier.py"
+    )
 
 
 def test_the_verifier_fetches_nothing():
@@ -1021,3 +1021,90 @@ def test_the_browser_agrees_on_a_log_that_holds_workspace_events(app, page, witn
     raw["payload_json"] = raw["payload_json"].replace('"to":"auditor"', '"to":"owner"')
     report = agree(app, page, tampered)
     assert report["ok"] is False and not _check(report, "log_entries")["ok"]
+
+
+# --------------------------------------------------------------------------------------------
+# Key lineage (plan R9 Phase 2, design §9): the browser writes the Python verifier's sentence
+# --------------------------------------------------------------------------------------------
+
+
+def _with_recovered_key(bundle, *, route="phone", same_key=False):
+    """``bundle`` with one more log entry, recorded by the log for the first signer: a completed
+    recovery that introduced (or, for the kit, restored) the key that signer voted with. The new
+    entry is appended to the bundle's entries with a fresh hash, so both verifiers read it; its
+    inclusion is not proved, so both mark that one check failed, and agree on it."""
+    from qvault.services.ledger_service import compute_entry_hash
+
+    changed = copy.deepcopy(bundle)
+    signer = changed["signatures"][0]
+    key_sha = sha256_hex(base64.b64decode(signer["public_key_b64"]))
+    payload = json.dumps(
+        {
+            "user_id": signer["signer_id"],
+            "route": route,
+            "old_public_key_sha256": key_sha if same_key else "ab" * 32,
+            "new_public_key_sha256": key_sha,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    last = changed["log"]["entries"][-1]
+    entry = {
+        "seq": last["seq"] + 1,
+        "timestamp": "2026-10-12T09:00:00Z",
+        "event_type": "recovery_completed",
+        "actor": f"user:{signer['signer_id']}",
+        "actor_id": signer["signer_id"],
+        "vault_id": None,
+        "ref_type": "user",
+        "ref_id": str(signer["signer_id"]),
+        "payload_json": payload,
+        "payload_hash": sha256_hex(payload.encode("utf-8")),
+        "prev_hash": last["entry_hash"],
+        "inclusion_proof": [],
+    }
+    entry["entry_hash"] = compute_entry_hash(
+        seq=entry["seq"],
+        timestamp=entry["timestamp"],
+        actor=entry["actor"],
+        event_type=entry["event_type"],
+        payload_hash=entry["payload_hash"],
+        prev_hash=entry["prev_hash"],
+        actor_id=entry["actor_id"],
+        vault_id=entry["vault_id"],
+        ref_type=entry["ref_type"],
+        ref_id=entry["ref_id"],
+    )
+    changed["log"]["entries"].append(entry)
+    return changed
+
+
+@pytest.mark.parametrize("route,same_key", [("phone", False), ("kit", True)])
+def test_the_browser_writes_the_same_lineage_line_as_python(app, page, bundle, route, same_key):
+    changed = _with_recovered_key(bundle, route=route, same_key=same_key)
+    js = agree(app, page, changed)
+    py = in_python(app, changed)
+    assert js["facts"]["lineage"] == py.facts["lineage"]
+    (line,) = py.facts["lineage"]
+    word = "introduced" if not same_key else "restored"
+    assert f"vote used a key {word} by recovery" in line and "on 2026-10-12" in line
+
+
+def test_a_bundle_without_recoveries_has_no_lineage_in_either(app, page, bundle):
+    js = agree(app, page, bundle)
+    assert js["facts"]["lineage"] == [] and in_python(app, bundle).facts["lineage"] == []
+
+
+def test_the_page_shows_the_key_history_panel_only_when_there_is_one(app, page, bundle, tmp_path):
+    def shown(b, name):
+        path = tmp_path / name
+        path.write_bytes(export_service.bundle_bytes(b))
+        page.set_input_files("#file", str(path))
+        page.wait_for_selector(".banner", timeout=15_000)
+        return page.inner_text("body").lower()  # labels are upper-cased by CSS
+
+    body = shown(_with_recovered_key(bundle), "recovered.qvault.json")
+    assert "key history" in body and "introduced by recovery (paired phone)" in body
+    page.reload()
+    page.wait_for_function("typeof window.qvaultVerify === 'function'", timeout=30_000)
+    assert "key history" not in shown(bundle, "plain.qvault.json")
