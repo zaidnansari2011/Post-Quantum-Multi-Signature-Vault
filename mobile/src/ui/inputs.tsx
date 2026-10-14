@@ -449,30 +449,47 @@ export function CheckboxRow({
   );
 }
 
-/** The platform switch, in the accent when on (§5.8). */
+/**
+ * The platform switch (§5.8): the accent track when on, `borderStrong` when off.
+ *
+ * The thumb is white when on and a light neutral when off, in both themes (Material 3 and iOS). It
+ * was `surface`, which in dark is near-black: on the handset the thumb vanished into the blue track
+ * and into the grey one, and the switch looked broken (handset audit, 14 Oct). Off, the thumb is
+ * white in light and `textMuted` in dark, so off never reads as on.
+ *
+ * Inside a list, use ListRow's `toggle`: it insets the switch from the card's edge and centres it on
+ * the row's title.
+ */
 export function Switch({
   value,
   onValueChange,
   label,
+  hint,
   disabled,
 }: {
   value: boolean;
   onValueChange: (v: boolean) => void;
   label: string;
+  hint?: string;
   disabled?: boolean;
 }) {
   const t = useTheme();
+  const on = t.color.accentText;
+  const off = t.scheme === 'dark' ? t.color.textMuted : t.color.surface;
   return (
     <RNSwitch
       value={value}
       onValueChange={onValueChange}
       disabled={disabled}
       accessibilityLabel={label}
+      accessibilityHint={hint}
       trackColor={{ true: t.color.accent, false: t.color.borderStrong }}
-      thumbColor={t.color.surface}
+      // Android paints one thumb colour whatever the state, so it follows the value.
+      thumbColor={value ? on : off}
       ios_backgroundColor={t.color.borderStrong}
-      // react-native-web's own default thumb is teal; selection is never a status green.
-      {...({ activeThumbColor: t.color.surface } as object)}
+      // react-native-web's own defaults are a teal thumb and a pale track; selection is never a
+      // status green, and its pale track vanished on the dark page.
+      {...({ activeThumbColor: on, activeTrackColor: t.color.accent } as object)}
     />
   );
 }
@@ -500,7 +517,9 @@ const useStyles = makeStyles((t) => ({
   },
   // minWidth 0: a web <input> has an intrinsic width that grows with the text size and would push
   // the whole form past the screen at 2.0 text (P3 review B1); flex alone does not shrink it.
-  input: { flex: 1, minWidth: 0, paddingVertical: t.space[12], minHeight: 46 },
+  // paddingHorizontal 0: the box's own padding is the inset. Android's TextInput adds about 4 of
+  // its own otherwise, so a Field's text sat further in than a TextArea's (handset audit, 14 Oct).
+  input: { flex: 1, minWidth: 0, paddingVertical: t.space[12], paddingHorizontal: 0, minHeight: 46 },
   under: { minHeight: 18 },
   underRow: { flexDirection: 'row', gap: t.space[12], alignItems: 'flex-start' },
   underStacked: { gap: t.space[4] },

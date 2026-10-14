@@ -27,7 +27,7 @@ import {
   vaultDetailResponse,
 } from '../src/api/schemas.ts';
 import { yourPart, type ActivityFacts } from '../src/logic/activity.ts';
-import { archiveOffered, forYou, forYouDot, inboxTarget, inboxWhen, removeOffer, type InboxFacts } from '../src/logic/inbox.ts';
+import { archiveOffered, asShown, forYou, forYouDot, inboxTarget, inboxWhen, removeOffer, type InboxFacts } from '../src/logic/inbox.ts';
 import { deviceNameProblem } from '../src/logic/onboarding.ts';
 import { pushState, showOffLine, type PushPermission } from '../src/logic/push.ts';
 import { remindView, type RemindFacts } from '../src/logic/remind.ts';
@@ -50,6 +50,17 @@ if (input.inbox) {
     archiveCases: ((input.inbox.archiveCases ?? []) as Array<Pick<InboxFacts, 'security' | 'archivable'>>).map((c) =>
       archiveOffered(c),
     ),
+    // The row as the phone draws it (`asShown`), and what For you then pins and offers.
+    shown: Object.fromEntries(
+      [...items, ...((input.inbox.shownCases ?? []) as InboxFacts[])].map((n) => {
+        const v = asShown(n, thisDevice, now);
+        return [n.id, { title: v.title, body: v.body, security: v.security, archive: archiveOffered(v) }];
+      }),
+    ),
+    pinnedShown: forYou(
+      items.map((n) => asShown(n, thisDevice, now)),
+      now,
+    ).pinned.map((n) => n.id),
   };
 }
 

@@ -170,7 +170,13 @@ export function IconButton({
         s.iconButton,
         compact && s.iconButtonCompact,
         filled && { backgroundColor: pressed ? t.color.accentPressed : t.color.accent },
-        tinted && { backgroundColor: pressed ? t.color.fillHover : t.color.accentSubtle },
+        // The ring gives the tinted circle an edge: on the dark page `accentSubtle` alone barely
+        // showed (handset audit, 14 Oct).
+        tinted && {
+          backgroundColor: pressed ? t.color.fillHover : t.color.accentSubtle,
+          borderWidth: 1,
+          borderColor: t.color.accentBorder,
+        },
         !filled && !tinted && pressed && { backgroundColor: pressedFill(t, raised) },
       ]}
     >

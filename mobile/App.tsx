@@ -171,6 +171,7 @@ function ApprovalsTab({
             onOpen={open.onOpenQueued}
             onOpenChange={(vaultId, changeId) => open.onOpenChange(vaultId, changeId, true)}
             onRaise={() => open.onRaise()}
+            onCreateVault={open.onCreateVault}
             onOpenWaiting={() => navigation.navigate('Waiting')}
             onOpenTreasuryApprovals={onOpenTreasuryApprovals}
             onOpenNotifications={onOpenNotifications}

@@ -976,7 +976,10 @@ Used in Approvals, Waiting on others, a vault's decisions and Activity.
   filters always use chips; §6.12).
 - **`Checkbox`:** 24 box, radius 4, `borderStrong`; checked is an `accent` fill with a white check.
   The signer picker uses this. **Selection is accent, never the green status colour** (S3; `app_52`).
-- **`Switch`:** the platform `Switch`, with `trackColor` `accent` on and `borderStrong` off.
+- **`Switch`:** the platform `Switch`, with `trackColor` `accent` on and `borderStrong` off. The
+  thumb is white (`accentText`) on, and `surface` (light) or `textMuted` (dark) off, never the
+  dark `surface`, which vanished on both tracks on the handset. In a list it is `ListRow`'s
+  `toggle`: inset 16 from the card's edge and centred on the title's first line.
 
 ### 5.9 Sheet
 
@@ -1988,8 +1991,10 @@ the web." The native `Alert.alert` goes with it.
 4. **Fields by type:**
    - **General:**
      - Title (`Field`, placeholder "Rotate the on-call paging credentials").
-     - "What everyone signs" (`TextArea`, serif), caption "Signed exactly as written. It can't be
-       edited once anyone has signed."
+     - "What everyone signs" (`TextArea`, serif), no caption: the action bar's one line, "Once
+       raised, the text can't be changed.", is the rule the server applies (no route edits a
+       raised decision; it can only be withdrawn). The old caption said "once anyone has signed",
+       which was not true, and two notices disagreed (handset audit, 14 Oct).
    - **Payment:**
      - **Amount:** `figure`-sized input with "ETH" as a suffix and a `decimal-pad` keyboard. Comma
        decimals are accepted and normalised (check `parseEth`).
@@ -2079,11 +2084,14 @@ the web." The native `Alert.alert` goes with it.
    - **The sheet:** search at the top; rows with a 32 avatar, name and email (`caption`) to tell two
      people with the same name apart; and `Checkbox`es (accent). It is scoped to the workspace (R3).
      The footer reads "Done, 2 added".
-   - **Empty state:** "Everyone in Northwind is already here. Invite more people on the web."
+   - **Empty state:** "You're the only member of Northwind so far." with the link "Invite people on
+     the web" for an owner or admin, or "Ask your admin to invite people." for anyone else.
    - **Chosen people** list under the row, each with a 48 pt "Remove" icon button (`close-circle`),
      not a 12 pt red text link.
 4. **Rule:** chips "Any one", "2 of 3", "All 3", with the restating sentence "Any 2 of the 3 approvers
-   must approve each decision."
+   must approve each decision." With no approvers added there is one possible rule: the sentence
+   alone ("You are the only approver."), no lone chip. A rule nothing could pass under is a warning
+   `Banner` (the fix as its title, the reason under it).
 5. **Footer link** (`caption`): "Viewers, roles and separation of duties are set on the web."
 6. **Bottom bar:** primary "Check and create". It opens a review sheet ("Any 2 of Ada, Brij, Chen
    approve every decision in Board approvals. Changing this later needs the web.") with "Create vault".
@@ -2123,9 +2131,11 @@ devices, Notifications.
   caption "Compare this with your device list on the web"), the algorithm ("ML-DSA-65, FIPS 204"),
   and the custody line ("Made on this phone. It never leaves it.").
 - **Text block** (`caption`): "Getting a new phone? Set it up first, then remove this one. Lost this
-  phone? Remove it from your other phone or on the web, then ask your vault's approvers to approve
-  your new key." (research 06 §3.8)
-- **Danger button "Remove this phone"** (§6.19).
+  phone? Remove it on the web or from another device, then set up your new phone with your
+  password. Forgotten your password too? Your Recovery Kit gets you back in on the web." (research
+  06 §3.8; the approvers' route to a new key is R9 Phase 3, deferred, so the copy names what ships.)
+- **Button "Remove this phone"**, `dangerSecondary` (outlined, red label): it opens the confirming
+  sheet, whose button is the filled danger one (§6.19).
 
 **Other devices** (pushed; DO): active devices as rows (name, "Added 4 Oct, last used 2 Oct").
 Removed devices sit in a collapsed group "Removed (2)", in `textSubtle`, never at the same weight.
@@ -2150,8 +2160,8 @@ Removed devices sit in a collapsed group "Removed (2)", in `textSubtle`, never a
     Activity item ("A device was removed from your account"), so a hostile device removing the
     owner's phone cannot go unnoticed.
   - Errors stay in the sheet; on `already_revoked` the sheet closes and the list refreshes.
-- **Lost a phone?** The page's footer: "Lost a phone? Remove it here, then ask your vault's
-  approvers to approve your new key."
+- **Lost a phone?** The page's footer: "Lost a phone? Remove it here, then set up your new phone
+  with your password."
 
 **Notifications** (pushed; R8):
 

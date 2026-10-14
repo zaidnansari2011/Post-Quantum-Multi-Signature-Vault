@@ -9,6 +9,7 @@ import { View, type ViewStyle } from 'react-native';
 import { initials } from '../format.ts';
 import { makeStyles, useTheme } from '../theme/index.ts';
 import { Icon, type IconName } from './Icon.tsx';
+import { Switch } from './inputs.tsx';
 import { Text, type TextTone } from './Text.tsx';
 import { pressedFill, useRaised } from './surface.ts';
 import { Touchable } from './Touchable.tsx';
@@ -78,7 +79,7 @@ export type ListRowProps = {
   onPress?: () => void;
   accessibilityLabel?: string;
   accessibilityHint?: string;
-  /** Two lines of caption before it ellipsises. */
+  /** Two lines of caption before it ellipsises; 0 never cuts it (a switch's explanation). */
   captionLines?: number;
   /** A sibling control on the right (never inside the row's own target, §4.6). */
   trailing?: ReactNode;
@@ -87,8 +88,17 @@ export type ListRowProps = {
   code?: string | null;
   /** Decoration inside the row, before its value: Members' avatar stack (§6.14). Not tappable. */
   accessory?: ReactNode;
-  /** False for a row whose tap reveals more in place rather than opening something. */
+  /**
+   * False for a row whose tap reveals more in place rather than opening something. Defaults to
+   * true, except on a row with the `external` icon: a link that leaves the app carries the external
+   * icon only, and the chevron (moving within the app) only the rest (handset audit, 14 Oct).
+   */
   chevron?: boolean;
+  /**
+   * A switch for the row (a row with a switch is not itself pressable): inset from the card's right
+   * edge like a chevron, and centred on the title's first line however the caption wraps.
+   */
+  toggle?: { value: boolean; onValueChange: (v: boolean) => void; disabled?: boolean };
 };
 
 export function ListRow({
@@ -107,12 +117,15 @@ export function ListRow({
   disabled,
   code,
   accessory,
-  chevron = true,
+  chevron = icon !== 'external',
+  toggle,
 }: ListRowProps) {
   const t = useTheme();
   const s = useStyles();
   const raised = useRaised();
   const stacked = t.stacked && !!value;
+  // The title's first line, as `body` is drawn at this text size (capped at the role's maxScale).
+  const titleLine = t.type.body.lineHeight * Math.min(Math.max(t.fontScale, 1), t.type.body.maxScale ?? 1);
   const body = (
     <>
       {leading ?? (icon ? <Icon name={icon} size={24} color={t.color.textMuted} /> : null)}
@@ -145,6 +158,32 @@ export function ListRow({
   );
   const label = accessibilityLabel ?? [title, caption, value].filter(Boolean).join('. ');
   const pressedStyle = { backgroundColor: pressedFill(t, raised) };
+  if (toggle) {
+    // Top-aligned with 16 above and below, so a one-line row is still 56 and the switch's box (the
+    // title's line height) sits exactly on the title, however many lines the caption runs to.
+    return (
+      <View style={[s.row, s.toggleRow]}>
+        {leading ?? (icon ? <Icon name={icon} size={24} color={t.color.textMuted} /> : null)}
+        <View style={s.rowText}>
+          <Text role="body">{title}</Text>
+          {caption ? (
+            <Text role="caption" tone={captionTone} numberOfLines={captionLines}>
+              {caption}
+            </Text>
+          ) : null}
+        </View>
+        <View style={[s.toggleBox, { height: titleLine }]}>
+          <Switch
+            label={title}
+            hint={caption ?? undefined}
+            value={toggle.value}
+            onValueChange={toggle.onValueChange}
+            disabled={toggle.disabled}
+          />
+        </View>
+      </View>
+    );
+  }
   if (!onPress) {
     return (
       <View style={s.rowOuter}>
@@ -217,7 +256,7 @@ export function KeyValue({
   );
 }
 
-/** Initials on `fill`, never accent and never a status colour. Square for vaults (§5.7). */
+/** Initials on `fillActive`, never accent and never a status colour. Square for vaults (§5.7). */
 export function Avatar({
   name,
   size = 24,
@@ -305,10 +344,14 @@ const useStyles = makeStyles((t) => ({
     paddingVertical: t.space[12],
   },
   rowFlex: { flex: 1 },
+  toggleRow: { alignItems: 'flex-start', paddingVertical: t.space[16] },
+  // Overflows its box evenly when the platform switch is taller than the line.
+  toggleBox: { justifyContent: 'center', alignItems: 'flex-end', minWidth: 48 },
   rowText: { flex: 1, gap: t.space[2] },
   value: { flexShrink: 1, maxWidth: '62%', textAlign: 'right' },
   kv: { gap: t.space[2], paddingVertical: t.space[4] },
-  avatar: { backgroundColor: t.color.fill, alignItems: 'center', justifyContent: 'center' },
+  // `fillActive`, not `fill`: on the dark page `fill` was almost the page itself (handset audit).
+  avatar: { backgroundColor: t.color.fillActive, alignItems: 'center', justifyContent: 'center' },
   stack: { flexDirection: 'row', alignItems: 'center' },
   stackItem: { borderWidth: 2, borderColor: t.color.surface, borderRadius: 14 },
 }));

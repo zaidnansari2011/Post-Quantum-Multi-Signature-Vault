@@ -7,8 +7,9 @@
 // server's `awaiting_me` is used only until that list arrives.
 //
 // No plus: the plus means "new decision" everywhere else (D11). "Create a vault" is the list's last
-// row, and only for someone who may create one (an auditor is read-only, S10). Search appears once
-// there are more than eight vaults.
+// row, and only for someone who may create one (an auditor is read-only, S10). With no vaults yet it
+// is the empty state's one button, and the empty state speaks to the person's role (`noVaults`).
+// Search appears once there are more than eight vaults.
 
 import { useState } from 'react';
 import { FlatList, View } from 'react-native';
@@ -16,6 +17,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   Banner,
+  Button,
   ColdStartHint,
   CollapsedBar,
   EmptyState,
@@ -37,7 +39,7 @@ import type { ProposalSummary, VaultSummary } from '../api/schemas.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { awaitingQuery, fetchedThisRun, keys, meQuery, vaultsQuery } from '../queries.ts';
 import { stillOpen } from '../status.ts';
-import { permissions, vaultCaption } from '../logic/workspace.ts';
+import { noVaults, permissions, vaultCaption } from '../logic/workspace.ts';
 
 const SEARCH_FROM = 8;
 
@@ -73,6 +75,7 @@ export default function VaultsScreen({
     query.error && !(query.error instanceof ApiError && query.error.status === 401) ? query.error : null;
   // The create row: only once /me has answered, so an auditor never sees it flicker in.
   const offerCreate = me.data !== undefined && can.canCreateVault && query.data !== undefined && !q;
+  const empty = noVaults(can);
   const rows: Array<VaultSummary | 'create'> = offerCreate && all.length > 0 ? [...vaults, 'create'] : vaults;
 
   return (
@@ -150,21 +153,11 @@ export default function VaultsScreen({
               <EmptyState title={`No vaults match "${search.trim()}"`} />
             ) : (
               <EmptyState
-                title="You're not in any vaults yet."
-                detail={
-                  can.canCreateVault
-                    ? 'Your admin adds you to one on the web, or create your own.'
-                    : 'Your admin adds you to one on the web.'
-                }
+                title={empty.title}
+                detail={empty.detail}
+                action={offerCreate && empty.create ? <Button label="Create a vault" onPress={onCreate} /> : undefined}
               />
             )
-          }
-          ListFooterComponent={
-            offerCreate && all.length === 0 && !query.isLoading && !transportFailure ? (
-              <List>
-                <ListRow icon="plus" title="Create a vault" onPress={onCreate} />
-              </List>
-            ) : null
           }
         />
       </View>

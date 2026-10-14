@@ -47,6 +47,22 @@ export function permissions(workspace: WorkspaceFacts): Permissions {
   };
 }
 
+/**
+ * What Vaults and Approvals say to someone in no vault yet, by role (handset audit, 14 Oct: the
+ * workspace's owner was told "Your admin adds you to one", and the owner is the admin). `create`:
+ * whether the empty state leads with a "Create a vault" button.
+ */
+export function noVaults(can: Permissions): { title: string; detail: string; create: boolean } {
+  const title = "You're not in any vaults yet.";
+  if (can.manager) {
+    return { title, detail: 'Create one, then add the people who approve its decisions.', create: true };
+  }
+  if (can.canCreateVault) {
+    return { title, detail: 'Your admin can add you to one, or you can create your own.', create: true };
+  }
+  return { title, detail: 'Your admin adds you to one on the web.', create: false };
+}
+
 /** Whether to offer raising a decision in a vault: its owner and approvers, never an auditor. */
 export function canRaiseIn(vaultRole: string | null | undefined, workspace: WorkspaceFacts): boolean {
   return mayPropose(vaultRole) && workspace?.role !== 'auditor' && workspace !== null;
@@ -181,9 +197,28 @@ export function newVaultRule(m: number, n: number): string {
  * off, or the rule leaves room.
  */
 export function newVaultWarning(m: number, n: number, sodDefault: boolean | undefined): string | null {
+  const caution = newVaultCaution(m, n, sodDefault);
+  return caution ? `${caution.detail} ${caution.title}.` : null;
+}
+
+/**
+ * The same warning as a Banner draws it on New vault: the fix as its title, the reason under it.
+ * The review sheet says it as the one sentence above (`newVaultWarning`).
+ */
+export function newVaultCaution(
+  m: number,
+  n: number,
+  sodDefault: boolean | undefined,
+): { title: string; detail: string } | null {
   if (sodDefault !== true || m < n) return null;
   if (n === 1) {
-    return "Whoever raises a decision can't approve it, so with you as the only approver nothing raised here could pass. Add an approver first.";
+    return {
+      title: 'Add an approver first',
+      detail: "Whoever raises a decision can't approve it, so with you as the only approver nothing raised here could pass.",
+    };
   }
-  return "Whoever raises a decision can't approve it, so with every approver needed nothing raised here could pass. Lower the rule or add an approver.";
+  return {
+    title: 'Lower the rule or add an approver',
+    detail: "Whoever raises a decision can't approve it, so with every approver needed nothing raised here could pass.",
+  };
 }

@@ -340,13 +340,15 @@ export default function NewDecisionScreen({
               ) : null}
             </View>
 
-            <View style={s.group}>
+            {/* The caption hangs off the control (4 under it, 16 over the next field), so it reads
+                as the control's note, not as a field label. */}
+            <View style={s.captioned}>
               <Segmented label="Type" options={kinds} value={effectiveKind} onChange={(k) => {
                 setKind(k);
                 setErrors({});
                 setDeadline(defaultDeadline(k));
               }} />
-              <Text role="caption" tone="muted">
+              <Text role="caption" tone="subtle">
                 Contracts with a file are raised on the web.
               </Text>
             </View>
@@ -369,7 +371,6 @@ export default function NewDecisionScreen({
                   placeholder="Say exactly what approving authorises."
                   autoCapitalize="sentences"
                   error={errors.text}
-                  caption="Signed exactly as written. It can't be edited once anyone has signed."
                 />
               </View>
             ) : effectiveKind === 'payment' ? (
@@ -555,7 +556,9 @@ export default function NewDecisionScreen({
           <Skeleton width="60%" height={16} />
         ) : raisable.length === 0 ? (
           <Text role="body" tone="muted">
-            {"You can't raise decisions in any of your vaults. Their owners and approvers can."}
+            {(vaults.data?.vaults.length ?? 0) === 0
+              ? "You're not in any vaults yet, so there's nowhere to raise a decision. Create one in Vaults."
+              : "You can't raise decisions in any of your vaults. Their owners and approvers can."}
           </Text>
         ) : (
           <List>
@@ -653,6 +656,7 @@ const useStyles = makeStyles((t) => ({
   content: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32], paddingTop: t.space[8] },
   stack: { gap: t.space[16] },
   group: { gap: t.space[8] },
+  captioned: { gap: t.space[4] },
   who: { flexDirection: 'row', gap: t.space[8], alignItems: 'flex-start' },
   suffix: { paddingHorizontal: t.space[12], justifyContent: 'center' },
   grouped: { gap: t.space[4] },
