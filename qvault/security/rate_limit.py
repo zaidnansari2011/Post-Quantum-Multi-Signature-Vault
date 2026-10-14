@@ -69,6 +69,13 @@ ENDPOINT_BUCKETS = {
     # Phase 2: a code from a paired phone, typed at /recover/phone or on a kit's status page.
     "recover.phone": "recover",
     "recover.status_phone_confirm": "recover",
+    # Shor side by side (admin, attack lab only): each POST does real CPU work (a state-vector
+    # simulation, or a slice of brute force), so a stuck or scripted page cannot keep a core busy.
+    "admin.shor_rsa_new": "attack_shor",
+    "admin.shor_rsa_base": "attack_shor",
+    "admin.shor_rsa_measure": "attack_shor",
+    "admin.shor_rsa_forge": "attack_shor",
+    "admin.shor_lwe_brute": "attack_shor",
 }
 
 #: (attempts, window in seconds) per bucket, per client address. RATE_LIMIT_SIGNUP_PER_HOUR sets
@@ -79,6 +86,7 @@ DEFAULT_LIMITS = {
     "pair": (20, 10 * 60),
     "recover": (10, 60 * 60),
     "pair_qr": (30, 10 * 60),
+    "attack_shor": (600, 10 * 60),
 }
 
 #: Addresses remembered per bucket before the least recently counted is dropped.

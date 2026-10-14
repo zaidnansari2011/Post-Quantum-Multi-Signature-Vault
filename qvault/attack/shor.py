@@ -53,6 +53,7 @@ no group element whose order encodes an ML-DSA secret.
 from __future__ import annotations
 
 import cmath
+import itertools
 import math
 import random
 import time
@@ -159,6 +160,18 @@ def _order_distribution_statevector(
     be described as a state-vector simulation without qualification. Returns the distribution and
     the number of amplitudes held, which the report quotes so the scaling wall is visible.
     """
+    probs, held, _observed = _statevector_with_observation(a, n, t, rng)
+    return probs, held
+
+
+def _statevector_with_observation(
+    a: int, n: int, t: int, rng: random.Random
+) -> tuple[list[float], int, int]:
+    """``_order_distribution_statevector``, also returning the value register's measured residue.
+
+    The walkthrough page (``shor_walkthrough.py``) shows which residue the second register
+    collapsed to; the attack itself never needs it. Same rng consumption, same distribution.
+    """
     size = 1 << t
     # |psi> = 2^(-t/2) SUM_x |x>|a^x mod N> — represented by the value each x carries, since the
     # map is a function and the superposition is therefore uniform over x.
@@ -182,7 +195,7 @@ def _order_distribution_statevector(
 
     _qft_in_place(state)
     probs = [abs(z) ** 2 for z in state]
-    return probs, size
+    return probs, size, observed
 
 
 def _qft_in_place(state: list[complex]) -> None:
@@ -279,15 +292,72 @@ def _confirm_order(a: int, n: int, candidate: int) -> int | None:
     with ``a^r = 1 mod n``, which is all the factoring reduction requires, and it is what a
     practical implementation does rather than insisting on the minimal order.
     """
+    return confirm_order_trail(a, n, candidate)[0]
+
+
+def confirm_order_trail(a: int, n: int, candidate: int) -> tuple[int | None, list[dict]]:
+    """``_confirm_order`` with its working shown: every multiple tried and ``a^m mod n`` for it.
+
+    The single implementation of the multiple test; ``_confirm_order`` returns its first element.
+    The walkthrough page prints the trail so each line can be checked on a calculator.
+    """
+    trail: list[dict] = []
     if candidate <= 0:
-        return None
+        return None, trail
     for multiple in range(1, MAX_ORDER_MULTIPLE + 1):
         order = candidate * multiple
         if order >= n * n:  # far past any possible order; stop rather than loop pointlessly
-            return None
-        if pow(a, order, n) == 1:
-            return order
-    return None
+            return None, trail
+        value = pow(a, order, n)
+        trail.append({"multiple": multiple, "exponent": order, "value": value})
+        if value == 1:
+            return order, trail
+    return None, trail
+
+
+def control_width(n: int) -> int:
+    """Public name for ``_control_width``: the control register's qubits for modulus ``n``."""
+    return _control_width(n)
+
+
+def phase_denominator(measured_k: int, t: int, n: int) -> int:
+    """The continued-fraction step: the denominator of the best approximation to ``k / 2^t``
+    with denominator below ``n``. Exactly what ``find_order`` does with each measurement."""
+    return Fraction(measured_k, 1 << t).limit_denominator(n - 1).denominator
+
+
+def measure_register(rng: random.Random, cum_weights) -> int:
+    """Sample one outcome of the control register from its cumulative distribution.
+
+    ``random.choices`` with ``cum_weights`` is the same draw as with ``weights`` (it accumulates
+    them first and then makes this call), so precomputing them changes no outcome. ``find_order``
+    and the walkthrough page's Measure button both sample through here.
+    """
+    return rng.choices(range(len(cum_weights)), cum_weights=cum_weights, k=1)[0]
+
+
+def observed_order_distribution(
+    a: int, n: int, rng: random.Random
+) -> tuple[list[float], int, int, int]:
+    """The state-vector distribution for one base, for the walkthrough page.
+
+    Returns ``(probs, t, amplitudes_held, observed_residue)``. Only for ``n <= MAX_N_STATEVECTOR``:
+    the page's claim is that the real amplitude vector was built and transformed.
+    """
+    if math.gcd(a, n) != 1:
+        raise ShorError(f"gcd({a}, {n}) != 1 - factor it directly, no quantum step needed")
+    if n > MAX_N_STATEVECTOR:
+        raise ShorError(f"N={n} is past the state-vector ceiling of {MAX_N_STATEVECTOR}")
+    t = _control_width(n)
+    probs, held, observed = _statevector_with_observation(a, n, t, rng)
+    return probs, t, held, observed
+
+
+def true_order(a: int, n: int) -> int:
+    """Public name for ``_true_order``. The walkthrough uses it only to draw ``a^x mod N`` up to a
+    little past its period and to mark the peaks; the attack's own order comes from a
+    measurement."""
+    return _true_order(a, n)
 
 
 def find_order(
@@ -312,16 +382,16 @@ def find_order(
         probs = _order_distribution_analytic(a, n, t, rng)
 
     size = 1 << t
-    outcomes = range(size)
+    cum_weights = list(itertools.accumulate(probs))
     measured_k = 0
     phase = Fraction(0)
     candidate = 0
     for attempt in range(1, max_measurements + 1):
-        measured_k = rng.choices(outcomes, weights=probs, k=1)[0]
+        measured_k = measure_register(rng, cum_weights)
         phase = Fraction(measured_k, size)
         # The continued-fraction convergent with denominator < N. This is the classical
         # post-processing step of Shor's algorithm, verbatim.
-        candidate = phase.limit_denominator(n - 1).denominator
+        candidate = phase_denominator(measured_k, t, n)
         # The convergent may be a proper divisor of the order -- see _confirm_order.
         confirmed_order = _confirm_order(a, n, candidate)
         if confirmed_order is not None:
