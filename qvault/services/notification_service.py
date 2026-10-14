@@ -75,6 +75,7 @@ UPDATE_KINDS = (
     "password_changed",
     "device_removed",
     "device_pairing_refused",
+    "password_guessed",
 ) + RECOVERY_KINDS
 #: At most this many repeat cancel notices about one account in a day (design §4.5, §16 item 9);
 #: the Home banner carries the rest. A recovery starting and a recovery taking effect are always
@@ -87,6 +88,7 @@ SECURITY_KINDS = (
     "password_changed",
     "device_removed",
     "device_pairing_refused",
+    "password_guessed",
     *RECOVERY_KINDS,
 )
 #: How long a "new device" notice cannot be marked read, by any session or device (A10, ⚑8):
@@ -532,8 +534,26 @@ def device_removed(device, *, by: str, now: datetime | None = None) -> None:
     )
 
 
-#: Why a pairing by code stopped, for the notice (A10, ⚑5 and ⚑9). A wrong code alone is not told.
-PAIRING_REFUSED_TOLD = ("contested", "declined", "wrong_password", "reused_after_confirm")
+#: Why a pairing by code stopped, for the notice (A10, ⚑5 and ⚑9). A wrong code alone is not told,
+#: nor a wrong password: ``password_guessed`` tells those, whatever the door (build review F3).
+PAIRING_REFUSED_TOLD = ("contested", "declined", "reused_after_confirm")
+
+
+def password_guessed(user, *, count: int, now: datetime | None = None) -> None:
+    """A security event (A10 build review F3): someone signed in as this person has typed a wrong
+    password ``count`` times in a day, at any door (signing, a new key, a password change, pairing a
+    phone, removing one). Told at 5, 20 and 50, with email and push; the codes typed never are."""
+    now = now or _utcnow()
+    db.session.flush()
+    _send(
+        "password_guessed",
+        [user.id],
+        key=f"password_guessed:{user.id}:{count}:{now.date().isoformat()}",
+        now=now,
+        actor_id=user.id,
+        data={"count": count},
+        strict=True,
+    )
 
 
 def device_pairing_refused(pairing, *, reason: str, now: datetime | None = None) -> None:

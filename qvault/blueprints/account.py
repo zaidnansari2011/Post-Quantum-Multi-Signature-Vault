@@ -92,6 +92,19 @@ def set_signing_choice():
     if not form.validate_on_submit():
         flash("That form had expired. Try again.", "error")
         return redirect(url_for("account.security"))
+    # The key a treasury will hold for you is chosen with your password (A10 build review F8,
+    # design review R2): a stolen session alone can't move your future seat.
+    try:
+        key_service.prove_password(
+            current_user, request.form.get("password") or "", via="signing_choice"
+        )
+    except PasswordLockedError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("account.security"))
+    except KeyUnlockError:
+        db.session.rollback()
+        flash("That isn't your password. Nothing was changed.", "error")
+        return redirect(url_for("account.security"))
     choice = (request.form.get("choice") or "").strip()
     device_key = None
     custody = "password"

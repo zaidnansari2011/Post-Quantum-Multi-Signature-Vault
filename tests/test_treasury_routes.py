@@ -270,7 +270,7 @@ def test_the_account_page_offers_the_choice_and_saves_it(world):
 
     saved = world.client.post(
         "/account/signing-choice",
-        data={"csrf_token": _csrf(page), "choice": f"device:{key.id}"},
+        data={"csrf_token": _csrf(page), "choice": f"device:{key.id}", "password": PASSWORD},
         follow_redirects=True,
     )
     assert "Saved." in saved.get_data(as_text=True)
@@ -301,7 +301,7 @@ def test_a_phone_that_can_no_longer_sign_in_is_refused_as_a_choice(world):
 
     saved = world.client.post(
         "/account/signing-choice",
-        data={"csrf_token": _csrf(page), "choice": f"device:{key.id}"},
+        data={"csrf_token": _csrf(page), "choice": f"device:{key.id}", "password": PASSWORD},
         follow_redirects=True,
     )
     assert "not yours" in saved.get_data(as_text=True) or "sign in" in saved.get_data(as_text=True)
@@ -370,7 +370,9 @@ def test_a_choice_that_is_not_a_number_is_refused_not_a_crash(world):
     """Review L-1."""
     _login(world, world.owner)
     response = world.client.post(
-        "/account/signing-choice", data={"choice": "device:abc"}, follow_redirects=True
+        "/account/signing-choice",
+        data={"choice": "device:abc", "password": PASSWORD},
+        follow_redirects=True,
     )
     assert response.status_code == 200
     assert "not yours" in response.get_data(as_text=True)

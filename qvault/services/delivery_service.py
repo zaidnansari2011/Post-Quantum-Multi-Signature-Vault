@@ -77,6 +77,7 @@ _SECURITY = (
     "password_changed",
     "device_removed",
     "device_pairing_refused",
+    "password_guessed",
     "recovery_waiting",
     "recovery_cancelled",
     "recovery_completed",
@@ -88,6 +89,7 @@ _COPY_FACTS = (
     "by_name",
     # A10: which way a phone was added, and why a pairing by code stopped.
     "via",
+    "count",
     "asked",
     "stage",
     "role",

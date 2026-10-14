@@ -92,6 +92,7 @@
         {{ radio_group('choice', 'The key a treasury registers for you', key_options,
                        selected=('device:' ~ key_choice.key_id) if key_choice.custody == 'device' else 'password') }}
         <p class="q-cap q-gap">A treasury only counts approvals made with the key it holds for you. A change applies the next time a treasury is created or changed; what is on chain stays until its signers approve a change.</p>
+        {{ field('password', 'Password to save this choice', type='password', id='f-choice-password', required=True, attrs={'autocomplete': 'current-password'}) }}
         {{ button('Save', 'secondary', type='submit') }}
       </form>
     </div>

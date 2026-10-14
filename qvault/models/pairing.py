@@ -35,9 +35,12 @@ class DevicePairing(db.Model):
     __tablename__ = "device_pairings"
     __table_args__ = (
         # One live code per person: showing a new one cancels the old in the same transaction.
+        # One live code per web session (build review F7: one session's code never cancels
+        # another's, so a cookie thief can't keep cancelling the owner's code).
         Index(
-            "uq_device_pairing_live_user",
+            "uq_device_pairing_live_session",
             "user_id",
+            "session_tag",
             unique=True,
             sqlite_where=text(_LIVE_SQL),
             postgresql_where=text(_LIVE_SQL),
@@ -76,6 +79,9 @@ class DevicePairing(db.Model):
     finished_at = db.Column(AwareDateTime, nullable=True)
     finish_reason = db.Column(db.String(32), nullable=True)
     device_id = db.Column(db.Integer, db.ForeignKey("devices.id"), nullable=True)
+    #: SHA-256 of the showing web session's id (``qv_sid``): codes are budgeted and superseded per
+    #: session (build review F7).
+    session_tag = db.Column(db.LargeBinary(32), nullable=True)
 
     user = db.relationship("User")
     device = db.relationship("Device")

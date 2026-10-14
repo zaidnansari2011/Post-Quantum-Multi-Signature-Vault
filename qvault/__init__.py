@@ -123,7 +123,14 @@ def create_app(config_name: str | None = None) -> Flask:
         user = db.session.get(User, int(user_id))
         # A session signed in before the person's credential epoch was bumped (a completed
         # recovery, a password change) is signed out here, on its next request (plan R9).
-        if user is not None and not recovery_service.session_is_current(user.id):
+        from .security import password_attempts
+
+        if user is not None and (
+            not recovery_service.session_is_current(user.id)
+            # A10 build review F3, F5: a session from before A10 (no id), one past its 30 days
+            # however often re-signed, or one ended for wrong passwords, is signed out.
+            or password_attempts.session_refusal(user.id) is not None
+        ):
             # A pairing code this session showed is no longer its to confirm (A10 review L3).
             from flask import session
 
@@ -294,6 +301,14 @@ def create_app(config_name: str | None = None) -> Flask:
     # Any proof of the current password cancels an open recovery (plan R9, ⚑5). The cancel is made
     # in the request's own transaction; this makes it again, in one of its own, after a view that
     # rolled back or never committed (a sign-in commits nothing).
+    # Wrong passwords end the session at the tenth and raise the owner's alarm (A10 build review
+    # F3), in a transaction of their own after the view, which rolled back.
+    @app.teardown_request
+    def _settle_wrong_passwords(exc):
+        from .security import password_attempts
+
+        password_attempts.settle(exc)
+
     @app.teardown_request
     def _settle_recovery_password_proofs(exc):
         from .services import recovery_service

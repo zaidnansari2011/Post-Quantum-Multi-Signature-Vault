@@ -292,6 +292,17 @@ def pairing_claim():
     )
 
 
+@bp.post("/pairing/withdraw")
+def pairing_withdraw():
+    """The phone cancelled on its code screen (build review F6): end its pairing, so the web can't
+    add a phone that has deleted its key. Authenticated by the pending token (bearer header)."""
+    from qvault.services import pairing_service
+
+    header = request.headers.get("Authorization", "")
+    token = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    return jsonify(ok=True, withdrawn=pairing_service.withdraw(token))
+
+
 @bp.get("/pairing/status")
 def pairing_status():
     """What the phone polls with the bearer token it chose, until the web confirms. Authenticated

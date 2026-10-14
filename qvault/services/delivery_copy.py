@@ -54,6 +54,7 @@ PUSH_KINDS = (
     "password_changed",
     "device_removed",
     "device_pairing_refused",
+    "password_guessed",
     "recovery_waiting",
     "recovery_cancelled",
     "recovery_completed",
@@ -86,6 +87,7 @@ PUSH_GROUPS = (
             "password_changed",
             "device_removed",
             "device_pairing_refused",
+            "password_guessed",
             *RECOVERY_KINDS,
         ),
     ),
@@ -210,6 +212,13 @@ def push_for(
             "Device removed",
             "A phone was removed from your account. If this wasn't you, change your password and "
             "check your devices.",
+            {"type": "activity", **extra},
+        )
+    if kind == "password_guessed":
+        return copy(
+            "Wrong passwords",
+            "Wrong passwords were typed on your account today. If this wasn't you, change your "
+            "password.",
             {"type": "activity", **extra},
         )
     if kind == "device_pairing_refused":
@@ -503,6 +512,21 @@ def email_for(
                 "else was signed in as you.",
             ),
             "Review your devices",
+            account,
+            "This is a security alert, which can't be switched off.",
+            preferences=False,
+        )
+    if kind == "password_guessed":
+        return EmailCopy(
+            "Wrong passwords were typed on your Q-Vault account",
+            "Wrong passwords on your account",
+            (
+                f"Someone signed in to your Q-Vault account has typed a wrong password "
+                f"{stored.get('count', 'several')} times today.",
+                "If this wasn't you, change your password now: it signs out every other browser. "
+                "A browser is signed out by itself after ten wrong tries.",
+            ),
+            "Open your account",
             account,
             "This is a security alert, which can't be switched off.",
             preferences=False,
