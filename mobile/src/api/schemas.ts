@@ -43,6 +43,39 @@ export const enrolResponse = z.object({
   device: deviceSchema,
 });
 
+// Pairing by a code shown on the web (A10, pairing-design §3.3).
+export const pairingInspectResponse = z.object({
+  ok: z.literal(true),
+  pairing_uuid: z.string(),
+  user: z.object({ id: z.number().int(), email: z.string(), display_name: z.string() }),
+  workspace: z.object({ name: z.string() }).nullable(),
+  server: z.string().nullable(),
+  claim_deadline: z.string(),
+  eligible_algorithms: z.array(z.string()),
+  default_algorithm: z.string(),
+});
+export type PairingInspect = z.infer<typeof pairingInspectResponse>;
+
+export const pairingClaimResponse = z.object({
+  ok: z.literal(true),
+  pairing_uuid: z.string(),
+  confirm_deadline: z.string(),
+  fingerprint: z.string(),
+});
+
+export const pairingWithdrawResponse = z.object({ ok: z.literal(true), withdrawn: z.boolean() });
+
+export const pairingStatusResponse = z.object({
+  ok: z.literal(true),
+  state: z.string(),
+  confirm_deadline: z.string().nullable(),
+  device: deviceSchema.optional(),
+  expires_at: z.string().nullable().optional(),
+  user: z.object({ id: z.number().int(), email: z.string(), display_name: z.string() }).optional(),
+  workspace: z.object({ name: z.string() }).passthrough().nullable().optional(),
+});
+export type PairingStatus = z.infer<typeof pairingStatusResponse>;
+
 export const meResponse = z.object({
   ok: z.literal(true),
   user: z.object({

@@ -1,0 +1,12 @@
+{% extends "public/_layout.html" %}
+{# Where a pairing code leads when a phone's camera app opens it instead of Q-Vault (A10,
+   pairing-design §3.2). The token is in the address's fragment, which the browser never sends:
+   this page does nothing with it and changes nothing. #}
+{% block page_title %}Pair a phone{% endblock %}
+{% block page_lead %}This code is for the Q-Vault app, not the browser.{% endblock %}
+{% block page %}
+<div class="q-prose">
+  <p>On the phone you want to add, open the Q-Vault app. On its sign-in screen, choose <strong>Pair with the web</strong> and scan the code again.</p>
+  <p>The code stops working two minutes after it was shown. If it has, show a new one from Account, Security on the web.</p>
+</div>
+{% endblock %}

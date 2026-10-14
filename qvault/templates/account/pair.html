@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{#- Pair a phone by a code (A10, pairing-design §3.3, §3.5). Only the web session that showed the
+    code reaches this page. While the code waits: the QR, behind "Show code". Once a phone has
+    claimed it: the confirm card, which needs the 6-digit code from that phone and the password.
+    After: what happened. pair.js polls the state every 2 seconds and reloads when it changes. -#}
+{% from "ui/forms.html" import field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/data.html" import hash %}
+{% from "ui/feedback.html" import banner %}
+{% block title %}Pair a phone — Account — Q-Vault{% endblock %}
+{% block crumbs %}{% from "ui/navigation.html" import breadcrumbs %}{{ breadcrumbs([('Account', url_for('account.index')), ('Security', url_for('account.security')), ('Pair a phone', None)]) }}{% endblock %}
+
+{% block content %}
+{%- set st = view.state %}
+<div class="q-acct q-pair" data-pair-poll="{{ url_for('account.pair_page', pairing_uuid=pairing.uuid) }}" data-pair-state="{{ st }}">
+  <h1 class="q-pair__h">Pair a phone</h1>
+  <p class="q-pair__state" aria-live="polite" id="pair-state">
+    {%- if st == 'open' %}{% if view.scanned %}Scanned. Finish on the phone.{% else %}Waiting for a phone to scan the code.{% endif %}
+    {%- elif st == 'claimed' %}A phone scanned the code. Check it below before you add it.
+    {%- elif st == 'confirmed' %}The phone was added.
+    {%- elif st == 'contested' %}Two phones scanned this code, so nothing was added.
+    {%- elif st == 'declined' %}Nothing was added.
+    {%- elif st == 'expired' %}This code has expired. Nothing was added.
+    {%- else %}This code was cancelled. Nothing was added.{% endif -%}
+  </p>
+
+  {%- if st == 'open' %}
+  <section class="q-panel" aria-labelledby="qr-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="qr-t">Scan with the Q-Vault app</h2></div>
+    <div class="q-panel__bd">
+      <ol class="q-pair__steps">
+        <li>On the phone you want to add, open the Q-Vault app.</li>
+        <li>On its sign-in screen, choose <strong>Pair with the web</strong>, then scan this code.</li>
+        <li>The phone shows a 6-digit code. You'll type it here, with your password.</li>
+      </ol>
+      <details class="q-pair__qr" id="pair-qr">
+        <summary class="q-btn q-btn--primary"><span>Show code</span></summary>
+        <div class="q-pair__code" role="img" aria-label="Pairing code for the Q-Vault app">{{ qr_svg }}</div>
+      </details>
+      <p class="q-cap q-gap">Works once, until {{ ui_absolute(pairing.claim_deadline) }} (two minutes). Don't show this code on a shared screen.</p>
+      <form method="post" action="{{ url_for('account.pair_cancel', pairing_uuid=pairing.uuid) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ button('Cancel', 'ghost', type='submit') }}
+      </form>
+    </div>
+  </section>
+
+  {%- elif st == 'claimed' %}
+  <section class="q-panel" aria-labelledby="cf-t" id="pair-confirm" tabindex="-1">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="cf-t">Add this phone?</h2></div>
+    <dl class="q-kv">
+      <div><dt>The phone calls itself</dt><dd>“{{ view.device_name }}”</dd></div>
+      <div><dt>Fingerprint</dt><dd>{{ hash(view.public_key_sha256, 'phone key fingerprint', 16, 0) }}</dd></div>
+      <div><dt>Algorithm</dt><dd>{{ view.alg_id }}</dd></div>
+    </dl>
+    <div class="q-panel__bd">
+      <p>This phone will approve decisions for you in every vault you're in, and can be chosen as your treasury key. Only add it if it's in your hand and it shows the code you type below.</p>
+      <form method="post" action="{{ url_for('account.pair_confirm', pairing_uuid=pairing.uuid) }}" class="q-gap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="public_key_sha256" value="{{ view.public_key_sha256 }}">
+        {{ field('check_code', 'The 6-digit code on the phone', id='f-check-code', required=True, mono=True,
+                 caption='Shown on the phone under “Type this code on the web”.',
+                 attrs={'inputmode': 'numeric', 'autocomplete': 'off', 'maxlength': '7', 'pattern': '[0-9 ]{6,7}', 'spellcheck': 'false'}) }}
+        {{ field('password', 'Your password', type='password', id='f-pair-password', required=True,
+                 caption='Adding a phone needs your password, so a stolen sign-in alone can’t add one.',
+                 attrs={'autocomplete': 'current-password'}) }}
+        {{ button('Add this phone', 'primary', type='submit') }}
+      </form>
+      <div class="q-pair__other q-gap">
+        <form method="post" action="{{ url_for('account.pair_decline', pairing_uuid=pairing.uuid) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {{ button('My phone didn’t scan this', 'secondary', type='submit') }}
+        </form>
+        <form method="post" action="{{ url_for('account.pair_cancel', pairing_uuid=pairing.uuid) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {{ button('Cancel', 'ghost', type='submit') }}
+        </form>
+      </div>
+      <p class="q-cap q-gap">Confirm by {{ ui_absolute(pairing.confirm_deadline) }}.</p>
+    </div>
+  </section>
+
+  {%- else %}
+  {%- if st == 'contested' %}
+  {{ banner('critical', 'Two phones scanned this code, so nothing was added.', "If one of them wasn't yours, someone may have seen your screen. Show a new code somewhere private.") }}
+  {%- elif st == 'declined' %}
+  {{ banner('warning', "A phone you don't have scanned your code.", 'Someone may have seen your screen. Nothing was added, and you have been sent a security notice about it.') }}
+  {%- elif st == 'confirmed' %}
+  {{ banner('success', 'The phone was added.', 'It can approve for you from now on. Every other device of yours has been told.') }}
+  {%- endif %}
+  <div class="q-pair__other">
+    <form method="post" action="{{ url_for('account.pair_start') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ button('Show a new code', 'primary', type='submit') }}
+    </form>
+    {{ button('Back to Security', 'ghost', href=url_for('account.security')) }}
+  </div>
+  {%- endif %}
+</div>
+<script src="{{ url_for('static', filename='pair.js') }}" defer></script>
+{% endblock %}

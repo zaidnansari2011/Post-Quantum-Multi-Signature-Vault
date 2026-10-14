@@ -1195,6 +1195,22 @@ already-proven setting rather than guessed.
      then, until a day has passed, "You can remind again at ..." instead of the button.
    - *Rename.* Account, This phone, "Change": rename the phone, and see the new name on the web's
      device list.
+13. **Pair with the web (A10, on the rework APK with expo-camera).** On the web, Account, Security,
+   "Pair a phone", then "Show code". On a phone that isn't set up, choose "Pair with the web" on the
+   sign-in screen: it asks about the screen lock and the name first, then the camera permission
+   (only from "Scan the code"). Scan the code: the phone says "Pair with your@email?" with the name
+   and workspace below. Continue, confirm with the lock, and the phone shows a 6-digit code. The web
+   now shows "Add this phone?" with the same fingerprint: type the code and your password. The
+   phone opens Approvals; another phone of yours gets a "New device added" push; the web inbox
+   alert can't be marked read for 72 hours.
+   - *Two phones.* Show a new code and scan it with two phones: the second says another phone
+     scanned it first, the web says nothing was added, and a "A phone wasn't added" alert arrives.
+   - *Killed app.* Kill the app on "Type this code on the web" and reopen it: it comes back to the
+     code (it must not scan again). Let it run out of time: it says so and returns to sign in.
+   - *Camera app.* Scan the code with the phone's own camera app: the browser opens a page that says
+     to use the Q-Vault app, and the code still works in the app afterwards.
+   - *Remove on the web.* On Security, "Remove" a phone with your password: it says removed, and the
+     removed phone itself gets a "Device removed" push.
 
 ## 4. Submission and delivery
 

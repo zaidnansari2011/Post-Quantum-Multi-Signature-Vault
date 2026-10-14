@@ -163,6 +163,10 @@ def bump_epoch(user_id: int) -> int:
         row = CredentialEpoch(user_id=user_id, epoch=0)
         db.session.add(row)
     row.epoch = (row.epoch or 0) + 1
+    # A pairing code shown under the old credential ends with it (A10, pairing-design §4.2).
+    from qvault.services import pairing_service
+
+    pairing_service.cancel_live(user_id, "credential_changed")
     return row.epoch
 
 

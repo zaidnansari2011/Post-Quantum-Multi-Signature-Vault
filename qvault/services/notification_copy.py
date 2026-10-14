@@ -220,11 +220,52 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
     account = _path("account.index")
     if kind == "device_enrolled":
         name = _clip(stored.get("device_name") or "A device")
+        at = when(notification.created_at, now=now)
+        if stored.get("via") == "web_qr":
+            return Copy(
+                "A new device can sign for you",
+                f"{name} was added on {at} from the web, by scanning a code and entering your "
+                "password. If this wasn't you, remove it now and change your password: someone "
+                "has your password and was signed in as you.",
+                _path("account.security"),
+            )
         return Copy(
             "A new device can sign for you",
-            f"{name} was enrolled on {when(notification.created_at, now=now)}. If this wasn't "
+            f"{name} was enrolled on {at}. If this wasn't "
             "you, change your password now: someone else knows it.",
             account,
+        )
+    if kind == "device_removed":
+        name = _clip(stored.get("device_name") or "A device")
+        by = stored.get("by_name")
+        how = (
+            " from the web"
+            if by == "web"
+            else " from the phone itself"
+            if by == "itself"
+            else (f" by {_clip(by)}" if by else "")
+        )
+        return Copy(
+            "A device was removed",
+            f"{name} was removed on {when(notification.created_at, now=now)}{how}. Its past "
+            "signatures still count. If this wasn't you, change your password and check your "
+            "devices.",
+            _path("account.security"),
+        )
+    if kind == "password_guessed":
+        return Copy(
+            "Wrong passwords on your account",
+            f"Someone signed in as you has typed a wrong password {stored.get('count', 'several')} "
+            "times today. If this wasn't you, change your password now: it signs out every other "
+            "browser. A browser is signed out by itself after ten wrong tries.",
+            _path("account.security"),
+        )
+    if kind == "device_pairing_refused":
+        return Copy(
+            "A phone wasn't added",
+            f"{_PAIRING_REFUSED.get(str(stored.get('change')), _PAIRING_REFUSED_DEFAULT)} "
+            "Nothing was added.",
+            _path("account.security"),
         )
     if kind == "password_changed":
         return Copy(
@@ -237,6 +278,19 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
         return _recovery(notification, stored, now)
     # A kind this version does not know (written by a newer one): say little, link home.
     return Copy("Notification", "", _path("core.index"))
+
+
+_PAIRING_REFUSED = {
+    "contested": "Two phones scanned your pairing code, so neither was added. If one wasn't "
+    "yours, someone may have seen your screen.",
+    "declined": "You said your phone didn't scan your pairing code. Someone may have seen your "
+    "screen.",
+    "wrong_password": "Someone signed in as you tried to add a phone and didn't know your "
+    "password. Change your password, which signs out every other browser.",
+    "reused_after_confirm": "A code that already added a phone was scanned again. If you didn't "
+    "scan it with another phone of yours, remove the phone it added.",
+}
+_PAIRING_REFUSED_DEFAULT = "A phone was stopped from being added by a code."
 
 
 def wrong_code_count(stored: dict) -> str:
@@ -490,6 +544,9 @@ PREFERENCE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         "Security",
         (
             ("device_enrolled", "A new device can sign for you"),
+            ("device_removed", "A device is removed from your account"),
+            ("device_pairing_refused", "A phone is stopped from being added by a code"),
+            ("password_guessed", "Wrong passwords are typed on your account"),
             ("password_changed", "Your password is changed"),
             ("recovery_waiting", "Someone starts recovering your account, or one you watch over"),
             ("recovery_cancelled", "A recovery is cancelled or stopped"),

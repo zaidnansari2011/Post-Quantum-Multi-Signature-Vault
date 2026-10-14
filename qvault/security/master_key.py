@@ -134,3 +134,18 @@ def kit_confirm_tag(kit_uuid: str, last_group: str) -> bytes:
     showing the whole code, and is never stored."""
     data = kit_uuid.encode("ascii") + b"|" + last_group.encode("ascii")
     return hmac.new(get_master_key(), _KIT_CONFIRM_DS + data, hashlib.sha256).digest()
+
+
+# A pairing code's token (A10, pairing-design §3.2). Derived, so the bound web page can draw the QR
+# again on a reload, while the database holds only its hash and a salt: a reader of the database
+# alone cannot rebuild a code someone is about to scan.
+_PAIR_TOKEN_DS = b"qvault:pair-token:v1|"
+
+
+def pairing_token(pairing_uuid: str, salt: bytes) -> bytes:
+    """The 32 bytes behind a pairing code, for this pairing's uuid and salt."""
+    return hmac.new(
+        get_master_key(),
+        _PAIR_TOKEN_DS + pairing_uuid.encode("ascii") + b"|" + salt,
+        hashlib.sha256,
+    ).digest()

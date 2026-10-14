@@ -64,6 +64,11 @@ interface SessionValue {
    * fingerprint and `finish`, which opens the app: setting up can show "Key created" first (§6.2).
    */
   enrol(args: { email: string; password: string; deviceName: string }): Promise<{ fingerprint: string; finish: () => void }>;
+  /**
+   * Adopt a pairing the web just confirmed (A10): the same clean start as `enrol`. Resolves with
+   * `finish`, which opens the app.
+   */
+  adoptPairing(result: { identity: StoredIdentity; token: string }): Promise<() => void>;
   /** Set up in this run: Approvals says which workspace once, then this clears (§6.2). */
   justEnrolled: boolean;
   clearJustEnrolled(): void;
@@ -199,10 +204,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus('enrolled');
   }, [ended, identity, token]);
 
-  const enrol = useCallback(
-    async (args: { email: string; password: string; deviceName: string }) => {
-      const result = await enrolThisDevice({ custody, ...args });
-      // Nothing seen before this enrolment belongs to it (I-14), on disk or in memory.
+  /** Nothing seen before this enrolment belongs to it (I-14); `finish` opens the app as it. */
+  const adopt = useCallback(
+    async (result: { identity: StoredIdentity; token: string }) => {
       stopSavingSummaries();
       queryClient.clear();
       networkFetches.clear();
@@ -210,7 +214,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       raisedThisRun.clear();
       await wipeSummaries();
       let finished = false;
-      const finish = () => {
+      return () => {
         if (finished) return;
         finished = true;
         setIdentity(result.identity);
@@ -220,9 +224,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setJustEnrolled(true);
         setStatus('enrolled');
       };
+    },
+    [queryClient],
+  );
+
+  const adoptPairing = useCallback((result: { identity: StoredIdentity; token: string }) => adopt(result), [adopt]);
+
+  const enrol = useCallback(
+    async (args: { email: string; password: string; deviceName: string }) => {
+      const result = await enrolThisDevice({ custody, ...args });
+      // Nothing seen before this enrolment belongs to it (I-14), on disk or in memory.
+      const finish = await adopt(result);
       return { fingerprint: result.identity.fingerprint, finish };
     },
-    [custody, queryClient],
+    [custody, adopt],
   );
 
   const toSetUp = useCallback(() => {
@@ -271,6 +286,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ended,
       lastEmail,
       enrol,
+      adoptPairing,
       justEnrolled,
       clearJustEnrolled,
       markUnauthorized,
@@ -288,6 +304,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ended,
       lastEmail,
       enrol,
+      adoptPairing,
       justEnrolled,
       clearJustEnrolled,
       markUnauthorized,
