@@ -247,10 +247,17 @@ class RecoveryPhoneApproval(db.Model):
     expires_at = db.Column(AwareDateTime, nullable=False)
     approved_at = db.Column(AwareDateTime, nullable=True)
     used_at = db.Column(AwareDateTime, nullable=True)
-    #: master_key.phone_code_tag over this approval and its code; NULL until the phone has signed.
+    #: The code's first 4 symbols, in clear: they say which approval a typed code is for, so a
+    #: wrong guess spends tries only on the approval it names (review M1). NULL until signed.
+    code_selector = db.Column(db.String(4), nullable=True, index=True)
+    #: master_key.phone_code_tag over this approval and the code's 8 secret symbols; NULL until the
+    #: phone has signed.
     code_tag = db.Column(db.LargeBinary(32), nullable=True)
     tries = db.Column(db.Integer, nullable=False, default=0)
     signature_sha256 = db.Column(db.String(64), nullable=True)
+    #: The phone's RECOVERY signature itself, kept for audit (review L5): with the signed fields in
+    #: the ledger and the phone's enrolled public key, anyone can check the phone really vouched.
+    signature = db.Column(db.LargeBinary, nullable=True)
 
     request = db.relationship("RecoveryRequest", backref="phone_approvals")
     device = db.relationship("Device")

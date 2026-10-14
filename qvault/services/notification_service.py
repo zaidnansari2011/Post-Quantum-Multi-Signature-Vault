@@ -565,6 +565,37 @@ def _send_recovery(
     return created
 
 
+def _phone_name(request) -> dict:
+    """For a phone reset, the name of the phone that vouched (review H1): the person can tell
+    which phone to remove. In-app words only; emails and pushes name no device (F1)."""
+    if request.route != "phone":
+        return {}
+    from qvault.services import recovery_phone
+
+    name = recovery_phone.vouching_device_name(request)
+    return {"device_name": name} if name else {}
+
+
+def recovery_phone_codes(
+    user, request, *, device_name: str | None, purpose: str, now: datetime | None = None
+) -> None:
+    """Five wrong codes ended an approval a phone of the person's showed (review M1): someone who
+    saw part of that phone's screen kept guessing. Told to the person alone (the approval, and any
+    reset it started, has ended, so nothing is waiting for anyone else to cancel). Never capped."""
+    data = {"change": "phone_codes", "purpose": purpose}
+    if device_name:
+        data["device_name"] = device_name
+    _send_recovery(
+        "recovery_kit_changed",
+        user,
+        {},
+        key=f"recovery_phone_codes:{request.request_uuid}:{purpose}",
+        now=now or _utcnow(),
+        data=data,
+        capped=False,
+    )
+
+
 def _completes(request) -> str | None:
     moment = request.completes_at
     if moment is None:
@@ -596,6 +627,7 @@ def recovery_waiting(
             "completes_at": _completes(request),
             "route": request.route,
             "shortened": bool(shortened),
+            **_phone_name(request),
         },
         capped=False,
     )
@@ -616,6 +648,7 @@ def recovery_cancelled(request, watchers: dict[int, str], *, now: datetime | Non
             "kit_burned": bool(request.kit_burned),
             "failed": request.state == "failed",
             "route": request.route,
+            **_phone_name(request),
         },
     )
 

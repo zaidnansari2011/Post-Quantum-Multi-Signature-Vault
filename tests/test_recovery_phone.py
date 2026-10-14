@@ -105,6 +105,26 @@ def kit_confirm(device, secret, request, *, now):
     ).code
 
 
+ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+#: A code no phone showed, with a selector no approval has (a guess at random).
+NOBODYS = "ZZZZ-ABCD-EFGH"
+
+
+def wrong_secret(code: str) -> str:
+    """The same selector (the approval it names) with a different secret: a guess by someone who
+    saw part of the phone's screen."""
+    plain = code.replace("-", "")
+    other = "".join(ALPHABET[(ALPHABET.index(c) + 1) % 32] for c in plain[4:])
+    return recovery_phone.grouped(plain[:4] + other)
+
+
+def wrong_selector(code: str) -> str:
+    """The right secret under another selector: names no approval."""
+    plain = code.replace("-", "")
+    other = "".join(ALPHABET[(ALPHABET.index(c) + 1) % 32] for c in plain[:4])
+    return recovery_phone.grouped(other + plain[4:])
+
+
 def _refused(fn, *args, **kwargs) -> RecoveryRefused:
     with pytest.raises(RecoveryRefused) as caught:
         fn(*args, **kwargs)
@@ -188,7 +208,7 @@ def test_the_phone_gets_a_code_only_once_its_signature_verifies(team):
     assert approval.request.state == "phone_pending"
     assert _events("recovery_phone_approved") == []
     code, request = phone_reset_from(device, secret, approval)
-    assert len(code) == 8 and request.state == "phone_approved"
+    assert len(code) == 12 and request.state == "phone_approved"
     (logged,) = _events("recovery_phone_approved")
     assert logged["purpose"] == "web_reset" and logged["device_id"] == device.id
     assert _events("recovery_requested")[0]["route"] == "phone"
@@ -302,14 +322,19 @@ def test_unknown_email_no_approval_a_wrong_code_and_an_old_code_get_the_same_ans
     device, secret, _ = pair(team.ada)
     answers = {}
     answers["unknown email"] = _refused(
-        recovery_phone.claim, "nobody@qvault.org", "ABCD-EFGH", NEW, now=NOW
+        recovery_phone.claim, "nobody@qvault.org", NOBODYS, NEW, now=NOW
     )
-    answers["no approval"] = _refused(
-        recovery_phone.claim, team.ada.email, "ABCD-EFGH", NEW, now=NOW
-    )
+    answers["no approval"] = _refused(recovery_phone.claim, team.ada.email, NOBODYS, NEW, now=NOW)
     code, _ = phone_reset(device, secret)
-    wrong = "0000-0000" if code != "00000000" else "1111-1111"
-    answers["wrong code"] = _refused(recovery_phone.claim, team.ada.email, wrong, NEW, now=NOW)
+    answers["wrong code"] = _refused(
+        recovery_phone.claim, team.ada.email, wrong_secret(code), NEW, now=NOW
+    )
+    answers["wrong selector"] = _refused(
+        recovery_phone.claim, team.ada.email, wrong_selector(code), NEW, now=NOW
+    )
+    answers["another person's email"] = _refused(
+        recovery_phone.claim, team.chen.email, code, NEW, now=NOW
+    )
     answers["too late"] = _refused(
         recovery_phone.claim,
         team.ada.email,
@@ -323,24 +348,31 @@ def test_unknown_email_no_approval_a_wrong_code_and_an_old_code_get_the_same_ans
 
 
 def test_a_typo_is_named_without_looking_anything_up(team):
-    for typed, words in (("ABC", "8 characters"), ("ABCD-EFGU", "never uses")):
+    for typed, words in (("ABCD-EFGH", "12 characters"), ("ABCD-EFGH-JKMU", "never uses")):
         with pytest.raises(recovery_phone.PhoneCodeError) as caught:
             recovery_phone.claim(team.ada.email, typed, NEW, now=NOW)
         assert words in str(caught.value)
 
 
-def test_five_wrong_codes_end_the_approval_and_its_request(team):
-    device, secret, _ = pair(team.ada)
+def test_five_wrong_codes_for_one_approval_end_it_and_tell_the_person_naming_the_phone(team):
+    from qvault.services.notification_copy import describe
+
+    device, secret, _ = pair(team.ada, name="Ada's Pixel")
     code, request = phone_reset(device, secret)
-    wrong = "0000-0000" if code != "00000000" else "1111-1111"
     for _ in range(recovery_phone.CODE_TRIES):
-        _refused(recovery_phone.claim, team.ada.email, wrong, NEW, now=NOW)
+        _refused(recovery_phone.claim, team.ada.email, wrong_secret(code), NEW, now=NOW)
     db.session.refresh(request)
     assert request.state == "expired"
     # The right code no longer works: the approval ran out.
     refused = _refused(recovery_phone.claim, team.ada.email, code, NEW, now=NOW)
     assert refused.code == "generic"
     assert _events("recovery_expired")[0]["reason"] == "wrong_codes"
+    # And the person is told (review M1), never anyone else.
+    (alarm,) = Notification.query.filter_by(kind="recovery_kit_changed").all()
+    assert alarm.recipient_id == team.ada.id
+    words = describe(alarm, waits=False, now=NOW)
+    assert "Five wrong codes" in words.body and "\u201cAda's Pixel\u201d" in words.body
+    assert "Security page, with your password" in words.body
 
 
 def test_two_waiting_phone_resets_and_the_typed_code_picks_one(team):
@@ -452,7 +484,9 @@ def test_the_current_password_cancels_a_reset_waiting_or_not_yet_claimed(team):
     db.session.commit()
     db.session.refresh(unclaimed)
     assert unclaimed.state == "cancelled" and unclaimed.cancelled_as == "password"
-    code, _ = phone_reset(device, secret, now=NOW + timedelta(minutes=1))
+    # That phone is now held back for 7 days (review H1); another phone of hers is not.
+    other, other_secret, _ = pair(team.ada, name="Other")
+    code, _ = phone_reset(other, other_secret, now=NOW + timedelta(minutes=1))
     waiting = claim(team.ada, code, now=NOW + timedelta(minutes=1)).request
     recovery_service.password_proven(team.ada, via="sign_in", now=NOW + timedelta(minutes=2))
     db.session.commit()
@@ -568,9 +602,10 @@ def test_a_late_confirmation_never_brings_completion_before_24_hours_from_the_ki
     started = start(team.ada, issued.code, now=NOW)
     code = kit_confirm(device, secret, started.request, now=NOW + timedelta(hours=30))
     recovery_phone.confirm_kit(started.status_token, code, now=NOW + timedelta(hours=30))
+    # Past 24 hours since the kit was used: still 6 more after the confirmation (review M3).
     db.session.refresh(started.request)
     # Already past 24 hours since the kit was used: it may complete now, and no earlier.
-    assert started.request.completes_at == NOW + timedelta(hours=30)
+    assert started.request.completes_at == NOW + timedelta(hours=36)
     # And a second confirmation cannot shorten it further.
     assert (
         _refused(
@@ -580,7 +615,7 @@ def test_a_late_confirmation_never_brings_completion_before_24_hours_from_the_ki
             request_uuid=started.request.request_uuid,
             now=NOW + timedelta(hours=30),
         ).code
-        == "too_late"
+        == "already_short"
     )
 
 
@@ -589,7 +624,7 @@ def test_a_wrong_or_stale_confirmation_code_changes_nothing(team):
     device, secret, _ = pair(team.ada)
     started = start(team.ada, issued.code, now=NOW)
     code = kit_confirm(device, secret, started.request, now=NOW + timedelta(hours=1))
-    wrong = "0000-0000" if code != "00000000" else "1111-1111"
+    wrong = wrong_secret(code)
     for moment, typed in ((NOW + timedelta(hours=1), wrong), (NOW + timedelta(hours=2), code)):
         refused = _refused(recovery_phone.confirm_kit, started.status_token, typed, now=moment)
         assert refused.code == "wrong_code"
@@ -670,17 +705,16 @@ def test_completion_ends_a_reset_that_would_now_lock_a_treasury(team):
 # Cancelling from a phone, and who may
 
 
-def test_a_cancel_from_the_persons_phone_burns_the_kit_and_a_watchers_does_not(team):
+def test_a_cancel_from_a_phone_never_burns_the_kit_whoever_makes_it(team):
+    """Review M2: the bearer token alone reaches a phone's cancel, so it must destroy nothing."""
     issued = issue(team.ada)
     adas, _, _ = pair(team.ada)
     started = start(team.ada, issued.code, now=NOW)
     recovery_phone.cancel_from_phone(adas, started.request.request_uuid, now=NOW)
-    assert started.request.kit_burned is True
-    assert recovery_kit.active_kit(team.ada) is None
-
-    reissued = issue(team.ada)
+    assert started.request.cancelled_as == "self" and started.request.kit_burned is False
+    assert recovery_kit.active_kit(team.ada) is not None
     chens, _, _ = pair(team.chen)
-    again = start(team.ada, reissued.code, now=NOW + timedelta(hours=1)).request
+    again = start(team.ada, issued.code, now=NOW + timedelta(hours=1)).request
     recovery_phone.cancel_from_phone(chens, again.request_uuid, now=NOW + timedelta(hours=1))
     assert again.cancelled_as == "cosigner" and again.kit_burned is False
     assert recovery_kit.active_kit(team.ada) is not None
@@ -734,7 +768,7 @@ def test_the_phone_code_appears_in_no_log_ledger_notice_delivery_or_trace(
     _, secret, token = pair(team.ada, days=10)
     _, code = _api_reset(client, secret, token)
     plain = code.replace("-", "")
-    wrong = "0000-0000" if plain != "00000000" else "1111-1111"
+    wrong = wrong_secret(code)
     form = {"email": team.ada.email, "password": NEW, "confirm": NEW}
     client.post("/recover/phone", data={**form, "code": wrong})
     client.post("/recover/phone", data={**form, "code": code})
@@ -788,7 +822,7 @@ def test_the_api_and_the_web_run_a_phone_reset_from_asking_to_the_wait(app, clie
     assert inputs["user_id"] == team.ada.id and inputs["device_id"] == device.id
     assert inputs["key_id"] == device.key_id and inputs["purpose"] == "web_reset"
     assert inputs["deployment"] == recovery_phone.deployment_id()
-    assert re.fullmatch(r"[0-9A-Z]{4}-[0-9A-Z]{4}", code)
+    assert re.fullmatch(r"[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}", code)
     page = client.get("/recover/phone")
     assert "Start this on your phone, never from a link." in _text(page)
     r = client.post(
@@ -883,7 +917,7 @@ def test_the_status_page_shortens_a_kit_request_with_the_phones_code(app, client
 
 def test_a_code_from_the_phone_is_rate_limited_per_address(app, client, team):
     app.config["RATE_LIMIT_ENABLED"] = True
-    data = {"email": team.ada.email, "code": "ABCD-EFGH", "password": NEW, "confirm": NEW}
+    data = {"email": team.ada.email, "code": NOBODYS, "password": NEW, "confirm": NEW}
     codes = [client.post("/recover/phone", data=data).status_code for _ in range(11)]
     assert codes[:10] == [400] * 10 and codes[10] == 429
 
@@ -926,6 +960,7 @@ def test_an_export_of_a_vote_under_a_recovered_key_prints_the_lineage_line(app, 
     assert line.startswith(
         "ada@qvault.org's vote used a key introduced by recovery (paired phone) on "
     )
+    assert "not proven" not in line  # its entry is in the published log (review L6)
     rendered = _render(report, colour=False)
     assert "note" in rendered and line in rendered
 
@@ -973,8 +1008,8 @@ def test_every_phone_recovery_page_passes_the_accessibility_guard(app, client, t
 
     form = {"email": team.ada.email, "password": NEW, "confirm": NEW}
     pages = {"phone": client.get("/recover/phone")}
-    pages["phone, typo"] = client.post("/recover/phone", data={**form, "code": "ABC"})
-    pages["phone, refused"] = client.post("/recover/phone", data={**form, "code": "ABCD-EFGH"})
+    pages["phone, typo"] = client.post("/recover/phone", data={**form, "code": "ABCD-EFGH"})
+    pages["phone, refused"] = client.post("/recover/phone", data={**form, "code": NOBODYS})
     issued = issue(team.ada)
     client.post("/recover", data={**form, "code": issued.code})
     pages["status, kit with shorten"] = client.get("/recover/status")
@@ -996,3 +1031,257 @@ def test_every_phone_recovery_page_passes_the_accessibility_guard(app, client, t
     home = _text(pages["home, kit and phone banners"])
     assert "Someone is recovering Ada Lovelace’s account" in home
     assert "Someone is recovering Chen Wu’s account" in home
+
+
+# --------------------------------------------------------------------------------------------
+# The adversarial review's attacks (2026-10-14), each now failing. One per reproduction in
+# rework-handoff/reviews/r9-phase2-repro_test_attacks.py; the web "Remove phone" (H1 item 1) is
+# built on another branch (A10).
+
+
+def test_review_m1_a_guesser_who_only_knows_the_email_cannot_wear_down_any_reset(team):
+    device, secret, _ = pair(team.ada)
+    codes = [
+        phone_reset(device, secret, now=NOW + timedelta(seconds=i))[0]
+        for i in range(recovery_phone.LIVE_PER_DEVICE)
+    ]
+    told = Notification.query.count()
+    selectors = {c[:4] for c in codes}
+    guesses = [
+        g for g in ("ZZZZABCDEFGH", "YYYYABCDEFGH", "XXXXABCDEFGH") if g[:4] not in selectors
+    ]
+    for i in range(recovery_phone.CODE_TRIES * 2):
+        _refused(recovery_phone.claim, team.ada.email, guesses[i % len(guesses)], NEW, now=NOW)
+    # Nothing was spent: every approval still has all its tries, and the right code still works.
+    assert {a.tries for a in RecoveryPhoneApproval.query.all()} == {0}
+    assert Notification.query.count() == told
+    started = claim(team.ada, codes[1], now=NOW + timedelta(minutes=2))
+    assert started.request.state == "waiting"
+
+
+def test_review_h1_a_cancelled_phone_cannot_start_another_reset_for_seven_days(team):
+    device, secret, _ = pair(team.ada, name="Ada's Pixel")
+    code, _ = phone_reset(device, secret)
+    request = claim(team.ada, code).request
+    recovery_service.password_proven(team.ada, via="sign_in", now=NOW + timedelta(minutes=5))
+    db.session.commit()
+    db.session.refresh(request)
+    assert request.state == "cancelled"
+    later = NOW + timedelta(minutes=6)
+    state = recovery_phone.phone_reset_state(device, now=later)
+    assert state["allowed"] is False and state["code"] == "cooling_off"
+    assert "Security page, with your password" in state["reason"]
+    assert _refused(recovery_phone.begin, device, "web_reset", now=later).code == "cooling_off"
+    # Another phone of the person's is not held back, and after 7 days this one may again.
+    other, _, _ = pair(team.ada, name="Other")
+    assert recovery_phone.phone_reset_state(other, now=later)["allowed"] is True
+    week = NOW + timedelta(minutes=5) + recovery_phone.RESTART_AFTER_CANCEL
+    assert recovery_phone.phone_reset_state(device, now=week + timedelta(seconds=1))["allowed"]
+
+
+@pytest.mark.parametrize("who", ["self", "manager", "cosigner", "kit"])
+def test_review_h1_every_cancel_but_the_code_typers_starts_the_cool_down(team, who):
+    issued = issue(team.ada)
+    device, secret, _ = pair(team.ada)
+    code, _ = phone_reset(device, secret)
+    request = claim(team.ada, code).request
+    if who == "kit":
+        start(team.ada, issued.code, now=NOW + timedelta(minutes=1))
+    else:
+        viewer = {"self": team.ada, "manager": team.owen, "cosigner": team.chen}[who]
+        recovery_service.cancel_as(viewer, request.request_uuid, now=NOW + timedelta(minutes=1))
+    db.session.refresh(request)
+    assert request.state == "cancelled" and request.cancelled_as == who
+    refused = _refused(recovery_phone.begin, device, "web_reset", now=NOW + timedelta(minutes=2))
+    assert refused.code == "cooling_off"
+
+
+def test_review_h1_cancelling_from_the_status_page_starts_no_cool_down(team):
+    device, secret, _ = pair(team.ada)
+    code, _ = phone_reset(device, secret)
+    started = claim(team.ada, code)
+    recovery_service.cancel_by_status_token(started.status_token, now=NOW + timedelta(minutes=1))
+    assert recovery_phone.phone_reset_state(device, now=NOW + timedelta(minutes=2))["allowed"]
+
+
+def test_review_h1_the_banner_and_the_notices_name_the_phone(app, client, team):
+    from test_recovery_pages import _login
+
+    from qvault.services.notification_copy import describe
+
+    _login(client, team.ada)  # signed in before: signing in after would cancel it
+    device, secret, _ = pair(team.ada, name="Ada's Pixel")
+    code, _ = phone_reset(device, secret)
+    request = claim(team.ada, code).request
+    home = _text(client.get("/"))
+    assert "The phone \u201cAda's Pixel\u201d paired to your account" in home
+    assert "remove it on the Security page, with your password" in home
+    waiting = Notification.query.filter_by(kind="recovery_waiting", recipient_id=team.ada.id).one()
+    assert "\u201cAda's Pixel\u201d" in describe(waiting, waits=False, now=NOW).body
+    recovery_service.password_proven(team.ada, via="sign_in", now=NOW + timedelta(minutes=5))
+    db.session.commit()
+    cancelled = Notification.query.filter_by(
+        kind="recovery_cancelled", recipient_id=team.ada.id
+    ).one()
+    body = describe(cancelled, waits=False, now=NOW).body
+    assert "\u201cAda's Pixel\u201d can't start another for 7 days" in body
+    assert "remove it on the Security page, with your password" in body
+    assert request.request_uuid
+
+
+def test_review_m2_a_token_alone_cannot_burn_the_kit_and_the_kit_wins_back(app, client, team):
+    issued = issue(team.ada)
+    device, _, token = pair(team.ada, days=10)
+    started = start(team.ada, issued.code)
+    uuid = started.request.request_uuid
+    r = client.post(
+        f"/api/v1/recovery/requests/{uuid}/cancel", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 200
+    db.session.expire_all()
+    assert RecoveryRequest.query.filter_by(request_uuid=uuid).one().kit_burned is False
+    assert recovery_kit.active_kit(team.ada) is not None
+    # The thief's phone starts a reset; the owner uses the kit again at once, which supersedes it
+    # and holds that phone back for 7 days.
+    r = client.post("/api/v1/recovery/phone-reset", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    again = start(team.ada, issued.code)
+    assert again.request.state == "waiting"
+
+
+def test_review_m3_a_late_confirmation_still_leaves_six_hours_to_cancel(team):
+    issued = issue(team.ada)
+    device, secret, _ = pair(team.ada)
+    started = start(team.ada, issued.code, now=NOW)
+    late = NOW + timedelta(hours=47)
+    code = kit_confirm(device, secret, started.request, now=late)
+    recovery_phone.confirm_kit(started.status_token, code, now=late)
+    db.session.refresh(started.request)
+    assert started.request.completes_at == late + recovery_phone.KIT_CONFIRM_FLOOR
+    assert not recovery_service.complete(started.request, now=late)
+    assert recovery_service.cancel_as(team.owen, started.request.request_uuid, now=late)
+
+
+def test_review_m3_a_confirmation_that_could_not_shorten_it_is_refused(team):
+    issued = issue(team.ada)
+    device, _, _ = pair(team.ada)
+    started = start(team.ada, issued.code, now=NOW)
+    # Two hours before it is due anyway: confirming now would make it later, so nothing to do.
+    almost = NOW + recovery_service.KIT_WAIT - timedelta(hours=2)
+    refused = _refused(
+        recovery_phone.begin,
+        device,
+        "kit_confirm",
+        request_uuid=started.request.request_uuid,
+        now=almost,
+    )
+    assert refused.code == "already_short"
+
+
+def test_review_l1_two_cosigners_resets_cannot_both_pass_the_treasury_check(team):
+    _treasury(team, threshold=2, others=[team.chen, team.bob])
+    adas, ada_secret, _ = pair(team.ada)
+    chens, chen_secret, _ = pair(team.chen)
+    a_code, _ = phone_reset(adas, ada_secret)
+    c_code, _ = phone_reset(chens, chen_secret)
+    assert claim(team.ada, a_code).request.state == "waiting"
+    # Ada's seat is about to lose its key, so Chen's reset would leave one usable seat of 2.
+    refused = _refused(claim, team.chen, c_code)
+    assert refused.code == "treasury_lockout"
+    assert recovery_phone.lockout(team.chen) is not None
+
+
+def test_review_l2_a_miss_does_the_same_database_work_for_any_email(team):
+    from sqlalchemy import event
+
+    device, secret, _ = pair(team.ada)
+    code, _ = phone_reset(device, secret)
+    email = team.ada.email  # read now: reading it later would itself be a query
+    guess = wrong_selector(code)
+    seen = []
+
+    def count(conn, cursor, statement, params, context, executemany):
+        seen.append(statement.split()[0].upper())
+
+    event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        _refused(recovery_phone.claim, "nobody@qvault.org", guess, NEW, now=NOW)
+        unknown = list(seen)
+        seen.clear()
+        _refused(recovery_phone.claim, email, guess, NEW, now=NOW)
+        known = list(seen)
+    finally:
+        event.remove(db.engine, "before_cursor_execute", count)
+    assert "UPDATE" not in unknown and "UPDATE" not in known
+    assert unknown == known
+
+
+def test_review_l3_a_revocation_cannot_overwrite_a_confirmation_committed_first(team):
+    from sqlalchemy import update
+
+    issued = issue(team.ada)
+    device, secret, _ = pair(team.ada)
+    started = start(team.ada, issued.code, now=NOW)
+    request = started.request
+    kit_confirm(device, secret, request, now=NOW + timedelta(hours=1))
+    approval = RecoveryPhoneApproval.query.one()
+    list(request.phone_approvals)  # the revocation has read the approvals ...
+    db.session.execute(  # ... when the confirmation commits its compare-and-sets
+        update(RecoveryPhoneApproval)
+        .where(RecoveryPhoneApproval.id == approval.id, RecoveryPhoneApproval.state == "approved")
+        .values(state="used", used_at=NOW + timedelta(hours=1))
+        .execution_options(synchronize_session=False)
+    )
+    db.session.execute(
+        update(RecoveryRequest)
+        .where(RecoveryRequest.id == request.id)
+        .values(completes_at=NOW + timedelta(hours=24))
+        .execution_options(synchronize_session=False)
+    )
+    recovery_phone.end_live_approvals(request)
+    device.revoked_at = NOW + timedelta(hours=1)
+    device.key.status = "retired"
+    device.key.can_sign = False
+    db.session.commit()
+    db.session.expire_all()
+    request = db.session.get(RecoveryRequest, request.id)
+    assert RecoveryPhoneApproval.query.one().state == "used"  # not overwritten
+    assert recovery_phone.approving_approval(request) is not None
+    assert recovery_service.complete(request, now=NOW + timedelta(hours=24))
+    db.session.refresh(request)
+    assert request.state == "failed" and "can no longer sign in" in request.end_reason
+
+
+def test_review_l3_revoking_ends_a_confirmation_seen_after_ending_the_waiting_ones(team):
+    issued = issue(team.ada)
+    device, secret, _ = pair(team.ada)
+    started = start(team.ada, issued.code, now=NOW)
+    code = kit_confirm(device, secret, started.request, now=NOW + timedelta(hours=1))
+    recovery_phone.confirm_kit(started.status_token, code, now=NOW + timedelta(hours=1))
+    device_service.revoke(device, actor_id=team.ada.id)
+    db.session.refresh(started.request)
+    assert started.request.state == "cancelled"
+
+
+def test_review_l4_a_phone_expiring_inside_the_wait_cannot_start(team):
+    device, _, _ = pair(team.ada)
+    device.expires_at = NOW + timedelta(hours=2)
+    db.session.commit()
+    state = recovery_phone.phone_reset_state(device, now=NOW)
+    assert state["allowed"] is False and state["code"] == "expires_soon"
+    assert "Pair it again first" in state["reason"]
+    assert _refused(recovery_phone.begin, device, "web_reset", now=NOW).code == "expires_soon"
+    assert RecoveryRequest.query.count() == 0
+
+
+def test_review_l5_the_phones_signature_is_kept_and_logged_for_audit(app, team):
+    device, secret, _ = pair(team.ada)
+    phone_reset(device, secret)
+    approval = RecoveryPhoneApproval.query.one()
+    (logged,) = _events("recovery_phone_approved")
+    signature = base64.b64decode(logged["signature_b64"])
+    assert signature == approval.signature
+    message = recovery_signing_bytes(**logged["signed"])
+    # Anyone with the phone's enrolled public key can check it, with nothing else from Q-Vault.
+    assert _provider().verify(device.key.public_key, message, signature)
+    assert logged["signed"]["device_id"] == device.id

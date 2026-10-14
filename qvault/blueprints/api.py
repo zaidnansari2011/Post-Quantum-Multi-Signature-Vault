@@ -1846,8 +1846,9 @@ def recovery_approve(request_uuid: str):
 @bp.post("/recovery/requests/<request_uuid>/cancel")
 @device_token_required
 def recovery_cancel(request_uuid: str):
-    """Cancel from the phone, after its presence check: the person (which burns a kit it used)
-    or someone watching over them (which does not). Anyone else gets a 404."""
+    """Cancel from the phone, after its presence check: the person, or someone watching over them.
+    It never burns a kit (design §17 item 19: the token alone reaches it). Anyone else gets a
+    404."""
     from qvault.services import recovery_phone
     from qvault.services.recovery_service import RecoveryRefused
 
