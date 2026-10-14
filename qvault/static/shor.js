@@ -372,9 +372,11 @@
       add(row, el('td', 'is-num', fmt(d.sample.y)));
       add(row, el('td', 'is-num', pct(d.sample.p)));
       add(row, el('td', null, d.sample.near_peak ? 'Yes' : 'No'));
-      add(row, el('td', null, a.usable ? 'r = ' + a.order : 'None'));
+      add(row, el('td', null, a.usable ? 'r = ' + a.order : (a.uninformative ? 'None, no information' : 'None')));
       var on = S.shots.filter(function (x) { return x.sample.near_peak; }).length;
-      setText(rsa.item(5), 'shots-note', on + ' of ' + S.shots.length + ' measurements landed on a peak (within 1 of it). The peaks hold ' + pct(S.register.peak_mass) + ' of the probability.');
+      var blank = S.shots.some(function (x) { return x.analysis.uninformative; });
+      setText(rsa.item(5), 'shots-note', on + ' of ' + S.shots.length + ' measurements landed on a peak (within 1 of it). The peaks hold ' + pct(S.register.peak_mass) + ' of the probability.' +
+        (blank ? ' A y with y / Q closest to a whole number (the peak at 0) says nothing about r, so it is not used: the algorithm measures again.' : ''));
       if (a.usable && !S.usable) S.usable = d;
       drawDist();
       return d;
@@ -406,9 +408,7 @@
       add(tr, el('td', 'is-num', String(t.value)));
     });
     var note = '';
-    if (a.uninformative) {
-      note = 'This measurement carried no information (denominator 1). The multiple test found r by trying small exponents directly, which works only because r is small here.';
-    } else if (a.order !== a.chosen) {
+    if (a.order !== a.chosen) {
       note = a.chosen + ' is a proper divisor of the period: the measurement gave s/r with s and r sharing a factor. ' +
         'Testing small multiples finds ' + a.chosen + ' x ' + (a.order / a.chosen) + ' = ' + a.order + ', the first exponent that brings a back to 1. This is the step from Shor\'s paper.';
     } else {
@@ -607,7 +607,7 @@
       if (last && last.real_size) {
         var rs = last.real_size;
         bruteNote.textContent = 'At ML-DSA-65\'s size the secret s1 alone has ' + fmt(rs.coefficients) + ' coefficients in [' + rs.range[0] + ', ' + rs.range[1] +
-          ']: about 2^' + fmt(rs.log2_candidates) + ' candidates. At the rate measured here (' + fmt(rs.rate_per_s) + ' a second) that is about 10^' + fmt(rs.log10_years) +
+          ']: about 2^' + rs.log2_candidates + ' candidates. At the rate measured here (' + fmt(rs.rate_per_s) + ' a second) that is about 10^' + rs.log10_years +
           ' years. Estimated, and beside the point: lattice reduction (next step) is far faster than brute force, and still out of reach.';
       }
     }).catch(function (err) { bruteNote.textContent = err.message; })

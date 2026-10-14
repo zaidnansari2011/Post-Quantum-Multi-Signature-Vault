@@ -243,11 +243,20 @@ def analyse_measurement(a: int, n: int, t: int, y: int) -> dict:
     rows = [{"p": p, "q": q, "below_n": q < n} for p, q in convergents(terms)]
     chosen = shor.phase_denominator(y, t, n)
     best = Fraction(y, size).limit_denominator(n - 1)
-    order, trail = shor.confirm_order_trail(a, n, chosen)
+    # A denominator of 1 (y = 0, or y within 1/(2N) of Q) says nothing about r. find_order would
+    # still run the multiple test on it, and at toy sizes that can succeed by simply trying
+    # exponents 1..64; at 2048 bits it could not. So the walkthrough measures again instead, and
+    # says why, rather than presenting a lucky search as the quantum step working.
+    if chosen == 1:
+        order, trail = None, []
+    else:
+        order, trail = shor.confirm_order_trail(a, n, chosen)
     if order is not None:
         reason = None
-    elif y == 0:
-        reason = "y = 0 carries no information about the period"
+    elif chosen == 1:
+        reason = (
+            "y / Q is closest to a whole number, which says nothing about the period. Measure again"
+        )
     else:
         reason = (
             f"no multiple of {chosen} up to {shor.MAX_ORDER_MULTIPLE} times brings {a} back to 1 "

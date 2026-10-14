@@ -84,6 +84,16 @@ def test_a_failed_base_is_reported_and_replaced_rather_than_skipped(trace):
     assert len(trace["bases"]) == len(reasons) + 1
 
 
+def test_a_measurement_with_no_information_is_not_passed_off_as_the_quantum_step():
+    """y = 0 gives denominator 1. find_order's multiple test would then find a small r by trying
+    exponents 1..64, which says nothing about the quantum step, so the page measures again."""
+    for y in (0, (1 << 16) - 1):
+        a = walk.analyse_measurement(7, 143, 16, y)
+        assert a["chosen"] == 1 and a["uninformative"]
+        assert not a["usable"] and a["order"] is None and a["trail"] == []
+        assert "Measure again" in a["reason"]
+
+
 def test_the_period_picture_returns_to_one_at_multiples_of_the_order():
     pic = walk.period_picture(7, 143)
     assert pic["r"] == 60
