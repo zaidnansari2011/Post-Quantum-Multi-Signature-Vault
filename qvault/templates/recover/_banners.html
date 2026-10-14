@@ -18,10 +18,15 @@
 {% macro recovery_banners(banners) -%}
 {%- for b in banners %}
 {%- set name = b.subject.display_name %}
-{%- set phone = ('The phone “' ~ b.device_name ~ '”') if b.device_name else 'A phone' %}
+{#- The name is its holder's to change, so the day it was paired and the start of its key, as the
+    Security page shows them, say which phone it really is (re-review N3). #}
+{%- set marks = [] %}
+{%- if b.device_paired %}{% set _ = marks.append('paired ' ~ ui_day(b.device_paired)) %}{% endif %}
+{%- if b.device_key %}{% set _ = marks.append('key ' ~ b.device_key[:4] ~ ' ' ~ b.device_key[4:]) %}{% endif %}
+{%- set phone = ('The phone “' ~ b.device_name ~ '”' ~ ((' (' ~ marks|join(', ') ~ ')') if marks else '')) if b.device_name else 'A phone' %}
 {%- if b.request.route == 'phone' and b.viewer_as == 'self' %}
   {%- set title = 'Someone is setting a new web password for your account' %}
-  {%- set body = phone ~ ' paired to your account approved a new web password and a new web signing key. Unless it is cancelled, they take effect on ' ~ ui_absolute(b.completes_at) ~ '. If this isn’t you, cancel it now: that phone then can’t start another for 7 days. Then remove it on the Security page, with your password.' %}
+  {%- set body = phone ~ ' paired to your account approved a new web password and a new web signing key. Unless it is cancelled, they take effect on ' ~ ui_absolute(b.completes_at) ~ '. If this isn’t you, cancel it now: that phone then can’t start another for 7 days. Then remove it on the Security page, with your password: the Security page shows each phone’s pairing day and key.' %}
 {%- elif b.request.route == 'phone' %}
   {%- set title = 'Someone is recovering ' ~ name ~ '’s account' %}
   {%- set body = phone ~ ' paired to ' ~ name ~ '’s account approved a new web password. Unless it is cancelled, on ' ~ ui_absolute(b.completes_at) ~ ' the account gets a new web signing key. If ' ~ name ~ ' didn’t start it, cancel it.' %}

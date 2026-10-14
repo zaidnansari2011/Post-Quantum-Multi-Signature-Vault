@@ -41,6 +41,7 @@ from qvault.services.recovery_service import RecoveryRefused
 from qvault.services.signing import recovery_signing_bytes
 
 DAY = timedelta(days=1)
+MIN = timedelta(minutes=1)
 
 
 @pytest.fixture()
@@ -713,8 +714,10 @@ def test_a_cancel_from_a_phone_never_burns_the_kit_whoever_makes_it(team):
     recovery_phone.cancel_from_phone(adas, started.request.request_uuid, now=NOW)
     assert started.request.cancelled_as == "self" and started.request.kit_burned is False
     assert recovery_kit.active_kit(team.ada) is not None
+    # (That kit now waits 7 days before it may start again: design §17 item 27.) A new kit:
+    fresh = issue(team.ada)
     chens, _, _ = pair(team.chen)
-    again = start(team.ada, issued.code, now=NOW + timedelta(hours=1)).request
+    again = start(team.ada, fresh.code, now=NOW + timedelta(hours=1)).request
     recovery_phone.cancel_from_phone(chens, again.request_uuid, now=NOW + timedelta(hours=1))
     assert again.cancelled_as == "cosigner" and again.kit_burned is False
     assert recovery_kit.active_kit(team.ada) is not None
@@ -1079,21 +1082,35 @@ def test_review_h1_a_cancelled_phone_cannot_start_another_reset_for_seven_days(t
     assert recovery_phone.phone_reset_state(device, now=week + timedelta(seconds=1))["allowed"]
 
 
-@pytest.mark.parametrize("who", ["self", "manager", "cosigner", "kit"])
-def test_review_h1_every_cancel_but_the_code_typers_starts_the_cool_down(team, who):
+@pytest.mark.parametrize(
+    ("who", "held"),
+    [
+        ("self", timedelta(days=7)),  # Cancel on Home: the person rejecting it
+        ("manager", timedelta(hours=24)),  # a doubt, not a rejection (re-review N2)
+        ("cosigner", timedelta(hours=24)),
+        ("kit", None),  # a kit superseding it says nothing against the phone (re-review N1)
+    ],
+)
+def test_review_h1_how_long_each_kind_of_cancel_holds_the_phone(team, who, held):
     issued = issue(team.ada)
     device, secret, _ = pair(team.ada)
     code, _ = phone_reset(device, secret)
     request = claim(team.ada, code).request
+    at = NOW + timedelta(minutes=1)
     if who == "kit":
-        start(team.ada, issued.code, now=NOW + timedelta(minutes=1))
+        start(team.ada, issued.code, now=at)
     else:
         viewer = {"self": team.ada, "manager": team.owen, "cosigner": team.chen}[who]
-        recovery_service.cancel_as(viewer, request.request_uuid, now=NOW + timedelta(minutes=1))
+        recovery_service.cancel_as(viewer, request.request_uuid, now=at)
     db.session.refresh(request)
     assert request.state == "cancelled" and request.cancelled_as == who
-    refused = _refused(recovery_phone.begin, device, "web_reset", now=NOW + timedelta(minutes=2))
-    assert refused.code == "cooling_off"
+    if held is None:
+        assert recovery_phone.cooling_off(device, at + timedelta(minutes=1)) is None
+        return
+    assert recovery_phone.cooling_off(device, at + held - timedelta(seconds=1)).code == (
+        "cooling_off"
+    )
+    assert recovery_phone.cooling_off(device, at + held + timedelta(seconds=1)) is None
 
 
 def test_review_h1_cancelling_from_the_status_page_starts_no_cool_down(team):
@@ -1114,7 +1131,9 @@ def test_review_h1_the_banner_and_the_notices_name_the_phone(app, client, team):
     code, _ = phone_reset(device, secret)
     request = claim(team.ada, code).request
     home = _text(client.get("/"))
-    assert "The phone \u201cAda's Pixel\u201d paired to your account" in home
+    key = device.key.public_fingerprint()
+    named = "The phone \u201cAda's Pixel\u201d (paired "
+    assert named in home and f"key {key[:4]} {key[4:8]}) paired to your account" in home
     assert "remove it on the Security page, with your password" in home
     waiting = Notification.query.filter_by(kind="recovery_waiting", recipient_id=team.ada.id).one()
     assert "\u201cAda's Pixel\u201d" in describe(waiting, waits=False, now=NOW).body
@@ -1124,12 +1143,12 @@ def test_review_h1_the_banner_and_the_notices_name_the_phone(app, client, team):
         kind="recovery_cancelled", recipient_id=team.ada.id
     ).one()
     body = describe(cancelled, waits=False, now=NOW).body
-    assert "\u201cAda's Pixel\u201d can't start another for 7 days" in body
+    assert f"key {key[:4]} {key[4:8]}) can't start another for 7 days" in body
     assert "remove it on the Security page, with your password" in body
     assert request.request_uuid
 
 
-def test_review_m2_a_token_alone_cannot_burn_the_kit_and_the_kit_wins_back(app, client, team):
+def test_review_m2_a_token_alone_cannot_burn_the_kit(app, client, team):
     issued = issue(team.ada)
     device, _, token = pair(team.ada, days=10)
     started = start(team.ada, issued.code)
@@ -1141,12 +1160,6 @@ def test_review_m2_a_token_alone_cannot_burn_the_kit_and_the_kit_wins_back(app, 
     db.session.expire_all()
     assert RecoveryRequest.query.filter_by(request_uuid=uuid).one().kit_burned is False
     assert recovery_kit.active_kit(team.ada) is not None
-    # The thief's phone starts a reset; the owner uses the kit again at once, which supersedes it
-    # and holds that phone back for 7 days.
-    r = client.post("/api/v1/recovery/phone-reset", headers={"Authorization": f"Bearer {token}"})
-    assert r.status_code == 200
-    again = start(team.ada, issued.code)
-    assert again.request.state == "waiting"
 
 
 def test_review_m3_a_late_confirmation_still_leaves_six_hours_to_cancel(team):
@@ -1285,3 +1298,140 @@ def test_review_l5_the_phones_signature_is_kept_and_logged_for_audit(app, team):
     # Anyone with the phone's enrolled public key can check it, with nothing else from Q-Vault.
     assert _provider().verify(device.key.public_key, message, signature)
     assert logged["signed"]["device_id"] == device.id
+
+
+# --------------------------------------------------------------------------------------------
+# The re-review of those fixes (2026-10-14), each attack now failing: one per reproduction in
+# rework-handoff/reviews/r9-phase2-fixes-repro_test.py, section B.
+
+
+def test_rereview_n1_a_kit_thief_cannot_keep_a_phone_only_owner_out(team):
+    """The owner forgot the password and has only the phone; a thief has the kit."""
+    from qvault.services.notification_copy import describe
+
+    issued = issue(team.ada)
+    phone, secret, _ = pair(team.ada, name="Ada's Pixel")
+    code, _ = phone_reset(phone, secret)
+    mine = claim(team.ada, code).request
+    # The thief uses the kit, which supersedes the owner's reset ...
+    thief = start(team.ada, issued.code, now=NOW + 10 * MIN, password="thief-pass-123")
+    db.session.refresh(mine)
+    assert mine.cancelled_as == "kit"
+    # ... but that holds the owner's phone back for nothing (not evidence against the phone),
+    assert recovery_phone.cooling_off(phone, NOW + 11 * MIN) is None
+    # and the owner is not told someone else has their phone.
+    note = Notification.query.filter_by(kind="recovery_cancelled", recipient_id=team.ada.id).one()
+    body = describe(note, waits=False, now=NOW).body
+    assert "someone has that phone" not in body and "someone else has it" in body
+    # The owner cancels the kit request from the phone: the kit can't restart for 7 days ...
+    recovery_phone.cancel_from_phone(phone, thief.request.request_uuid, now=NOW + 12 * MIN)
+    refused = _refused(start, team.ada, issued.code, now=NOW + 13 * MIN, password="thief-pass-123")
+    assert refused.code == "too_soon"
+    # ... while the owner's own reset runs its 24 hours and completes.
+    code, _ = phone_reset(phone, secret, now=NOW + 14 * MIN)
+    again = claim(team.ada, code, now=NOW + 14 * MIN).request
+    assert recovery_service.complete(again, now=again.completes_at)
+    db.session.refresh(again)
+    assert again.state == "completed"
+    # Seven days on, the kit (which a completed reset revoked anyway) could have started again.
+    later = NOW + 12 * MIN + recovery_phone.RESTART_AFTER_CANCEL + MIN
+    assert recovery_service._restart_allowed_at(issued.kit, later) is None
+
+
+def test_rereview_n2_a_watcher_or_another_phones_token_holds_the_phone_only_a_day(app, team):
+    phone, secret, _ = pair(team.ada, name="Main")
+    other, _, _ = pair(team.ada, name="Old tablet")
+    code, _ = phone_reset(phone, secret)
+    first = claim(team.ada, code).request
+    recovery_service.cancel_as(team.owen, first.request_uuid, now=NOW + MIN)
+    assert recovery_phone.cooling_off(phone, NOW + 2 * MIN) is not None
+    day = NOW + MIN + timedelta(hours=24, seconds=1)
+    assert recovery_phone.cooling_off(phone, day) is None
+    code, _ = phone_reset(phone, secret, now=day)
+    second = claim(team.ada, code, now=day).request
+    recovery_phone.cancel_from_phone(other, second.request_uuid, now=day + MIN)
+    db.session.refresh(second)
+    assert second.cancelled_as == "self"
+    assert second.cancel_reason == recovery_phone.FROM_OTHER_PHONE
+    assert recovery_phone.cooling_off(phone, day + MIN + timedelta(hours=24, seconds=1)) is None
+
+
+def test_rereview_n2_the_vouching_phones_own_cancel_holds_it_seven_days(team):
+    phone, secret, _ = pair(team.ada)
+    code, _ = phone_reset(phone, secret)
+    request = claim(team.ada, code).request
+    recovery_phone.cancel_from_phone(phone, request.request_uuid, now=NOW + MIN)
+    db.session.refresh(request)
+    assert request.cancel_reason == recovery_phone.FROM_VOUCHING_PHONE
+    assert recovery_phone.cooling_off(phone, NOW + timedelta(days=6)) is not None
+
+
+def test_rereview_n3_removing_another_phone_still_holds_the_vouching_one(app, client, team):
+    stolen, s_secret, s_token = pair(team.ada, name="Ada's iPhone")
+    real, _, _ = pair(team.ada, name="Ada's Pixel")
+    client.post(
+        f"/api/v1/devices/{stolen.id}/name",
+        json={"name": "Ada's Pixel"},
+        headers={"Authorization": f"Bearer {s_token}"},
+    )
+    code, _ = phone_reset(stolen, s_secret)
+    request = claim(team.ada, code).request
+    # The two phones share a name, but not a key, and the banner and API say which key.
+    (seen,) = recovery_phone.requests_for(real, now=NOW)
+    assert seen["device_key"] == stolen.key.public_fingerprint()[:8]
+    assert seen["device_key"] != real.key.public_fingerprint()[:8]
+    assert seen["device_paired"] == stolen.created_at.date().isoformat()
+    # Tricked into removing the good phone: the thief's reset ends AND its phone is held back.
+    device_service.revoke(real, actor_id=team.ada.id)
+    db.session.refresh(request)
+    assert request.state == "cancelled" and request.cancelled_as == "device_revoked"
+    assert recovery_phone.phone_reset_state(stolen, now=NOW + MIN)["code"] == "cooling_off"
+
+
+def test_rereview_n4_a_code_made_before_a_cancel_cannot_start_a_reset_after_it(team):
+    phone, secret, _ = pair(team.ada)
+    c1, _ = phone_reset(phone, secret, now=NOW)
+    c2, second = phone_reset(phone, secret, now=NOW + timedelta(seconds=1))
+    r1 = claim(team.ada, c1, now=NOW + timedelta(seconds=2)).request
+    recovery_service.cancel_as(team.ada, r1.request_uuid, now=NOW + MIN)
+    refused = _refused(claim, team.ada, c2, now=NOW + 3 * MIN)
+    assert refused.code == "cooling_off"
+    db.session.refresh(second)
+    # Ended as a refusal, not a cancel: it starts no further cool-down of its own.
+    assert second.state == "rejected"
+
+
+def test_a_failing_cancel_notice_never_fails_the_removal_and_is_sent_later(team, monkeypatch):
+    """A10's rule for device removals: the removal and the recovery's cancel commit even if the
+    cancel's notice cannot be written; the notice is owed and the scheduler sends it."""
+    from qvault.services import notification_service
+
+    device, secret, _ = pair(team.ada)
+    code, _ = phone_reset(device, secret)
+    request = claim(team.ada, code).request
+    real = notification_service.recovery_cancelled
+
+    def broken(*args, **kwargs):
+        db.session.execute(db.text("INSERT INTO no_such_table VALUES (1)"))  # a real DB error
+
+    monkeypatch.setattr(notification_service, "recovery_cancelled", broken)
+    device_service.revoke(device, actor_id=team.ada.id)
+    db.session.expire_all()
+    request = db.session.get(RecoveryRequest, request.id)
+    assert db.session.get(type(device), device.id).revoked_at is not None
+    assert request.state == "cancelled" and request.cancelled_as == "device_revoked"
+    assert request.end_reason == recovery_service.NOTICE_OWED
+    assert _events("recovery_cancelled")  # the ledger entry committed with the cancel
+    assert Notification.query.filter_by(kind="recovery_cancelled").count() == 0
+    # The scheduler sends it once the notices can be written again, and clears the mark.
+    monkeypatch.setattr(notification_service, "recovery_cancelled", real)
+    recovery_service.tick(now=NOW + MIN)
+    db.session.refresh(request)
+    assert request.end_reason is None
+    told = {n.recipient_id for n in Notification.query.filter_by(kind="recovery_cancelled")}
+    assert team.ada.id in told and team.owen.id in told
+    recovery_service.tick(now=NOW + 2 * MIN)
+    assert (
+        Notification.query.filter_by(kind="recovery_cancelled", recipient_id=team.ada.id).count()
+        == 1
+    )

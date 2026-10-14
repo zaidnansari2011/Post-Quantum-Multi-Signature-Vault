@@ -101,13 +101,40 @@ CODE_SYMBOLS = SELECTOR_SYMBOLS + SECRET_SYMBOLS
 #: when 24 hours have already passed since the kit was used (review M3): the "now sooner" notice
 #: must have time to reach the person, who may have been talked into approving.
 KIT_CONFIRM_FLOOR = timedelta(hours=6)
-#: After a phone's web reset is cancelled by the person, a proof of their password, someone
-#: watching over them or their Recovery Kit, that phone cannot start another for this long
-#: (review H1), so a stolen phone cannot restart the moment each one is cancelled.
+#: After the person rejects a phone's web reset (a proof of their password, Cancel on Home, or the
+#: vouching phone itself), that phone cannot start another for this long (review H1), so a stolen
+#: phone cannot restart the moment each one is cancelled. The same 7 days hold a Recovery Kit back
+#: after the person's phone cancels a request it started (re-review N1, design §17 item 27).
 RESTART_AFTER_CANCEL = timedelta(days=7)
-#: Who cancelling a phone's reset starts that phone's cool-down: everyone but whoever typed its code
-#: (the status page), a removed device (it can start nothing anyway) and Q-Vault itself.
-COOLDOWN_ROLES = ("self", "password", "manager", "cosigner", "kit")
+#: A doubt, not a rejection (re-review N2): a manager's or co-signer's cancel, or a cancel by the
+#: bearer token of another of the person's phones, holds the vouching phone this long. Enough that a
+#: stolen phone cannot restart at once after a watcher cancels it; short enough that a hostile
+#: colleague cannot keep the person's own phone shut with one click a week.
+RESTART_AFTER_DOUBT = timedelta(hours=24)
+#: Why a phone's cancel is marked: by the phone that vouched, by another phone of the person's, or
+#: (a kit request, which no phone vouched for) from a phone.
+FROM_VOUCHING_PHONE = "cancelled_by_vouching_phone"
+FROM_OTHER_PHONE = "cancelled_from_other_phone"
+FROM_PHONE = "cancelled_from_phone"
+
+
+def cool_down_for(cancelled_as: str | None, cancel_reason: str | None) -> timedelta | None:
+    """How long a cancelled phone reset holds the phone that vouched for it, or None (design §17
+    items 17 and 27). Never for a cancel by whoever typed its code (the status page): that is the
+    reset's own starter. Never for a Recovery Kit superseding it: that is not evidence against the
+    phone (re-review N1). The full 7 days for a proof of the password, Cancel on Home, the
+    vouching phone's own cancel, and a device removal or token expiry (re-review N3: harmless when
+    the phone itself was removed, and it stops a thief who tricked the person into removing their
+    other phone from walking away free)."""
+    if cancelled_as in ("password", "device_revoked", "system"):
+        return RESTART_AFTER_CANCEL
+    if cancelled_as == "self":
+        return RESTART_AFTER_DOUBT if cancel_reason == FROM_OTHER_PHONE else RESTART_AFTER_CANCEL
+    if cancelled_as in ("manager", "cosigner"):
+        return RESTART_AFTER_DOUBT
+    return None
+
+
 #: The new web key a phone reset makes: pinned, never the switchable active algorithm (§7), because
 #: treasuries verify ML-DSA-65 only.
 NEW_KEY_ALG = "ML-DSA-65"
@@ -232,23 +259,30 @@ def device_problem(device: Device | None, now: datetime) -> RecoveryRefused | No
 
 
 def cooling_off(device: Device, now: datetime) -> RecoveryRefused | None:
-    """Why ``device`` may not start a web reset yet: one it vouched for was cancelled by the
-    person, a proof of their password, a watcher or their kit less than RESTART_AFTER_CANCEL ago
-    (review H1). Kit confirmations are not held back: they hand over nothing new."""
-    last = db.session.scalar(
-        select(func.max(RecoveryRequest.finished_at))
+    """Why ``device`` may not start a web reset yet: one it vouched for was cancelled, and that
+    cancel holds it (``cool_down_for``: 7 days for the person's rejection, 24 hours for a doubt)
+    for a while yet (review H1, re-review N1 to N3). Kit confirmations are not held back: they hand
+    over nothing new."""
+    rows = db.session.execute(
+        select(
+            RecoveryRequest.finished_at, RecoveryRequest.cancelled_as, RecoveryRequest.cancel_reason
+        )
         .join(RecoveryPhoneApproval, RecoveryPhoneApproval.request_id == RecoveryRequest.id)
         .where(
             RecoveryPhoneApproval.device_id == device.id,
             RecoveryRequest.route == "phone",
             RecoveryRequest.state == "cancelled",
-            RecoveryRequest.cancelled_as.in_(COOLDOWN_ROLES),
             RecoveryRequest.finished_at > now - RESTART_AFTER_CANCEL,
         )
-    )
-    if last is None:
+    ).all()
+    holds = [
+        _aware(finished) + length
+        for finished, role, reason in rows
+        if (length := cool_down_for(role, reason)) is not None
+    ]
+    again = max(holds, default=None)
+    if again is None or again <= now:
         return None
-    again = _aware(last) + RESTART_AFTER_CANCEL
     return RecoveryRefused(
         "cooling_off",
         "A web password reset from this phone was cancelled, so it can't start another until "
@@ -276,14 +310,34 @@ def kit_confirm_target(request: RecoveryRequest, now: datetime) -> datetime:
     return max(_aware(request.window_starts_at) + KIT_WITH_PHONE_WAIT, now + KIT_CONFIRM_FLOOR)
 
 
-def vouching_device_name(request: RecoveryRequest) -> str | None:
-    """The name of the phone that vouched for ``request`` (or, for a reset not yet claimed, asked
-    to), for banners and notices (review H1): the person can tell which phone to remove."""
+def vouching_device(request: RecoveryRequest) -> Device | None:
+    """The phone that vouched for ``request`` (or, for a reset not yet claimed, asked to)."""
     approvals = sorted(request.phone_approvals, key=lambda a: (a.state != "used", -a.id))
     for approval in approvals:
         if approval.device is not None:
-            return approval.device.name
+            return approval.device
     return None
+
+
+def vouching_device_name(request: RecoveryRequest) -> str | None:
+    """The name of the phone that vouched for ``request``, for banners and notices (review H1)."""
+    device = vouching_device(request)
+    return device.name if device is not None else None
+
+
+def device_facts(device: Device | None) -> dict:
+    """What names a phone beyond its name, which its holder can change at will (re-review N3):
+    the day it was paired and the start of its key's fingerprint, as the Security page and the
+    phone's Other devices list show them."""
+    if device is None:
+        return {}
+    facts = {"device_name": device.name}
+    paired = _aware(device.created_at)
+    if paired is not None:
+        facts["device_paired"] = paired.date().isoformat()
+    if device.key is not None:
+        facts["device_key"] = device.key.public_fingerprint()[:8]
+    return facts
 
 
 # --------------------------------------------------------------------------------------------
@@ -820,7 +874,9 @@ def claim(
     # The code matched: from here on the answers can be specific.
     request = match.request
     device = match.device
-    problem = device_problem(device, now)
+    # A code made before this phone's cool-down began must not start a reset after it (re-review
+    # N4). Ending it here is a refusal ('rejected'), never a cancel, so it starts no cool-down.
+    problem = device_problem(device, now) or cooling_off(device, now)
     if problem is not None:
         _end_preclaim(request, match, reason=problem.message)
         raise RecoveryRefused(
@@ -1138,6 +1194,9 @@ def on_device_revoked(device: Device, *, actor_id: int | None, now: datetime | N
                 reason="device_revoked",
                 burn=False,
                 now=now,
+                # A removal never fails because of a notice (A10's rule): best-effort, and owed
+                # to the scheduler if it cannot be written.
+                notice_best_effort=True,
             ):
                 ended += 1
     return ended
@@ -1339,6 +1398,13 @@ def request_json(request: RecoveryRequest, viewer: User, *, role: str, now: date
         "confirmed_by_phone": approval is not None and request.route == "kit",
         # The phone that vouched for a reset, by its name, so the person knows which to remove.
         "device_name": vouching_device_name(request) if request.route == "phone" else None,
+        # And what names it beyond a name its holder can change (re-review N3).
+        "device_paired": device_facts(vouching_device(request)).get("device_paired")
+        if request.route == "phone"
+        else None,
+        "device_key": device_facts(vouching_device(request)).get("device_key")
+        if request.route == "phone"
+        else None,
         "can_cancel": True,
         "can_confirm": (
             role == "self"
@@ -1397,8 +1463,15 @@ def cancel_from_phone(
         role = recovery_service.watchers(request.user_id).get(viewer.id)
         if role is None or request.state in PHONE_PRECLAIM_STATES:
             raise LookupError(request_uuid)
+    # Which phone cancelled, for the cool-down (re-review N2) and the kit's restart wait (N1).
+    if request.route != "phone":
+        reason = FROM_PHONE
+    elif any(a.device_id == device.id for a in request.phone_approvals):
+        reason = FROM_VOUCHING_PHONE
+    else:
+        reason = FROM_OTHER_PHONE
     if not recovery_service.cancel(
-        request, by=viewer, as_role=role, reason="cancelled_from_phone", burn=False, now=now
+        request, by=viewer, as_role=role, reason=reason, burn=False, now=now
     ):
         raise RecoveryRefused("too_late", "This recovery can't be cancelled: it has already ended.")
     db.session.commit()
