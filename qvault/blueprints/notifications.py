@@ -138,8 +138,11 @@ def open_notification(nid: int):
 @bp.post("/notifications/<int:nid>/read")
 @login_required
 def read(nid: int):
-    if notification_service.mark_read(current_user, nid) is None:
+    item = notification_service.mark_read(current_user, nid)
+    if item is None:
         abort(404)
+    if item["unread"] and item["locked"]:
+        flash("This notice stays unread until the recovery it’s about ends.", "info")
     return _back(url_for("notifications.inbox"))
 
 
@@ -168,6 +171,15 @@ def read_all():
     section = request.form.get("section")
     section = section if section in ("needs_you", "updates") else None
     notification_service.mark_all_read(current_user, section=section)
+    # Say what stayed unread and why, rather than leave it looking broken (staging QA F4).
+    kept = notification_service.kept_unread(current_user, section=section)
+    notes = []
+    if kept["security"]:
+        notes.append("Security notices stay unread until you open or mark each one.")
+    if kept["locked"]:
+        notes.append("A notice about a recovery still open stays unread until the recovery ends.")
+    if notes:
+        flash(" ".join(notes), "info")
     return _back(url_for("notifications.inbox", section=section or "needs_you"))
 
 

@@ -92,7 +92,7 @@
     <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery Kit</h2>
       {%- if ks.problem is none %}{{ badge('Saved', 'success') }}
       {%- elif ks.problem == 'unconfirmed' %}{{ badge('Not confirmed', 'warning') }}
-      {%- elif ks.problem == 'stale' %}{{ badge('Stopped working', 'critical') }}
+      {%- elif ks.problem in ('stale', 'burned') %}{{ badge('Stopped working', 'critical') }}
       {%- else %}{{ badge('None', 'warning') }}{% endif %}</div>
     {%- if ks.kit and ks.problem != 'stale' %}
     <dl class="q-kv">
@@ -104,6 +104,8 @@
     <div class="q-panel__bd">
       {%- if ks.problem == 'stale' %}
       <p>Your kit stopped working: Q-Vault can no longer check it, so it can’t be used. Make a new one.</p>
+      {%- elif ks.problem == 'burned' %}
+      <p>Your kit stopped working: you cancelled a recovery that used it, so someone else may have it. Make a new one, and keep it somewhere only you can reach.</p>
       {%- elif ks.kit %}
       <p>If you forget your password, type this kit’s code at the address printed on it to choose a new one and keep your signing key{% if ks.treasury_signer %}, including your place on a treasury{% endif %}. It takes 72 hours, and you, your workspace’s admins and your fellow approvers are told and can cancel it.</p>
       {%- else %}
