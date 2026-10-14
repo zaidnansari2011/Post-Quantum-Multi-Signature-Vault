@@ -173,7 +173,7 @@ def test_banners_say_whose_account_which_way_and_when(results):
     assert own_phone["title"] == "Someone is setting a new web password for your account"
     assert "tomorrow at 12:00" in own_phone["detail"] and "Recovery Kit" not in own_phone["detail"]
     assert "Security page on the web, with your password" in own_phone["detail"]
-    assert "can’t start another for 7 days" in own_phone["detail"]
+    assert "can’t start another for at least a day" in own_phone["detail"]
     own_kit = by_name["own kit request"]
     assert own_kit["title"] == "Someone is recovering your account"
     # A phone's cancel never stops the kit (review M2): the words say how to stop it instead.

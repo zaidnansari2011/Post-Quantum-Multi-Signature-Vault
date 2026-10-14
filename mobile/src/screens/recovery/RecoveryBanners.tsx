@@ -30,6 +30,8 @@ function facts(r: RecoveryRequest) {
     completes_at: r.completes_at,
     confirmed_by_phone: r.confirmed_by_phone,
     device_name: r.device_name ?? null,
+    device_paired: r.device_paired ?? null,
+    device_key: r.device_key ?? null,
   };
 }
 
