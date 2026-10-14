@@ -25,13 +25,13 @@ export function vaultsToRaiseIn<T extends { role: string | null }>(vaults: reado
 
 /**
  * Whether the queue offers "Raise a decision" at all: not when every vault this person is on only
- * lets them view it.
+ * lets them view it, and not when they are in no vault yet. The form would dead-end at "Choose a
+ * vault" with nothing to choose (handset audit, 14 Oct); Approvals offers "Create a vault" instead.
  *
- * Offered while the list is still loading, so the button does not flicker in, and when there are
- * no vaults yet, because the picker then says to create one -- which is the way forward.
+ * Offered while the list is still loading, so the button does not flicker in.
  */
 export function offersRaise(vaults: readonly { role: string | null }[] | undefined): boolean {
-  if (vaults === undefined || vaults.length === 0) return true;
+  if (vaults === undefined) return true;
   return vaults.some((v) => mayPropose(v.role));
 }
 

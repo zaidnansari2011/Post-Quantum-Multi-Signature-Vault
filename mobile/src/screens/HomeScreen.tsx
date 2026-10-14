@@ -48,7 +48,7 @@ import { useApprovals, useTreasuryChanges } from '../approvals.ts';
 import { parseInstant } from '../time.ts';
 import { andList } from '../logic/words.ts';
 import { changeSummary, type ChangeEntry } from '../logic/treasuryChange.ts';
-import { permissions } from '../logic/workspace.ts';
+import { noVaults, permissions } from '../logic/workspace.ts';
 import { OfflineNotice, useColdStart, useRefreshOnFocus } from '../freshness.tsx';
 import { keys, meQuery, vaultsQuery } from '../queries.ts';
 import { approvalsHeadline, elsewhereSections } from '../logic/queue.ts';
@@ -60,6 +60,7 @@ export default function HomeScreen({
   onOpen,
   onOpenChange,
   onRaise,
+  onCreateVault,
   onOpenWaiting,
   onOpenTreasuryApprovals,
   onOpenNotifications,
@@ -68,6 +69,8 @@ export default function HomeScreen({
   /** A treasury change waiting on you: its own route (§6.15). */
   onOpenChange: (vaultId: number, changeId: number) => void;
   onRaise: () => void;
+  /** With no vault yet, the empty queue's one button: New vault (§6.17). */
+  onCreateVault: () => void;
   onOpenWaiting: () => void;
   /** Account's treasury approvals: the one-time move to this phone's key (§6.18). */
   onOpenTreasuryApprovals: () => void;
@@ -138,6 +141,16 @@ export default function HomeScreen({
     dueToday: q.dueToday,
   });
   const raise = canRaise && !removed ? { icon: 'plus' as const, label: 'New decision', onPress: onRaise } : undefined;
+  // Nothing at all below the headline: say what this page is for, and with no vault yet, the way in.
+  const nothingHere =
+    showList && !removed && queue.length === 0 && sections.length === 0 && changes.web.length === 0 && q.waiting.length === 0;
+  const noVault = nothingHere && vaults.data !== undefined && vaults.data.vaults.length === 0;
+  const empty = noVaults(permissions(me.data?.workspace));
+  const emptyLine = noVault
+    ? `${empty.title} ${empty.detail}`
+    : nothingHere
+      ? 'When a decision needs your signature, it shows here.'
+      : null;
   const refreshing = (q.awaiting.isRefetching || q.all.isRefetching) && confirmed;
   const refresh = () => {
     void q.awaiting.refetch();
@@ -209,9 +222,14 @@ export default function HomeScreen({
           <RootHeader
             onLayout={header.onHeaderLayout}
             title={headline.title}
-            supporting={headline.supporting ?? undefined}
+            supporting={headline.supporting ?? emptyLine ?? undefined}
             action={raise ? { ...raise, filled: true } : undefined}
           />
+          {noVault && empty.create && me.data ? (
+            <View style={s.create}>
+              <Button label="Create a vault" onPress={onCreateVault} />
+            </View>
+          ) : null}
           {welcome ? (
             <Text role="body" tone="muted" style={s.welcome}>
               {welcome}
@@ -312,6 +330,7 @@ export default function HomeScreen({
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
   retry: { alignItems: 'flex-start' },
+  create: { alignItems: 'flex-start', marginBottom: t.space[16] },
   after: { marginTop: t.space[24] },
   welcome: { marginTop: -t.space[8], marginBottom: t.space[16] },
   offLine: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[8], marginTop: t.space[24] },

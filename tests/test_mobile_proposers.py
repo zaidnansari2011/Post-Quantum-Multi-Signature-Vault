@@ -109,7 +109,8 @@ def test_home_offers_raising_unless_every_vault_only_lets_the_person_view(app, c
                 "only_views": only_views,
                 "signs": signs,
                 "mixed": mixed,
-                # No vaults yet: still offered, and the picker says to create one first.
+                # No vaults yet: not offered (the form would dead-end at "Choose a vault");
+                # Approvals offers "Create a vault" instead.
                 "no_vaults": [],
                 # Not loaded yet: offered, as before, rather than flickering in.
                 "not_loaded": None,
@@ -121,7 +122,7 @@ def test_home_offers_raising_unless_every_vault_only_lets_the_person_view(app, c
         "only_views": False,
         "signs": True,
         "mixed": True,
-        "no_vaults": True,
+        "no_vaults": False,
         "not_loaded": True,
     }
     assert results["picker"]["only_views"] == []

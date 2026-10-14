@@ -1024,6 +1024,18 @@ def test_waiting_on_others_includes_what_you_raised_and_names_who_can_act(result
 # -- §6.13 to §6.18 ----------------------------------------------------------------------------
 
 
+def test_no_vaults_yet_is_said_to_each_role_in_its_own_terms(results):
+    empty = results["workspace"]["noVaults"]
+    # The owner or an admin IS the admin: never told to wait for one.
+    assert empty["admin"]["create"] is True and "admin" not in empty["admin"]["detail"].lower()
+    assert empty["member"]["create"] is True and "create your own" in empty["member"]["detail"]
+    assert empty["auditor"] == {
+        "title": "You're not in any vaults yet.",
+        "detail": "Your admin adds you to one on the web.",
+        "create": False,
+    }
+
+
 def test_an_auditor_creates_and_raises_nothing(results):
     perms = results["workspace"]["permissions"]
     assert perms["auditor"]["canCreateVault"] is False and perms["auditor"]["auditor"] is True
