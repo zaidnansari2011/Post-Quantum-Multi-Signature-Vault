@@ -145,6 +145,35 @@ def enrol(
 
     _check_challenge(user, challenge)
 
+    provider, public_key, pop_signature = check_new_device_key(
+        alg_id=alg_id, public_key_b64=public_key_b64, pop_signature_b64=pop_signature_b64
+    )
+
+    # Proof of possession. Nothing is written before this passes.
+    message = device_enrolment_bytes(
+        user_id=user.id, alg_id=alg_id, public_key_b64=public_key_b64, challenge=challenge
+    )
+    if not provider.verify(public_key, message, pop_signature):
+        raise DeviceError(
+            "pop_invalid", "The device did not prove possession of that key's private half."
+        )
+
+    device, raw_token = _create_device(user, name=name, alg_id=alg_id, public_key=public_key)
+    # A security notification, which cannot be switched off: a device that can sign for this
+    # person now exists, and if they did not enrol it, someone else has their password.
+    notification_service.device_enrolled(device)
+    if commit:
+        db.session.commit()
+    return device, raw_token
+
+
+def check_new_device_key(
+    *, alg_id: str, public_key_b64: str, pop_signature_b64: str
+) -> tuple[object, bytes, bytes]:
+    """The checks every way of adding a device runs on its key, before its proof (password
+    enrolment, and pairing by code, A10): an eligible algorithm, a key and a signature of the
+    algorithm's sizes, and a key not already registered. Returns ``(provider, public_key,
+    pop_signature)``. One function, so the two routes cannot drift apart."""
     if alg_id not in key_service.DEVICE_ELIGIBLE_SIG_ALGS:
         raise DeviceError(
             "algorithm_not_device_eligible",
@@ -177,27 +206,38 @@ def enrol(
 
     if Key.query.filter_by(public_key=public_key).first() is not None:
         raise DeviceError("public_key_already_enrolled", "That public key is already registered.")
+    return provider, public_key, pop_signature
 
-    # Proof of possession. Nothing is written before this passes.
-    message = device_enrolment_bytes(
-        user_id=user.id, alg_id=alg_id, public_key_b64=public_key_b64, challenge=challenge
-    )
-    if not provider.verify(public_key, message, pop_signature):
-        raise DeviceError(
-            "pop_invalid", "The device did not prove possession of that key's private half."
-        )
 
+def _create_device(
+    user: User,
+    *,
+    name: str,
+    alg_id: str,
+    public_key: bytes,
+    token_hash: bytes | None = None,
+    extra: dict | None = None,
+    now: datetime | None = None,
+) -> tuple[Device, str | None]:
+    """Write the ``Key``, the ``Device`` and the ``device_enrolled`` ledger entry, after a proof
+    of possession has been verified. With ``token_hash`` (pairing by code, A10) the device holds a
+    token it chose and only the digest is known here, so no plaintext is returned."""
     key = key_service.enrol_device_key(user, alg_id=alg_id, public_key=public_key, commit=False)
     db.session.flush()  # assign key.id before the Device row and the ledger payload reference it
 
-    raw_token = secrets.token_urlsafe(_TOKEN_BYTES)
+    raw_token = None
+    if token_hash is None:
+        raw_token = secrets.token_urlsafe(_TOKEN_BYTES)
+        token_hash = token_digest(raw_token)
     max_age = int(current_app.config.get("DEVICE_TOKEN_MAX_AGE_DAYS", 90))
+    moment = now or _now()
     device = Device(
         owner_id=user.id,
         key_id=key.id,
         name=name,
-        token_hash=token_digest(raw_token),
-        expires_at=_now() + timedelta(days=max_age),
+        token_hash=token_hash,
+        created_at=moment,
+        expires_at=moment + timedelta(days=max_age),
     )
     db.session.add(device)
     db.session.flush()
@@ -215,6 +255,7 @@ def enrol(
             # the public key a vote was verified under was recorded as device-enrolled — rather
             # than taking this server's word for it at read time.
             "public_key_sha256": sha256_hex(public_key),
+            **(extra or {}),
         },
         actor=f"user:{user.id}",
         actor_id=user.id,
@@ -222,11 +263,6 @@ def enrol(
         ref_id=str(device.id),
         commit=False,
     )
-    # A security notification, which cannot be switched off: a device that can sign for this
-    # person now exists, and if they did not enrol it, someone else has their password.
-    notification_service.device_enrolled(device)
-    if commit:
-        db.session.commit()
     return device, raw_token
 
 
@@ -265,20 +301,43 @@ def touch(device: Device, *, commit: bool = True) -> None:
 # -- revocation ---------------------------------------------------------------------------------
 
 
-def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) -> Device:
+def revoke(
+    device: Device,
+    *,
+    actor_id: int | None = None,
+    by_device: Device | None = None,
+    from_web: bool = False,
+    commit: bool = True,
+) -> Device:
     """Revoke a device: its token stops working and its key can no longer sign.
 
     Past approvals are untouched and keep counting. Revoking a lost phone must not rewrite the
     record of consent its owner genuinely gave — retire-but-retain, ADR-0007.
+
+    Whatever the door, the owner is told (A10 review M5): a ``device_removed`` security notice,
+    with its email and pushes, in this transaction, written before the removed phone's push token
+    is cleared, so the removed phone hears of it too (F5). ``by_device`` is the device that did it
+    (the API), ``from_web`` the web's Remove; the copy names which.
     """
     if device.revoked_at is not None:
         raise DeviceError("already_revoked", "That device is already revoked.")
+
+    if from_web:
+        by_label, by_ledger = "web", "web"
+    elif by_device is not None:
+        by_label = "itself" if by_device.id == device.id else by_device.name
+        by_ledger = f"device:{by_device.id}"
+    else:
+        by_label, by_ledger = "", None
+    # Told first, while this phone still counts as live, so its push is queued too (F5 then keeps
+    # it addressed after the token is cleared below).
+    notification_service.device_removed(device, by=by_label)
 
     device.revoked_at = _now()
     key = device.key
     if key is not None:
         key_service.revoke_device_key(key, commit=False)
-    # A removed phone's lock screen hears nothing more (plan R8).
+    # A removed phone's lock screen hears nothing more (plan R8), except what is already queued.
     from qvault.services import delivery_service
 
     delivery_service.revoke_push_token(device, "device_removed", commit=False)
@@ -291,6 +350,7 @@ def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) 
             "key_id": device.key_id,
             "public_key_sha256": sha256_hex(key.public_key) if key is not None else None,
             "revoked_by": actor_id,
+            **({"by": by_ledger} if by_ledger else {}),
         },
         actor=f"user:{actor_id}" if actor_id else "SYSTEM",
         actor_id=actor_id,
@@ -301,6 +361,24 @@ def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) 
     if commit:
         db.session.commit()
     return device
+
+
+def remove_with_password(user: User, device: Device | None, password: str) -> Device:
+    """The web's Remove (A10, ⚑4): the owner's password, then the revoke.
+
+    The password goes through ``key_service.prove_password``, so it is limited per session and
+    per account before any Argon2id work, and is a proof that cancels an open recovery (A10 review
+    H1). Raises ``LookupError`` for a device that is not the user's, ``DeviceError`` for one
+    already removed, and ``KeyUnlockError`` / ``PasswordLockedError`` for the password."""
+    if device is None or device.owner_id != user.id:
+        raise LookupError("no such device")
+    if device.revoked_at is not None:
+        raise DeviceError("already_revoked", "That device was already removed.")
+    from qvault.services import recovery_service
+
+    recovery_service.complete_if_due(user)
+    key_service.prove_password(user, password, via="remove_device")
+    return revoke(device, actor_id=user.id, from_web=True)
 
 
 def devices_for(user: User) -> list[Device]:

@@ -239,14 +239,15 @@ def test_removing_the_owners_phone_right_after_enrolling_still_sends_it_the_aler
     assert r.status_code == 200
     delivery_service.run()
 
-    (alert,) = _pushes_to(TOKEN_B)
-    assert alert.title == "New device added"
+    # Both security alerts reach the removed phone: the new device, and (A10 review M5) its own
+    # removal, which names who did it.
+    assert sorted(m.title for m in _pushes_to(TOKEN_B)) == ["Device removed", "New device added"]
     row = Delivery.query.filter_by(channel="push", kind="device_enrolled", status="sent").one()
     assert row.push_to is None  # the removed phone's token is not kept once sent
     # Anything else for that phone is not sent.
     _raise(team)
     delivery_service.run()
-    assert len(_pushes_to(TOKEN_B)) == 1
+    assert len(_pushes_to(TOKEN_B)) == 2
 
 
 # --------------------------------------------------------------------------------------------

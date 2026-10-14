@@ -102,6 +102,19 @@ def create_app(config_name: str | None = None) -> Flask:
 
     rate_limit.init_app(app)
 
+    # No page of the app is ever framed, so none may be (A10 review L1): a framed Security page
+    # with a password manager that fills on click is a clickjack on the forms that remove a phone,
+    # add one, or choose the treasury key.
+    @app.after_request
+    def _refuse_framing(response):
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        policy = response.headers.get("Content-Security-Policy")
+        if policy is None:
+            response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        elif "frame-ancestors" not in policy:
+            response.headers["Content-Security-Policy"] = f"{policy}; frame-ancestors 'none'"
+        return response
+
     @login_manager.user_loader
     def load_user(user_id: str):
         from .models.user import User
@@ -111,6 +124,10 @@ def create_app(config_name: str | None = None) -> Flask:
         # A session signed in before the person's credential epoch was bumped (a completed
         # recovery, a password change) is signed out here, on its next request (plan R9).
         if user is not None and not recovery_service.session_is_current(user.id):
+            # A pairing code this session showed is no longer its to confirm (A10 review L3).
+            from flask import session
+
+            session.pop("pairing_binding", None)
             return None
         return user
 
@@ -124,6 +141,10 @@ def create_app(config_name: str | None = None) -> Flask:
         # The epoch read before the password was checked, so a recovery that completed during
         # the check signs this session out on its next request (plan R9, design §16 item 23).
         recovery_service.stamp_session(user.id, recovery_service.sign_in_epoch(user.id))
+        # A fresh id for the per-session wrong-password count (A10 review M6).
+        from .security import password_attempts
+
+        password_attempts.stamp_session()
         # A kit reminder hidden "for now" comes back at every sign-in (plan R9).
         session.pop(recovery_service.KIT_REMINDER_HIDDEN, None)
 

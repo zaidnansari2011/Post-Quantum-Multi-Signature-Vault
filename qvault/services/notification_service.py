@@ -73,6 +73,8 @@ UPDATE_KINDS = (
     "vault_rule_changed",
     "device_enrolled",
     "password_changed",
+    "device_removed",
+    "device_pairing_refused",
 ) + RECOVERY_KINDS
 #: At most this many repeat cancel notices about one account in a day (design §4.5, §16 item 9);
 #: the Home banner carries the rest. A recovery starting and a recovery taking effect are always
@@ -80,7 +82,16 @@ UPDATE_KINDS = (
 #: wrong-codes alarm capped: it comes at most three times a day, at 10, 100 and 1,000 (item 26).
 RECOVERY_NOTICES_PER_DAY = 5
 #: Delivered whatever a preference says (S12): the account holder must hear about these.
-SECURITY_KINDS = ("device_enrolled", "password_changed", *RECOVERY_KINDS)
+SECURITY_KINDS = (
+    "device_enrolled",
+    "password_changed",
+    "device_removed",
+    "device_pairing_refused",
+    *RECOVERY_KINDS,
+)
+#: How long a "new device" notice cannot be marked read, by any session or device (A10, ⚑8):
+#: someone who added a phone from a signed-in browser must not be able to unpin the alert.
+DEVICE_NOTICE_LOCK = timedelta(hours=72)
 KINDS = NEEDS_YOU_KINDS + UPDATE_KINDS
 SECTIONS = ("needs_you", "updates", "archived")
 
@@ -175,9 +186,12 @@ def _send(
     proposal_id: int | None = None,
     actor_id: int | None = None,
     data: dict | None = None,
+    strict: bool = False,
 ) -> list[Notification]:
     """One notification of ``kind`` to each recipient who wants it and has not had this one, and
-    the email and pushes for it to whoever wants those (R8; queued here, sent by the scheduler)."""
+    the email and pushes for it to whoever wants those (R8; queued here, sent by the scheduler).
+    ``strict``: the email and push rows are written in the caller's transaction, and a failure to
+    write them fails the event (A10: an added or removed phone must not go untold)."""
     recipients = set(recipients)
     stored = json.dumps(data, sort_keys=True) if data else None
     wanting = _wanting(recipients, kind)
@@ -217,6 +231,7 @@ def _send(
         actor_id=actor_id,
         data=stored,
         notifications={row.recipient_id: row.id for row in created},
+        strict=strict,
     )
     return created
 
@@ -470,17 +485,73 @@ def treasury_reconfigured(reconfiguration, *, now: datetime | None = None) -> No
         )
 
 
-def device_enrolled(device, *, now: datetime | None = None) -> None:
-    """A security event: a device that can sign for its owner now exists."""
-    with _best_effort("device enrolled"):
+def device_enrolled(
+    device, *, now: datetime | None = None, via: str | None = None, strict: bool = False
+) -> None:
+    """A security event: a device that can sign for its owner now exists.
+
+    ``via="web_qr"`` (A10) says it was added from the web by a code, and is ``strict``: written,
+    with its email and push, in the confirm's transaction, so the phone is never added untold. The
+    password route stays best-effort, as it was."""
+    data = {"device_name": device.name}
+    if via:
+        data["via"] = via
+
+    def send():
         _send(
             "device_enrolled",
             [device.owner_id],
             key=f"device_enrolled:{device.id}",
             now=now or _utcnow(),
             actor_id=device.owner_id,
-            data={"device_name": device.name},
+            data=data,
+            strict=strict,
         )
+
+    if strict:
+        db.session.flush()
+        send()
+        return
+    with _best_effort("device enrolled"):
+        send()
+
+
+def device_removed(device, *, by: str, now: datetime | None = None) -> None:
+    """A security event (A10 review M5): a device can no longer sign for its owner. Written in the
+    revoke's own transaction, with its email and pushes, whatever door removed it. ``by`` is who
+    did it, as the copy says it: ``"web"``, or the name of the device that removed it."""
+    db.session.flush()
+    _send(
+        "device_removed",
+        [device.owner_id],
+        key=f"device_removed:{device.id}",
+        now=now or _utcnow(),
+        actor_id=device.owner_id,
+        data={"device_name": device.name, "by_name": by},
+        strict=True,
+    )
+
+
+#: Why a pairing by code stopped, for the notice (A10, ⚑5 and ⚑9). A wrong code alone is not told.
+PAIRING_REFUSED_TOLD = ("contested", "declined", "wrong_password", "reused_after_confirm")
+
+
+def device_pairing_refused(pairing, *, reason: str, now: datetime | None = None) -> None:
+    """A security event (A10): a phone was stopped from being added by a code shown on the web.
+    Strict, like the other device notices. Never carries the phone's chosen name (it may be the
+    attacker's text)."""
+    if reason not in PAIRING_REFUSED_TOLD:
+        return
+    db.session.flush()
+    _send(
+        "device_pairing_refused",
+        [pairing.user_id],
+        key=f"device_pairing_refused:{pairing.uuid}:{reason}",
+        now=now or _utcnow(),
+        actor_id=pairing.user_id,
+        data={"change": reason},
+        strict=True,
+    )
 
 
 def password_changed(user, *, entry, now: datetime | None = None) -> None:
@@ -1146,10 +1217,20 @@ def _section_of(notification, *, waits: bool, voted: bool) -> str | None:
     return "updates"
 
 
+def device_notice_locked(notification, now: datetime) -> bool:
+    """A "new device" notice younger than ``DEVICE_NOTICE_LOCK``: nobody may mark it read (⚑8)."""
+    if notification.kind != "device_enrolled" or notification.created_at is None:
+        return False
+    created = notification.created_at
+    created = created if created.tzinfo else created.replace(tzinfo=UTC)
+    return now < created + DEVICE_NOTICE_LOCK
+
+
 def _view(notification, *, waits: bool, now: datetime, locked: bool = False) -> dict:
     """What a client shows. Facts and a link to a page: nothing in it can approve or reject.
     ``locked``: it speaks of a recovery still open, so it can be neither archived nor read."""
     actionable = waits and notification.kind in NEEDS_YOU_KINDS
+    locked = locked or device_notice_locked(notification, now)
     proposal = notification.proposal
     voted = proposal is not None and any(
         s.signer_id == notification.recipient_id for s in proposal.signatures
@@ -1212,6 +1293,10 @@ def mark_read(
     if notification is None:
         return None
     if by_device_id is not None and _device_of(notification) == by_device_id:
+        return view(notification, now=now)
+    # Nobody clears a "new device" notice for its first 72 hours (A10, ⚑8): the person who added a
+    # phone from a stolen session holds a web session too.
+    if device_notice_locked(notification, now):
         return view(notification, now=now)
     if notification.read_at is None and not is_locked(notification.id):
         notification.read_at = now
