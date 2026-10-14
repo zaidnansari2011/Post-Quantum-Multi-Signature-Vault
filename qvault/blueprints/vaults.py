@@ -822,7 +822,8 @@ def proposal_detail(vid: int, pid: str):
             evidence.how_it_ends(
                 rejections=rejections,
                 required_m=proposal.required_m,
-                required_n=proposal.required_n,
+                # Rejections count against the people its rule lets vote (staging QA F2).
+                required_n=eligibility.deciding_n(proposal),
                 could_reject=[word(uid) for uid in outlook.still],
                 withdrawer=withdrawer,
                 expires=expires,
@@ -844,7 +845,7 @@ def proposal_detail(vid: int, pid: str):
         reject_lines=evidence.reject_consequence(
             rejections=rejections,
             required_m=proposal.required_m,
-            required_n=proposal.required_n,
+            required_n=eligibility.deciding_n(proposal),
             approvals=approvals,
             # The other people who can still vote: the counts are theirs, not the signed N's.
             others=[word(uid) for uid in outlook.still if uid != current_user.id],

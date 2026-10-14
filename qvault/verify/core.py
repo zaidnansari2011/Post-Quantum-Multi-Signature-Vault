@@ -197,6 +197,37 @@ def _integral_numbers(value: Any) -> Any:
     return value
 
 
+def _requester_excluded(log: Any, uuid: str, authorised: set, verified: list) -> bool:
+    """Whether the log says this decision was rejected with the person who raised it left out of
+    its voters (separation of duties, staging QA 2026-10-14 F2), and the bundle bears that out.
+
+    The signed rule is M of N, and N counts the person who raised it. Where they couldn't vote, a
+    rejection is counted against the other N - 1: the server records that in its
+    ``proposal_rejected`` entry as ``requester_excluded``. Read from the log, so it is inside the
+    hash chain, the Merkle tree and the witness's co-signature (steps 5 to 9 check those entries),
+    and only believed when the raiser (the actor who opened it) is in the signer set and cast no
+    vote here. It can only ever close a decision as Rejected, never approve one."""
+    entries = log.get("entries") if isinstance(log, dict) else None
+    if not isinstance(entries, list):
+        return False
+    flagged = False
+    creator = None
+    for raw in entries:
+        if not isinstance(raw, dict) or raw.get("ref_id") != uuid:
+            continue
+        if raw.get("event_type") == "proposal_created":
+            creator = raw.get("actor_id")
+        elif raw.get("event_type") == "proposal_rejected":
+            try:
+                payload = json.loads(raw.get("payload_json") or "")
+            except (TypeError, ValueError):
+                continue
+            flagged = isinstance(payload, dict) and payload.get("requester_excluded") is True
+    if not flagged or creator is None or creator not in authorised:
+        return False
+    return all(s.get("signer_id") != creator for s in verified)
+
+
 def _need(obj: Any, key: str, what: str) -> Any:
     if not isinstance(obj, dict) or key not in obj:
         raise _Malformed(f"{what} is missing {key!r}")
@@ -433,10 +464,17 @@ def _verify_into(
         met = len(approvals) >= required_m
         detail = f"{len(approvals)} of {required_m} required approvals"
     elif status == "rejected":
-        met = len(rejections) > decision["required_n"] - required_m
+        excluded = _requester_excluded(log, decision["proposal_uuid"], authorised, verified)
+        voters = decision["required_n"] - (1 if excluded else 0)
+        met = len(rejections) > voters - required_m
         detail = (
             f"{_count(len(rejections), 'rejection')} {'makes' if len(rejections) == 1 else 'make'} "
             f"{_count(required_m, 'approval')} unreachable"
+            + (
+                f" from the {voters} who could vote: the person who raised it couldn't approve it"
+                if excluded
+                else ""
+            )
         )
     else:
         met = len(approvals) < required_m

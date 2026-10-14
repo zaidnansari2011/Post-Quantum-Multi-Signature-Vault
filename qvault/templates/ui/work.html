@@ -91,9 +91,10 @@
 {%- else -%}
   <span class="q-wl__note q-wl__note--keep">{{ ui_status(row.status_key, row.status_n)[0] }}</span>
   {%- if row.my_vote == 'reject' -%}
-  {%- set needed = p.required_n - p.required_m + 1 -%}
-  {#- Of the people who can vote on it: under S15 whoever raised it is in its signed N but can't. -#}
-  {%- set voters = row.voters if row.voters is defined else p.required_n -%}
+  {#- Of the people who can vote on it: under S15 whoever raised it is in its signed N but can't,
+      and rejections are counted against the rest (``eligibility.deciding_n``, staging QA F2). -#}
+  {%- set voters = row.deciding_n if row.deciding_n is defined else p.required_n -%}
+  {%- set needed = voters - p.required_m + 1 -%}
   {%- if needed > voters -%}
   <span class="q-wl__note">You rejected. Rejections alone can’t end it.</span>
   {%- else -%}
