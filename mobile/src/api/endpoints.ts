@@ -12,6 +12,7 @@ import {
   pairingClaimResponse,
   pairingInspectResponse,
   pairingStatusResponse,
+  pairingWithdrawResponse,
   meResponse,
   notificationResponse,
   notificationsResponse,
@@ -98,6 +99,16 @@ export function pairingClaim(args: {
       pending_token_digest: args.pendingTokenDigest,
       pop_signature_b64: args.popSignatureB64,
     },
+  });
+}
+
+/** The phone cancelled: end its pairing on the server, so the web can't add it (build review F6). */
+export function pairingWithdraw(pendingToken: string) {
+  return request(pairingWithdrawResponse, {
+    method: 'POST',
+    path: '/api/v1/pairing/withdraw',
+    token: pendingToken,
+    quietUnauthorized: true,
   });
 }
 

@@ -234,26 +234,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (args: { email: string; password: string; deviceName: string }) => {
       const result = await enrolThisDevice({ custody, ...args });
       // Nothing seen before this enrolment belongs to it (I-14), on disk or in memory.
-      stopSavingSummaries();
-      queryClient.clear();
-      networkFetches.clear();
-      signedContent.clear();
-      raisedThisRun.clear();
-      await wipeSummaries();
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        setIdentity(result.identity);
-        setToken(result.token);
-        setLastEmail(result.identity.email);
-        setEnded(null);
-        setJustEnrolled(true);
-        setStatus('enrolled');
-      };
+      const finish = await adopt(result);
       return { fingerprint: result.identity.fingerprint, finish };
     },
-    [custody, queryClient],
+    [custody, adopt],
   );
 
   const toSetUp = useCallback(() => {

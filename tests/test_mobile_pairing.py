@@ -228,3 +228,47 @@ def test_a_code_for_another_server_is_never_sent_anywhere(app, http_server, tmp_
     assert out["read"] == {"ok": False, "reason": "other_server"}
     db.session.refresh(pairing)
     assert pairing.scanned_at is None and pairing.state == "open"
+
+
+def test_a_lost_claim_answer_is_retried_identically_and_never_contests(app, http_server, tmp_path):
+    """Build review F2: the claim lands but its answer is lost. The phone keeps its key and sends
+    the byte-identical claim again; the server answers it the same way, and no false alarm."""
+    from qvault.models.ledger import LedgerEntry
+    from qvault.models.notification import Notification
+
+    ada = auth_service.register_user("ada@e.com", "Ada", PW)
+    client, pairing, url = _show_code(app, http_server)
+    out = _node(
+        E2E,
+        {
+            "phase": "claim",
+            "base_url": http_server,
+            "scanned": url,
+            "drop_first_claim_response": True,
+        },
+        tmp_path,
+    )
+    assert out["ok"], out
+    assert out["unanswered"] is True and out["kept_seed"] is True
+    assert out["claim_bodies"] == 2 and out["bodies_identical"] is True
+    db.session.refresh(pairing)
+    assert pairing.state == "claimed"
+    assert LedgerEntry.query.filter_by(event_type="device_pairing_refused").count() == 0
+    assert Notification.query.filter_by(kind="device_pairing_refused").count() == 0
+    _confirm(client, pairing, out["pending"]["checkCode"])
+    assert Device.query.filter_by(owner_id=ada.id).count() == 1
+
+
+def test_cancel_on_the_phone_withdraws_its_pairing(app, http_server, tmp_path):
+    """Build review F6: after the phone's Cancel the web can no longer add it."""
+    auth_service.register_user("ada@e.com", "Ada", PW)
+    client, pairing, url = _show_code(app, http_server)
+    out = _node(
+        E2E,
+        {"phase": "claim", "base_url": http_server, "scanned": url, "withdraw_after_claim": True},
+        tmp_path,
+    )
+    assert out["withdrawn"] is True
+    _confirm(client, pairing, out["pending"]["checkCode"])
+    db.session.refresh(pairing)
+    assert pairing.state == "cancelled" and Device.query.count() == 0
