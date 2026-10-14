@@ -551,14 +551,8 @@ def _verify_into(
         )
     )
 
-    # ---------------------------------------------------------------------------------------
-    # 6b'. Key lineage (plan R9, design §9). Informational, never a check: a vote under a key a
-    #      recovery introduced or restored says so, from the log's own recovery_completed entry
-    #      (whose hash recomputed above, and whose inclusion step 7 proves). It cannot say whether
-    #      the recovery was right (design §13 item 7). A bundle without such entries reads as
-    #      before.
-    # ---------------------------------------------------------------------------------------
-    report.facts["lineage"] = lineage_lines(verified, payloads, registrations)
+    # 6b'. Key lineage (plan R9, design §9) is worked out after step 7, which says which entries
+    #      are proven to be in the log.
 
     # ---------------------------------------------------------------------------------------
     # 6c. Payment authorisations (plan Phase 9). The treasury pays only on signatures over its
@@ -587,6 +581,7 @@ def _verify_into(
     root = _hex32(_need(checkpoint, "root_hash", "checkpoint"), "checkpoint.root_hash")
 
     not_included: list[str] = []
+    included: set[int] = set()
     for seq, raw in sorted(by_seq.items()):
         proof_hex = raw.get("inclusion_proof")
         if not isinstance(proof_hex, list):
@@ -605,6 +600,17 @@ def _verify_into(
             root=root,
         ):
             not_included.append(f"entry {seq}: not in the published log")
+        else:
+            included.add(seq)
+
+    # ---------------------------------------------------------------------------------------
+    # 6b'. Key lineage (plan R9, design §9). Informational, never a check: a vote under a key a
+    #      recovery introduced or restored says so, from the log's own recovery_completed entry
+    #      (whose hash recomputed above). A line from an entry not proven to be in the log says
+    #      so (review L6). It cannot say whether the recovery was right (design §13 item 7). A
+    #      bundle without such entries reads as before.
+    # ---------------------------------------------------------------------------------------
+    report.facts["lineage"] = lineage_lines(verified, payloads, registrations, included)
 
     add(
         Check(
@@ -739,10 +745,16 @@ def _verify_into(
 LINEAGE_ROUTES = {"kit": "Recovery Kit", "phone": "paired phone", "quorum": "approvers"}
 
 
-def lineage_lines(verified: list[dict], payloads: list, registrations: dict) -> list[str]:
+LINEAGE_UNPROVEN = " (This log entry is not proven to be in the published log.)"
+
+
+def lineage_lines(
+    verified: list[dict], payloads: list, registrations: dict, included: set[int]
+) -> list[str]:
     """One sentence for each verified vote whose key a completed recovery introduced (a new key)
     or restored (the same key, under a new password), matched on the key's SHA-256 and the
-    signer's id. The browser verifier writes the same sentences."""
+    signer's id; marked when its entry's inclusion in the log did not verify. The browser verifier
+    writes the same sentences."""
     lines: list[str] = []
     for s in verified:
         key_sha = sha256_hex(s["_public_key"])
@@ -754,15 +766,16 @@ def lineage_lines(verified: list[dict], payloads: list, registrations: dict) -> 
                 continue
             route = LINEAGE_ROUTES.get(p.get("route"), str(p.get("route")))
             day = str(raw.get("timestamp", ""))[:10]
+            proven = "" if raw.get("seq") in included else LINEAGE_UNPROVEN
             if p.get("old_public_key_sha256") == key_sha:
                 lines.append(
                     f"{who}'s vote used a key restored by recovery ({route}) on {day}: the same "
-                    "key, under a new password."
+                    "key, under a new password." + proven
                 )
             else:
                 lines.append(
                     f"{who}'s vote used a key introduced by recovery ({route}) on {day}, "
-                    f"replacing key {str(p.get('old_public_key_sha256'))[:16]}."
+                    f"replacing key {str(p.get('old_public_key_sha256'))[:16]}." + proven
                 )
     return lines
 

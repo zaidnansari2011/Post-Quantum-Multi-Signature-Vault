@@ -1088,6 +1088,8 @@ def test_the_browser_writes_the_same_lineage_line_as_python(app, page, bundle, r
     (line,) = py.facts["lineage"]
     word = "introduced" if not same_key else "restored"
     assert f"vote used a key {word} by recovery" in line and "on 2026-10-12" in line
+    # This entry carries no inclusion proof, so the line says so (review L6), in both.
+    assert line.endswith("(This log entry is not proven to be in the published log.)")
 
 
 def test_a_bundle_without_recoveries_has_no_lineage_in_either(app, page, bundle):

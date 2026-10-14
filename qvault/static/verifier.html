@@ -5980,7 +5980,8 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
 
   // Key lineage (plan R9, design section 9): how a recovery route is named in a lineage line.
   const LINEAGE_ROUTES = { kit: 'Recovery Kit', phone: 'paired phone', quorum: 'approvers' };
-  function lineageLines(verified, payloads, registrations) {
+  const LINEAGE_UNPROVEN = ' (This log entry is not proven to be in the published log.)';
+  function lineageLines(verified, payloads, registrations, included) {
     const lines = [];
     for (const s of verified) {
       const keySha = hex(sha256(b64(s.public_key_b64)));
@@ -5990,12 +5991,14 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
         if (p.new_public_key_sha256 !== keySha) continue;
         const route = LINEAGE_ROUTES[p.route] || String(p.route);
         const day = String(e.timestamp || '').slice(0, 10);
+        const proven = included.has(e.seq) ? '' : LINEAGE_UNPROVEN;
         if (p.old_public_key_sha256 === keySha) {
           lines.push(who + "'s vote used a key restored by recovery (" + route + ') on ' + day
-                     + ': the same key, under a new password.');
+                     + ': the same key, under a new password.' + proven);
         } else {
           lines.push(who + "'s vote used a key introduced by recovery (" + route + ') on ' + day
-                     + ', replacing key ' + String(p.old_public_key_sha256).slice(0, 16) + '.');
+                     + ', replacing key ' + String(p.old_public_key_sha256).slice(0, 16) + '.'
+                     + proven);
         }
       }
     }
@@ -6170,9 +6173,7 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
       add('identity', 'The signers are the accounts the log recorded', !identity.length,
           identity.join('; ') || [...registrations.values()].sort().join(', '));
 
-      // 6b'. key lineage (mirrors lineage_lines in qvault/verify/core.py, word for word): a vote
-      // under a key a recovery introduced or restored says so. Informational, never a check.
-      facts.lineage = lineageLines(verified, payloads, registrations);
+      // 6b'. key lineage: worked out after step 7, which says which entries are in the log.
 
       // 6c. payment authorisations (mirrors _check_execution in qvault/verify/core.py, step for
       // step, so the two reach the same verdict on every file)
@@ -6260,12 +6261,19 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
       const cp = log.checkpoint;
       const root = unhex(cp.root_hash);
       const missing = [];
+      const included = new Set();
       for (const e of good) {
         const proof = (e.inclusion_proof || []).map(unhex);
         if (!verifyInclusion(leafHash(unhex(e.entry_hash)), e.seq, cp.tree_size, proof, root)) {
           missing.push('entry ' + e.seq + ': not in the published log');
+        } else {
+          included.add(e.seq);
         }
       }
+      // 6b'. key lineage (mirrors lineage_lines in qvault/verify/core.py, word for word): a vote
+      // under a key a recovery introduced or restored says so. Informational, never a check; a
+      // line from an entry not proven to be in the log says that too.
+      facts.lineage = lineageLines(verified, payloads, registrations, included);
       add('inclusion', 'Those records are inside the published transparency log', !missing.length,
           missing.join('; ') || 'proved against a log of ' + count(cp.tree_size, 'entry', 'entries') + ', root '
                                 + cp.root_hash.slice(0, 16) + '…');
