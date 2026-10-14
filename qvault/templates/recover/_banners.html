@@ -38,7 +38,7 @@
 
 {% macro kit_banner(state, where='home') -%}
 {%- if state and state.problem %}
-{%- if state.problem == 'stale' %}
+{%- if state.problem in ('stale', 'burned') %}
   {%- set title = 'Your Recovery Kit stopped working' %}
 {%- elif state.problem == 'unconfirmed' %}
   {%- set title = 'Did you save your Recovery Kit?' %}
@@ -47,6 +47,8 @@
 {%- endif %}
 {%- if state.treasury_signer %}
   {%- set body = 'A treasury holds your password key. If you forget your password, only a Recovery Kit gives you back that same key; any other way back gives you a new one, and the treasury’s signers must then move your seat.' %}
+{%- elif state.problem == 'burned' %}
+  {%- set body = 'You cancelled a recovery that used it, so it can’t be used again. Make a new one to keep a way back if you forget your password.' %}
 {%- elif state.problem == 'unconfirmed' %}
   {%- set body = 'You didn’t type back the last group of the kit you were shown. If you didn’t keep it, make a new one: the old one stops working.' %}
 {%- else %}

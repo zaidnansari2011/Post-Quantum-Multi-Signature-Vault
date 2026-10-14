@@ -333,7 +333,10 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
                 security if me else home,
             )
         role = stored.get("by_role")
-        if role in ("manager", "cosigner"):
+        if role in ("manager", "cosigner") and notification.actor_id == notification.recipient_id:
+            # The admin or approver who cancelled it reads their own notice (staging QA F10).
+            by = "by you"
+        elif role in ("manager", "cosigner"):
             what = "an admin" if role == "manager" else "a fellow approver"
             by = f"by {_name(notification.actor)}, {what}"
         elif not me and role == "self":

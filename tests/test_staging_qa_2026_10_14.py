@@ -253,3 +253,138 @@ def test_a_vault_whose_threshold_needs_the_requester_refuses_to_raise_and_says_w
     )
     new = client.get(f"/vaults/{vault.id}/proposals/new").get_data(as_text=True)
     assert "It can’t pass:" in new
+
+
+# --- F3: recovery entries in the audit log of the people told to act on them --------------------
+
+
+def _recovery_trail(team):
+    """A recovery of Ada's account, started with her kit and cancelled by Bob, an admin."""
+    issued = recovery_support.issue(team.ada)
+    request = recovery_support.start(team.ada, issued.code, now=recovery_support.NOW).request
+    recovery_service.cancel_as(
+        team.bob, request.request_uuid, now=recovery_support.NOW + timedelta(hours=1)
+    )
+    return request
+
+
+def _seen(user):
+    rows = audit_service.search(user, audit_service.Filters(per_page=200)).items
+    return {e.event_type for e in rows if e.event_type.startswith("recovery_")}
+
+
+WATCHED = {"recovery_requested", "recovery_waiting", "recovery_cancelled"}
+
+
+def test_the_people_told_about_a_recovery_see_it_in_their_audit_log(app):
+    team = recovery_support.make_team()
+    _recovery_trail(team)
+    # Owen owns the workspace, Bob is an admin, Chen approves in Ada's vault: each got the banner
+    # and the notices, and each can cancel, so each sees the trail.
+    for watcher in (team.owen, team.bob, team.chen):
+        assert _seen(watcher) >= WATCHED, watcher.display_name
+        # Not the kit's own making, which only Ada was told about.
+        assert "recovery_kit_issued" not in _seen(watcher)
+    assert "recovery_cancelled" in audit_service.event_types_present(team.owen)
+
+
+def test_nobody_else_sees_a_recovery(app):
+    team = recovery_support.make_team()
+    _recovery_trail(team)
+    # Dee is a member of the same workspace with no part in Ada's vaults; Eve is elsewhere.
+    assert _seen(team.dee) == set()
+    assert _seen(team.eve) == set()
+    assert "recovery_waiting" not in audit_service.event_types_present(team.dee)
+
+
+def test_the_account_holder_sees_who_cancelled_their_recovery_and_it_says_whose(app, client):
+    team = recovery_support.make_team()
+    _recovery_trail(team)
+    assert _seen(team.ada) >= WATCHED | {"recovery_kit_issued"}
+    entry = LedgerEntry.query.filter_by(event_type="recovery_cancelled").one()
+    sentence = audit_service.narrate([entry])[0]["sentence"]
+    assert sentence == "Bob Hale cancelled a recovery of Ada Lovelace's account."
+    g.pop("_login_user", None)
+    client.post("/login", data={"email": team.ada.email, "password": recovery_support.PW})
+    page = client.get("/ledger/").get_data(as_text=True)
+    assert "Bob Hale cancelled a recovery of Ada Lovelace" in page
+
+
+def test_a_person_cancelling_their_own_recovery_reads_as_their_own():
+    entry = LedgerEntry(
+        event_type="recovery_cancelled", actor="user:7", actor_id=7, ref_type="user", ref_id="7"
+    )
+    assert audit_service._cancel_sentence(entry, "Ada", {7: "Ada"}) == (
+        "Ada cancelled a recovery of their own account."
+    )
+
+
+# --- F10: whoever cancelled a recovery reads "by you" --------------------------------------------
+
+
+def test_the_admin_who_cancelled_a_recovery_is_told_it_was_them(app):
+    team = recovery_support.make_team()
+    _recovery_trail(team)
+    mine = Notification.query.filter_by(kind="recovery_cancelled", recipient_id=team.bob.id).one()
+    body = notification_service.view(mine)["body"]
+    assert "It was cancelled by you." in body
+    assert "Bob Hale, an admin" not in body
+    owens = Notification.query.filter_by(kind="recovery_cancelled", recipient_id=team.owen.id).one()
+    assert "by Bob Hale, an admin" in notification_service.view(owens)["body"]
+
+
+# --- F4: a notice that can't be marked read says so, instead of a button that does nothing ------
+
+
+def _signed_in_then_recovered(client, team):
+    """Ada signed in before her kit is used (signing in afterwards would cancel the recovery)."""
+    g.pop("_login_user", None)
+    client.post("/login", data={"email": team.ada.email, "password": recovery_support.PW})
+    issued = recovery_support.issue(team.ada)
+    return issued, recovery_support.start(team.ada, issued.code).request
+
+
+def test_a_notice_about_an_open_recovery_offers_no_mark_read_and_says_why(app, client):
+    team = recovery_support.make_team()
+    _signed_in_then_recovered(client, team)
+    notice = Notification.query.filter_by(kind="recovery_waiting", recipient_id=team.ada.id).one()
+    page = client.get("/notifications/?section=updates").get_data(as_text=True)
+    item = page.split(f'/notifications/{notice.id}/open"', 1)[1].split("</li>", 1)[0]
+    assert "Stays unread until the recovery ends" in item
+    assert f"/notifications/{notice.id}/read" not in item
+
+    # A crafted POST changes nothing, and now says why.
+    after = client.post(f"/notifications/{notice.id}/read", follow_redirects=True)
+    assert "stays unread until the recovery it’s about ends" in after.get_data(as_text=True)
+    db.session.refresh(notice)
+    assert notice.read_at is None
+
+
+def test_mark_all_read_says_what_stayed_unread(app, client):
+    team = recovery_support.make_team()
+    _signed_in_then_recovered(client, team)
+    page = client.post(
+        "/notifications/read-all", data={"section": "updates"}, follow_redirects=True
+    ).get_data(as_text=True)
+    assert "A notice about a recovery still open stays unread until the recovery ends." in page
+
+
+# --- F11: a kit burned by cancelling a recovery reads as stopped, not "None" ---------------------
+
+
+def test_a_kit_burned_by_the_owners_cancel_reads_as_stopped_working(app, client):
+    team = recovery_support.make_team()
+    _issued, request = _signed_in_then_recovered(client, team)
+    client.post(f"/recover/requests/{request.request_uuid}/cancel")
+    db.session.refresh(request)
+    assert request.kit_burned is True
+    assert recovery_service.kit_state(team.ada).problem == "burned"
+    home = client.get("/").get_data(as_text=True)
+    assert "Your Recovery Kit stopped working" in home
+    assert "You cancelled a recovery that used it" in home
+    security = client.get("/account/security").get_data(as_text=True)
+    panel = security.split('id="recovery"', 1)[1].split("</section>", 1)[0]
+    assert "Stopped working" in panel and ">None<" not in panel
+    # A new kit puts it right.
+    recovery_support.issue(team.ada)
+    assert recovery_service.kit_state(team.ada).problem == "unconfirmed"

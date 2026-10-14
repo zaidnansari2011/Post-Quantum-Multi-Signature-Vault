@@ -17,7 +17,11 @@
   </a>
   {%- if actions %}
   <div class="nitem__actions">
-    {% if n.unread %}
+    {#- A notice about a recovery still open can't be marked read (design §4.5): no button that
+        does nothing, but why it stays (staging QA F4). -#}
+    {% if n.unread and n.locked %}
+    <span class="nitem__kept">Stays unread until the recovery ends</span>
+    {% elif n.unread %}
     <form method="post" action="{{ url_for('notifications.read', nid=n.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="next" value="{{ back }}">
