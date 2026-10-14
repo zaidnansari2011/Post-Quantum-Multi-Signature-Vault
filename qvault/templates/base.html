@@ -72,7 +72,7 @@
 {% set bp = request.blueprint or '' %}
 {# The Developer tools: the live trace and the adversary lab, each only where it is switched on. #}
 {% set dev_href = url_for('glassbox.index') if glassbox_enabled else (url_for('admin.attack_lab') if config.ATTACK_LAB_ENABLED else None) %}
-{% set in_dev = bp == 'glassbox' or ep in ('admin.attack_lab', 'admin.run_attack_lab') %}
+{% set in_dev = bp == 'glassbox' or ep in ('admin.attack_lab', 'admin.run_attack_lab', 'admin.shor_side_by_side') %}
 {% macro nav_item(label, href, icon_name, current, count=None) -%}
 <a class="q-nav-i" href="{{ href }}"{% if current %} aria-current="page"{% endif %}>
   {{ icon(icon_name) }}<span class="q-nav-i__l">{{ label }}</span>

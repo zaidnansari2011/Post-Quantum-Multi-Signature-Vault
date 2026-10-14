@@ -414,3 +414,164 @@ def run_attack_lab():
             "persist",
         )
     return redirect(url_for("admin.attack_lab", run=_hold_live_run("attack", live)))
+
+
+# --- Shor side by side (plan: docs/plans/shor-side-by-side.md) -----------------------------------
+#
+# The step-through behind /admin/attack/shor. The page is rendered with the ML-DSA column, the toy
+# LWE instance and the scaling chart; the RSA column is driven from the browser, one JSON POST per
+# button, each computed here by qvault.attack.shor_walkthrough. Runs are held between presses in a
+# small in-process store per kind (one worker, as for the live runs above), so page loads cannot
+# push out a judge's RSA run. Every POST carries the CSRF token in X-CSRFToken and counts against a
+# rate-limit bucket: "attack_shor_sim" for the two that build a state vector, "attack_shor" for
+# the rest. A state vector already being built in this process answers 503 (SimulatorBusy).
+
+_shor_runs: dict = {}
+_shor_runs_lock = threading.Lock()
+
+
+def _shor_store(kind: str):
+    from qvault.attack import shor_walkthrough as walk
+
+    with _shor_runs_lock:
+        if kind not in _shor_runs:
+            keep = walk.RSA_RUNS_KEPT if kind == "rsa" else walk.LWE_RUNS_KEPT
+            _shor_runs[kind] = walk.RunStore(keep=keep)
+        return _shor_runs[kind]
+
+
+def _shor_busy(exc: Exception):
+    response = _shor_error(str(exc), 503)
+    response.headers["Retry-After"] = "1"
+    return response
+
+
+def _shor_json() -> dict:
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _shor_error(message: str, status: int = 400):
+    from flask import jsonify
+
+    response = jsonify(ok=False, error=message)
+    response.status_code = status
+    return response
+
+
+_SHOR_EXPIRED = "This run is no longer held on the server. Start a new key."
+
+
+@bp.get("/attack/shor")
+@admin_required
+def shor_side_by_side():
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    provider = current_app.extensions["crypto"].signature("ML-DSA-65")
+    lwe_run = walk.new_lwe_run()
+    lwe_id = _shor_store("lwe").put(lwe_run)
+    # The printed instance is the n = 4 one the brute force searches, not a second draw.
+    lwe = walk.lwe_demo(instance=lwe_run.instances[4])
+    return render_template(
+        "admin/shor.html",
+        mldsa=walk.mldsa_panel(provider),
+        hardness=walk.mldsa_hardness("ML-DSA-65"),
+        lwe=lwe,
+        lwe_id=lwe_id,
+        lwe_sizes=walk.LWE_SIZES,
+        brute_cap=walk.BRUTE_CAP_S,
+        scaling=walk.scaling_series(),
+        shor_2048=walk.cost.shor_resources(2048),
+        message_max=walk.MESSAGE_MAX,
+        max_n=walk.shor.MAX_N_STATEVECTOR,
+    )
+
+
+@bp.post("/attack/shor/rsa/new")
+@admin_required
+def shor_rsa_new():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    try:
+        run, started = walk.start_run(_shor_json().get("message"))
+    except walk.SimulatorBusy as exc:
+        return _shor_busy(exc)
+    except ValueError as exc:
+        return _shor_error(str(exc))
+    return jsonify(ok=True, run=_shor_store("rsa").put(run), **started)
+
+
+@bp.post("/attack/shor/rsa/base")
+@admin_required
+def shor_rsa_base():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    run = _shor_store("rsa").get(_shor_json().get("run"), walk.RSARun)
+    if run is None:
+        return _shor_error(_SHOR_EXPIRED, 404)
+    if len(run.bases_tried) >= walk.MAX_BASE_DRAWS:
+        return _shor_error("This key has had its share of bases. Start a new key.")
+    try:
+        return jsonify(ok=True, **walk.new_base(run))
+    except walk.SimulatorBusy as exc:
+        return _shor_busy(exc)
+
+
+@bp.post("/attack/shor/rsa/measure")
+@admin_required
+def shor_rsa_measure():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    run = _shor_store("rsa").get(_shor_json().get("run"), walk.RSARun)
+    if run is None:
+        return _shor_error(_SHOR_EXPIRED, 404)
+    try:
+        return jsonify(ok=True, **walk.measure(run))
+    except ValueError as exc:
+        return _shor_error(str(exc))
+
+
+@bp.post("/attack/shor/rsa/forge")
+@admin_required
+def shor_rsa_forge():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    data = _shor_json()
+    run = _shor_store("rsa").get(data.get("run"), walk.RSARun)
+    if run is None:
+        return _shor_error(_SHOR_EXPIRED, 404)
+    try:
+        return jsonify(ok=True, **walk.forge_for(run, data.get("message")))
+    except ValueError as exc:
+        return _shor_error(str(exc))
+
+
+@bp.post("/attack/shor/lwe/brute")
+@admin_required
+def shor_lwe_brute():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    data = _shor_json()
+    run = _shor_store("lwe").get(data.get("run"), walk.LWERun)
+    if run is None:
+        return _shor_error("This instance is no longer held on the server. Reload the page.", 404)
+    n = data.get("n")
+    if not isinstance(n, int) or isinstance(n, bool) or n not in walk.LWE_SIZES:
+        return _shor_error("Unknown size.")
+    return jsonify(ok=True, **walk.brute_force_step(run, n))

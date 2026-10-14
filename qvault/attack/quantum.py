@@ -96,7 +96,7 @@ def shor_breaks_rsa(rng: random.Random) -> Run:
         run.step(
             "Bases discarded to keep the demonstration honest",
             "a base sharing a factor with N would let the attack finish classically. That happens "
-            "only at toy sizes (about 2^-1013 for RSA-2048), so those draws are thrown away "
+            "only at toy sizes (about 2^-1023 for RSA-2048), so those draws are thrown away "
             "instead of being counted as a win",
             result.redrawn_lucky_bases,
         )
