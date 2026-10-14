@@ -18,6 +18,7 @@ import { toBase64, toHex } from '../src/crypto/bytes.ts';
 import { publicKeyFingerprint } from '../src/crypto/fingerprint.ts';
 import { sha256 } from '@noble/hashes/sha2.js';
 import {
+  approveRecoveryOnPhone,
   enrolThisDevice,
   verifyProposalIntegrity,
   voteOnProposal,
@@ -39,6 +40,8 @@ interface Input {
   no_screen_lock?: boolean;
   /** Simulate the screen lock being removed after enrolling (refused before signing). */
   lock_removed_after_enrol?: boolean;
+  /** After enrolling, start a web reset from this phone (R9 Phase 2) instead of voting. */
+  recovery?: 'web_reset';
 }
 
 const input: Input = JSON.parse(readFileSync(process.argv[2], 'utf8'));
@@ -137,6 +140,15 @@ async function main() {
     alg_id: me.device.alg_id,
     fingerprint_matches: me.device.fingerprint === identity.fingerprint,
   };
+
+  if (input.recovery) {
+    // The real flow: ask, check every field, build the RECOVERY bytes here, sign, verify, send.
+    const overview = await api.fetchRecovery(token);
+    out.recovery_allowed = overview.phone_reset.allowed;
+    const approved = await approveRecoveryOnPhone({ custody, token, identity, purpose: input.recovery });
+    out.recovery = { request_uuid: approved.requestUuid, code: approved.code, expires_at: approved.expiresAt };
+    return;
+  }
 
   const awaiting = await api.fetchProposals(token, 'awaiting');
   out.awaiting_count = awaiting.proposals.length;

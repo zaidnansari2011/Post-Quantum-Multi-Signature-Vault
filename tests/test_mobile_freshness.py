@@ -298,6 +298,10 @@ FLOWS_USERS = {
     "src/session.tsx",  # enrolThisDevice
     "src/signingSheet.ts",  # the guards and errors the sheet checks before any prompt
     "src/screens/TreasuryChangeScreen.tsx",  # approveTreasuryChange, on §6.15's own route
+    # approveRecoveryOnPhone (R9 Phase 2): a recovery is vouched for on its own screens, never from
+    # a banner; cancelling, which signs nothing, lives in src/recoveryCancel.ts.
+    "src/screens/account/WebPasswordScreen.tsx",
+    "src/screens/recovery/KitConfirmScreen.tsx",
 }
 
 
@@ -343,6 +347,14 @@ def _sneaks_into_flows(text: str) -> list[str]:
         ("approveTreasuryChange", {"src/screens/TreasuryChangeScreen.tsx"}),
         # The enrolment's proof of possession.
         ("enrolThisDevice", {"src/session.tsx"}),
+        # A recovery is vouched for on its own two screens (R9 Phase 2), never from a banner.
+        (
+            "approveRecoveryOnPhone",
+            {
+                "src/screens/account/WebPasswordScreen.tsx",
+                "src/screens/recovery/KitConfirmScreen.tsx",
+            },
+        ),
     ],
 )
 def test_i12_only_the_signing_screens_import_a_signing_flow(name, allowed):

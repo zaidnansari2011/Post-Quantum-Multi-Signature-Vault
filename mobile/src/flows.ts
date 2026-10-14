@@ -1,5 +1,5 @@
-// Enrolment and voting. These are the only two places where a private key is used, so both the
-// checks that make device custody meaningful live here.
+// Enrolment, voting, treasury changes and recovery approvals (R9 Phase 2): the only places a private
+// key is used, so the checks that make device custody meaningful live here.
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
@@ -8,9 +8,11 @@ import { getAlgorithm, negotiateAlgorithm } from './crypto/algorithms.ts';
 import {
   deviceEnrolmentBytes,
   paymentText,
+  recoverySigningBytes,
   signingInputsToPayloadHash,
   voteSigningBytes,
   type Decision,
+  type RecoveryPurpose,
 } from './crypto/signing.ts';
 import { toBase64, toHex } from './crypto/bytes.ts';
 import { executionDigest, reconfigureDigest } from './crypto/execution.ts';
@@ -19,6 +21,7 @@ import type { Custody, ProtectionLevel, StoredIdentity } from './custody.ts';
 import type { ProposalDetail, ReconfigurationView } from './api/schemas.ts';
 import { decisionCode } from './logic/decisionCode.ts';
 import { treasuryChangePrompt, votePrompt, type PromptCopy } from './logic/prompt.ts';
+import { checkRecoveryInputs, recoveryPrompt } from './logic/recovery.ts';
 
 // The prompt's strings live in src/logic/prompt.ts (phone-ux §5.13); re-exported for the probes.
 export { promptSubject, promptSummary } from './logic/prompt.ts';
@@ -442,4 +445,61 @@ export async function approveTreasuryChange(args: {
     signatureSha256: localDigest,
     protection,
   };
+}
+
+// -- account recovery by phone (plan R9 Phase 2, design §6) ---------------------------------------
+
+export interface RecoveryApprovalOutcome {
+  requestUuid: string;
+  /** "ABCD-EFGH": shown on this phone, once. Never stored. */
+  code: string;
+  expiresAt: string;
+  protection: ProtectionLevel;
+}
+
+/**
+ * Vouch for a recovery with this phone's key: start a web reset (`web_reset`), or confirm the
+ * person's own Recovery Kit request (`kit_confirm`, which needs `requestUuid`). The server sends
+ * the RECOVERY bytes' fields; every one is checked against what was asked for before any prompt
+ * (src/logic/recovery.ts), the bytes are built here, signed after the presence check, verified
+ * here (ADR-0010), and only then sent. The code comes back for this phone to show.
+ */
+export async function approveRecoveryOnPhone(args: {
+  custody: Custody;
+  token: string;
+  identity: StoredIdentity;
+  purpose: RecoveryPurpose;
+  requestUuid?: string;
+  now?: () => number;
+}): Promise<RecoveryApprovalOutcome> {
+  const now = args.now ?? Date.now;
+  await requireScreenLock(args.custody, 'sign');
+  const asked =
+    args.purpose === 'web_reset'
+      ? await api.startPhoneReset(args.token)
+      : await api.startKitConfirm(args.token, args.requestUuid ?? '');
+  const inputs = asked.inputs;
+  checkRecoveryInputs(inputs, {
+    purpose: args.purpose,
+    requestUuid: args.purpose === 'kit_confirm' ? (args.requestUuid ?? '') : asked.request_uuid,
+    userId: args.identity.userId,
+    deviceId: args.identity.deviceId,
+    now: now(),
+  });
+
+  const protection = await confirmedPresence(args.custody, recoveryPrompt(args.purpose));
+  const pair = await args.custody.deriveKeyPair(args.identity.algId);
+  if (!pair) throw new KeyMissingError();
+  const alg = getAlgorithm(args.identity.algId);
+  const message = recoverySigningBytes(inputs);
+  const signature = alg.sign(message, pair.secretKey);
+  if (!alg.verify(signature, message, pair.publicKey)) throw new SelfVerificationError();
+
+  const approved = await api.approveRecovery({
+    token: args.token,
+    requestUuid: inputs.request_uuid,
+    purpose: args.purpose,
+    signatureB64: toBase64(signature),
+  });
+  return { requestUuid: inputs.request_uuid, code: approved.code, expiresAt: approved.expires_at, protection };
 }
