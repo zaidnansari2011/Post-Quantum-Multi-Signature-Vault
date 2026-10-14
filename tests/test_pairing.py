@@ -544,7 +544,7 @@ def test_21_one_live_code_ten_an_hour_and_none_without_a_public_address(app, cli
     for _ in range(pairing_service.CREATE_PER_HOUR - 2):
         _show_code(client)
     r = client.post("/account/devices/pair", follow_redirects=True)
-    assert "too many pairing codes" in r.get_data(as_text=True)
+    assert "Too many pairing codes were shown from this browser" in r.get_data(as_text=True)
     clock[0] = T0 + timedelta(hours=2)
     app.config["PUBLIC_BASE_URL"] = None
     try:
