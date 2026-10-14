@@ -177,7 +177,7 @@ export default function OtherDevicesScreen({ onBack, removeDeviceId }: { onBack:
           ) : null}
 
           <Text role="caption" tone="muted">
-            {"Lost a phone? Remove it here, then ask your vault's approvers to approve your new key."}
+            {'Lost a phone? Remove it here, then set up your new phone with your password.'}
           </Text>
         </View>
       </Scroll>
