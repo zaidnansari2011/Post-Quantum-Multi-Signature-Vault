@@ -233,3 +233,24 @@ def test_a_tampered_proposal_is_refused(http_server, seeded, tmp_path, monkeypat
     from qvault.services import approval_service
 
     assert approval_service.tally(seeded["proposal"]) == (0, 0)
+
+
+def test_the_app_starts_a_web_reset_whose_code_the_web_accepts(
+    http_server, seeded, tmp_path, monkeypatch
+):
+    """R9 Phase 2: the app's own flow asks, checks every field, builds the RECOVERY bytes itself,
+    signs them after the presence check and gets a code that the website then accepts, so the
+    TypeScript bytes are the bytes the server verifies, over HTTP and through the zod schemas."""
+    from datetime import timedelta
+
+    from qvault.services import recovery_phone
+
+    # A phone enrolled a moment ago cannot vouch (the 7-day rule, tests/test_recovery_phone.py);
+    # here the bytes and the flow are under test, so that one rule is set aside for this test.
+    monkeypatch.setattr(recovery_phone, "MIN_PAIRED_AGE", timedelta(0))
+    out = _run_client(http_server, tmp_path, recovery="web_reset")
+    assert out["ok"], out
+    assert out["recovery_allowed"] is True
+    started = recovery_phone.claim(EMAIL, out["recovery"]["code"], "new-password-456")
+    assert started.request.request_uuid == out["recovery"]["request_uuid"]
+    assert started.request.state == "waiting" and started.request.route == "phone"

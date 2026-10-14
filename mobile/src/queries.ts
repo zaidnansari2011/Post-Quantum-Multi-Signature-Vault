@@ -75,6 +75,8 @@ export const keys = {
   // Under one prefix, so a push (src/push.ts) refreshes the whole inbox with one invalidation.
   notifications: (section: 'needs_you' | 'updates' | 'archived') => ['notifications', section] as const,
   unread: ['notifications', 'unread'] as const,
+  // Account recovery (R9 Phase 2): open recoveries this person should see, and the phone reset.
+  recovery: ['recovery'] as const,
 };
 
 /** Awaiting (Approvals, the badge). */
@@ -205,6 +207,19 @@ export function unreadQuery(token: string) {
     queryKey: keys.unread,
     queryFn: recorded(keys.unread, (signal) => api.fetchUnread(token, signal)),
     staleTime: STALE_MS.activity,
+    ...RETRY,
+  };
+}
+
+/**
+ * Recoveries this person should see, with Cancel, and whether this phone may start a web reset
+ * (R9 Phase 2). Stale quickly: a recovery's banner must not outlive it, nor be missing for long.
+ */
+export function recoveryQuery(token: string) {
+  return {
+    queryKey: keys.recovery,
+    queryFn: recorded(keys.recovery, (signal) => api.fetchRecovery(token, signal)),
+    staleTime: STALE_MS.awaiting,
     ...RETRY,
   };
 }
