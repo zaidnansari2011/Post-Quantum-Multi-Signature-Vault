@@ -231,9 +231,10 @@ def _config(env: dict) -> dict:
         "const app = require('./app.json');"
         "const out = require('./app.config.js')({ config: app.expo });"
         "process.stdout.write(JSON.stringify({ api: out.extra.apiBaseUrl,"
-        " gs: out.android.googleServicesFile ?? null, eas: out.extra.eas }));"
+        " gs: out.android.googleServicesFile ?? null, eas: out.extra.eas,"
+        " updates: out.updates }));"
     )
-    unset = ("QVAULT_API_BASE_URL", "GOOGLE_SERVICES_JSON")
+    unset = ("QVAULT_API_BASE_URL", "GOOGLE_SERVICES_JSON", "QVAULT_UPDATE_CHANNEL")
     clean = {k: v for k, v in os.environ.items() if k not in unset}
     run = subprocess.run(
         ["node", "-e", script],
@@ -263,6 +264,17 @@ def test_the_server_address_comes_from_the_build_and_defaults_to_the_live_domain
     ):
         refused = _config({"QVAULT_API_BASE_URL": bad}).get("error", "")
         assert "must be an https origin" in refused, bad
+
+
+@needs_node
+def test_a_local_build_names_its_update_channel_and_an_eas_build_leaves_it_to_the_profile():
+    """A Gradle build gets no channel injected; without one the APK would never receive an update."""
+    assert "requestHeaders" not in _config({})["updates"]
+    local = _config({"QVAULT_UPDATE_CHANNEL": "rework"})["updates"]
+    assert local["requestHeaders"] == {"expo-channel-name": "rework"}
+    assert local["url"].startswith("https://u.expo.dev/")  # the rest of `updates` is kept
+    for bad in ("Rework", "re work", "rework/x"):
+        assert "must be a channel name" in _config({"QVAULT_UPDATE_CHANNEL": bad}).get("error", "")
 
 
 def test_app_links_cover_the_decision_page_on_both_servers_and_nothing_else():
