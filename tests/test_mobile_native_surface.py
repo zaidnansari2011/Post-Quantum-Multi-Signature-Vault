@@ -201,12 +201,16 @@ def test_the_rework_apk_keeps_the_phone_s_data_on_the_phone_and_records_no_sound
     assert android["allowBackup"] is False  # N18: the summary cache never leaves in a backup
     assert android["predictiveBackGestureEnabled"] is True  # N9
     blocked = set(android["blockedPermissions"])
-    # The camera scans; it never records sound. Screenshot detection and media reads are unused.
+    # The camera scans; it never records sound. Media reads are unused.
     assert {
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.DETECT_SCREEN_CAPTURE",
     } <= blocked
+    # Never blocked: expo-screen-capture registers a screen capture callback in its OnCreate on
+    # Android 14+, which throws without this permission, and the app crashed at launch on a
+    # handset (2026-10-14). It is an install-time permission that reports only that a capture
+    # happened, never its contents.
+    assert "android.permission.DETECT_SCREEN_CAPTURE" not in blocked
     camera = _plugin("expo-camera")
     assert camera["recordAudioAndroid"] is False and camera["microphonePermission"] is False
 

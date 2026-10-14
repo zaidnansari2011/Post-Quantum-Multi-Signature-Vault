@@ -24,7 +24,10 @@ const SETTINGS = {
   // failure seen. Metaspace is separate from the heap and the Kotlin compiler is hungry for it.
   // Modest on purpose. The crash was a NATIVE allocation failure (clang/ninja), not a Java heap
   // exhaustion -- so a smaller JVM reservation leaves MORE room for the C++ compile, not less.
-  'org.gradle.jvmargs': '-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8',
+  // Metaspace 1 GiB, not 512 MiB: the rework's extra modules (camera, notifications, ...) ran the
+  // daemon out of metaspace in release lint (lintVitalAnalyzeRelease failed, 2026-10-14). Metaspace
+  // is committed as classes load, not reserved up front, so the cap costs the C++ compile nothing.
+  'org.gradle.jvmargs': '-Xmx2048m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8',
   // Parallelism multiplies peak memory by the worker count, which is the thing under pressure.
   'org.gradle.workers.max': '2',
 };
