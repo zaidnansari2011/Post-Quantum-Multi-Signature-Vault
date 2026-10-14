@@ -976,7 +976,10 @@ Used in Approvals, Waiting on others, a vault's decisions and Activity.
   filters always use chips; §6.12).
 - **`Checkbox`:** 24 box, radius 4, `borderStrong`; checked is an `accent` fill with a white check.
   The signer picker uses this. **Selection is accent, never the green status colour** (S3; `app_52`).
-- **`Switch`:** the platform `Switch`, with `trackColor` `accent` on and `borderStrong` off.
+- **`Switch`:** the platform `Switch`, with `trackColor` `accent` on and `borderStrong` off. The
+  thumb is white (`accentText`) on, and `surface` (light) or `textMuted` (dark) off, never the
+  dark `surface`, which vanished on both tracks on the handset. In a list it is `ListRow`'s
+  `toggle`: inset 16 from the card's edge and centred on the title's first line.
 
 ### 5.9 Sheet
 

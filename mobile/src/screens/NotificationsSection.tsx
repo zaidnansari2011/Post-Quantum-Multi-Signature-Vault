@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { Banner, Button, List, ListRow, Section, Switch, Text } from '../ui/index.tsx';
+import { Banner, Button, List, ListRow, Section, Text } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
@@ -71,14 +71,11 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
                 key={group.id}
                 title={group.label}
                 caption={canToggle(group) ? null : "Security alerts can't be turned off."}
-                trailing={
-                  <Switch
-                    label={group.label}
-                    value={group.enabled}
-                    disabled={!canToggle(group) || toggle.isPending}
-                    onValueChange={(enabled) => toggle.mutate({ group: group.id, enabled })}
-                  />
-                }
+                toggle={{
+                  value: group.enabled,
+                  disabled: !canToggle(group) || toggle.isPending,
+                  onValueChange: (enabled) => toggle.mutate({ group: group.id, enabled }),
+                }}
               />
             ))
           : null}

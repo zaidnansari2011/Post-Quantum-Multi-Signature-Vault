@@ -19,7 +19,6 @@ import {
   Scroll,
   Section,
   Sheet,
-  Switch,
   Text,
   TextLink,
 } from '../../ui/index.tsx';
@@ -105,24 +104,22 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
 
           <View style={s.group}>
             <List>
-              <View style={s.switchRow}>
-                <View style={s.flex}>
-                  <Text role="body">{`Require ${name} to open Q-Vault`}</Text>
-                  <Text role="caption" tone="muted">
-                    {Platform.OS === 'ios'
-                      ? 'Asked when Q-Vault opens, and after a minute away. The app switcher shows a cover instead of your decisions.'
-                      : canCoverSwitcher()
-                        ? 'Asked when Q-Vault opens, and after a minute away. The app switcher hides your decisions. Also stops screenshots of Q-Vault on this phone.'
-                        : 'Asked when Q-Vault opens, and after a minute away.'}
-                  </Text>
-                </View>
-                <Switch
-                  value={lock.enabled}
-                  onValueChange={(v) => void toggleLock(v)}
-                  label={`Require ${name} to open Q-Vault`}
-                  disabled={lockBusy || (noScreenLock && !lock.enabled)}
-                />
-              </View>
+              <ListRow
+                title={`Require ${name} to open Q-Vault`}
+                caption={
+                  Platform.OS === 'ios'
+                    ? 'Asked when Q-Vault opens, and after a minute away. The app switcher shows a cover instead of your decisions.'
+                    : canCoverSwitcher()
+                      ? 'Asked when Q-Vault opens, and after a minute away. The app switcher hides your decisions. Also stops screenshots of Q-Vault on this phone.'
+                      : 'Asked when Q-Vault opens, and after a minute away.'
+                }
+                captionLines={0}
+                toggle={{
+                  value: lock.enabled,
+                  onValueChange: (v) => void toggleLock(v),
+                  disabled: lockBusy || (noScreenLock && !lock.enabled),
+                }}
+              />
             </List>
             {noScreenLock ? (
               <InlineMessage
@@ -174,17 +171,8 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
 }
 
 const useStyles = makeStyles((t) => ({
-  flex: { flex: 1 },
   stack: { gap: t.space[24], paddingTop: t.space[8] },
   stack16: { gap: t.space[16] },
   group: { gap: t.space[8] },
   change: { justifyContent: 'center', paddingRight: t.space[8] },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: t.space[12],
-    paddingHorizontal: t.layout.gutter,
-    paddingVertical: t.space[12],
-    minHeight: 56,
-  },
 }));
