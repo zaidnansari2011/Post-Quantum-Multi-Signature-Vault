@@ -9,6 +9,9 @@ import {
   createVaultResponse,
   devicesResponse,
   enrolResponse,
+  pairingClaimResponse,
+  pairingInspectResponse,
+  pairingStatusResponse,
   meResponse,
   notificationResponse,
   notificationsResponse,
@@ -63,6 +66,48 @@ export function enrolDevice(args: {
       challenge: args.challenge,
       pop_signature_b64: args.popSignatureB64,
     },
+  });
+}
+
+// -- pairing by a code shown on the web (A10) --------------------------------------------------
+
+export function pairingInspect(token: string) {
+  return request(pairingInspectResponse, {
+    method: 'POST',
+    path: '/api/v1/pairing/inspect',
+    body: { token },
+  });
+}
+
+export function pairingClaim(args: {
+  token: string;
+  deviceName: string;
+  algId: string;
+  publicKeyB64: string;
+  pendingTokenDigest: string;
+  popSignatureB64: string;
+}) {
+  return request(pairingClaimResponse, {
+    method: 'POST',
+    path: '/api/v1/pairing/claim',
+    body: {
+      token: args.token,
+      device_name: args.deviceName,
+      alg_id: args.algId,
+      public_key_b64: args.publicKeyB64,
+      pending_token_digest: args.pendingTokenDigest,
+      pop_signature_b64: args.popSignatureB64,
+    },
+  });
+}
+
+/** Polled with the pending token. Not a device token yet, so a 401 here never ends a session. */
+export function pairingStatus(pendingToken: string, signal?: AbortSignal) {
+  return request(pairingStatusResponse, {
+    path: '/api/v1/pairing/status',
+    token: pendingToken,
+    signal,
+    quietUnauthorized: true,
   });
 }
 
