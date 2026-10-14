@@ -4,6 +4,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import * as api from './api/endpoints.ts';
+import { ApiError, TransportError } from './api/client.ts';
 import { getAlgorithm, negotiateAlgorithm } from './crypto/algorithms.ts';
 import {
   deviceEnrolmentBytes,
@@ -191,6 +192,29 @@ export class PairingMismatchError extends Error {
 }
 
 /**
+ * The claim was sent but no answer came back (a timeout, a network change, a server error): it may
+ * or may not have landed. Nothing is forgotten (build review F2). `resend` sends the IDENTICAL claim
+ * again, which the server answers the same way whether or not the first one landed; a new key would
+ * contest the phone's own pairing and raise a false "someone saw your screen" alarm.
+ */
+export class ClaimNotAnsweredError extends Error {
+  readonly pending: PendingPairing;
+  readonly resend: () => Promise<PendingPairing>;
+  constructor(pending: PendingPairing, resend: () => Promise<PendingPairing>) {
+    super('The claim was sent but no answer came back.');
+    this.name = 'ClaimNotAnsweredError';
+    this.pending = pending;
+    this.resend = resend;
+  }
+}
+
+/** Whether a failed request may have reached the server: no answer, or the server failed. */
+function unanswered(err: unknown): boolean {
+  if (err instanceof TransportError) return true;
+  return err instanceof ApiError && err.status >= 500;
+}
+
+/**
  * Claim a scanned pairing code with a key made here. No password: the code is the credential, and
  * the person confirms on the web with the 6-digit code this returns and their password.
  *
@@ -251,14 +275,25 @@ export async function claimPairing(args: {
     claimDeadline: args.inspect.claim_deadline,
   };
   await args.savePending(pending);
-  const claimed = await sendClaim(args.token, pending, key.publicKeyB64, toBase64(signature));
-  if (claimed.fingerprint !== key.fingerprint) {
-    await args.custody.forgetEverything();
-    throw new PairingMismatchError();
-  }
-  const kept = { ...pending, confirmDeadline: claimed.confirm_deadline };
-  await args.savePending(kept);
-  return kept;
+  // Exactly these bytes, every time: the server treats an identical claim as the same claim.
+  const signatureB64 = toBase64(signature);
+  const attempt = async (): Promise<PendingPairing> => {
+    let claimed;
+    try {
+      claimed = await sendClaim(args.token, pending, key.publicKeyB64, signatureB64);
+    } catch (err) {
+      if (unanswered(err)) throw new ClaimNotAnsweredError(pending, attempt);
+      throw err;
+    }
+    if (claimed.fingerprint !== key.fingerprint) {
+      await args.custody.forgetEverything();
+      throw new PairingMismatchError();
+    }
+    const kept = { ...pending, confirmDeadline: claimed.confirm_deadline };
+    await args.savePending(kept);
+    return kept;
+  };
+  return attempt();
 }
 
 function sendClaim(token: string, pending: PendingPairing, publicKeyB64: string, popSignatureB64: string) {

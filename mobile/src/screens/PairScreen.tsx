@@ -34,7 +34,13 @@ import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
 import type { PairingInspect } from '../api/schemas.ts';
 import { getApiBaseUrl } from '../config.ts';
-import { NoScreenLockError, PairingMismatchError, claimPairing, finishPairing } from '../flows.ts';
+import {
+  ClaimNotAnsweredError,
+  NoScreenLockError,
+  PairingMismatchError,
+  claimPairing,
+  finishPairing,
+} from '../flows.ts';
 import { DEVICE_NAME_MAX, defaultDeviceName, rateLimitMessage } from '../logic/onboarding.ts';
 import {
   endMessage,
@@ -66,6 +72,8 @@ export default function PairScreen({ resume, onExit }: { resume?: PendingPairing
   const [pending, setPending] = useState<PendingPairing | null>(resume ?? null);
   const [end, setEnd] = useState<PairingEnd | null>(null);
   const [finish, setFinish] = useState<(() => void) | null>(null);
+  // A claim sent with no answer: try the identical claim again, never a new key (build review F2).
+  const [resend, setResend] = useState<(() => Promise<PendingPairing>) | null>(null);
 
   // Forget the key, the pending token and the kept pairing: nothing half-made stays.
   const forget = useCallback(async () => {
@@ -172,8 +180,36 @@ export default function PairScreen({ resume, onExit }: { resume?: PendingPairing
     [],
   );
 
+  const claimAgain = async () => {
+    if (busy || !resend) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      const kept = await resend();
+      setResend(null);
+      setPending(kept);
+      setStep('code');
+    } catch (err) {
+      if (err instanceof ClaimNotAnsweredError) {
+        setProblem(UNREACHABLE);
+      } else if (err instanceof ApiError && (err.code === 'pairing_invalid' || err.code === 'pairing_contested')) {
+        await ended(err.code === 'pairing_contested' ? 'contested' : 'invalid');
+      } else {
+        setResend(null);
+        await forget();
+        setProblem(apiProblem(err));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createKey = async () => {
     if (busy || !token || !inspect) return;
+    if (resend) {
+      await claimAgain();
+      return;
+    }
     setBusy(true);
     setProblem(null);
     try {
@@ -196,7 +232,13 @@ export default function PairScreen({ resume, onExit }: { resume?: PendingPairing
       setPending(kept);
       setStep('code');
     } catch (err) {
-      if (err instanceof NoScreenLockError) {
+      if (err instanceof ClaimNotAnsweredError) {
+        // It may have landed: keep the key, the pending token and the kept pairing, and offer the
+        // same claim again.
+        setResend(() => err.resend);
+        setPending(err.pending);
+        setProblem("Q-Vault didn't answer. Check your connection, then choose Try again.");
+      } else if (err instanceof NoScreenLockError) {
         setStep('nolock');
       } else if (err instanceof Error && err.name === 'AuthenticationCancelled') {
         setProblem('The check was cancelled. No key was made.');
@@ -290,7 +332,12 @@ export default function PairScreen({ resume, onExit }: { resume?: PendingPairing
               label="Cancel"
               variant="quiet"
               onPress={() => {
-                void forget().then(onExit);
+                // Tell the server first, so the web can't add a phone whose key is gone (F6).
+                void api
+                  .pairingWithdraw(pending.pendingToken)
+                  .catch(() => undefined)
+                  .then(forget)
+                  .then(onExit);
               }}
               full
             />
@@ -322,8 +369,24 @@ export default function PairScreen({ resume, onExit }: { resume?: PendingPairing
           </ContentWidth>
         </ScrollView>
         <View style={s.bottom}>
-          <Button label="Continue" onPress={() => void createKey()} busy={busy} full />
-          <Button label="Cancel" variant="quiet" onPress={onExit} full />
+          <Button label={resend ? 'Try again' : 'Continue'} onPress={() => void createKey()} busy={busy} full />
+          <Button
+            label="Cancel"
+            variant="quiet"
+            onPress={() => {
+              if (!pending) {
+                onExit();
+                return;
+              }
+              // A claim that may have landed: end it on the server, then forget it here (F6).
+              void api
+                .pairingWithdraw(pending.pendingToken)
+                .catch(() => undefined)
+                .then(forget)
+                .then(onExit);
+            }}
+            full
+          />
         </View>
       </Screen>
     );

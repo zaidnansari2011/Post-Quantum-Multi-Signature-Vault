@@ -63,6 +63,8 @@ export const pairingClaimResponse = z.object({
   fingerprint: z.string(),
 });
 
+export const pairingWithdrawResponse = z.object({ ok: z.literal(true), withdrawn: z.boolean() });
+
 export const pairingStatusResponse = z.object({
   ok: z.literal(true),
   state: z.string(),
