@@ -341,24 +341,29 @@ def test_09_wrong_passwords_are_counted_and_the_fifth_cancels_and_tells(app, cli
     db.session.refresh(pairing)
     assert pairing.state == "cancelled" and pairing.finish_reason == "wrong_secret"
     assert _refused("wrong_password")[0]
-    assert _notices(ada, "device_pairing_refused")
+    # Told by the account-wide alarm at the fifth wrong password, whatever the door (review F3).
+    assert _notices(ada, "password_guessed")
     assert phone.status(api).get_json()["state"] == "cancelled"
     assert Device.query.count() == 0
 
 
-def test_09b_the_sessions_lockout_refuses_before_argon2(app, client, ada, clock, monkeypatch):
+def test_09b_the_tenth_wrong_password_ends_the_session(app, client, ada, clock, monkeypatch):
+    """Build review F3: a stolen cookie is worth ten guesses in all, not ten every 15 minutes."""
     monkeypatch.setattr(password_attempts.time, "monotonic", lambda: 10_000.0)
     monkeypatch.setattr(pairing_service, "CREATE_PER_HOUR", 100)
     _sign_in(client)
     for _ in range(password_attempts.MAX_FAILURES):
         pairing, _, phone, _ = _paired_again(app, client, ada)
         _confirm(client, pairing, phone, password="wrong-password")
-    pairing, _, phone, _ = _paired_again(app, client, ada)
     calls = []
     monkeypatch.setattr(key_service, "verify_password", lambda *a: calls.append(a) or True)
     r = _confirm(client, pairing, phone)
+    assert r.status_code == 302 and "/login" in r.headers["Location"]
     assert calls == [] and Device.query.count() == 0
-    assert "Too many wrong passwords" in client.get(r.headers["Location"]).get_data(as_text=True)
+    page = client.get(r.headers["Location"]).get_data(as_text=True)
+    assert "signed out of this browser" in page
+    db.session.refresh(pairing)
+    assert pairing.state == "cancelled"
 
 
 def _paired_again(app, client, ada):
@@ -459,19 +464,20 @@ def test_16_every_dead_token_gets_the_same_answer(app, client, ada, clock):
     assert len(bodies) == 1 and next(iter(bodies))[0] == 404
 
 
-def test_17_the_pairing_buckets_answer_429_and_status_polls_are_not_counted(
+def test_17_the_pairing_bucket_answers_429_and_status_polls_are_not_counted(
     app, client, ada, clock
 ):
     pairing, token, phone, api = _paired(app, client, ada, clock)
     app.config["RATE_LIMIT_ENABLED"] = True
-    app.config["RATE_LIMITS"] = {"pair_qr": (2, 600), "signed_in_password": (2, 600)}
+    app.config["RATE_LIMITS"] = {"pair_qr": (2, 600)}
     try:
         for _ in range(5):
             assert phone.status(api).status_code == 200
         codes = [Phone.new().inspect(api, "C" * 43).status_code for _ in range(3)]
         assert codes == [404, 404, 429]
+        # The signed-in password forms are never limited by address (build review F1).
         r = [_confirm(client, pairing, phone, password="wrong").status_code for _ in range(3)]
-        assert r[-1] == 429
+        assert 429 not in r
     finally:
         app.config["RATE_LIMIT_ENABLED"] = False
         app.config["RATE_LIMITS"] = {}
@@ -787,10 +793,9 @@ def test_33_a_thief_locks_only_their_own_session_and_fifty_lock_the_account(
     }
     for _ in range(password_attempts.MAX_FAILURES + 2):
         thief.post("/account/password", data=data)
-    r = thief.post(
-        "/account/password", data={**data, "current_password": PW}, follow_redirects=True
-    )
-    assert "Too many wrong passwords" in r.get_data(as_text=True)
+    # The thief's session ended at its tenth wrong password (build review F3).
+    r = thief.post("/account/password", data={**data, "current_password": PW})
+    assert r.status_code == 302 and "/login" in r.headers["Location"]
     # The owner, in their own session, still changes the password, which signs the thief out.
     r = owner.post("/account/password", data={**data, "current_password": PW})
     assert r.status_code == 302 and auth_service.authenticate(ada.email, "new-password-456")

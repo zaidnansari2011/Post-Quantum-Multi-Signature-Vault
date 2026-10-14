@@ -330,8 +330,14 @@ def revoke(
     else:
         by_label, by_ledger = "", None
     # Told first, while this phone still counts as live, so its push is queued too (F5 then keeps
-    # it addressed after the token is cleared below).
-    notification_service.device_removed(device, by=by_label)
+    # it addressed after the token is cleared below). In a savepoint of its own: a notice that
+    # can't be written never stops a revoke (build review F4). It is owed instead, and
+    # ``send_owed_removal_notices`` sends it on the scheduler's next pass.
+    try:
+        with db.session.begin_nested():
+            notification_service.device_removed(device, by=by_label)
+    except Exception:  # noqa: BLE001 - logged; the revoke must commit whatever happened here
+        current_app.logger.exception("device %s removed; its notice is owed", device.id)
 
     device.revoked_at = _now()
     key = device.key
@@ -361,6 +367,37 @@ def revoke(
     if commit:
         db.session.commit()
     return device
+
+
+#: How far back an owed "device removed" notice is still sent.
+OWED_NOTICE_WINDOW = timedelta(days=7)
+
+
+def send_owed_removal_notices(*, now: datetime | None = None) -> int:
+    """Send the ``device_removed`` notice for every device removed in the last week that has none
+    (its revoke committed while the notice could not be written, build review F4). Returns how many
+    were sent. The scheduler runs it; each is deduplicated by its key, so a rerun sends none."""
+    from qvault.models.notification import Notification
+
+    now = now or _now()
+    sent = 0
+    removed = Device.query.filter(
+        Device.revoked_at.is_not(None), Device.revoked_at > now - OWED_NOTICE_WINDOW
+    ).all()
+    for device in removed:
+        told = Notification.query.filter_by(
+            recipient_id=device.owner_id, dedupe_key=f"device_removed:{device.id}"
+        ).first()
+        if told is not None:
+            continue
+        try:
+            with db.session.begin_nested():
+                notification_service.device_removed(device, by="", now=now)
+            sent += 1
+        except Exception:  # noqa: BLE001 - tried again on the next pass
+            current_app.logger.exception("owed notice for device %s still not sent", device.id)
+    db.session.commit()
+    return sent
 
 
 def remove_with_password(user: User, device: Device | None, password: str) -> Device:

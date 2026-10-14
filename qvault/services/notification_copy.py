@@ -249,6 +249,14 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
             "devices.",
             _path("account.security"),
         )
+    if kind == "password_guessed":
+        return Copy(
+            "Wrong passwords on your account",
+            f"Someone signed in as you has typed a wrong password {stored.get('count', 'several')} "
+            "times today. If this wasn't you, change your password now: it signs out every other "
+            "browser. A browser is signed out by itself after ten wrong tries.",
+            _path("account.security"),
+        )
     if kind == "device_pairing_refused":
         return Copy(
             "A phone wasn't added",
@@ -532,6 +540,7 @@ PREFERENCE_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("device_enrolled", "A new device can sign for you"),
             ("device_removed", "A device is removed from your account"),
             ("device_pairing_refused", "A phone is stopped from being added by a code"),
+            ("password_guessed", "Wrong passwords are typed on your account"),
             ("password_changed", "Your password is changed"),
             ("recovery_waiting", "Someone starts recovering your account, or one you watch over"),
             ("recovery_cancelled", "A recovery is cancelled or stopped"),

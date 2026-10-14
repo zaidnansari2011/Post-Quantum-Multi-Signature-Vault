@@ -58,12 +58,12 @@ ENDPOINT_BUCKETS = {
     # Account recovery (plan R9, design §4.6): the kit's entry form and the status page's Cancel.
     "recover.kit": "recover",
     "recover.status_cancel": "recover",
-    # Pairing by a code shown on the web (A10): the phone's two POSTs, and the signed-in forms
-    # that check a password without unlocking a key (confirm, and the web's Remove).
+    # Pairing by a code shown on the web (A10): the phone's two POSTs. Never the signed-in password
+    # forms (confirm, the web's Remove): this limiter counts before sign-in, by address alone, so
+    # anyone behind the owner's NAT could keep the owner from removing a stolen phone (build review
+    # F1). Those are limited per session and per account by ``password_attempts`` instead.
     "api.pairing_inspect": "pair_qr",
     "api.pairing_claim": "pair_qr",
-    "account.pair_confirm": "signed_in_password",
-    "account.remove_device": "signed_in_password",
 }
 
 #: (attempts, window in seconds) per bucket, per client address. RATE_LIMIT_SIGNUP_PER_HOUR sets
@@ -74,7 +74,6 @@ DEFAULT_LIMITS = {
     "pair": (20, 10 * 60),
     "recover": (10, 60 * 60),
     "pair_qr": (30, 10 * 60),
-    "signed_in_password": (20, 10 * 60),
 }
 
 #: Addresses remembered per bucket before the least recently counted is dropped.

@@ -55,10 +55,12 @@ from .treasury_job import TreasuryJob, TreasuryJobTransaction
 from .user import User
 from .user_setting import UserSetting
 from .vault import Vault, VaultMember, VaultPolicy, VaultRule
+from .web_session import EndedWebSession
 from .workspace import Invitation, Workspace, WorkspaceMember
 
 __all__ = [
     "DevicePairing",
+    "EndedWebSession",
     "User",
     "Key",
     "AlgorithmConfig",

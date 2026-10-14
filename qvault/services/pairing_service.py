@@ -64,8 +64,11 @@ from qvault.services.signing import device_pairing_bytes, pairing_check_code
 CLAIM_SECONDS = 120
 #: Seconds from the claim to the web's confirm (⚑3).
 CONFIRM_SECONDS = 120
-#: Codes one account may show in an hour (counted in the table, so a restart does not reset it).
+#: Codes one web session may show in an hour, and one account across all its sessions (counted in
+#: the table, so a restart does not reset them). Per session first, so a cookie thief spends their
+#: own budget, not the owner's (build review F7).
 CREATE_PER_HOUR = 10
+CREATE_PER_HOUR_ACCOUNT = 30
 #: Wrong passwords or codes on one pairing before it is cancelled.
 WRONG_LIMIT = 5
 #: How long an ended pairing's row is kept (the ledger keeps the record).
@@ -202,13 +205,33 @@ def _end(pairing: DevicePairing, state: str, reason: str, now: datetime) -> bool
     )
 
 
-def cancel_live(user_id: int, reason: str, *, now: datetime | None = None) -> int:
-    """Cancel every live pairing of an account, in the caller's transaction (a password change, a
-    completed recovery: anything that bumps the credential epoch). Returns how many."""
+def _session_tag() -> bytes | None:
+    """The showing web session, as the pairing records it: a hash of its ``qv_sid``."""
+    from qvault.security import password_attempts
+
+    sid = password_attempts.session_id()
+    if sid is None:
+        return None
+    return hashlib.sha256(b"qvault:pair-session:v1|" + sid.encode("utf-8")).digest()
+
+
+def cancel_live(
+    user_id: int, reason: str, *, now: datetime | None = None, session_tag: object = ...
+) -> int:
+    """Cancel live pairings of an account, in the caller's transaction (a password change, a
+    completed recovery: anything that bumps the credential epoch), or with ``session_tag`` only
+    those one web session showed. Returns how many."""
     now = now or _now()
+    conditions = [DevicePairing.user_id == user_id, DevicePairing.state.in_(LIVE_STATES)]
+    if session_tag is not ...:
+        conditions.append(
+            DevicePairing.session_tag.is_(None)
+            if session_tag is None
+            else DevicePairing.session_tag == session_tag
+        )
     result = db.session.execute(
         update(DevicePairing)
-        .where(DevicePairing.user_id == user_id, DevicePairing.state.in_(LIVE_STATES))
+        .where(*conditions)
         .values(
             state="cancelled",
             finish_reason=reason,
@@ -263,18 +286,23 @@ def create(user: User, *, now: datetime | None = None) -> DevicePairing:
     now = now or _now()
     if not available():
         raise PairingError("not_set_up", "Pairing by code isn't set up on this server.")
-    recent = db.session.scalar(
-        select(func.count())
-        .select_from(DevicePairing)
-        .where(
-            DevicePairing.user_id == user.id, DevicePairing.created_at > now - timedelta(hours=1)
-        )
+    tag = _session_tag()
+    hour = now - timedelta(hours=1)
+    mine = select(func.count()).select_from(DevicePairing).where(
+        DevicePairing.user_id == user.id, DevicePairing.created_at > hour
     )
-    if (recent or 0) >= CREATE_PER_HOUR:
+    account = db.session.scalar(mine) or 0
+    session_count = db.session.scalar(
+        mine.where(
+            DevicePairing.session_tag.is_(None) if tag is None else DevicePairing.session_tag == tag
+        )
+    ) or 0
+    if session_count >= CREATE_PER_HOUR or account >= CREATE_PER_HOUR_ACCOUNT:
         raise PairingError(
             "too_many", "You've shown too many pairing codes this hour. Try again later."
         )
-    cancel_live(user.id, "superseded", now=now)
+    # A new code ends only this session's previous one: never a code another session is showing.
+    cancel_live(user.id, "superseded", now=now, session_tag=tag)
     db.session.flush()
 
     binding = secrets.token_urlsafe(32)
@@ -290,6 +318,7 @@ def create(user: User, *, now: datetime | None = None) -> DevicePairing:
         created_at=now,
         claim_deadline=now + timedelta(seconds=CLAIM_SECONDS),
         wrong_attempts=0,
+        session_tag=tag,
     )
     pairing.token_hash = token_hash(token_text(pairing))
     db.session.add(pairing)
@@ -353,6 +382,35 @@ def cancel(
     if state_of(pairing, now) in LIVE_STATES:
         _end(pairing, "cancelled", reason, now)
         db.session.commit()
+
+
+def cancel_bound(user_id: int, binding: str, reason: str, *, now: datetime | None = None) -> None:
+    """Cancel the live pairing a session with this binding showed (that session has just ended), in
+    the caller's transaction."""
+    now = now or _now()
+    pairing = DevicePairing.query.filter(
+        DevicePairing.user_id == user_id,
+        DevicePairing.state.in_(LIVE_STATES),
+        DevicePairing.binding_hash == _binding_hash(binding),
+    ).one_or_none()
+    if pairing is not None:
+        _end(pairing, "cancelled", reason, now)
+
+
+def withdraw(pending_token: str, *, now: datetime | None = None) -> bool:
+    """The phone cancelled on its code screen (build review F6): the pairing ends, so the web can
+    never add a phone that has deleted its key. Authenticated by the pending token alone; True if a
+    live pairing was ended."""
+    now = now or _now()
+    if not isinstance(pending_token, str) or not pending_token:
+        return False
+    digest = device_service.token_digest(pending_token)
+    pairing = DevicePairing.query.filter_by(pending_token_hash=digest).one_or_none()
+    if pairing is None or state_of(pairing, now) != "claimed":
+        return False
+    ended = _end(pairing, "cancelled", "withdrawn", now)
+    db.session.commit()
+    return ended
 
 
 def cancel_for_session(user: User, *, now: datetime | None = None) -> None:
