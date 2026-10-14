@@ -680,6 +680,9 @@ export const recoveryRequestSchema = z.object({
   confirmed_by_phone: z.boolean(),
   // Review fixes (H1, M3): absent from a server before them.
   device_name: z.string().nullable().optional(),
+  // What names that phone beyond a name its holder can change (re-review N3).
+  device_paired: z.string().nullable().optional(),
+  device_key: z.string().nullable().optional(),
   can_cancel: z.boolean(),
   can_confirm: z.boolean(),
   confirm_would_complete_at: z.string().nullable().optional(),
