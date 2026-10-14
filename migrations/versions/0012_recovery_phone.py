@@ -23,8 +23,9 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-# Integration merge (2026-10-14): built as ``0011_recovery_phone`` after ``0010_recovery_kit``; A10's
-# ``0011_a10_device_pairings`` merged first, so this revision is renumbered 0012 and chained after it.
+# Integration merge (2026-10-14): built as ``0011_recovery_phone`` after ``0010_recovery_kit``;
+# A10's ``0011_a10_device_pairings`` merged first, so this revision is renumbered 0012 and chained
+# after it.
 # The two touch disjoint tables, so the order between them carries no meaning.
 revision: str = "0012_recovery_phone"
 down_revision: str | Sequence[str] | None = "0011_a10_device_pairings"

@@ -170,7 +170,9 @@ def results(tmp_path_factory):
                     "the new password only.",
                 ),
                 # Another moment in the sentence is not this item's: left as the server wrote it.
-                _item(23, "decision_approved", _at(2026, 10, 9, 9, 5), body="Due 12 Oct at 18:00 UTC."),
+                _item(
+                    23, "decision_approved", _at(2026, 10, 9, 9, 5), body="Due 12 Oct at 18:00 UTC."
+                ),
             ],
             "archiveCases": [
                 {"security": True, "archivable": True},
