@@ -97,14 +97,32 @@ export interface RecoveryFacts {
   confirmed_by_phone: boolean;
   /** For a phone reset, the name of the phone that vouched (review H1). */
   device_name?: string | null;
+  /** The day it was paired (YYYY-MM-DD) and the start of its key (re-review N3). */
+  device_paired?: string | null;
+  device_key?: string | null;
 }
 
 /** Where a phone is removed (A10): the web's Security page, with the password. */
 export const REMOVE_PHONE = 'remove it on the Security page on the web, with your password';
 
-/** "The phone “Pixel 8”", or "A phone" when the server did not say which. */
-export function phoneNamed(name: string | null | undefined): string {
-  return name && name.trim() ? `The phone \u201c${name.trim()}\u201d` : 'A phone';
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "The phone “Pixel 8” (paired 4 Oct 2026, key 9f38 c198)", or "A phone". The name is its holder's
+ * to change, so the pairing day and the start of its key, as Other devices and the web's Security
+ * page show them, say which phone it really is (re-review N3).
+ */
+export function phoneNamed(
+  name: string | null | undefined,
+  paired: string | null | undefined = null,
+  key: string | null | undefined = null,
+): string {
+  if (!name || !name.trim()) return 'A phone';
+  const marks: string[] = [];
+  const day = paired && /^\d{4}-\d{2}-\d{2}$/.test(paired) ? paired.split('-').map(Number) : null;
+  if (day) marks.push(`paired ${day[2]} ${MONTHS[day[1] - 1]} ${day[0]}`);
+  if (key && /^[0-9a-f]{8}$/.test(key)) marks.push(`key ${key.slice(0, 4)} ${key.slice(4)}`);
+  return `The phone \u201c${name.trim()}\u201d${marks.length ? ` (${marks.join(', ')})` : ''}`;
 }
 
 /**
@@ -125,7 +143,7 @@ export function recoveryBanner(r: RecoveryFacts, now: number): { title: string; 
   if (r.viewer_as === 'self' && r.route === 'phone') {
     return {
       title: 'Someone is setting a new web password for your account',
-      detail: `${phoneNamed(r.device_name)} approved it. Unless it’s cancelled, a new web password and key take effect ${at}. If this isn’t you, cancel it (that phone then can’t start another for 7 days), then ${REMOVE_PHONE}.`,
+      detail: `${phoneNamed(r.device_name, r.device_paired, r.device_key)} approved it. Unless it’s cancelled, a new web password and key take effect ${at}. If this isn’t you, cancel it (that phone then can’t start another for at least a day), then ${REMOVE_PHONE}.`,
     };
   }
   if (r.viewer_as === 'self') {
@@ -137,7 +155,7 @@ export function recoveryBanner(r: RecoveryFacts, now: number): { title: string; 
   if (r.route === 'phone') {
     return {
       title: `Someone is recovering ${name}’s account`,
-      detail: `${phoneNamed(r.device_name)} paired to ${name}’s account approved a new web password. Unless it’s cancelled, the account gets a new web signing key ${at}. If ${name} didn’t start it, cancel it.`,
+      detail: `${phoneNamed(r.device_name, r.device_paired, r.device_key)} paired to ${name}’s account approved a new web password. Unless it’s cancelled, the account gets a new web signing key ${at}. If ${name} didn’t start it, cancel it.`,
     };
   }
   return {
@@ -155,9 +173,10 @@ export function cancelConsequence(r: Pick<RecoveryFacts, 'route' | 'viewer_as' |
   if (r.route === 'kit') {
     // A phone's cancel never stops the kit working (review M2): only a new kit, made on the web
     // with the password, does.
-    return 'Nothing about your account changes, and your Recovery Kit keeps working. If someone else has it, make a new one on the web: the old one then stops working.';
+    // Nor, since re-review N1, can that kit start another recovery for 7 days.
+    return 'Nothing about your account changes, and your Recovery Kit keeps working, but it can\u2019t start another recovery for 7 days. If someone else has it, make a new one on the web: the old one then stops working.';
   }
-  return `Nothing about your account changes, and the phone that started it can\u2019t start another for 7 days. If you didn\u2019t start it, ${REMOVE_PHONE}.`;
+  return `Nothing about your account changes, and the phone that started it can\u2019t start another for at least a day. If you didn\u2019t start it, ${REMOVE_PHONE}.`;
 }
 
 /** "ABCD-EFGH-JKMN" read out one character at a time, for screen readers. */
