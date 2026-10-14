@@ -208,10 +208,13 @@ export class ClaimNotAnsweredError extends Error {
   }
 }
 
-/** Whether a failed request may have reached the server: no answer, or the server failed. */
+/**
+ * Whether the claim should be sent again, identically, rather than given up: no answer, the server
+ * failed, or it was turned away by the address limit before it was read (429: fixes review N5b).
+ */
 function unanswered(err: unknown): boolean {
   if (err instanceof TransportError) return true;
-  return err instanceof ApiError && err.status >= 500;
+  return err instanceof ApiError && (err.status >= 500 || err.status === 429);
 }
 
 /**

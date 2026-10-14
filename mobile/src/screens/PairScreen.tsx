@@ -195,7 +195,10 @@ export default function PairScreen({ resume, onExit }: { resume?: PendingPairing
       } else if (err instanceof ApiError && (err.code === 'pairing_invalid' || err.code === 'pairing_contested')) {
         await ended(err.code === 'pairing_contested' ? 'contested' : 'invalid');
       } else {
+        // The first claim may have landed: end it on the server before forgetting the key, so a
+        // later scan can't contest this phone's own pairing (fixes review N5b).
         setResend(null);
+        if (pending) await api.pairingWithdraw(pending.pendingToken).catch(() => undefined);
         await forget();
         setProblem(apiProblem(err));
       }
