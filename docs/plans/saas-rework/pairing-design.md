@@ -6,6 +6,14 @@ answers to R1–R5, 7 misstatements of existing code). Every finding is closed b
 §14. The owner approved ⚑1–⚑7 on 2026-10-14. The review fixes add ⚑8–⚑11; the owner's standing
 instruction is to go with the recommendation, so they are built as recommended and listed for
 confirmation.
+**Build status (2026-10-14):** built on `rework/a10-pair` as revised here, pending its build
+review: server and web (`qvault/services/pairing_service.py`, migration `0011_a10_device_pairings`,
+`/api/v1/pairing/*`, `/account/devices/pair*`, web Remove), the per-session password limit, the
+`device_removed` and `device_pairing_refused` notices, the 72-hour lock, app-wide framing refusal,
+and the phone (`mobile/src/screens/PairScreen.tsx`, `claimPairing`/`finishPairing` in `flows.ts`).
+Tests: `tests/test_pairing.py` (§9 items 1–29, 31–35), `tests/test_pairing_vectors.py`,
+`tests/test_mobile_pairing.py` (item 30, and the real flows against a real server). Not done:
+harness screenshots of the phone screens; the handset check (OWNER-ACTIONS §3.5 item 13).
 **Decision:** phone-ux [§6.2a](phone-ux.md) and API row A10; plan R7 ("Every screen rebuilt…",
 open only for this screen).
 **Branch:** `rework/a10-pair` from `saas-rework` `510d6c6`. Code citations are to that commit.

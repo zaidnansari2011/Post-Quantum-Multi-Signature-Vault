@@ -1253,7 +1253,11 @@ phone or a fresh install. Set it up to approve here. Your old phone's key stays 
 remove it on the web."
 
 **§6.2a Pair with the web (P4; needs API A10 and `expo-camera` in the APK; adversarial review
-first):**
+first):** *Status 2026-10-14: designed in [pairing-design.md](pairing-design.md), design reviewed
+and revised, built on `rework/a10-pair` (`src/screens/PairScreen.tsx`); pending its build review.
+As built, the name and the screen-lock check come before the scan, the phone leads with the
+account's email, and the web asks for a 6-digit code from the phone as well as the password
+(pairing-design §3.5, §8).*
 
 - The web's Account → Devices shows a QR code carrying a short-lived enrolment token.
 - The phone scans it, shows "Pair with Zaid in Northwind?" with the account's email, then goes to
@@ -2789,7 +2793,7 @@ renders the fallbacks without shims.*
 | A7 | Per-decision log status (entry, witnessed) | The evidence checks | R2 (optional) |
 | A8 | `GET /notifications`, read, read-all, unread count | Activity "For you" | R4 |
 | A9 | 401 reason codes (`token_expired`, `device_revoked`); device `expires_at` surfaced; **re-authenticate an existing device** (password plus a signature from the device key over a fresh challenge). It must say whether it extends `Device.expires_at` or adds a separate token expiry, list the treasury-seat consequences, and refuse revoked devices and non-active keys (§6.20) | Session ended without a new key | R7 (protocol change: adversarial review, with treasury seats in scope) |
-| A10 | Short-lived (≤ 2 min), single-use enrolment token shown as a QR on the web, confirmed on the web before the key is registered, raising a security notification (§6.2a) | Pair with the web | R6–R7 (**adversarial review**: a new way to bind a signing key without a password) |
+| A10 | Short-lived (≤ 2 min), single-use enrolment token shown as a QR on the web, confirmed on the web before the key is registered, raising a security notification (§6.2a) | Pair with the web | R6–R7 (**adversarial review**: a new way to bind a signing key without a password). *Built 2026-10-14 on `rework/a10-pair` after a design review ([pairing-design.md](pairing-design.md)): `POST /api/v1/pairing/inspect`, `POST /api/v1/pairing/claim`, `GET /api/v1/pairing/status`; pending its build review.* |
 | A11 | `POST /proposals/<uuid>/withdraw`, `can_withdraw`, `raised_again_from` | Withdraw, raise again | R5 |
 | A12 | `POST /proposals/<uuid>/remind` returning `reminded_at` and `next_allowed_at` | Remind | R4 (done: `reminded_at` and `next_allowed_at` on the reply and its refusal, and `remind` on the requester's summary, P4b) |
 | A13 | `create_proposal {decision_type, fields, raised_again_from}`; detail `decision_type`, `fields`, `template_version` (the API names them `fields`, not `type_fields`) | Decision types | R5 (done; phone wired in P3) |
