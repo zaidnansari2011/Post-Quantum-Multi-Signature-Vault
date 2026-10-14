@@ -95,6 +95,16 @@ export interface RecoveryFacts {
   subject_name: string | null;
   completes_at: string | null;
   confirmed_by_phone: boolean;
+  /** For a phone reset, the name of the phone that vouched (review H1). */
+  device_name?: string | null;
+}
+
+/** Where a phone is removed (A10): the web's Security page, with the password. */
+export const REMOVE_PHONE = 'remove it on the Security page on the web, with your password';
+
+/** "The phone “Pixel 8”", or "A phone" when the server did not say which. */
+export function phoneNamed(name: string | null | undefined): string {
+  return name && name.trim() ? `The phone \u201c${name.trim()}\u201d` : 'A phone';
 }
 
 /**
@@ -115,19 +125,19 @@ export function recoveryBanner(r: RecoveryFacts, now: number): { title: string; 
   if (r.viewer_as === 'self' && r.route === 'phone') {
     return {
       title: 'Someone is setting a new web password for your account',
-      detail: `A phone paired to your account approved it. Unless it’s cancelled, a new web password and key take effect ${at}. If this isn’t you, cancel it, then remove that phone.`,
+      detail: `${phoneNamed(r.device_name)} approved it. Unless it’s cancelled, a new web password and key take effect ${at}. If this isn’t you, cancel it (that phone then can’t start another for 7 days), then ${REMOVE_PHONE}.`,
     };
   }
   if (r.viewer_as === 'self') {
     return {
       title: 'Someone is recovering your account',
-      detail: `They used your Recovery Kit${r.confirmed_by_phone ? ', and a phone of yours confirmed it' : ''}. Unless it’s cancelled, your signing key opens with their new password ${at}. If this isn’t you, cancel it: your kit then stops working too.`,
+      detail: `They used your Recovery Kit${r.confirmed_by_phone ? ', and a phone of yours confirmed it' : ''}. Unless it’s cancelled, your signing key opens with their new password ${at}. If this isn’t you, cancel it, then make a new Recovery Kit on the web: the old one then stops working.`,
     };
   }
   if (r.route === 'phone') {
     return {
       title: `Someone is recovering ${name}’s account`,
-      detail: `A phone paired to ${name}’s account approved a new web password. Unless it’s cancelled, the account gets a new web signing key ${at}. If ${name} didn’t start it, cancel it.`,
+      detail: `${phoneNamed(r.device_name)} paired to ${name}’s account approved a new web password. Unless it’s cancelled, the account gets a new web signing key ${at}. If ${name} didn’t start it, cancel it.`,
     };
   }
   return {
@@ -143,15 +153,17 @@ export function cancelConsequence(r: Pick<RecoveryFacts, 'route' | 'viewer_as' |
     return `Nothing about ${name}’s account changes, and their Recovery Kit keeps working. They are told you cancelled it.`;
   }
   if (r.route === 'kit') {
-    return 'Nothing about your account changes. Your Recovery Kit stops working, because someone else has it: make a new one on the web.';
+    // A phone's cancel never stops the kit working (review M2): only a new kit, made on the web
+    // with the password, does.
+    return 'Nothing about your account changes, and your Recovery Kit keeps working. If someone else has it, make a new one on the web: the old one then stops working.';
   }
-  return 'Nothing about your account changes. If you didn’t start it, remove the phone that did.';
+  return `Nothing about your account changes, and the phone that started it can\u2019t start another for 7 days. If you didn\u2019t start it, ${REMOVE_PHONE}.`;
 }
 
-/** "ABCD-EFGH" read out one character at a time, for screen readers. */
+/** "ABCD-EFGH-JKMN" read out one character at a time, for screen readers. */
 export function spokenCode(code: string): string {
   return code
-    .replace('-', '')
+    .replace(/-/g, '')
     .split('')
     .join(' ');
 }

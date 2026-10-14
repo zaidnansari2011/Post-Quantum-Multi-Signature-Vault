@@ -678,8 +678,11 @@ export const recoveryRequestSchema = z.object({
   completes_at: z.string().nullable(),
   request_code: z.string().nullable(),
   confirmed_by_phone: z.boolean(),
+  // Review fixes (H1, M3): absent from a server before them.
+  device_name: z.string().nullable().optional(),
   can_cancel: z.boolean(),
   can_confirm: z.boolean(),
+  confirm_would_complete_at: z.string().nullable().optional(),
 });
 export type RecoveryRequest = z.infer<typeof recoveryRequestSchema>;
 
@@ -716,10 +719,10 @@ export const recoverySigningResponse = z.object({
   expires_at: z.string(),
 });
 
-/** The code the signature earned: shown on this phone once, never stored. */
+/** The code the signature earned: 12 symbols in 3 groups, shown on this phone once, never stored. */
 export const recoveryApproveResponse = z.object({
   ok: z.literal(true),
-  code: z.string().regex(/^[0-9A-Z]{4}-[0-9A-Z]{4}$/),
+  code: z.string().regex(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/),
   expires_at: z.string(),
   purpose: z.enum(['web_reset', 'kit_confirm']),
 });

@@ -21,6 +21,7 @@ import { methodButton } from '../../logic/methodLabel.ts';
 import { codeTimeLeft, recoveryProblem, spokenCode, takesEffect, type RecoveryProblem } from '../../logic/recovery.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const FLOOR_MS = 6 * 60 * 60 * 1000;
 
 export default function KitConfirmScreen({ requestUuid, onBack }: { requestUuid: string; onBack: () => void }) {
   const s = useStyles();
@@ -41,8 +42,12 @@ export default function KitConfirmScreen({ requestUuid, onBack }: { requestUuid:
   }, [shown]);
 
   const request = recovery.data?.requests.find((r) => r.request_uuid === requestUuid && r.viewer_as === 'self');
+  // The server's own figure (24 hours from the kit's use, never less than 6 hours from now: review
+  // M3); worked out here only for a server that does not send it.
   const started = request?.created_at ? Date.parse(request.created_at) : NaN;
-  const sooner = Number.isNaN(started) ? null : new Date(Math.max(started + DAY_MS, now)).toISOString();
+  const sooner =
+    request?.confirm_would_complete_at ??
+    (Number.isNaN(started) ? null : new Date(Math.max(started + DAY_MS, now + FLOOR_MS)).toISOString());
   const left = shown ? codeTimeLeft(shown.expiresAt, now) : null;
 
   const approve = async () => {
@@ -138,7 +143,9 @@ export default function KitConfirmScreen({ requestUuid, onBack }: { requestUuid:
               </View>
             </Section>
             <Text role="caption" tone="muted">
-              Cancelling stops your Recovery Kit working too, because someone else has it. Make a new one on the web.
+              Approving never makes it take effect sooner than 6 hours from now, so you can still cancel it if you were
+              talked into this. Cancelling from this phone keeps your Recovery Kit working: if someone else has it, make
+              a new one on the web.
             </Text>
           </View>
         )}

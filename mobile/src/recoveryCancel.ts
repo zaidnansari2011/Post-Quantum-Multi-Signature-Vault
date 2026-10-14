@@ -19,7 +19,8 @@ export class CancelNeedsScreenLock extends Error {
 }
 
 /**
- * Cancel a recovery: the person's own (which stops a kit it used working) or one they watch over.
+ * Cancel a recovery: the person's own or one they watch over. It never stops a kit working (design
+ * §17 item 19): only a new kit, made on the web with the password, does.
  * The phone's lock is asked first, naming whose recovery; a phone without one is refused.
  */
 export async function cancelRecoveryOnPhone(args: {
