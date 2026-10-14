@@ -516,9 +516,12 @@
   <dl class="q-plain">
     <div><dt>Vault</dt><dd><a href="{{ url_for('vaults.vault_detail', vid=vault.id) }}">{{ vault.name }}</a></dd></div>
     <div><dt>Type</dt><dd>{{ typed.label }}{% if typed.version %}<span class="q-cap">Its text is written from its fields.</span>{% endif %}</dd></div>
-    {#- Under S15 the rule counts who could vote: whoever raised it is in the signed set but can't. -#}
-    {% set vn = voter_ids|length if raiser_excluded else proposal.required_n %}
-    <div><dt>Rule when raised</dt><dd>{% if vn == 1 and proposal.required_m == 1 %}One person decides{% else %}{{ 'Any ' if proposal.required_m < vn }}{{ proposal.required_m }} of {{ vn }}{% endif %}<span class="q-cap">{{ people(voter_ids if raiser_excluded else approver_ids)[:1]|upper }}{{ people(voter_ids if raiser_excluded else approver_ids)[1:] }}.{% if raiser_excluded %} {{ 'You' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'Whoever raised it') }} raised it, so can’t approve it.{% endif %} Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
+    {#- The signed rule, M of N, as the exported record and /verify/ state it (staging QA F7: this
+        said "2 of 2" where the record said "2 of 3"). Under S15 the caption says who could vote:
+        whoever raised it is in the signed set but can't. -#}
+    {% set n = proposal.required_n %}
+    {% set raiser = 'You' if proposal.creator_id == current_user.id else names.get(proposal.creator_id, 'Whoever raised it') %}
+    <div><dt>Rule when raised</dt><dd>{% if n == 1 and proposal.required_m == 1 %}One person decides{% else %}{{ 'Any ' if proposal.required_m < n and not raiser_excluded }}{{ proposal.required_m }} of {{ n }}{% endif %}<span class="q-cap">{{ people(approver_ids)[:1]|upper }}{{ people(approver_ids)[1:] }}.{% if raiser_excluded %} {{ raiser }} raised it, so can’t approve it: {% if voter_ids|length == 1 %}the other approver decides{% elif voter_ids|length == proposal.required_m %}{{ 'both' if proposal.required_m == 2 else 'all ' ~ proposal.required_m }} of the others must approve{% else %}any {{ proposal.required_m }} of the other {{ voter_ids|length }} decide{% endif %}.{% endif %} Later changes to the threshold or approvers don’t add anyone to this {{ noun }}.</span></dd></div>
     {% if changes_since %}
     {#- R5: the vault's rule changes since this was raised, and which of them reach it: its
         threshold and signer set are frozen, but who may sign is checked again at signing. -#}

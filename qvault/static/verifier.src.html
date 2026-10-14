@@ -242,6 +242,21 @@
   const DS_PROPOSAL   = enc.encode('QVAULT-SIG-v1:PROPOSAL|');
   const DS_VOTE       = enc.encode('QVAULT-SIG-v1:VOTE|');
 
+  const requesterExcluded = (log, uuid, authorised, verified) => {
+    let flagged = false;
+    let creator = null;
+    for (const e of (log && Array.isArray(log.entries)) ? log.entries : []) {
+      if (!e || e.ref_id !== uuid) continue;
+      if (e.event_type === 'proposal_created') creator = e.actor_id;
+      else if (e.event_type === 'proposal_rejected') {
+        let p = null;
+        try { p = JSON.parse(e.payload_json); } catch (_) { continue; }
+        flagged = !!p && typeof p === 'object' && p.requester_excluded === true;
+      }
+    }
+    if (!flagged || creator === null || creator === undefined || !authorised.has(creator)) return false;
+    return verified.every(s => s.signer_id !== creator);
+  };
   const entryHash = e => hex(sha256(cat(DS_ENTRY, cbytes({
     seq: e.seq, timestamp: e.timestamp, actor: e.actor,
     actor_id: e.actor_id ?? null, event_type: e.event_type, vault_id: e.vault_id ?? null,
@@ -459,9 +474,15 @@
         met = approvals.length >= d.required_m;
         detail = approvals.length + ' of ' + d.required_m + ' required approvals';
       } else if (d.status === 'rejected') {
-        met = rejections.length > d.required_n - d.required_m;
+        // Under separation of duties the person who raised it is in N but couldn't vote: the
+        // log's proposal_rejected entry says requester_excluded, believed only when that person
+        // opened it, is a signer and cast no vote (staging QA 2026-10-14, F2; as core.py).
+        const excluded = requesterExcluded(log, d.proposal_uuid, authorised, verified);
+        const voters = d.required_n - (excluded ? 1 : 0);
+        met = rejections.length > voters - d.required_m;
         detail = count(rejections.length, 'rejection') + (rejections.length === 1 ? ' makes ' : ' make ')
-          + count(d.required_m, 'approval') + ' unreachable';
+          + count(d.required_m, 'approval') + ' unreachable'
+          + (excluded ? ' from the ' + voters + " who could vote: the person who raised it couldn't approve it" : '');
       } else {
         met = approvals.length < d.required_m;
         detail = d.status + ': ' + approvals.length + ' of ' + d.required_m + ' approvals so far';

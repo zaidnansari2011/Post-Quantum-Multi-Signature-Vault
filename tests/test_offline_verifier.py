@@ -229,6 +229,29 @@ def test_a_rejected_decision_agrees(app, page, witnessed):
     assert report["facts"]["status"] == "rejected"
 
 
+def test_a_rejection_under_separation_of_duties_agrees(app, page, witnessed):
+    """Staging QA 2026-10-14, F2: 2 of 3 where whoever raised it can't approve it, closed by one
+    rejection because only two could vote. Both verifiers read that from the log's entry."""
+    owner = auth_service.register_user("sod-chair@e.com", "Chair", PASSWORD)
+    vault = vault_service.create_vault(owner, "Board", "", 2)
+    yes = auth_service.register_user("sod-yes@e.com", "Supporter", PASSWORD)
+    no = auth_service.register_user("sod-no@e.com", "Objector", PASSWORD)
+    vault_service.add_member(vault, yes.email, "signer", actor_id=owner.id)
+    vault_service.add_member(vault, no.email, "signer", actor_id=owner.id)
+    vault_service.set_requester_can_approve(vault, False, actor_id=owner.id)
+    proposal = proposal_service.create_proposal(vault, owner, "Motion", "Adopt it.")
+    approval_service.cast_vote(proposal, yes, PASSWORD, "approve")
+    approval_service.cast_vote(proposal, no, PASSWORD, "reject", reason="Not convinced.")
+    assert proposal.status == "rejected"
+    checkpoint_service.maybe_checkpoint()
+    checkpoint_service.sync_witness()
+
+    report = agree(app, page, export_service.build_decision_bundle(proposal))
+    assert report["ok"] is True
+    threshold = next(c for c in report["checks"] if c["key"] == "threshold")
+    assert "from the 2 who could vote" in threshold["detail"]
+
+
 # --------------------------------------------------------------------------------------------
 # Agreement on forgeries — the half that actually matters
 # --------------------------------------------------------------------------------------------

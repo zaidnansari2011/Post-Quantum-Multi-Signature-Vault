@@ -14,6 +14,15 @@ longer pass and why (``shortfall``: the actual people, and what stops each), and
 deadline or when the person who raised it withdraws it. ``outlook`` is what every screen reads to
 say so, and the lists show it as "Can’t pass" in place of "Waiting on N".
 
+**When rejections close it (staging QA 2026-10-14, F2).** A decision closes as Rejected once its
+rejections are more than its voters less its threshold: even if everyone else approved, it could not
+pass. Its voters are its signed N, less the person who raised it when separation of duties keeps
+them from voting and they haven't voted (``deciding_n``). Before, N counted that person, so in a
+2-of-3 vault under S15 a 1-1 split could never close and stayed open as "Can’t pass" for good. The
+signed rule is unchanged (S9): the ledger's ``proposal_rejected`` entry says ``requester_excluded``
+when this applied, and the offline verifiers read it there. Demoted, removed or suspended approvers
+still never reject a decision for anyone (owner decision 2026-10-09): nobody rejected it.
+
 **A decision that could never pass is not raised.** ``cannot_raise`` counts the approvers who
 could approve one raised now (in good standing, less the requester under S15) against the
 threshold, and raising is refused when they are too few, with the reason in words.
@@ -214,6 +223,30 @@ def eligible_ids(
     return ids
 
 
+def requester_excluded(proposal, *, allows: bool | None = None) -> bool:
+    """Whether the person who raised ``proposal`` is one of its signed N but can't vote on it:
+    separation of duties applies to it (``requester_may_approve``) and they haven't voted. A vote
+    they cast while they still could keeps counting, and then they count too."""
+    if proposal.creator_id not in _snapshot(proposal):
+        return False
+    if requester_may_approve(proposal, allows=allows):
+        return False
+    return not any(s.signer_id == proposal.creator_id for s in proposal.signatures)
+
+
+def deciding_n(proposal, *, allows: bool | None = None) -> int:
+    """How many people its signed rule lets decide it: its N, less whoever raised it when they
+    can't vote on it (``requester_excluded``). What a rejection is counted against."""
+    return proposal.required_n - (1 if requester_excluded(proposal, allows=allows) else 0)
+
+
+def rejection_closes(proposal, rejections: int, *, allows: bool | None = None) -> bool:
+    """Whether ``rejections`` close ``proposal`` as Rejected: more than its voters less its
+    threshold, so the approvals it needs can no longer be reached by the people its rule lets
+    vote. The same rule as every vault's, with the requester left out under S15 (F2)."""
+    return rejections > deciding_n(proposal, allows=allows) - proposal.required_m
+
+
 def can_sign(proposal, user_id: int) -> bool:
     return user_id in eligible_ids(proposal)
 
@@ -325,8 +358,9 @@ def cannot_pass(
 
     Owner decision 2026-10-09 (staging smoke test): such a decision asks nobody to approve it. It
     leaves Needs you, the approvals inbox, reminders and pushes, nobody is offered Approve and the
-    vote gate takes no approval of it; Reject stays, with its reason. When it becomes Rejected is
-    unchanged: that is the signed M-of-N rule the offline verifier checks (S9). Not permanent: an
+    vote gate takes no approval of it; Reject stays, with its reason. It becomes Rejected only by
+    rejections (``rejection_closes``), never because approvers were demoted, removed or
+    suspended: nobody rejected it. Not permanent: an
     approver reinstated in the workspace, or made an approver again, can make it passable again.
     """
     return (
