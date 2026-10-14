@@ -766,3 +766,22 @@ failing (`tests/test_pairing_build_review.py`, and `tests/test_mobile_pairing.py
 | --- | --- | --- |
 | ⚑12 | Sign out every web session from before this deploy once, and end any web session 30 days after its sign-in. | **Yes.** It is the only way a cookie copied before the deploy can't bypass the per-session limit, and it stops a re-signed cookie living for ever. The cost is one sign-in each, once. |
 | ⚑13 | End a web session at its tenth wrong password, and alarm the person at 5, 20 and 50 wrong passwords a day. | **Yes.** A stolen cookie is then worth ten guesses in total, and the owner hears of guessing at any door. |
+
+### 15.1 Fixes review response
+
+The fixes were reviewed again (`rework-handoff/reviews/review-a10-fixes.md`: F1, F2, F4, F5, F6 and
+F8 closed; F3 and F7 partly; one new medium and five lows). Each is a regression test in
+`tests/test_pairing_build_review.py`. Migration `0011_a10_device_pairings` was amended in place:
+it was never deployed, and its revision id is kept because the integration branch chains R9's
+`0012_recovery_phone` onto it.
+
+| Finding | Change |
+| --- | --- |
+| N1 the ten-guess count and the alarm lived in process memory (production scales to zero) | Each wrong password typed in a signed-in web session is a `password_failures` row. The session's count (ending it at ten) and the account's 24-hour count (alarming at 5, 20, 50) are read from the database, so a restart forgets nothing. Only the 15-minute brake before Argon2id stays in memory. |
+| N2 a copied cookie still cancelled the owner's code (F7 partial) | A new code now ends only the code whose binding the request holds. A cookie copied before the owner shows a code can't end it, nor another session's. **Accepted residual:** a copied cookie *is* that browser session, so it can spend that session's 10 codes an hour; the refusal says "if you didn't show them, sign out, sign in again (a new count) and change your password". The account ceiling (30) needs three sign-ins, so the password. |
+| N3 the owner's own typos alarmed and could sign them out | A correct password in the same session deletes that session's wrong passwords from the 15 minutes before it: a typo followed by the right password never counts. The alarm reads "A wrong password was typed N times today … and not followed by the right one. If it was you, you can ignore this." Wrong passwords never followed by the right one still count, which is the attack (⚑13 amended: ordinary typos don't count). |
+| N4 the owed-notice job told removals from before A10 | Owed is recorded explicitly at the revoke (`owed_device_notices`, with who removed it), and the job sends only those, with the same "from the web / by <phone>" wording. A notice still owed after 7 days is dropped with a log line. The removed phone's own push can't be sent on this path (its token is gone); that is stated. |
+| N5 claim then withdraw erased the contest | A withdraw is logged (`device_pairing_refused {withdrawn}`, actor `pairing:<uuid>`). A scan of a code withdrawn within its confirm window is a contest: logged, told, and the scanning phone hears "another phone scanned this code". The web page says "The phone that scanned this code cancelled. If that wasn't your phone, someone saw your screen." |
+| N5b the phone forgot its key on a 429 retry | 429 is treated like no answer (the identical claim can be sent again), and any other refusal on the retry withdraws the pairing before the key is forgotten. |
+| Nits | Ended sessions older than the 30-day session life are pruned; the in-memory lifetime map is gone. |
+| Suite | The QR's white ground is a token (`--qr-ground`, white in both themes) and the heading uses `--text-title-size` without a literal fallback, so `test_design_tokens` is green. |
