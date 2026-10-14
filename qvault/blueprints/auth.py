@@ -110,6 +110,10 @@ def forgot_password():
 @bp.post("/logout")
 @login_required
 def logout():
+    # A pairing code this session is showing ends with it (A10, pairing-design §4.2).
+    from qvault.services import pairing_service
+
+    pairing_service.cancel_for_session(current_user)
     logout_user()
     flash("You have been logged out.", "info")
     # An invitation for another address offers to sign out and come back to it.
