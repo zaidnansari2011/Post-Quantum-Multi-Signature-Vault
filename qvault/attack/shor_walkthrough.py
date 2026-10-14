@@ -67,17 +67,17 @@ def choose_base(n: int, rng: random.Random) -> dict:
     """Step 2: a random base ``a`` with ``gcd(a, N) = 1``, drawn as ``shor.shor_factor`` draws it.
 
     A base sharing a factor with N would factor N on the spot, with no quantum step. At 9 bits that
-    happens often; at 2048 bits about 2^-1013 of the time. So, as
-    ``shor_factor(force_quantum=True)``
-    does, such a base is redrawn, and every redraw is reported with its gcd rather than hidden.
+    happens often; at 2048 bits about (p + q) / N, around 2^-1023, of the time. So, as
+    ``shor_factor(force_quantum=True)`` does, such a base is redrawn, and the redraws are counted.
+    Only the count leaves the server: the discarded base, or its gcd with N, would hand the reader
+    a factor before Shor has found one.
     """
-    redrawn = []
+    redrawn = 0
     for _ in range(MAX_BASE_DRAWS):
         a = rng.randrange(2, n - 1)
-        common = math.gcd(a, n)
-        if common == 1:
+        if math.gcd(a, n) == 1:
             return {"a": a, "gcd": 1, "redrawn": redrawn}
-        redrawn.append({"a": a, "gcd": common})
+        redrawn += 1
     raise shor.ShorError(f"no base coprime to {n} in {MAX_BASE_DRAWS} draws")  # pragma: no cover
 
 
@@ -87,6 +87,9 @@ def period_picture(a: int, n: int) -> dict:
     The period ``r`` here is found classically, by running the sequence until it returns to 1. That
     is possible only because N is tiny: at 2048 bits the sequence runs for up to about 2^2048 terms
     before repeating, which is the whole reason the quantum step exists. The page says so.
+
+    ``rows`` is the same sequence cut into lines of length r, so the columns line up and the
+    repetition can be seen at a glance.
     """
     r = shor.true_order(a, n)
     count = min(SEQUENCE_MAX_POINTS, max(r + 2, math.ceil(r * SEQUENCE_PERIODS) + 1))
@@ -97,6 +100,7 @@ def period_picture(a: int, n: int) -> dict:
         "r": r,
         "values": values,
         "ones": [x for x, v in enumerate(values) if v == 1],
+        "rows": [values[i : i + r] for i in range(0, count, r)],
         "truncated": count < math.ceil(r * SEQUENCE_PERIODS) + 1,
     }
 
@@ -263,6 +267,7 @@ def analyse_measurement(a: int, n: int, t: int, y: int) -> dict:
             f"mod {n}"
         )
     return {
+        **_relation(a, n, chosen, order),
         "y": y,
         "size": size,
         "decimal": f"{y / size:.10f}",
@@ -277,6 +282,28 @@ def analyse_measurement(a: int, n: int, t: int, y: int) -> dict:
         "uninformative": chosen == 1,
         "reason": reason,
     }
+
+
+def _relation(a: int, n: int, chosen: int, order: int | None) -> dict:
+    """How the candidate and the confirmed exponent relate to the period, for the page's wording.
+
+    The attack never reads the true period; it is computed here (classically, as for the picture)
+    only so the sentence under the table says exactly what happened:
+
+    * ``period``: the candidate is the period itself;
+    * ``divisor``: the candidate is a proper divisor of the period (the measured s and r shared a
+      factor) and the multiple test recovered the period;
+    * ``multiple``: the exponent found brings a back to 1 but is a multiple of the period rather
+      than the period (an off-peak measurement); the factoring step accepts any such exponent.
+    """
+    if order is None:
+        return {"relation": None, "minimal": None}
+    r = shor.true_order(a, n)
+    if order == r:
+        relation = "period" if chosen == r else "divisor"
+    else:
+        relation = "multiple"
+    return {"relation": relation, "minimal": order == r}
 
 
 def euclid(x: int, y: int) -> tuple[int, list[dict]]:
@@ -417,11 +444,29 @@ class RSARun:
 MAX_MEASUREMENTS_PER_RUN = 400  # a bound on one run's server work, far above what Shor needs
 
 
+class SimulatorBusy(RuntimeError):
+    """Another request is building a state vector; this one should try again in a moment."""
+
+
+# One state-vector simulation at a time in this process. Each is about a second of pure-Python
+# CPU holding the GIL and some 30 MB at its peak, and the app runs as one worker, so a second
+# simultaneous one would only slow every page down. Refused rather than queued: a judge's click
+# gets "try again in a second" instead of a request that hangs.
+_SIMULATOR = threading.Semaphore(1)
+
+
 def start_run(message: str, seed: int | None = None) -> tuple[RSARun, dict]:
-    """Steps 1 to 4 for a new key: the key, a base, the function picture and the register."""
+    """Steps 1 to 4 for a new key: the key, a base, the function picture and the register.
+
+    Also the input check for the right column's table, run on this key: the page compares
+    ML-DSA with the RSA key the judge is actually attacking.
+    """
+    message = check_message(message)
     rng = random.Random(seed if seed is not None else secrets.randbits(64))
-    run = RSARun(key=new_key(rng), message=check_message(message), rng=rng)
-    return run, {"key": public_view(run.key), **new_base(run)}
+    run = RSARun(key=new_key(rng), message=message, rng=rng)
+    started = new_base(run)
+    instance = shor_instance(f"RSA-TOY-{run.key.bits}", run.key.public_bytes())
+    return run, {"key": public_view(run.key), "checks": instance["checks"], **started}
 
 
 def public_view(key: toy_rsa.ToyRSAKey) -> dict:
@@ -430,9 +475,17 @@ def public_view(key: toy_rsa.ToyRSAKey) -> dict:
 
 
 def new_base(run: RSARun) -> dict:
-    """Steps 2 to 4 again, for the same key: what the algorithm does when a base fails."""
-    base = choose_base(run.key.n, run.rng)
-    register, chart = prepare_register(base["a"], run.key.n, run.rng)
+    """Steps 2 to 4 again, for the same key: what the algorithm does when a base fails.
+
+    Raises ``SimulatorBusy`` at once if another state vector is being built in this process.
+    """
+    if not _SIMULATOR.acquire(blocking=False):
+        raise SimulatorBusy("Another run is being simulated. Try again in a second.")
+    try:
+        base = choose_base(run.key.n, run.rng)
+        register, chart = prepare_register(base["a"], run.key.n, run.rng)
+    finally:
+        _SIMULATOR.release()
     run.base, run.register = base, register
     run.bases_tried.append({"a": base["a"]})
     return {
@@ -621,6 +674,12 @@ def shor_instance(alg_id: str, public_key: bytes) -> dict:
 
     Only these two families are handled. ECDSA falls to Shor's discrete-logarithm variant, a
     different hidden-subgroup instance, and this function makes no claim about it.
+
+    Each check says separately what was **computed** here from the key (``computed``) and what is
+    taken from the scheme's definition (``stated``), and its ``present`` value is derived from the
+    computed facts alone: for RSA, whether N is composite; for ML-DSA, whether the key carries
+    anything beyond rho and t1, and whether q is composite. The page shows both parts, so no
+    sentence on it implies a computation that did not happen.
     """
     analogue = shor.no_quantum_analogue(alg_id)
     requires = analogue["requires"]
@@ -628,22 +687,28 @@ def shor_instance(alg_id: str, public_key: bytes) -> dict:
         key = json.loads(public_key)
         n, e = key["n"], key["e"]
         composite = not cost._is_probable_prime(n)
+        found = f"N = {n} is {'composite' if composite else 'prime'} (Miller-Rabin)."
         checks = [
             {
                 "requirement": requires[0],
                 "present": composite,
-                "evidence": f"N = {n} is composite, so the group of units mod N has an order "
-                "nobody can compute without p and q",
+                "computed": found,
+                "stated": "The group of units mod a composite N has order (p - 1)(q - 1), "
+                "which cannot be computed without p and q.",
             },
             {
                 "requirement": requires[1],
                 "present": composite,
-                "evidence": f"f(x) = a^x mod {n} repeats with a period that divides lcm(p-1, q-1)",
+                "computed": found,
+                "stated": f"f(x) = a^x mod {n} repeats with a period dividing lcm(p - 1, q - 1), "
+                "which depends on the secret factors.",
             },
             {
                 "requirement": requires[2],
-                "present": True,
-                "evidence": f"a^x mod {n} is ordinary modular exponentiation",
+                "present": composite,
+                "computed": found,
+                "stated": f"a^x mod {n} is ordinary modular exponentiation, and its period is "
+                "the one above.",
             },
         ]
         if not composite:  # pragma: no cover - a prime N is not an RSA key
@@ -652,34 +717,47 @@ def shor_instance(alg_id: str, public_key: bytes) -> dict:
 
     if alg_id.startswith("ML-DSA"):
         q = MLDSA65["q"]
-        expected = SEED_BYTES + MLDSA65["k"] * MLDSA65["n"] * T1_BITS // 8
-        key_has_modulus = len(public_key) != expected  # rho || t1 and nothing else
+        t1_bytes = MLDSA65["k"] * MLDSA65["n"] * T1_BITS // 8
+        key_has_more = len(public_key) != SEED_BYTES + t1_bytes  # rho || t1 and nothing else
+        t1_max = max(_unpack(public_key[SEED_BYTES:], T1_BITS, MLDSA65["k"] * MLDSA65["n"]))
         q_prime = cost._is_probable_prime(q)
         order_factors = _factorise(q - 1)
         order_text = " x ".join(f"{p}^{e}" if e > 1 else str(p) for p, e in order_factors)
+        hidden_order = key_has_more or not q_prime  # the only way a secret group order could exist
+        layout = (
+            f"The key's {len(public_key):,} bytes are exactly rho ({SEED_BYTES}) and t1 "
+            f"({t1_bytes:,}), whose largest coefficient is {t1_max}: no modulus N is carried."
+            if not key_has_more
+            else f"The key is {len(public_key):,} bytes, not rho and t1 alone."
+        )
+        modulus = (
+            f"The scheme's modulus q = {q:,} is {'prime' if q_prime else 'composite'} "
+            f"(Miller-Rabin), and q - 1 = {q - 1:,} = {order_text} (factorised here)."
+        )
         checks = [
             {
                 "requirement": requires[0],
-                "present": False,
-                "evidence": f"the key is rho ({SEED_BYTES} bytes) and t1, with no modulus in it. "
-                f"The scheme's only modulus is q = {q:,}, which is "
-                f"{'prime' if q_prime else 'composite'}: its group of units has order "
-                f"q - 1 = {q - 1:,} = {order_text}, already public",
+                "present": hidden_order,
+                "computed": f"{layout} {modulus}",
+                "stated": "So the only group of units in play has a public order.",
             },
             {
                 "requirement": requires[1],
-                "present": False,
-                "evidence": "every period mod q divides q - 1, which is public, and the secret "
-                "is a pair of short vectors in t = A*s1 + s2, not a period of anything",
+                "present": hidden_order,
+                "computed": "Every period mod q divides q - 1, factorised above, so none is "
+                "secret.",
+                "stated": "The secret is the short vectors s1, s2 in t = A*s1 + s2 (FIPS 204); "
+                "they enter linearly, not as an exponent.",
             },
             {
                 "requirement": requires[2],
-                "present": False,
-                "evidence": "exponentiation mod q exists, but the period it would reveal is "
-                "already known, so there is nothing secret to put in superposition",
+                "present": hidden_order,
+                "computed": "Exponentiation mod q exists, but the periods it can reveal are "
+                "the divisors of q - 1 above.",
+                "stated": None,
             },
         ]
-        if key_has_modulus or not q_prime:  # pragma: no cover - would be a different scheme
+        if hidden_order:  # pragma: no cover - would be a different scheme
             return {"alg_id": alg_id, "checks": checks, "unexpected": True}
         raise NoShorInstance(
             alg_id,
@@ -689,12 +767,14 @@ def shor_instance(alg_id: str, public_key: bytes) -> dict:
     raise ValueError(f"shor_instance handles RSA and ML-DSA only, not {alg_id}")
 
 
-def mldsa_panel(provider, toy_public_key: bytes | None = None) -> dict:
-    """The right column, steps 1 and 2: a real ML-DSA-65 key, and the attempt to attack it."""
+def mldsa_panel(provider) -> dict:
+    """The right column, steps 1 and 2: a real ML-DSA-65 key, and the attempt to attack it.
+
+    The RSA side of the comparison table comes from ``start_run``, on the key the judge is
+    attacking in the left column, so the two columns never show different RSA keys.
+    """
     keypair = provider.keygen()
     layout = mldsa_key_layout(keypair.public_key, keypair.secret_key)
-    rsa_key = toy_public_key or toy_rsa.generate(rng=random.Random()).public_bytes()
-    rsa = shor_instance("RSA-TOY-9", rsa_key)
     try:
         shor_instance(provider.meta.alg_id, keypair.public_key)
     except NoShorInstance as refusal:
@@ -704,8 +784,7 @@ def mldsa_panel(provider, toy_public_key: bytes | None = None) -> dict:
     return {
         "alg_id": provider.meta.alg_id,
         "layout": layout,
-        "rsa_checks": rsa["checks"],
-        "rsa_n": rsa["n"],
+        "requires": shor.no_quantum_analogue(provider.meta.alg_id)["requires"],
         "refusal": refused,
     }
 
@@ -778,16 +857,23 @@ def _eliminate(inst: dict, target: list[int]) -> dict:
     }
 
 
-def lwe_demo(n: int = 4, noise: bool = True, seed: int | None = None) -> dict:
+def lwe_demo(
+    n: int = 4, noise: bool = True, seed: int | None = None, *, instance: dict | None = None
+) -> dict:
     """Gaussian elimination on a toy LWE instance, without and with its noise.
 
     Without noise the first n equations pin s down exactly. With noise, the same elimination
     returns s + A_n^-1 * e_n: an answer that fits the n equations it used and misses the others by
     large amounts. If the noise on those n rows happens to be all zero (probability (1/3)^n) the
     elimination succeeds, and that is reported as luck rather than hidden.
+
+    Pass ``instance`` (one of an ``LWERun``'s) so the page's brute force searches the very
+    equations the page prints.
     """
-    rng = random.Random(seed if seed is not None else secrets.randbits(64))
-    inst = lwe_instance(n, rng)
+    if instance is None:
+        rng = random.Random(seed if seed is not None else secrets.randbits(64))
+        instance = lwe_instance(n, rng)
+    inst, n = instance, instance["n"]
     out = {"instance": inst, "clean": _eliminate(inst, inst["t_clean"])}
     if noise:
         out["noisy"] = _eliminate(inst, inst["t"])
@@ -1005,3 +1091,9 @@ class RunStore:
             if run is not None:
                 self._runs.move_to_end(run_id)
         return run if isinstance(run, kind) else None
+
+
+# Separate stores, so page loads (each makes an LWE run) never push out a judge's live RSA run.
+# An RSA run holds about 2 MB; an LWE run a few kilobytes, so many more of those are kept.
+RSA_RUNS_KEPT = 8
+LWE_RUNS_KEPT = 128
