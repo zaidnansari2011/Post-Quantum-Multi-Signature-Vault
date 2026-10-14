@@ -497,9 +497,9 @@ def start_with_kit(
         if again_at is not None:
             raise RecoveryRefused(
                 "too_soon",
-                "This kit's last recovery was cancelled from the browser that started it less "
-                "than 24 hours ago, so it can't start another yet. Nothing was changed. Try again "
-                f"after {_readable(again_at)}.",
+                "This kit's last recovery was cancelled recently (from the browser that started "
+                "it, or from the account's phone), so it can't start another yet. Nothing was "
+                f"changed. Try again after {_readable(again_at)}.",
             )
         try:
             opened = recovery_kit.open_wraps(kit, kem_secret)
@@ -606,16 +606,33 @@ def start_with_kit(
 
 
 def _restart_allowed_at(kit, now: datetime) -> datetime | None:
-    """When ``kit`` may start again, if a request it started was cancelled from its own browser
-    less than RESTART_AFTER_OWN_CANCEL ago (design §16 item 19); otherwise None."""
-    last = db.session.scalar(
+    """When ``kit`` may start again, or None: 24 hours after a request it started was cancelled
+    from its own browser (design §16 item 19), and 7 days after the person's phone cancelled one
+    (design §17 item 27, re-review N1: a phone's cancel no longer burns the kit, so without this a
+    kit thief could restart the moment a phone-only owner cancelled)."""
+    from qvault.services import recovery_phone
+
+    holds = []
+    own = db.session.scalar(
         select(func.max(RecoveryRequest.finished_at)).where(
             RecoveryRequest.kit_id == kit.id,
             RecoveryRequest.cancelled_as == "status_holder",
             RecoveryRequest.finished_at > now - RESTART_AFTER_OWN_CANCEL,
         )
     )
-    return _aware(last) + RESTART_AFTER_OWN_CANCEL if last is not None else None
+    if own is not None:
+        holds.append(_aware(own) + RESTART_AFTER_OWN_CANCEL)
+    phone = db.session.scalar(
+        select(func.max(RecoveryRequest.finished_at)).where(
+            RecoveryRequest.kit_id == kit.id,
+            RecoveryRequest.cancelled_as == "self",
+            RecoveryRequest.cancel_reason == recovery_phone.FROM_PHONE,
+            RecoveryRequest.finished_at > now - recovery_phone.RESTART_AFTER_CANCEL,
+        )
+    )
+    if phone is not None:
+        holds.append(_aware(phone) + recovery_phone.RESTART_AFTER_CANCEL)
+    return max(holds) if holds else None
 
 
 def _readable(moment: datetime) -> str:
@@ -647,6 +664,12 @@ def _erase_pending(request: RecoveryRequest) -> None:
         db.session.delete(wrap)
 
 
+#: Written to a cancelled request's ``end_reason`` when its notice could not be written with the
+#: cancel (a cancel made by a device removal, whose notice is best-effort so the removal never
+#: fails because of it). ``send_owed_notices`` sends it later and clears the mark.
+NOTICE_OWED = "notice_owed"
+
+
 def cancel(
     request: RecoveryRequest,
     *,
@@ -655,9 +678,16 @@ def cancel(
     reason: str,
     burn: bool,
     now: datetime | None = None,
+    notice_best_effort: bool = False,
 ) -> bool:
     """Cancel ``request`` if it is still waiting and its time has not come, or if it is a phone
     reset still waiting for its code (Phase 2); True if this call did.
+
+    ``notice_best_effort``: the cancel is part of something that must not fail because of a
+    notice (a device removal, A10's rule). The cancel and its ledger entry still commit with the
+    caller; the notice is written in a savepoint, and if that fails it is owed (``NOTICE_OWED``)
+    and sent by the scheduler (``send_owed_notices``). The banner cannot carry it: a cancelled
+    request has none.
 
     Compare-and-set: one conditional UPDATE, so a cancel at ``completes_at - 1 s`` wins and one at
     ``completes_at`` loses to completion, whichever process gets there; and a phone reset's code
@@ -719,8 +749,56 @@ def cancel(
     )
     if was == "waiting":
         # A phone reset nobody claimed was never told to anyone, so its end is not told either.
-        notification_service.recovery_cancelled(request, watchers(request.user_id), now=now)
+        if notice_best_effort:
+            _cancel_notice_best_effort(request, now)
+        else:
+            notification_service.recovery_cancelled(request, watchers(request.user_id), now=now)
     return True
+
+
+def _cancel_notice_best_effort(request: RecoveryRequest, now: datetime) -> bool:
+    """Write ``request``'s cancel notice in a savepoint. On failure, mark it owed and carry on.
+    True if it was written."""
+    from qvault.services import notification_service
+
+    try:
+        with db.session.begin_nested():
+            notification_service.recovery_cancelled(request, watchers(request.user_id), now=now)
+    except Exception:
+        current_app.logger.exception(
+            "could not write the cancel notice of recovery %s; it is owed", request.request_uuid
+        )
+        request.end_reason = NOTICE_OWED
+        return False
+    if request.end_reason == NOTICE_OWED:
+        request.end_reason = None
+    return True
+
+
+#: How long an owed cancel notice is retried before it is given up (and logged).
+OWED_NOTICE_WINDOW = timedelta(days=7)
+
+
+def send_owed_notices(*, now: datetime | None = None) -> int:
+    """The scheduler's part: send every cancel notice that could not be written with its cancel
+    (``NOTICE_OWED``), each in its own savepoint, so the person and their watchers still hear
+    that a recovery of the account ended and who ended it. Returns how many were sent."""
+    now = now or _now()
+    owed = (
+        RecoveryRequest.query.filter(
+            RecoveryRequest.state == "cancelled",
+            RecoveryRequest.end_reason == NOTICE_OWED,
+            RecoveryRequest.finished_at > now - OWED_NOTICE_WINDOW,
+        )
+        .order_by(RecoveryRequest.id)
+        .all()
+    )
+    sent = 0
+    for request in owed:
+        if _cancel_notice_best_effort(request, _aware(request.finished_at)):
+            sent += 1
+    db.session.commit()
+    return sent
 
 
 def cancel_as(viewer: User, request_uuid: str, *, now: datetime | None = None) -> RecoveryRequest:
@@ -994,6 +1072,7 @@ def tick(*, now: datetime | None = None) -> int:
     now = now or _now()
     try:
         swept = recovery_phone.sweep(now=now)
+        send_owed_notices(now=now)
     except Exception:
         db.session.rollback()
         if current_app.config.get("TESTING"):
@@ -1041,6 +1120,9 @@ class Banner:
     viewer_as: str
     #: For a phone reset, the vouching phone's name (review H1): which phone to remove.
     device_name: str | None = None
+    #: And what names it beyond that name, which its holder can change (re-review N3).
+    device_paired: datetime | None = None
+    device_key: str | None = None
 
 
 def _possibly_watched(viewer_id: int):
@@ -1098,8 +1180,20 @@ def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
             if request.route == "phone":
                 from qvault.services import recovery_phone
 
-                phone = recovery_phone.vouching_device_name(request)
-            found.append(Banner(request, request.user, _aware(request.completes_at), role, phone))
+                phone = recovery_phone.vouching_device(request)
+            found.append(
+                Banner(
+                    request,
+                    request.user,
+                    _aware(request.completes_at),
+                    role,
+                    phone.name if phone is not None else None,
+                    _aware(phone.created_at) if phone is not None else None,
+                    phone.key.public_fingerprint()[:8]
+                    if phone is not None and phone.key is not None
+                    else None,
+                )
+            )
     return found
 
 

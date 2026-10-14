@@ -572,8 +572,7 @@ def _phone_name(request) -> dict:
         return {}
     from qvault.services import recovery_phone
 
-    name = recovery_phone.vouching_device_name(request)
-    return {"device_name": name} if name else {}
+    return recovery_phone.device_facts(recovery_phone.vouching_device(request))
 
 
 def recovery_phone_codes(
@@ -648,6 +647,7 @@ def recovery_cancelled(request, watchers: dict[int, str], *, now: datetime | Non
             "kit_burned": bool(request.kit_burned),
             "failed": request.state == "failed",
             "route": request.route,
+            "cancel_reason": request.cancel_reason,
             **_phone_name(request),
         },
     )
