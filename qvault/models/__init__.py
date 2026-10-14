@@ -13,7 +13,8 @@ proposal_lifecycle (decision depth, plan R5); decision_comment (a decision's uns
 discussion, R5); decision_fields (a typed decision's unsigned fields, R5); delivery and
 push_token (the email and push outbox, plan R8); recovery_kit, recovery_kit_wrap,
 recovery_request, recovery_request_wrap, credential_epoch, recovery_notice and the kit throttle's
-two tables (account recovery, plan R9).
+two tables (account recovery, plan R9); device_pairing (pairing a phone by a code
+shown on the web, A10).
 Added in later phases: rotation_event.
 """
 
@@ -30,6 +31,7 @@ from .file import VaultFile
 from .key import Key
 from .ledger import LedgerEntry
 from .notification import Notification, NotificationPreference
+from .pairing import DevicePairing
 from .proposal import DecisionFields, Proposal, ProposalLifecycle
 from .reconfiguration import (
     Reconfiguration,
@@ -53,9 +55,12 @@ from .treasury_job import TreasuryJob, TreasuryJobTransaction
 from .user import User
 from .user_setting import UserSetting
 from .vault import Vault, VaultMember, VaultPolicy, VaultRule
+from .web_session import EndedWebSession
 from .workspace import Invitation, Workspace, WorkspaceMember
 
 __all__ = [
+    "DevicePairing",
+    "EndedWebSession",
     "User",
     "Key",
     "AlgorithmConfig",

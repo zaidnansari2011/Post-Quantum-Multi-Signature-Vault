@@ -9,6 +9,7 @@ so none of them can be altered after signatures exist.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 from qvault.crypto import canonical_json
@@ -177,3 +178,58 @@ def device_enrolment_bytes(
         }
     )
     return DS_DEVICE_ENROL + b"|" + body
+
+
+DS_DEVICE_PAIR = b"QVAULT-SIG-v1:DEVICE-PAIR"
+
+
+def device_pairing_bytes(
+    *,
+    user_id: int,
+    pairing_uuid: str,
+    alg_id: str,
+    public_key_b64: str,
+    pending_token_digest: str,
+) -> bytes:
+    """The exact bytes a phone signs to claim a pairing by code (A10, pairing-design §3.8).
+
+    The enrolment proof's job (possession of the key being registered, bound to the account), plus
+    two bindings that route needs and the password route did not:
+
+    - ``pairing_uuid``, the server-chosen id of a pairing session that lives at most four minutes:
+      the freshness the enrolment challenge gives the password route, so no challenge is issued;
+    - ``pending_token_digest``, the digest of the bearer token the phone chose and keeps: a proof
+      captured or replayed cannot install anyone else's token, so a retry that repeats the body is
+      harmless and one that changes the digest needs the private key.
+
+    ``DS_DEVICE_PAIR`` keeps these bytes disjoint from proposals, votes and password enrolment.
+    """
+    body = canonical_json(
+        {
+            "user_id": user_id,
+            "pairing_uuid": pairing_uuid,
+            "alg_id": alg_id,
+            "public_key": public_key_b64,
+            "pending_token_digest": pending_token_digest,
+        }
+    )
+    return DS_DEVICE_PAIR + b"|" + body
+
+
+def pairing_check_code(
+    *, pairing_uuid: str, public_key_sha256: str, pending_token_digest: str
+) -> str:
+    """The six digits the phone shows and the person types on the web (A10, §3.8).
+
+    Derived from the pairing, the claimed key and the pending token's digest. The web page never
+    holds the digest, so only the server and the phone that won the claim can compute it: typing
+    it forces the code to come from a phone in the person's hand."""
+    digest = hashlib.sha256(
+        b"qvault:pair-check:v1|"
+        + pairing_uuid.encode("ascii")
+        + b"|"
+        + public_key_sha256.encode("ascii")
+        + b"|"
+        + pending_token_digest.encode("ascii")
+    ).digest()
+    return f"{int.from_bytes(digest[:8], 'big') % 1_000_000:06d}"

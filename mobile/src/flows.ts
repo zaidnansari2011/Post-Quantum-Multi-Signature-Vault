@@ -4,6 +4,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import * as api from './api/endpoints.ts';
+import { ApiError, TransportError } from './api/client.ts';
 import { getAlgorithm, negotiateAlgorithm } from './crypto/algorithms.ts';
 import {
   deviceEnrolmentBytes,
@@ -12,11 +13,19 @@ import {
   voteSigningBytes,
   type Decision,
 } from './crypto/signing.ts';
-import { toBase64, toHex } from './crypto/bytes.ts';
+import { fromBase64, toBase64, toHex } from './crypto/bytes.ts';
 import { executionDigest, reconfigureDigest } from './crypto/execution.ts';
 import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import type { Custody, ProtectionLevel, StoredIdentity } from './custody.ts';
-import type { ProposalDetail, ReconfigurationView } from './api/schemas.ts';
+import type { PairingInspect, PairingStatus, ProposalDetail, ReconfigurationView } from './api/schemas.ts';
+import {
+  devicePairingBytes,
+  newPendingToken,
+  pairingCheckCode,
+  pendingTokenDigest,
+  publicKeySha256,
+} from './crypto/pairing.ts';
+import { confirmedMatches, type PendingPairing } from './logic/pairing.ts';
 import { decisionCode } from './logic/decisionCode.ts';
 import { treasuryChangePrompt, votePrompt, type PromptCopy } from './logic/prompt.ts';
 
@@ -170,6 +179,163 @@ export async function enrolThisDevice(args: {
   await args.custody.saveToken(enrolled.token);
   await args.custody.saveIdentity(identity);
   return { identity, token: enrolled.token };
+}
+
+// -- pairing with the web (phone-ux §6.2a, A10, pairing-design §3, §8) ---------------------------
+
+/** The server answered a claim with a fingerprint that is not this phone's key. */
+export class PairingMismatchError extends Error {
+  constructor() {
+    super('The server named a different key than the one this phone made. Nothing was kept.');
+    this.name = 'PairingMismatchError';
+  }
+}
+
+/**
+ * The claim was sent but no answer came back (a timeout, a network change, a server error): it may
+ * or may not have landed. Nothing is forgotten (build review F2). `resend` sends the IDENTICAL claim
+ * again, which the server answers the same way whether or not the first one landed; a new key would
+ * contest the phone's own pairing and raise a false "someone saw your screen" alarm.
+ */
+export class ClaimNotAnsweredError extends Error {
+  readonly pending: PendingPairing;
+  readonly resend: () => Promise<PendingPairing>;
+  constructor(pending: PendingPairing, resend: () => Promise<PendingPairing>) {
+    super('The claim was sent but no answer came back.');
+    this.name = 'ClaimNotAnsweredError';
+    this.pending = pending;
+    this.resend = resend;
+  }
+}
+
+/** Whether a failed request may have reached the server: no answer, or the server failed. */
+function unanswered(err: unknown): boolean {
+  if (err instanceof TransportError) return true;
+  return err instanceof ApiError && err.status >= 500;
+}
+
+/**
+ * Claim a scanned pairing code with a key made here. No password: the code is the credential, and
+ * the person confirms on the web with the 6-digit code this returns and their password.
+ *
+ * The pending token is chosen here and only its digest is sent, inside the signed claim, so the
+ * server never holds a token it could hand to anyone else. The pairing is kept (`savePending`)
+ * before the claim is sent, so an app killed while waiting resumes instead of scanning again
+ * (scanning again would contest its own pairing).
+ */
+export async function claimPairing(args: {
+  custody: Custody;
+  token: string;
+  inspect: PairingInspect;
+  deviceName: string;
+  randomBytes: (n: number) => Uint8Array;
+  savePending: (pending: PendingPairing) => Promise<void>;
+}): Promise<PendingPairing> {
+  await requireScreenLock(args.custody, 'enrol');
+  const algId = negotiateAlgorithm(args.inspect.eligible_algorithms);
+  const key = await args.custody.createKeyPair(algId);
+  const pendingToken = newPendingToken(args.randomBytes);
+  const digest = pendingTokenDigest(pendingToken);
+  const message = devicePairingBytes({
+    userId: args.inspect.user.id,
+    pairingUuid: args.inspect.pairing_uuid,
+    algId,
+    publicKeyB64: key.publicKeyB64,
+    pendingTokenDigest: digest,
+  });
+  const signature = key.sign(message);
+  const derived = await args.custody.deriveKeyPair(algId);
+  if (
+    !derived ||
+    !getAlgorithm(algId).verify(signature, message, derived.publicKey) ||
+    toBase64(derived.publicKey) !== key.publicKeyB64
+  ) {
+    await args.custody.forgetEverything();
+    throw new SelfVerificationError();
+  }
+  const keyHash = publicKeySha256(fromBase64(key.publicKeyB64));
+  const pending: PendingPairing = {
+    pairingUuid: args.inspect.pairing_uuid,
+    pendingToken,
+    userId: args.inspect.user.id,
+    email: args.inspect.user.email,
+    displayName: args.inspect.user.display_name,
+    workspaceName: args.inspect.workspace?.name ?? null,
+    server: args.inspect.server ?? '',
+    algId,
+    deviceName: args.deviceName,
+    fingerprint: key.fingerprint,
+    publicKeySha256: keyHash,
+    checkCode: pairingCheckCode({
+      pairingUuid: args.inspect.pairing_uuid,
+      publicKeySha256: keyHash,
+      pendingTokenDigest: digest,
+    }),
+    confirmDeadline: null,
+    claimDeadline: args.inspect.claim_deadline,
+  };
+  await args.savePending(pending);
+  // Exactly these bytes, every time: the server treats an identical claim as the same claim.
+  const signatureB64 = toBase64(signature);
+  const attempt = async (): Promise<PendingPairing> => {
+    let claimed;
+    try {
+      claimed = await sendClaim(args.token, pending, key.publicKeyB64, signatureB64);
+    } catch (err) {
+      if (unanswered(err)) throw new ClaimNotAnsweredError(pending, attempt);
+      throw err;
+    }
+    if (claimed.fingerprint !== key.fingerprint) {
+      await args.custody.forgetEverything();
+      throw new PairingMismatchError();
+    }
+    const kept = { ...pending, confirmDeadline: claimed.confirm_deadline };
+    await args.savePending(kept);
+    return kept;
+  };
+  return attempt();
+}
+
+function sendClaim(token: string, pending: PendingPairing, publicKeyB64: string, popSignatureB64: string) {
+  return api.pairingClaim({
+    token,
+    deviceName: pending.deviceName,
+    algId: pending.algId,
+    publicKeyB64,
+    pendingTokenDigest: pendingTokenDigest(pending.pendingToken),
+    popSignatureB64,
+  });
+}
+
+/**
+ * The web confirmed: keep the identity, and the pending token becomes this phone's device token.
+ * The answer must name this phone's own key and the account it set out to pair with; anything else
+ * and the phone forgets everything.
+ */
+export async function finishPairing(args: {
+  custody: Custody;
+  pending: PendingPairing;
+  status: PairingStatus;
+}): Promise<EnrolResult> {
+  const { pending, status } = args;
+  if (status.state !== 'confirmed' || !confirmedMatches(pending, status) || !status.device || !status.user) {
+    await args.custody.forgetEverything();
+    throw new PairingMismatchError();
+  }
+  const identity: StoredIdentity = {
+    userId: status.user.id,
+    email: status.user.email,
+    displayName: status.user.display_name,
+    deviceId: status.device.id,
+    deviceName: status.device.name,
+    algId: pending.algId,
+    fingerprint: pending.fingerprint,
+    enrolledAt: status.device.created_at ?? new Date().toISOString(),
+    protection: await args.custody.detectProtection(),
+  };
+  await args.custody.saveToken(pending.pendingToken);
+  await args.custody.saveIdentity(identity);
+  return { identity, token: pending.pendingToken };
 }
 
 /**

@@ -60,6 +60,13 @@ def pricing():
     return render_template("public/pricing.html")
 
 
+@bp.get("/pair")
+def pair():
+    """Where a pairing code leads a camera app (A10): says to use the Q-Vault app. The token is in
+    the fragment, which never reaches this server, and this page changes nothing."""
+    return render_template("public/pair.html")
+
+
 @bp.get("/changelog")
 def changelog():
     return render_template("public/changelog.html")

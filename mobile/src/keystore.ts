@@ -21,6 +21,7 @@ import { publicKeyFingerprint } from './crypto/fingerprint.ts';
 import { fromBase64, toBase64 } from './crypto/bytes.ts';
 import type { NewKeyPair, PromptStrings, ProtectionLevel, StoredIdentity } from './custody.ts';
 import { beginAuthPrompt, endAuthPrompt } from './authPrompt.ts';
+import type { PendingPairing } from './logic/pairing.ts';
 
 // Installed on import, before anything can sign. This module is the only Custody implementation
 // the app has, so no signing path can reach noble without passing through here first -- which is
@@ -33,6 +34,9 @@ const IDENTITY_KEY = 'qvault.device.identity.v1';
 // App lock (phone-ux §6.1): optional and off by default (owner, §12 Q7). A preference, not a secret;
 // kept beside the identity so it goes when the phone is removed or set up again.
 const APP_LOCK_KEY = 'qvault.device.applock.v1';
+// A pairing with the web in flight (A10, pairing-design §8): kept from the moment of the claim so a
+// killed app resumes it instead of scanning again. Holds the pending token until the web confirms.
+const PAIRING_KEY = 'qvault.pairing.v1';
 
 // THIS_DEVICE_ONLY so the item is excluded from iCloud Keychain and from encrypted backups. A
 // device-held signing key that could restore onto a second handset would defeat the point.
@@ -228,7 +232,26 @@ export async function forgetEverything(): Promise<void> {
     SecureStore.deleteItemAsync(TOKEN_KEY, OPTIONS),
     SecureStore.deleteItemAsync(IDENTITY_KEY, OPTIONS),
     SecureStore.deleteItemAsync(APP_LOCK_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(PAIRING_KEY, OPTIONS),
   ]);
+}
+
+/** Keep the pairing in flight (§8). */
+export async function savePendingPairing(pending: PendingPairing): Promise<void> {
+  await SecureStore.setItemAsync(PAIRING_KEY, JSON.stringify(pending), OPTIONS);
+}
+
+export async function loadPendingPairing(): Promise<PendingPairing | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(PAIRING_KEY, OPTIONS);
+    return raw ? (JSON.parse(raw) as PendingPairing) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function forgetPendingPairing(): Promise<void> {
+  await SecureStore.deleteItemAsync(PAIRING_KEY, OPTIONS);
 }
 
 /** Whether app lock is on (§6.1). Off unless this phone turned it on. */

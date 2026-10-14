@@ -42,6 +42,8 @@ import { NoScreenLockError } from '../flows.ts';
 import { useSigningMethod } from '../signingMethod.ts';
 import { DEVICE_NAME_MAX, defaultDeviceName, rateLimitMessage, signInProblems } from '../logic/onboarding.ts';
 import { deviceNames } from '../native/device.ts';
+import { resumable, type PendingPairing } from '../logic/pairing.ts';
+import PairScreen from './PairScreen.tsx';
 
 type Step = 'signin' | 'key' | 'nolock' | 'done';
 
@@ -65,6 +67,19 @@ export default function EnrolScreen() {
   const [created, setCreated] = useState<string | null>(null);
   const [finish, setFinish] = useState<(() => void) | null>(null);
   const base = getApiBaseUrl();
+  // Pair with the web (§6.2a): its own screens; a pairing in flight when the app was killed resumes.
+  const [pairing, setPairing] = useState<{ resume: PendingPairing | null } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void keystore.loadPendingPairing().then((kept) => {
+      if (!live || !kept) return;
+      if (resumable(kept, Date.now())) setPairing({ resume: kept });
+      else void keystore.forgetPendingPairing();
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // "Key created" for a moment, then on into the app (§6.2 step 2, item 5).
   useEffect(() => {
@@ -134,6 +149,10 @@ export default function EnrolScreen() {
     if (protection !== 'none') setStep('key');
     else setKeyProblem({ tone: 'warning', text: "This phone still has no screen lock." });
   };
+
+  if (pairing) {
+    return <PairScreen resume={pairing.resume} onExit={() => setPairing(null)} />;
+  }
 
   if (step === 'done') {
     return (
@@ -282,6 +301,8 @@ export default function EnrolScreen() {
             </View>
 
             <Button label="Continue" onPress={() => void signIn()} busy={busy} full />
+            {/* §6.2 item 7: set up from a code shown on the web, with no password typed here. */}
+            <Button label="Pair with the web" variant="secondary" onPress={() => setPairing({ resume: null })} full />
 
             <Text role="caption" tone="muted">
               Had Q-Vault on another phone? Its key stays valid until you remove it on the web.

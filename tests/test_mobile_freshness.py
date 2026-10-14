@@ -295,6 +295,9 @@ FLOWS_USERS = {
     "src/checks.ts",  # the integrity guard and its error
     "src/screens/DecisionScreen.tsx",  # voteOnProposal: the one place a vote is signed
     "src/screens/EnrolScreen.tsx",  # NoScreenLockError, to explain a refused enrolment
+    # A10: claimPairing and finishPairing (setting up by a code: a key is made, nothing is voted),
+    # and the errors that say how a claim went.
+    "src/screens/PairScreen.tsx",
     "src/session.tsx",  # enrolThisDevice
     "src/signingSheet.ts",  # the guards and errors the sheet checks before any prompt
     "src/screens/TreasuryChangeScreen.tsx",  # approveTreasuryChange, on §6.15's own route

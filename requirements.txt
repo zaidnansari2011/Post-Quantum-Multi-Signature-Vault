@@ -7,6 +7,7 @@ Flask-Login>=0.6
 Flask-WTF>=1.2
 WTForms>=3.1
 email-validator>=2.0     # WTForms Email() validator
+segno>=1.6               # QR codes drawn as inline SVG on the server (A10, pairing by code)
 
 # --- Persistence ---
 SQLAlchemy>=2.0

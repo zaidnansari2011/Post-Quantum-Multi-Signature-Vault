@@ -42,18 +42,43 @@
     {% endif %}
   </section>
 
-  <section class="q-panel" aria-labelledby="dev-t">
+  <section class="q-panel" aria-labelledby="dev-t" id="phones">
     <div class="q-panel__hd"><h2 class="q-panel__t" id="dev-t">Phones</h2></div>
     {% if devices %}
     <dl class="q-kv">
       {% for d in devices %}
-      <div><dt>{{ d.name }}</dt><dd>{% if d.is_usable() %}Paired{% elif d.revoked_at %}Removed {{ ui_absolute(d.revoked_at) }}{% else %}Sign-in expired{% endif %}<span class="q-cap">Added {{ ui_absolute(d.created_at) }}{% if d.last_seen_at %}. Last seen {{ ui_absolute(d.last_seen_at) }}{% endif %}.</span>{% if d.key %}<span class="q-line">{{ hash(d.key.public_fingerprint(), 'phone key fingerprint', 16, 0) }}</span>{% endif %}</dd></div>
+      <div><dt>{{ d.name }}</dt><dd>{% if d.is_usable() %}Paired{% elif d.revoked_at %}Removed {{ ui_absolute(d.revoked_at) }}{% else %}Sign-in expired{% endif %}<span class="q-cap">Added {{ ui_absolute(d.created_at) }}{% if d.last_seen_at %}. Last seen {{ ui_absolute(d.last_seen_at) }}{% endif %}.</span>{% if d.key %}<span class="q-line">{{ hash(d.key.public_fingerprint(), 'phone key fingerprint', 16, 0) }}</span>{% endif %}
+        {%- if d.is_usable() %}
+        <details class="q-acct__remove" id="remove-{{ d.id }}"{% if open_remove == d.id %} open{% endif %}>
+          <summary>Remove {{ d.name }}</summary>
+          {%- if device_seats.get(d.id) %}
+          <p class="q-cap">This phone holds your seat on the treasury of {{ device_seats[d.id] | join(', ') }}. Removing it here stops Q-Vault counting its approvals, but the treasury keeps the key until the vault's owner changes its signers.</p>
+          {%- endif %}
+          <form method="post" action="{{ url_for('account.remove_device', device_id=d.id) }}" class="q-acct__inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {{ field('password', 'Password to remove this phone', type='password', id='f-remove-' ~ d.id, required=True, caption='It stops approving for you at once. Its past approvals still count.', attrs={'autocomplete': 'current-password'}) }}
+            {{ button('Remove phone', 'danger', type='submit') }}
+          </form>
+        </details>
+        {%- endif %}</dd></div>
       {% endfor %}
     </dl>
     <p class="q-sigrec__note">A phone signs with its own key, which never leaves it. Q-Vault can’t sign for you with it.</p>
     {% else %}
     <div class="q-panel__bd"><p>No phone is paired. Pair the Q-Vault app to approve with a key that never leaves your phone.</p></div>
     {% endif %}
+    {%- if pairing_available %}
+    <div class="q-panel__bd q-acct__foot">
+      {%- if nobody_else_told %}
+      <p class="q-cap">Nobody else will be told when a phone is added: email isn't set up on this server and you have no other phone.</p>
+      {%- endif %}
+      <form method="post" action="{{ url_for('account.pair_start') }}" class="q-gap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="q-cap">Shows a code to scan with the Q-Vault app on a phone that isn't set up yet. You'll confirm with a code from the phone and your password.</p>
+        {{ button('Pair a phone', 'secondary', type='submit') }}
+      </form>
+    </div>
+    {%- endif %}
   </section>
 
   {% if treasuries_on %}
@@ -67,6 +92,7 @@
         {{ radio_group('choice', 'The key a treasury registers for you', key_options,
                        selected=('device:' ~ key_choice.key_id) if key_choice.custody == 'device' else 'password') }}
         <p class="q-cap q-gap">A treasury only counts approvals made with the key it holds for you. A change applies the next time a treasury is created or changed; what is on chain stays until its signers approve a change.</p>
+        {{ field('password', 'Password to save this choice', type='password', id='f-choice-password', required=True, attrs={'autocomplete': 'current-password'}) }}
         {{ button('Save', 'secondary', type='submit') }}
       </form>
     </div>

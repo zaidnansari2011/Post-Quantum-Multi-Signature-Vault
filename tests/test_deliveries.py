@@ -777,7 +777,8 @@ def test_a_push_queued_before_its_phone_was_removed_is_not_sent(client, team):
     )
     delivery_service.run()
 
-    assert _pushes_to(TOKEN_B) == []
+    # Only the removal's own security alert reaches it (A10 review M5), never the decision's push.
+    assert [m.title for m in _pushes_to(TOKEN_B)] == ["Device removed"]
     db.session.refresh(queued)
     assert queued.status == "skipped" and queued.last_error == "the phone no longer takes pushes"
     assert PushToken.query.filter_by(user_id=team.brij.id).one().revoked_reason == "device_removed"

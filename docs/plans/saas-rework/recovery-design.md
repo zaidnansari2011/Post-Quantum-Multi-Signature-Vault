@@ -182,7 +182,9 @@ During `waiting` **the account does not change**: the old password signs in and 
 one does not work yet (the status page says when it will).
 
 **Any proof of the current password cancels**: web sign-in, a password vote, phone pairing
-(`request_challenge`), change password, kit regeneration, reissue. Someone who knows the password
+(`request_challenge`), change password, kit regeneration, reissue. A10 adds two more (pairing-design
+§3.6): confirming a phone paired by QR (`pair_web`) and removing a phone on the web
+(`remove_device`). Someone who knows the password
 does not need recovery, and in every attack in §3 the real person still knows it.
 
 **Who else can cancel**, without a signature (cancelling is the safe direction), with CSRF on the
