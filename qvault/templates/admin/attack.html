@@ -106,10 +106,13 @@
 <div class="q-admin">
 {% set facts = [('Reference run', ui_day(stored.generated_at)), ('Attacks', stored.summary.total)] if stored else [] %}
 {% call page_header('Adversary lab', description=None if stored else 'No reference run recorded.', facts=facts) %}
-  <form method="post" action="{{ url_for('admin.run_attack_lab') }}">
-    {{ form.hidden_tag() }}
-    {{ button('Run the algorithm attacks now', 'secondary', type='submit') }}
-  </form>
+  <div class="q-btnrow">
+    {{ button('Shor side by side', 'ghost', href=url_for('admin.shor_side_by_side')) }}
+    <form method="post" action="{{ url_for('admin.run_attack_lab') }}">
+      {{ form.hidden_tag() }}
+      {{ button('Run the algorithm attacks now', 'secondary', type='submit') }}
+    </form>
+  </div>
 {% endcall %}
 {% include "_developer_nav.html" %}
 
