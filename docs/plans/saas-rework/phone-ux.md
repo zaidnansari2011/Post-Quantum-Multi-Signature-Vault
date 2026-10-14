@@ -2131,9 +2131,11 @@ devices, Notifications.
   caption "Compare this with your device list on the web"), the algorithm ("ML-DSA-65, FIPS 204"),
   and the custody line ("Made on this phone. It never leaves it.").
 - **Text block** (`caption`): "Getting a new phone? Set it up first, then remove this one. Lost this
-  phone? Remove it from your other phone or on the web, then ask your vault's approvers to approve
-  your new key." (research 06 §3.8)
-- **Danger button "Remove this phone"** (§6.19).
+  phone? Remove it on the web or from another device, then set up your new phone with your
+  password. Forgotten your password too? Your Recovery Kit gets you back in on the web." (research
+  06 §3.8; the approvers' route to a new key is R9 Phase 3, deferred, so the copy names what ships.)
+- **Button "Remove this phone"**, `dangerSecondary` (outlined, red label): it opens the confirming
+  sheet, whose button is the filled danger one (§6.19).
 
 **Other devices** (pushed; DO): active devices as rows (name, "Added 4 Oct, last used 2 Oct").
 Removed devices sit in a collapsed group "Removed (2)", in `textSubtle`, never at the same weight.
@@ -2158,8 +2160,8 @@ Removed devices sit in a collapsed group "Removed (2)", in `textSubtle`, never a
     Activity item ("A device was removed from your account"), so a hostile device removing the
     owner's phone cannot go unnoticed.
   - Errors stay in the sheet; on `already_revoked` the sheet closes and the list refreshes.
-- **Lost a phone?** The page's footer: "Lost a phone? Remove it here, then ask your vault's
-  approvers to approve your new key."
+- **Lost a phone?** The page's footer: "Lost a phone? Remove it here, then set up your new phone
+  with your password."
 
 **Notifications** (pushed; R8):
 

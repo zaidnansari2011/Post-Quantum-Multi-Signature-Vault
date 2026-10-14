@@ -139,11 +139,13 @@ export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
           </List>
 
           <Text role="caption" tone="muted">
-            {"Getting a new phone? Set it up first, then remove this one. Lost this phone? Remove it from your other phone or on the web, then ask your vault's approvers to approve your new key."}
+            {"Getting a new phone? Set it up first, then remove this one. Lost this phone? Remove it on the web or from another device, then set up your new phone with your password. Forgotten your password too? Your Recovery Kit gets you back in on the web."}
           </Text>
 
           <Section>
-            <Button label="Remove this phone" variant="danger" onPress={() => setRemoving(true)} full />
+            {/* Outlined with a red label, not a red slab: it opens the confirming sheet, where the
+                one filled danger button is (§6.19). */}
+            <Button label="Remove this phone" variant="dangerSecondary" onPress={() => setRemoving(true)} full />
           </Section>
         </View>
       </Scroll>

@@ -10,7 +10,9 @@
 //
 // Dragging the grabber or the header down more than 30% of the sheet, or faster than 800pt/s,
 // closes it, unless `dismissible` is false (a signature in flight), when it springs back. Android
-// back, a tap on the backdrop and Cancel close it too, under the same rule.
+// back, a tap on the backdrop and Cancel close it too, under the same rule. A sheet with no footer
+// (Key details, Licences, a picker) has no Cancel, so its header carries a Close button: dragging
+// and Back are not discoverable on their own (handset audit, 14 Oct).
 //
 // The keyboard: the footer (the sign button) rides above it, and the sheet's height shrinks by it.
 // Fields in a sheet are never autofocused, so the content is read before the keyboard arrives.
@@ -174,7 +176,15 @@ export function Sheet({
 
   const overflowing = content > room + 1;
   const maxHeight = window.height - insets.top - t.space[24] - keyboard;
-  const bottom = keyboard > 0 ? keyboard + t.space[8] : Math.max(t.space[16], insets.bottom + t.space[8]);
+  const closable = dismissible && !footer;
+  // A footer's buttons end 8 above the inset. Without one, the last row needs more air than that:
+  // on the handset it sat on the sheet's bottom edge, against the navigation bar.
+  const bottom =
+    keyboard > 0
+      ? keyboard + t.space[8]
+      : footer
+        ? Math.max(t.space[16], insets.bottom + t.space[8])
+        : Math.max(t.space[24], insets.bottom + t.space[16]);
 
   return (
     <Modal
@@ -202,7 +212,7 @@ export function Sheet({
           <GestureDetector gesture={pan}>
             <View style={s.header}>
               <View style={s.grabber} />
-              {title || onBack ? (
+              {title || onBack || closable ? (
                 <View style={s.titleRow}>
                   {onBack ? (
                     <IconButton
@@ -215,6 +225,13 @@ export function Sheet({
                     <Text ref={titleRef} role="titleSm" accessibilityRole="header" style={s.title}>
                       {title}
                     </Text>
+                  ) : (
+                    <View style={s.title} />
+                  )}
+                  {closable ? (
+                    <View style={s.close}>
+                      <IconButton icon="x" label="Close" onPress={onClose} size={20} compact />
+                    </View>
                   ) : null}
                 </View>
               ) : null}
@@ -266,6 +283,8 @@ const useStyles = makeStyles((t) => ({
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: t.space[4], minHeight: 24 },
   title: { flex: 1 },
+  // A 32pt button (48 with its slop) that doesn't make the 24pt title row taller.
+  close: { marginVertical: -4, marginRight: -t.space[4] },
   body: { flexGrow: 0, flexShrink: 1 },
   bodyContent: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[16], gap: t.space[16] },
   footer: { paddingHorizontal: t.layout.gutter, paddingTop: t.space[4], gap: t.space[8] },
