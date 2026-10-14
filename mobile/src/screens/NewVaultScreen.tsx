@@ -13,13 +13,14 @@
 // vault is not signing: no haptic.
 
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigation, usePreventRemove } from '@react-navigation/native';
 
 import {
   ActionBar,
   Avatar,
+  Banner,
   Button,
   CheckboxRow,
   ChipGroup,
@@ -34,6 +35,7 @@ import {
   Sheet,
   Skeleton,
   Text,
+  TextLink,
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import type { Person } from '../api/schemas.ts';
@@ -41,8 +43,9 @@ import { OfflineNotice } from '../freshness.tsx';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
 import { ApiError, TransportError } from '../api/client.ts';
+import { getApiBaseUrl } from '../config.ts';
 import { meQuery, peopleQuery } from '../queries.ts';
-import { newVaultRule, newVaultWarning, ruleChips } from '../logic/workspace.ts';
+import { newVaultCaution, newVaultRule, newVaultWarning, permissions, ruleChips } from '../logic/workspace.ts';
 
 export default function NewVaultScreen({
   onClose,
@@ -74,6 +77,8 @@ export default function NewVaultScreen({
   const people = useQuery({ ...peopleQuery(token), enabled: picking });
   const n = picked.length + 1;
   const warning = newVaultWarning(m, n, workspace?.separation_of_duties_default);
+  const caution = newVaultCaution(m, n, workspace?.separation_of_duties_default);
+  const can = permissions(workspace);
 
   const dirty = leaving === null && (name.trim() !== '' || purpose.trim() !== '' || picked.length > 0);
   usePreventRemove(dirty, ({ data }) => setDiscard({ action: data.action }));
@@ -174,15 +179,12 @@ export default function NewVaultScreen({
               <Text role="caption" tone="muted">
                 Rule
               </Text>
-              <ChipGroup label="Rule" value={m} onChange={setM} options={ruleChips(n)} />
-              <Text role="body" tone="muted">
+              {/* One possible rule (no approvers added yet) is a fact, not a choice: no lone chip. */}
+              {n > 1 ? <ChipGroup label="Rule" value={m} onChange={setM} options={ruleChips(n)} /> : null}
+              <Text role="body" tone={n > 1 ? 'muted' : 'text'}>
                 {newVaultRule(m, n)}
               </Text>
-              {warning ? (
-                <Text role="body" tone="warning">
-                  {warning}
-                </Text>
-              ) : null}
+              {caution ? <Banner tone="warning" title={caution.title} detail={caution.detail} /> : null}
             </View>
 
             <Text role="caption" tone="muted">
@@ -236,9 +238,18 @@ export default function NewVaultScreen({
             <Skeleton width="55%" height={16} />
           </View>
         ) : everyone.length === 0 ? (
+          // The list is everyone in the workspace but you, so empty means you're its only member.
           <EmptyState
-            title={`Everyone in ${workspace?.name ?? 'your workspace'} is already here.`}
-            detail="Invite more people on the web."
+            title={`You're the only member of ${workspace?.name ?? 'your workspace'} so far.`}
+            detail={can.manager ? undefined : 'Ask your admin to invite people.'}
+            action={
+              can.manager ? (
+                <TextLink
+                  label="Invite people on the web"
+                  onPress={() => void Linking.openURL(`${getApiBaseUrl()}/workspace/invite`).catch(() => {})}
+                />
+              ) : undefined
+            }
           />
         ) : shown.length === 0 ? (
           <EmptyState title={`No one matches "${search.trim()}"`} />
