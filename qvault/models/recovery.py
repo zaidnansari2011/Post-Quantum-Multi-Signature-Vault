@@ -17,6 +17,9 @@ nobody has migrated still starts. Revision ``0010_recovery_kit`` makes the same 
   marked read while it is open.
 - ``recovery_kit_failures`` and ``recovery_kit_pauses``: wrong codes per account, and when the
   alarm about them was last raised (they never stop the kit working).
+- ``recovery_phone_approvals`` (Phase 2, revision ``0011_recovery_phone``): a paired phone's
+  signed approval of a web reset or of a kit request, and the code it showed, kept only as a
+  master-key HMAC.
 """
 
 from __future__ import annotations
@@ -38,7 +41,16 @@ ROUTES = ("kit", "phone", "quorum")
 #: phone and approver routes' (Phases 2 and 3), named here so the one-open-request index already
 #: covers them.
 OPEN_STATES = ("claimed", "approving", "waiting")
+#: A phone route request before anyone has typed its code on the web (design §6.2): made when the
+#: phone asks (``phone_pending``), signed by the phone (``phone_approved``), for 10 minutes. Not
+#: open in the index's sense, so several may wait at once and the typed code picks one (§6.4).
+PHONE_PRECLAIM_STATES = ("phone_pending", "phone_approved")
 END_STATES = ("completed", "cancelled", "expired", "rejected", "failed")
+#: Why a paired phone signed a recovery (design §6.4): to start a web reset, or to confirm a kit.
+PHONE_PURPOSES = ("web_reset", "kit_confirm")
+#: A phone approval: asked for, not yet signed (``pending``); signed, its code live
+#: (``approved``); its code typed on the web (``used``); or over (``ended``).
+PHONE_APPROVAL_STATES = ("pending", "approved", "used", "ended")
 _OPEN_SQL = "state IN ('claimed', 'approving', 'waiting')"
 _ACTIVE_KIT_SQL = "state = 'active'"
 
@@ -206,6 +218,48 @@ class RecoveryRequestWrap(db.Model):
 
     request = db.relationship("RecoveryRequest", back_populates="wraps")
     key = db.relationship("Key")
+
+
+class RecoveryPhoneApproval(db.Model):
+    """A paired phone vouching for a recovery (plan R9 Phase 2, design §6.2 to §6.4).
+
+    Made when the phone asks, before it signs: the request it names, why (``purpose``), the phone
+    and its key, and until when (``expires_at``, 10 minutes, whole seconds, inside the signed
+    bytes). Once the phone's signature over the ``QVAULT-SIG-v1:RECOVERY`` bytes verifies, a code
+    is made and shown on that phone only; it is stored as a master-key HMAC (``code_tag``), never
+    as itself, so a copy of the database cannot read it back or test guesses against it. Five
+    wrong codes end it. ``used`` is the approval that moved its request on: for a web reset, the
+    device whose usability completion re-checks.
+    """
+
+    __tablename__ = "recovery_phone_approvals"
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(
+        db.Integer, db.ForeignKey("recovery_requests.id"), nullable=False, index=True
+    )
+    purpose = db.Column(db.String(16), nullable=False)  # PHONE_PURPOSES
+    device_id = db.Column(db.Integer, db.ForeignKey("devices.id"), nullable=False, index=True)
+    key_id = db.Column(db.Integer, db.ForeignKey("keys.id"), nullable=False)
+    state = db.Column(db.String(16), nullable=False, default="pending")  # PHONE_APPROVAL_STATES
+    created_at = db.Column(AwareDateTime, nullable=False, default=_utcnow)
+    #: Whole seconds: the phone signs it as ISO-8601 text ending ``Z``.
+    expires_at = db.Column(AwareDateTime, nullable=False)
+    approved_at = db.Column(AwareDateTime, nullable=True)
+    used_at = db.Column(AwareDateTime, nullable=True)
+    #: master_key.phone_code_tag over this approval and its code; NULL until the phone has signed.
+    code_tag = db.Column(db.LargeBinary(32), nullable=True)
+    tries = db.Column(db.Integer, nullable=False, default=0)
+    signature_sha256 = db.Column(db.String(64), nullable=True)
+
+    request = db.relationship("RecoveryRequest", backref="phone_approvals")
+    device = db.relationship("Device")
+    key = db.relationship("Key")
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return (
+            f"<RecoveryPhoneApproval {self.id} {self.purpose} device={self.device_id} {self.state}>"
+        )
 
 
 class CredentialEpoch(db.Model):

@@ -484,6 +484,9 @@ def email_for(
     return None
 
 
+_WATCHER_REASON = "You are an admin of their workspace or approve in one of their vaults. "
+
+
 def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
     """A recovery email. The subject names nobody; the account is a quoted fact (F1). It never
     carries the code, a password, or a link that cancels: Cancel is on Home, behind sign-in."""
@@ -495,6 +498,57 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
     if kind == "recovery_waiting":
         due = _moment(stored.get("completes_at"))
         takes = (("Takes effect", when(due, now=now)),) if due is not None else ()
+        phone = stored.get("route") == "phone"
+        sooner = bool(stored.get("shortened"))
+        if me and (phone or sooner):
+            return EmailCopy(
+                "Someone is recovering your Q-Vault account",
+                "Someone is recovering your account",
+                (
+                    (
+                        "A phone paired to your Q-Vault account approved a new web password and "
+                        "a new web signing key. Unless it is cancelled, they take effect after a "
+                        "24-hour wait."
+                    )
+                    if phone
+                    else (
+                        "A phone paired to your Q-Vault account confirmed the recovery that used "
+                        "your Recovery Kit, so it takes effect sooner."
+                    ),
+                    "If this wasn't you, sign in to Q-Vault: using your password cancels it. "
+                    "You can also cancel it on Home or in the app.",
+                ),
+                "Open Q-Vault",
+                home,
+                security,
+                preferences=False,
+                facts=takes,
+            )
+        if phone or sooner:
+            return EmailCopy(
+                "An account you work with is being recovered on Q-Vault",
+                "An account is being recovered",
+                (
+                    (
+                        "A phone paired to the account of a person you work with approved a new "
+                        "web password. Unless someone cancels it, the account gets a new web "
+                        "signing key after a 24-hour wait."
+                    )
+                    if phone
+                    else (
+                        "A phone paired to the account of a person you work with confirmed the "
+                        "recovery that used their Recovery Kit, so it takes effect sooner. It "
+                        "gives whoever started it that person's signing key, including any place "
+                        "on a treasury."
+                    ),
+                    "If they didn't start it, sign in to Q-Vault and cancel it on Home.",
+                ),
+                "Open Q-Vault",
+                home,
+                _WATCHER_REASON + security,
+                preferences=False,
+                facts=account + takes,
+            )
         if me:
             return EmailCopy(
                 "Someone is recovering your Q-Vault account",
@@ -537,6 +591,26 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
                 "Sign in to Q-Vault to see who stopped it."
                 + (" If you didn't start it, make a new Recovery Kit." if me else ""),
             ),
+            "Open Q-Vault",
+            mine if me else home,
+            security,
+            preferences=False,
+            facts=account,
+        )
+    if kind == "recovery_completed" and stored.get("route") == "phone":
+        line = (
+            "The recovery of your account took effect: your new web password and a new web "
+            "signing key work now, and every other sign-in was ended. Your paired phone keeps "
+            "working. Make a new Recovery Kit."
+            if me
+            else "The recovery of an account you watch over took effect: it has a new web "
+            "password and a new web signing key, set from its paired phone. If you don't think it "
+            "was them, call them on a number you already have."
+        )
+        return EmailCopy(
+            "A Q-Vault account recovery took effect",
+            "An account was recovered",
+            (line,),
             "Open Q-Vault",
             mine if me else home,
             security,

@@ -134,3 +134,17 @@ def kit_confirm_tag(kit_uuid: str, last_group: str) -> bytes:
     showing the whole code, and is never stored."""
     data = kit_uuid.encode("ascii") + b"|" + last_group.encode("ascii")
     return hmac.new(get_master_key(), _KIT_CONFIRM_DS + data, hashlib.sha256).digest()
+
+
+# -- Recovery by phone (R9 Phase 2, design section 6) ----------------------------------------------
+# The code a paired phone shows, to be typed on the web. Its own tag: never _MAC_DS, never a kit's.
+_PHONE_CODE_DS = b"qvault:recovery-phone-code:v1|"
+
+
+def phone_code_tag(approval_id: int, request_uuid: str, code: str) -> bytes:
+    """HMAC-SHA256(master key, ``qvault:recovery-phone-code:v1|`` + approval id + request uuid +
+    code): how a phone approval's code is kept. A copy of the database holds no code and cannot
+    test guesses at one (8 symbols are 40 bits, which a plain hash would give up offline), and a
+    tag made for one approval opens no other."""
+    data = f"{int(approval_id)}|{request_uuid}|{code}".encode("ascii")
+    return hmac.new(get_master_key(), _PHONE_CODE_DS + data, hashlib.sha256).digest()

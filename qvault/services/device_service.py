@@ -282,6 +282,12 @@ def revoke(device: Device, *, actor_id: int | None = None, commit: bool = True) 
     from qvault.services import delivery_service
 
     delivery_service.revoke_push_token(device, "device_removed", commit=False)
+    # Removing any device of the person ends every recovery a phone vouched for, in this
+    # transaction (plan R9 Phase 2, design §6.2 step 4): a phone thief who removes the owner's
+    # other phones thereby cancels their own attempt.
+    from qvault.services import recovery_phone
+
+    recovery_phone.on_device_revoked(device, actor_id=actor_id)
 
     ledger_service.append(
         "device_revoked",

@@ -276,6 +276,8 @@ _CANCELLED_BY = {
     "self": "by you",
     "status_holder": "by whoever started it",
     "system": "by Q-Vault",
+    "device_revoked": "because a paired phone was removed",
+    "kit": "because your Recovery Kit was used, which replaces a reset from a phone",
 }
 
 
@@ -302,6 +304,39 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
     if kind == "recovery_waiting":
         due = _moment(stored.get("completes_at"))
         at = when(due, now=now) if due is not None else "in 72 hours"
+        if stored.get("route") == "phone":
+            if me:
+                return Copy(
+                    "Someone is setting a new web password for your account",
+                    "A phone paired to your account approved a new web password and a new web "
+                    f"signing key. Unless it is cancelled, they take effect on {at}. If this "
+                    "wasn't you, cancel it on Home or in the app, or sign in: using your password "
+                    "cancels it.",
+                    home,
+                )
+            return Copy(
+                f"{name}'s account is being recovered",
+                f"A phone paired to {name}'s account approved a new web password. Unless it is "
+                f"cancelled, on {at} the account gets a new web signing key. If {name} didn't "
+                "start it, cancel it on Home.",
+                home,
+            )
+        if stored.get("shortened"):
+            if me:
+                return Copy(
+                    "A phone confirmed the recovery of your account",
+                    "A phone paired to your account confirmed the recovery that used your Recovery "
+                    f"Kit, so it now takes effect on {at}. If this wasn't you, cancel it on Home "
+                    "or in the app now.",
+                    home,
+                )
+            return Copy(
+                f"{name}'s recovery now takes effect sooner",
+                f"A phone paired to {name}'s account confirmed the recovery that used their "
+                f"Recovery Kit. Unless it is cancelled, on {at} they get {name}'s signing key, "
+                f"including any place on a treasury. If {name} didn't start it, cancel it on Home.",
+                home,
+            )
         if me:
             return Copy(
                 "Someone is recovering your account",
@@ -340,16 +375,28 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
             by = f"by {name}"
         elif not me and role == "password":
             by = f"by someone using {name}'s password"
+        elif not me and role == "kit":
+            by = f"because {name}'s Recovery Kit was used, which replaces a reset from a phone"
         else:
             by = _CANCELLED_BY.get(role, "")
         if me:
-            then = (
-                " Your Recovery Kit no longer works, because someone else had it. Make a new one "
-                "on the Security page."
-                if stored.get("kit_burned")
-                else " If you didn't start it, someone else has your Recovery Kit: make a new one "
-                "on the Security page now."
-            )
+            if stored.get("route") == "phone":
+                then = (
+                    ""
+                    if role in ("self", "password", "kit", "device_revoked")
+                    else " If you didn't start it, someone has one of your paired phones and can "
+                    "unlock it: remove it on the Security page."
+                )
+            elif stored.get("kit_burned"):
+                then = (
+                    " Your Recovery Kit no longer works, because someone else had it. Make a new "
+                    "one on the Security page."
+                )
+            else:
+                then = (
+                    " If you didn't start it, someone else has your Recovery Kit: make a new one "
+                    "on the Security page now."
+                )
             return Copy(
                 "The recovery of your account was cancelled",
                 f"It was cancelled {by}. Nothing about your account changed.{then}",
@@ -358,6 +405,23 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
         return Copy(
             f"The recovery of {name}'s account was cancelled",
             f"It was cancelled {by}. Nothing about the account changed.",
+            home,
+        )
+
+    if kind == "recovery_completed" and stored.get("route") == "phone":
+        if me:
+            return Copy(
+                "Your account was recovered",
+                "Your new web password works now, with a new web signing key, and every other "
+                "sign-in was ended. Your paired phone keeps working. Votes you made before still "
+                "count. Make a new Recovery Kit on the Security page.",
+                security,
+            )
+        return Copy(
+            f"{name}'s account was recovered",
+            f"{name} has a new web password and a new web signing key, set from their paired "
+            f"phone. If {name} holds a seat on a treasury, its vault's owner must move it. If you "
+            f"don't think {name} did this, call them on a number you already have.",
             home,
         )
 
