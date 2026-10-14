@@ -46,8 +46,8 @@
 <ul>
   <li><strong>It doesn't stop collusion.</strong> If enough approvers agree to something wrong, it passes. Choose the rule and the people with that in mind.</li>
   <li><strong>The password key is held by this server.</strong> If you sign on the web, your signing key is stored here encrypted under your password, and the server unlocks it when you sign. Someone who controls the server and captures your password could sign as you. A key on the phone app is made on the phone and never leaves it.</li>
-  <li><strong>We can't reset your password.</strong> It also unlocks your signing key. <a href="{{ url_for('auth.forgot_password') }}">What you can do instead</a>.</li>
-  <li><strong>The witness is only as independent as whoever runs it.</strong> Today the Q-Vault team runs the one witness, as a separate service with its own key. It catches a rewritten database; it can't protect you from us.</li>
+  <li><strong>We can't reset your password.</strong> It also unlocks your signing key. A Recovery Kit, a code you keep offline, lets you choose a new password and keep your signing key after a 72-hour wait. Without one, the key can't be given back. <a href="{{ url_for('auth.forgot_password') }}">What you can do instead</a>.</li>
+  <li><strong>The witness is only as independent as whoever runs it.</strong> Today the Q-Vault team runs the one witness, as a separate service with its own key. It catches a rewritten database; it can't protect you from us.{% if not witness_configured %} This server has no witness at the moment, so nothing outside it vouches for its log.{% endif %}</li>
   <li><strong>Files are encrypted for the vault, not for each person.</strong> The server can decrypt a vault's files to give them to its members.</li>
   <li><strong>The connection isn't post-quantum.</strong> HTTPS to this site is whatever the hosting provider offers. The post-quantum claims cover signatures and the log.</li>
   {% if onchain %}<li><strong>Payments run on a test network.</strong> Treasury payments use Ethereum's Sepolia test network, not real money.</li>{% endif %}
@@ -62,6 +62,7 @@
     <tr><td>Changing a decision after people signed</td><td>Every signature stops verifying, and the page says the content was altered.</td><td><a href="{{ doc('docs/adr/0009-proposal-binding-verification.md') }}">ADR-0009, binding</a></td></tr>
     <tr><td>Editing or deleting the log</td><td>The chain and the Merkle checkpoints stop matching; the witness refuses to co-sign a history that isn't an extension of the one it saw.</td><td><a href="{{ doc('docs/adr/0015-transparency-log-and-witness.md') }}">ADR-0015, log and witness</a></td></tr>
     <tr><td>Swapping in a weaker algorithm</td><td>A switch to a weaker algorithm needs an administrator's explicit confirmation, which is logged; existing signatures keep their own algorithm.</td><td><a href="{{ doc('docs/adr/0012-downgrade-resistance.md') }}">ADR-0012, downgrades</a></td></tr>
+    <tr><td>Someone with your Recovery Kit and your email address</td><td>They can start a recovery. It takes effect only after 72 hours, and until then you, your workspace's owners and admins and your fellow approvers are told and can cancel it; signing in with your password cancels it too. If nobody does, they have your account and your signing key.</td><td><a href="{{ doc('docs/plans/saas-rework/recovery-design.md') }}">Recovery design</a></td></tr>
     <tr><td>A server that signs for you</td><td>Possible with a password key (above). A phone key never reaches the server.</td><td><a href="{{ doc('docs/adr/0004-two-tier-key-custody.md') }}">ADR-0004, custody</a>, <a href="{{ doc('docs/adr/0016-device-held-signing-keys.md') }}">ADR-0016, phone keys</a></td></tr>
   </tbody>
 </table></div>

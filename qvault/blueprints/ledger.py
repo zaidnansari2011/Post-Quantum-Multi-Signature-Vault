@@ -20,6 +20,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    stream_with_context,
     url_for,
 )
 from flask_login import current_user, login_required
@@ -139,9 +140,15 @@ def transparency():
 @bp.get("/export.csv")
 @login_required
 def export_csv():
-    """Stream the current filter as CSV, scoped identically to the on-screen list."""
+    """Stream the current filter as CSV, scoped identically to the on-screen list.
+
+    The rows are read inside the generator, after this function has returned, so it runs under
+    ``stream_with_context``: without it a server tears the request down first, the signed-in
+    reader and the database session go with it, and the file stops after its header (staging QA
+    2026-10-14, F1). The test client's shared context hid that."""
     filters = Filters.from_request(request.args)
 
+    @stream_with_context
     def generate():
         buffer = io.StringIO()
         writer = csv.writer(buffer)

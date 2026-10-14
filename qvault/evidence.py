@@ -180,7 +180,8 @@ def how_it_ends(
 ) -> str:
     """How an open decision that can no longer pass still ends, from the facts (owner decision
     2026-10-09): rejections by the people who can still vote, when they are enough to close it by
-    its signed rule (rejections over N minus M); a withdrawal by whoever raised it, when they still
+    its rule (rejections over its voters minus M, ``required_n`` being
+    ``eligibility.deciding_n``); a withdrawal by whoever raised it, when they still
     can; and its deadline. ``could_reject`` are their names ("you" for the reader),
     ``withdrawer`` the raiser's ("you", or None when they can't withdraw it), ``expires`` its
     deadline as written."""

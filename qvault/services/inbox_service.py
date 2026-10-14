@@ -445,6 +445,8 @@ def decorate(proposals, user: User, signer_vaults: set[int], *, now: datetime | 
                     set(snapshots[p.id])
                     - ({p.creator_id} if not eligibility.requester_may_approve(p) else set())
                 ),
+                # How many its rejections are counted against (``eligibility.deciding_n``).
+                "deciding_n": eligibility.deciding_n(p),
             }
         )
     return rows
@@ -609,7 +611,12 @@ def effective_status(proposal: Proposal, *, now: datetime | None = None) -> str:
         rejections = sum(1 for s in proposal.signatures if s.decision == "reject")
         if approvals >= proposal.required_m:
             return "approved"
-        if rejections > proposal.required_n - proposal.required_m:
+        # Counted against its voters: under S15 the raiser may be out of them (staging QA F2).
+        # One fewer voter is the most that can change, so the full rule is read only then.
+        if rejections > proposal.required_n - proposal.required_m or (
+            rejections > proposal.required_n - 1 - proposal.required_m
+            and eligibility.rejection_closes(proposal, rejections)
+        ):
             return "rejected"
         return "expired"
     return proposal.status
@@ -634,6 +641,9 @@ def home(user: User, *, now: datetime | None = None) -> dict:
     2. **Due soon**: due within 48 hours and not waiting on this reader (they voted, or they are
        not one of its approvers).
     3. **Waiting on others**: raised or signed by this reader, not due within 48 hours.
+    4. **Can’t pass**: raised by this reader and unable to pass (``eligibility.cannot_pass``). It
+       waits on nobody else: nobody is asked to approve it, and only its raiser can end it before
+       its deadline, by withdrawing it (staging QA 2026-10-14, F2). Shown only when there is one.
 
     Expired decisions are in none of them (S20): only genuinely open rows are read. Each list is
     cut to ``HOME_ROWS``, with its full length beside it for the "Show all" link.
@@ -654,18 +664,25 @@ def home(user: User, *, now: datetime | None = None) -> dict:
     )
     signer_vaults = signer_vault_ids(user)
     rows = decorate(db.session.scalars(stmt).unique().all(), user, signer_vaults, now=now)
-    needs, due_soon, waiting = [], [], []
+    needs, due_soon, waiting, stuck = [], [], [], []
     for row in rows:
         p = row["proposal"]
         soon = p.expires_at is not None and p.expires_at <= now + SOON
         if row["needs_me"]:
             needs.append(row)
+        elif row["status_key"] == "cannot_pass" and p.creator_id == user.id:
+            stuck.append(row)
         elif soon:
             due_soon.append(row)
         elif p.creator_id == user.id or row["signed_by_me"]:
             waiting.append(row)
     sections = {}
-    for key, items in (("needs_you", needs), ("due_soon", due_soon), ("waiting", waiting)):
+    for key, items in (
+        ("needs_you", needs),
+        ("due_soon", due_soon),
+        ("waiting", waiting),
+        ("stuck", stuck),
+    ):
         items.sort(key=_due_order)
         sections[key] = {"rows": items[:HOME_ROWS], "total": len(items)}
     today = now.date()

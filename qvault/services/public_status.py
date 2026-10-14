@@ -245,6 +245,12 @@ class LogFacts:
         )
 
 
+def witness_configured() -> bool:
+    """Whether this server is set up with a witness at all, for copy that would otherwise promise
+    one (the landing hero, Security; staging QA F12)."""
+    return bool(checkpoint_service.witness_url())
+
+
 def log_facts() -> LogFacts:
     """The log's size, its newest signed head, and the witness's state, cheaply, with the last full
     check of the whole log (see the module)."""
@@ -401,7 +407,8 @@ def checks() -> list[Check]:
             )
         )
     else:
-        head = f"#{facts.signed_size:,}" if facts.signed_size else "none yet"
+        # "#" is an entry number, from #0 as on Audit (staging QA F8): a head of 29 entries is #28.
+        head = f"#{facts.signed_size - 1:,}" if facts.signed_size else "none yet"
         signed = f", signed {ago(facts.signed_at)}" if facts.signed_at else ""
         out.append(
             Check(
@@ -457,7 +464,7 @@ def checks() -> list[Check]:
                 "Behind",
                 f"{facts.unwitnessed:,} {_have(facts.unwitnessed)} "
                 f"waited {span(facts.waiting_since)} for the witness. Last co-signed "
-                f"{ago(facts.witnessed_at)}, at #{facts.witnessed_size:,}.{key}",
+                f"{ago(facts.witnessed_at)}, at #{facts.witnessed_size - 1:,}.{key}",
             )
         )
     else:
@@ -466,7 +473,7 @@ def checks() -> list[Check]:
                 "Witness",
                 "ok",
                 "Current",
-                f"Last co-signed {ago(facts.witnessed_at)}, at #{facts.witnessed_size:,}. "
+                f"Last co-signed {ago(facts.witnessed_at)}, at #{facts.witnessed_size - 1:,}. "
                 f"Entries wait at most "
                 f"{count_noun(int(witness_grace().total_seconds() // 60), 'minute')} "
                 f"before this turns amber.{key}",

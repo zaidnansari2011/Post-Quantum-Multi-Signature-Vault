@@ -280,6 +280,24 @@ def initials(name: str | None) -> str:
     return (words[0][:1] + words[-1][:1]).upper()
 
 
+def breakable_url(address: str):
+    """``address`` as HTML that wraps only between its parts: a ``<wbr>`` before each dot and
+    slash after the scheme, inside a span that never breaks inside a word (``.q-url``). A long
+    host at phone width (staging's) wraps as "…azurecontainerapps.io" / "/recover", never as
+    "…/re" / "cover", which on a printed kit is easy to misread (staging QA F5)."""
+    from markupsafe import Markup, escape
+
+    text = str(address or "")
+    scheme, sep, rest = text.partition("://")
+    if not sep:
+        scheme, rest = "", text
+    head = escape(scheme + sep)
+    body = Markup("").join(
+        Markup("<wbr>") + escape(ch) if ch in "./" else escape(ch) for ch in rest
+    )
+    return Markup('<span class="q-url">') + head + body + Markup("</span>")
+
+
 def register(app) -> None:
     app.jinja_env.globals.update(
         ui_status=status_of,
@@ -299,4 +317,5 @@ def register(app) -> None:
         ui_rule=rule_words,
         ui_short_names=short_name_list,
         ui_names=name_list,
+        ui_url=breakable_url,
     )

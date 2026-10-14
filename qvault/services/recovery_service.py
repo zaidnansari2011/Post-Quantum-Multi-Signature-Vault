@@ -1024,7 +1024,8 @@ def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
 
 @dataclass(frozen=True)
 class KitState:
-    #: none, unconfirmed or stale: what the "save your kit" banner says; None when all is well.
+    #: none, unconfirmed, stale or burned (cancelling a recovery that used it stopped it; staging
+    #: QA F11): what the "save your kit" banner says; None when all is well.
     problem: str | None
     kit: object | None
     #: Whether a treasury seat holds this person's password key: the kit matters most for them,
@@ -1036,7 +1037,12 @@ def kit_state(user: User) -> KitState:
     kit = recovery_kit.current_kit(user)
     treasury = bool(recovery_kit.seat_key_ids(user))
     if kit is None:
-        problem = "none"
+        from qvault.models.recovery import RecoveryKit  # kept local: R9 Phase 2 edits the imports
+
+        latest = (
+            RecoveryKit.query.filter_by(user_id=user.id).order_by(RecoveryKit.id.desc()).first()
+        )
+        problem = "burned" if latest is not None and latest.revoked_reason == "burned" else "none"
     elif kit.state == "stale":
         problem = "stale"
     elif kit.confirmed_at is None:

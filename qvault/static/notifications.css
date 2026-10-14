@@ -114,6 +114,7 @@
   flex: 0 0 auto; display: flex; gap: var(--space-4); padding: var(--space-8) var(--space-16) var(--space-8) 0;
 }
 .nitem__actions form { margin: 0; }
+.nitem__kept { align-self: center; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 
 @media (max-width: 767px) {
   .nitem { flex-wrap: wrap; }

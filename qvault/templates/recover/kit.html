@@ -16,7 +16,7 @@
     password takes effect 72 hours from now. Until then nothing changes, and you, your workspace’s
     admins and your fellow approvers are told and can cancel it.
   </p>
-  {{ banner('info', 'Type this code only at ' ~ address ~ ', the address printed on your kit.', 'Nobody from Q-Vault or your company will ever ask for it.') }}
+  {{ banner('info', 'Type this code only at ' ~ ui_url(address) ~ ', the address printed on your kit.', 'Nobody from Q-Vault or your company will ever ask for it.') }}
   {%- if refusal %}
   {{ banner('critical', refusal, announce=True) }}
   {%- endif %}
