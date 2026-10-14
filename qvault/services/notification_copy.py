@@ -343,11 +343,23 @@ REMOVE_PHONE = "remove it on the Security page, with your password"
 
 
 def _phone(stored: dict) -> str:
-    """The phone that vouched for a reset, by the name its owner gave it, or "a phone"."""
+    """The phone that vouched for a reset: its name, and (re-review N3: the name is its holder's
+    to change) the day it was paired and the start of its key, as the Security page shows them;
+    or "a phone"."""
     name = stored.get("device_name")
-    if isinstance(name, str) and name.strip():
-        return f"the phone \u201c{_clip(name.strip())}\u201d"
-    return "a phone"
+    if not (isinstance(name, str) and name.strip()):
+        return "a phone"
+    marks = []
+    paired = stored.get("device_paired")
+    if isinstance(paired, str) and len(paired) == 10:
+        moment = _moment(paired + "T00:00:00+00:00")
+        if moment is not None:
+            marks.append(f"paired {moment.day} {moment:%b %Y}")
+    key = stored.get("device_key")
+    if isinstance(key, str) and len(key) == 8 and all(c in "0123456789abcdef" for c in key):
+        marks.append(f"key {key[:4]} {key[4:]}")
+    extra = f" ({', '.join(marks)})" if marks else ""
+    return f"the phone \u201c{_clip(name.strip())}\u201d{extra}"
 
 
 def _recovery(notification, stored: dict, now: datetime) -> Copy:
@@ -455,13 +467,27 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
         if me:
             if stored.get("route") == "phone":
                 phone = _phone(stored)
-                then = (
-                    ""
-                    if role in ("device_revoked", "system", "status_holder")
-                    else f" {phone[:1].upper()}{phone[1:]} can't start another for 7 days. If "
-                    f"you didn't start it, someone has that phone and can unlock it: "
-                    f"{REMOVE_PHONE}."
-                )
+                if role in ("device_revoked", "system", "status_holder"):
+                    then = ""
+                elif role == "kit":
+                    # A kit superseded it: nothing says the phone is anyone else's (re-review N1).
+                    then = (
+                        " If you didn't use your Recovery Kit, someone else has it: cancel that "
+                        "recovery from your phone or on Home. It then can't start another for 7 "
+                        "days."
+                    )
+                else:
+                    held = (
+                        "a day"
+                        if role in ("manager", "cosigner")
+                        or stored.get("cancel_reason") == "cancelled_from_other_phone"
+                        else "7 days"
+                    )
+                    then = (
+                        f" {phone[:1].upper()}{phone[1:]} can't start another for {held}. If you "
+                        f"didn't start it, someone has that phone and can unlock it: "
+                        f"{REMOVE_PHONE}."
+                    )
             elif stored.get("kit_burned"):
                 then = (
                     " Your Recovery Kit no longer works, because someone else had it. Make a new "

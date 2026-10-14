@@ -144,8 +144,8 @@ export default function KitConfirmScreen({ requestUuid, onBack }: { requestUuid:
             </Section>
             <Text role="caption" tone="muted">
               Approving never makes it take effect sooner than 6 hours from now, so you can still cancel it if you were
-              talked into this. Cancelling from this phone keeps your Recovery Kit working: if someone else has it, make
-              a new one on the web.
+              talked into this. Cancelling from this phone keeps your Recovery Kit, but it can't start another recovery
+              for 7 days. If someone else has it, make a new one on the web.
             </Text>
           </View>
         )}
