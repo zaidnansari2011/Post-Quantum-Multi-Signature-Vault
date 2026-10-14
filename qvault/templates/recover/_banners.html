@@ -18,7 +18,13 @@
 {% macro recovery_banners(banners) -%}
 {%- for b in banners %}
 {%- set name = b.subject.display_name %}
-{%- if b.viewer_as == 'self' %}
+{%- if b.request.route == 'phone' and b.viewer_as == 'self' %}
+  {%- set title = 'Someone is setting a new web password for your account' %}
+  {%- set body = 'A phone paired to your account approved a new web password and a new web signing key. Unless it is cancelled, they take effect on ' ~ ui_absolute(b.completes_at) ~ '. If this isn’t you, cancel it now, and remove that phone on the Security page.' %}
+{%- elif b.request.route == 'phone' %}
+  {%- set title = 'Someone is recovering ' ~ name ~ '’s account' %}
+  {%- set body = 'A phone paired to ' ~ name ~ '’s account approved a new web password. Unless it is cancelled, on ' ~ ui_absolute(b.completes_at) ~ ' the account gets a new web signing key. If ' ~ name ~ ' didn’t start it, cancel it.' %}
+{%- elif b.viewer_as == 'self' %}
   {%- set title = 'Someone is recovering your account' %}
   {%- set body = 'They used your Recovery Kit and chose a new password. Unless it is cancelled, it takes effect on ' ~ ui_absolute(b.completes_at) ~ ', and your signing key then opens with their password. If this isn’t you, cancel it now: your Recovery Kit then stops working too, because someone else has it.' %}
 {%- else %}

@@ -427,6 +427,33 @@ class RecoverKitForm(FlaskForm):
     submit = SubmitField("Start recovery")
 
 
+class RecoverPhoneForm(FlaskForm):
+    """A new web password from a paired phone (plan R9 Phase 2, design §6.2): the code the phone
+    shows after it signed. The code's typo check runs in the service; here it is only bounded."""
+
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
+    code = StringField(
+        "Code from your phone",
+        validators=[DataRequired(message="Type the code your phone shows."), Length(max=40)],
+    )
+    password = PasswordField("New password", validators=[DataRequired(), Length(min=8, max=1024)])
+    confirm = PasswordField(
+        "Confirm new password",
+        validators=[DataRequired(), EqualTo("password", message="Passwords must match")],
+    )
+    submit = SubmitField("Set new password")
+
+
+class PhoneConfirmForm(FlaskForm):
+    """A kit request's status page: the code a paired phone shows after confirming it (§6.3)."""
+
+    code = StringField(
+        "Code from your phone",
+        validators=[DataRequired(message="Type the code your phone shows."), Length(max=40)],
+    )
+    submit = SubmitField("Shorten the wait")
+
+
 class IssueKitForm(FlaskForm):
     """Making, or replacing, a Recovery Kit from the Security page: the password opens the keys
     the kit will hold."""

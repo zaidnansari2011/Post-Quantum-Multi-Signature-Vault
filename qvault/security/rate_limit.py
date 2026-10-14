@@ -3,7 +3,9 @@
 Four doors take a password from anyone: sign-in (``POST /login``), the two sign-ups
 (``POST /register`` and ``POST /invite/<token>/register``), and the phone's pairing endpoints
 (``POST /api/v1/devices/challenge`` and ``POST /api/v1/devices``). A fifth takes a Recovery Kit
-code (``POST /recover``, and Cancel on its status page: plan R9, 10 an hour). Each POST counts
+code (``POST /recover``, and Cancel on its status page: plan R9, 10 an hour), and the same bucket
+takes a paired phone's code (``POST /recover/phone`` and the kit status page's confirm, Phase 2).
+Each POST counts
 against a bucket for the client's address over a sliding window; past the limit the request is
 refused with 429 and ``Retry-After`` before the view runs, so a refused guess costs no Argon2id
 work either.
@@ -58,6 +60,9 @@ ENDPOINT_BUCKETS = {
     # Account recovery (plan R9, design §4.6): the kit's entry form and the status page's Cancel.
     "recover.kit": "recover",
     "recover.status_cancel": "recover",
+    # Phase 2: a code from a paired phone, typed at /recover/phone or on a kit's status page.
+    "recover.phone": "recover",
+    "recover.status_phone_confirm": "recover",
 }
 
 #: (attempts, window in seconds) per bucket, per client address. RATE_LIMIT_SIGNUP_PER_HOUR sets

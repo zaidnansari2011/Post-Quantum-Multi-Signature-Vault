@@ -1736,3 +1736,125 @@ def set_notification_settings():
         push={**_push_state(), "groups": _push_groups(g.api_user)},
         email={"available": delivery_service.channel_ready("email")},
     )
+
+
+# -- account recovery by phone (plan R9 Phase 2, design §6) ---------------------------------------
+# The device is always the calling phone, from its bearer token: a phone can vouch only as
+# itself, and only for its own person's recovery. The code a signature earns is in the approve
+# response and nowhere else: never stored, logged or sent again. Watchers (owners, admins and
+# co-signers) see and may cancel the recoveries they watch over, as on Home.
+
+_RECOVERY_STATUS = {
+    "device_unusable": 403,
+    "too_new": 403,
+    "device_key": 403,
+    "signature_invalid": 422,
+    "bad_request": 400,
+    "bad_purpose": 400,
+}
+
+
+def _recovery_refused(exc) -> tuple:
+    return _error(exc.code, exc.message, _RECOVERY_STATUS.get(exc.code, 409))
+
+
+def _recovery_signing(approval) -> dict:
+    from qvault.services import recovery_phone
+
+    return {
+        "inputs": recovery_phone.signing_inputs(approval),
+        "expires_at": recovery_phone.iso_z(approval.expires_at),
+    }
+
+
+@bp.get("/recovery")
+@device_token_required
+def recovery_overview():
+    """Every recovery this phone's person should see (their own, and those they watch over), and
+    whether this phone may start a web reset now."""
+    from qvault.services import recovery_phone
+
+    return jsonify(
+        ok=True,
+        requests=recovery_phone.requests_for(g.api_device),
+        phone_reset=recovery_phone.phone_reset_state(g.api_device),
+    )
+
+
+@bp.post("/recovery/phone-reset")
+@device_token_required
+def recovery_phone_reset():
+    """'Set a new web password': makes the request and returns the RECOVERY bytes' fields to sign
+    (purpose ``web_reset``). Nothing can be claimed until the signature arrives."""
+    from qvault.services import recovery_phone
+    from qvault.services.recovery_service import RecoveryRefused
+
+    try:
+        approval = recovery_phone.begin(g.api_device, "web_reset")
+    except RecoveryRefused as exc:
+        return _recovery_refused(exc)
+    return jsonify(
+        ok=True, request_uuid=approval.request.request_uuid, **_recovery_signing(approval)
+    )
+
+
+@bp.post("/recovery/requests/<request_uuid>/kit-confirm")
+@device_token_required
+def recovery_kit_confirm(request_uuid: str):
+    """Confirm the person's own Recovery Kit request: returns the fields to sign (purpose
+    ``kit_confirm``). Anyone else's request is a 404."""
+    from qvault.services import recovery_phone
+    from qvault.services.recovery_service import RecoveryRefused
+
+    try:
+        approval = recovery_phone.begin(g.api_device, "kit_confirm", request_uuid=request_uuid)
+    except LookupError:
+        return _error("unknown_request", "No such recovery.", 404)
+    except RecoveryRefused as exc:
+        return _recovery_refused(exc)
+    return jsonify(ok=True, request_uuid=request_uuid, **_recovery_signing(approval))
+
+
+@bp.post("/recovery/requests/<request_uuid>/approve")
+@device_token_required
+def recovery_approve(request_uuid: str):
+    """The phone's signature over the RECOVERY bytes: ``{"purpose", "signature_b64"}``. Returns
+    the code to show on this phone, once."""
+    from qvault.services import recovery_phone
+    from qvault.services.recovery_service import RecoveryRefused
+
+    body = _body()
+    purpose = body.get("purpose")
+    if purpose not in ("web_reset", "kit_confirm"):
+        return _error("bad_purpose", "That isn't something a phone can approve.", 400)
+    try:
+        approved = recovery_phone.approve(
+            g.api_device, request_uuid, purpose, body.get("signature_b64")
+        )
+    except LookupError:
+        return _error("unknown_request", "No such recovery.", 404)
+    except RecoveryRefused as exc:
+        return _recovery_refused(exc)
+    return jsonify(
+        ok=True,
+        code=recovery_phone.grouped(approved.code),
+        expires_at=recovery_phone.iso_z(approved.approval.expires_at),
+        purpose=purpose,
+    )
+
+
+@bp.post("/recovery/requests/<request_uuid>/cancel")
+@device_token_required
+def recovery_cancel(request_uuid: str):
+    """Cancel from the phone, after its presence check: the person (which burns a kit it used)
+    or someone watching over them (which does not). Anyone else gets a 404."""
+    from qvault.services import recovery_phone
+    from qvault.services.recovery_service import RecoveryRefused
+
+    try:
+        ended = recovery_phone.cancel_from_phone(g.api_device, request_uuid)
+    except LookupError:
+        return _error("unknown_request", "No such recovery.", 404)
+    except RecoveryRefused as exc:
+        return _recovery_refused(exc)
+    return jsonify(ok=True, request_uuid=ended.request_uuid, state=ended.state)

@@ -6,6 +6,11 @@
   cancel it, through an HttpOnly, SameSite=Strict cookie scoped to ``/recover``.
 - ``/recover/requests/<uuid>/cancel``: Cancel on Home's banner, for the person and for the people
   watching over them (``recovery_service.watchers``); anyone else gets a 404.
+- ``/recover/phone`` (Phase 2, design §6.2): email, the code a paired phone shows after it signed,
+  and a new web password. Answers an unknown email, no waiting approval and a wrong code alike.
+- ``/recover/status/phone-confirm`` (Phase 2, design §6.3): on a kit request's status page, the
+  code a paired phone shows after confirming it, which shortens the wait to 24 hours from the
+  kit's use.
 - The kit's own page (``kit_page``), drawn in answer to the POST that made the kit: at sign-up,
   or on the Security page. It is never stored and cannot be fetched again; ``/account/recovery-kit``
   confirms the last group typed back, or takes "Do this later".
@@ -33,10 +38,17 @@ from flask_login import current_user, login_required
 
 from qvault.crypto import kit_code
 from qvault.extensions import db
-from qvault.forms import IssueKitForm, KitConfirmForm, KitLaterForm, RecoverKitForm
+from qvault.forms import (
+    IssueKitForm,
+    KitConfirmForm,
+    KitLaterForm,
+    PhoneConfirmForm,
+    RecoverKitForm,
+    RecoverPhoneForm,
+)
 from qvault.models.recovery import RecoveryKit
 from qvault.security import master_key
-from qvault.services import delivery_service, recovery_kit, recovery_service
+from qvault.services import delivery_service, recovery_kit, recovery_phone, recovery_service
 from qvault.services.key_service import KeyUnlockError, PasswordLockedError
 from qvault.services.recovery_service import RecoveryRefused
 
@@ -86,22 +98,50 @@ def kit():
             except RecoveryRefused as exc:
                 refusal = exc.message
             else:
-                response = redirect(url_for("recover.status"))
-                response.set_cookie(
-                    recovery_service.STATUS_COOKIE,
-                    started.status_token,
-                    max_age=int(recovery_service.KIT_WAIT.total_seconds()) + 30 * 24 * 3600,
-                    path=recovery_service.STATUS_PATH,
-                    # As the theme cookie: behind a proxy that ends TLS, is_secure reads False.
-                    secure=request.is_secure
-                    or bool(current_app.config.get("SESSION_COOKIE_SECURE", False)),
-                    httponly=True,
-                    samesite="Strict",
-                )
-                return _private(response)
+                return _started(started)
     # The code is never written back into the page, whatever happened to it.
     form.code.data = ""
     body = render_template("recover/kit.html", form=form, refusal=refusal, address=site_address())
+    return _private(make_response(body, status))
+
+
+def _started(started):
+    """To the status page, carrying the status cookie that lets this browser see and cancel the
+    request it started: HttpOnly, SameSite=Strict, scoped to /recover."""
+    response = redirect(url_for("recover.status"))
+    response.set_cookie(
+        recovery_service.STATUS_COOKIE,
+        started.status_token,
+        max_age=int(recovery_service.KIT_WAIT.total_seconds()) + 30 * 24 * 3600,
+        path=recovery_service.STATUS_PATH,
+        # As the theme cookie: behind a proxy that ends TLS, is_secure reads False.
+        secure=request.is_secure or bool(current_app.config.get("SESSION_COOKIE_SECURE", False)),
+        httponly=True,
+        samesite="Strict",
+    )
+    return _private(response)
+
+
+@bp.route("/recover/phone", methods=["GET", "POST"])
+def phone():
+    """A new web password from a paired phone (design §6.2): the phone started it and shows the
+    code; this page takes it with the email and a new password. Rate limited like ``/recover``."""
+    form = RecoverPhoneForm()
+    refusal = None
+    status = 200
+    if request.method == "POST":
+        status = 400
+        if form.validate_on_submit():
+            try:
+                started = recovery_phone.claim(form.email.data, form.code.data, form.password.data)
+            except recovery_phone.PhoneCodeError as exc:
+                form.code.errors = [*form.code.errors, str(exc)]
+            except RecoveryRefused as exc:
+                refusal = exc.message
+            else:
+                return _started(started)
+    form.code.data = ""
+    body = render_template("recover/phone.html", form=form, refusal=refusal)
     return _private(make_response(body, status))
 
 
@@ -115,12 +155,67 @@ def status():
     found = recovery_service.request_for_status_token(_status_token())
     if found is not None:
         found = recovery_service.settle(found)
+    now = datetime.now(UTC)
     body = render_template(
         "recover/status.html",
         req=found,
-        now=datetime.now(UTC),
+        now=now,
+        confirm_form=PhoneConfirmForm(),
+        can_shorten=_can_shorten(found, now),
+        shortest=_shortest(found),
+        confirmed_by_phone=(
+            found is not None
+            and found.route == "kit"
+            and recovery_phone.approving_approval(found) is not None
+        ),
+        treasury_notes=(
+            recovery_phone.narrowing(found.user)
+            if found is not None and found.route == "phone" and found.state == "waiting"
+            else []
+        ),
     )
     return _private(make_response(body))
+
+
+def _shortest(found):
+    if found is None or found.window_starts_at is None:
+        return None
+    start = found.window_starts_at
+    start = start if start.tzinfo else start.replace(tzinfo=UTC)
+    return start + recovery_phone.KIT_WITH_PHONE_WAIT
+
+
+def _can_shorten(found, now) -> bool:
+    """A kit request still waiting, whose end is later than 24 hours after the kit was used."""
+    shortest = _shortest(found)
+    if found is None or found.route != "kit" or found.state != "waiting" or shortest is None:
+        return False
+    completes = found.completes_at
+    completes = completes if completes.tzinfo else completes.replace(tzinfo=UTC)
+    return completes > max(now, shortest)
+
+
+@bp.post("/recover/status/phone-confirm")
+def status_phone_confirm():
+    """The code the person's paired phone shows after confirming this browser's kit request
+    (design §6.3). Then it completes 24 hours after the kit was used: never sooner."""
+    form = PhoneConfirmForm()
+    if not form.validate_on_submit():
+        if not _csrf_ok():
+            abort(400)
+        flash("Type the code your phone shows.", "error")
+        return _private(redirect(url_for("recover.status")))
+    try:
+        recovery_phone.confirm_kit(_status_token(), form.code.data)
+    except LookupError:
+        abort(404)
+    except recovery_phone.PhoneCodeError as exc:
+        flash(str(exc), "error")
+    except RecoveryRefused as exc:
+        flash(exc.message, "error")
+    else:
+        flash("Your phone confirmed it. The new time is below.", "success")
+    return _private(redirect(url_for("recover.status")))
 
 
 @bp.post("/recover/status/cancel")

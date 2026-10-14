@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "ui/forms.html" import wtf_field %}
 {% from "ui/buttons.html" import button %}
 {% from "ui/feedback.html" import banner %}
 {% block title %}Your recovery — Q-Vault{% endblock %}
@@ -6,7 +7,9 @@
 {#- /recover/status (plan R9, design §4.2): the browser that started a recovery, by its HttpOnly
     cookie, sees when it takes effect and can cancel it (which never burns the kit, but keeps it
     from starting another recovery for 24 hours: design §16 item 19). Once the wait is over,
-    loading this page completes it if the scheduler has not. -#}
+    loading this page completes it if the scheduler has not. Phase 2: a phone reset (route
+    'phone') says it gives a new web key; a kit request can be shortened by a code from the
+    person's paired phone (design §6.3), to 24 hours after the kit was used and never sooner. -#}
 {% macro body() %}
 {%- set cancelled_by = {
     'self': 'by the account’s owner',
@@ -14,7 +17,11 @@
     'manager': 'by an admin of the account’s workspace',
     'cosigner': 'by one of the account’s fellow approvers',
     'status_holder': 'from this browser',
+    'device_revoked': 'because a phone paired to the account was removed',
+    'kit': 'because the account’s Recovery Kit was used, which replaces a reset from a phone',
+    'system': 'by Q-Vault, because the phone that vouched for it can no longer sign in',
 } %}
+{%- set phone = req and req.route == 'phone' %}
 <div class="q-auth q-auth--wide">
   {%- if not req %}
   <h1 class="q-auth__t">No recovery from this browser</h1>
@@ -25,28 +32,61 @@
   <dl class="q-kv q-gap">
     <div><dt>Takes effect</dt><dd>{{ ui_absolute(req.completes_at) }}</dd></div>
     <div><dt>Started</dt><dd>{{ ui_absolute(req.created_at) }}</dd></div>
+    {%- if phone and req.request_code %}
+    <div><dt>Request</dt><dd><code class="q-mono">{{ req.request_code }}</code></dd></div>
+    {%- endif %}
   </dl>
   <p class="q-auth__p">
     Until then nothing changes: the account’s current password still works, and the new one
     doesn’t yet. After that time, sign in with the new password, or come back to this page.
+    {%- if phone %} You will then have a new web signing key; the paired phone keeps its own.{% endif %}
   </p>
+  {%- for note in treasury_notes %}
+  {{ banner('warning', 'A treasury seat will need moving', note) }}
+  {%- endfor %}
   <p class="q-auth__p">
     We’ve told the account’s owner, its workspace’s admins and its fellow approvers. Any of them can
     cancel it, and using the current password anywhere cancels it too.
+    {%- if phone %} So does removing any phone paired to the account.{% endif %}
   </p>
+  {%- if confirmed_by_phone %}
+  <p class="q-auth__p">A paired phone confirmed this recovery, so it takes effect 24 hours after the kit was used.</p>
+  {%- elif can_shorten %}
+  <h2 class="q-recover__t">Shorten the wait with your phone</h2>
+  <p class="q-auth__p">
+    If your phone is paired to this account, open this recovery in the Q-Vault app and approve it.
+    Type the code it shows here, and the recovery takes effect on {{ ui_absolute(shortest if shortest > now else now) }}
+    instead. Only do this if you are the one at this computer.
+  </p>
+  <form method="post" action="{{ url_for('recover.status_phone_confirm') }}" novalidate autocomplete="off">
+    {{ confirm_form.hidden_tag() }}
+    {{ wtf_field(confirm_form.code, caption='8 characters, as your phone shows them.', mono=True,
+                 attrs={'autocomplete': 'one-time-code', 'autocapitalize': 'characters', 'spellcheck': 'false'}) }}
+    {{ button(confirm_form.submit.label.text, 'secondary', type='submit', block=True, name='submit', value=confirm_form.submit.label.text) }}
+  </form>
+  {%- endif %}
+  {%- if not phone %}
   <p class="q-auth__p">
     If you cancel it here, the kit still works, but it can’t start another recovery for 24 hours.
   </p>
+  {%- endif %}
   <form method="post" action="{{ url_for('recover.status_cancel') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {{ button('Cancel this recovery', 'danger', type='submit', block=True) }}
   </form>
   {%- elif req.state == 'completed' %}
   <h1 class="q-auth__t">The account is recovered</h1>
+  {%- if phone %}
+  <p class="q-auth__p">
+    The new password works now, with a new web signing key, and every other sign-in was ended. The
+    paired phone keeps working. After you sign in, make a new Recovery Kit.
+  </p>
+  {%- else %}
   <p class="q-auth__p">
     The new password works now, and every other sign-in was ended. The signing key is the same.
     After you sign in, make a new Recovery Kit: this one was used up.
   </p>
+  {%- endif %}
   {{ button('Sign in', 'primary', href=url_for('auth.login'), block=True) }}
   {%- elif req.state == 'failed' %}
   <h1 class="q-auth__t">This recovery didn’t go through</h1>
