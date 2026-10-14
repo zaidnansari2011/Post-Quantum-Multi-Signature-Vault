@@ -88,7 +88,11 @@ export type ListRowProps = {
   code?: string | null;
   /** Decoration inside the row, before its value: Members' avatar stack (§6.14). Not tappable. */
   accessory?: ReactNode;
-  /** False for a row whose tap reveals more in place rather than opening something. */
+  /**
+   * False for a row whose tap reveals more in place rather than opening something. Defaults to
+   * true, except on a row with the `external` icon: a link that leaves the app carries the external
+   * icon only, and the chevron (moving within the app) only the rest (handset audit, 14 Oct).
+   */
   chevron?: boolean;
   /**
    * A switch for the row (a row with a switch is not itself pressable): inset from the card's right
@@ -113,7 +117,7 @@ export function ListRow({
   disabled,
   code,
   accessory,
-  chevron = true,
+  chevron = icon !== 'external',
   toggle,
 }: ListRowProps) {
   const t = useTheme();
@@ -252,7 +256,7 @@ export function KeyValue({
   );
 }
 
-/** Initials on `fill`, never accent and never a status colour. Square for vaults (§5.7). */
+/** Initials on `fillActive`, never accent and never a status colour. Square for vaults (§5.7). */
 export function Avatar({
   name,
   size = 24,
@@ -346,7 +350,8 @@ const useStyles = makeStyles((t) => ({
   rowText: { flex: 1, gap: t.space[2] },
   value: { flexShrink: 1, maxWidth: '62%', textAlign: 'right' },
   kv: { gap: t.space[2], paddingVertical: t.space[4] },
-  avatar: { backgroundColor: t.color.fill, alignItems: 'center', justifyContent: 'center' },
+  // `fillActive`, not `fill`: on the dark page `fill` was almost the page itself (handset audit).
+  avatar: { backgroundColor: t.color.fillActive, alignItems: 'center', justifyContent: 'center' },
   stack: { flexDirection: 'row', alignItems: 'center' },
   stackItem: { borderWidth: 2, borderColor: t.color.surface, borderRadius: 14 },
 }));

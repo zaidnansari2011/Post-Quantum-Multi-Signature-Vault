@@ -37,7 +37,7 @@ STATES = {
     "expo_go": (True, "unavailable", False, "unavailable", "Not set up"),
     "never_asked": (True, "undetermined", False, "off", "Off"),
     "said_no": (True, "denied", False, "blocked", "Off"),
-    "allowed_not_registered": (True, "granted", False, "registering", "On"),
+    "allowed_not_registered": (True, "granted", False, "registering", "Connecting"),
     "on": (True, "granted", True, "on", "On"),
 }
 

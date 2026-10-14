@@ -42,18 +42,22 @@ export default function AccountScreen({ onOpen }: { onOpen: (page: AccountPage) 
   const ends = parseInstant(current?.expires_at ?? null);
   const endingSoon = !Number.isNaN(ends) && ends - now < 14 * DAY;
   const myKey = me.data?.my_key;
+  // The address as the account holds it (the server stores it lower-cased). The copy kept at
+  // set-up is what was typed into the sign-in field, keyboard capital and all, so it is only the
+  // fallback until /me answers (handset audit, 14 Oct: "Zaidnansari2011@gmail.com").
+  const email = me.data?.user.email ?? identity.email;
 
   return (
     <Screen>
       <OfflineNotice at={devices.dataUpdatedAt} />
       <Scroll refreshing={devices.isRefetching} onRefresh={() => void Promise.all([devices.refetch(), me.refetch()])}>
         <RootHeader title="Account" />
-        <View style={s.profile} accessible accessibilityLabel={[identity.displayName, identity.email, workspaceLine(workspace)].filter(Boolean).join('. ')}>
+        <View style={s.profile} accessible accessibilityLabel={[identity.displayName, email, workspaceLine(workspace)].filter(Boolean).join('. ')}>
           <Avatar name={identity.displayName} size={32} />
           <View style={s.flex}>
             <Text role="titleSm">{identity.displayName}</Text>
             <Text role="caption" tone="muted">
-              {identity.email}
+              {email}
             </Text>
             {workspaceLine(workspace) ? (
               <Text role="caption" tone="muted">
