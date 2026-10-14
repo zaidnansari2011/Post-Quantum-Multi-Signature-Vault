@@ -413,6 +413,19 @@ function Inputs() {
           <Switch value={on} onValueChange={setOn} label="Require Face ID to open Q-Vault" />
         </View>
       </Story>
+      <Story title="ListRow toggle: on, off, locked on; inset and on the title's line">
+        <List>
+          <ListRow title="Needs your signature" toggle={{ value: on, onValueChange: setOn }} />
+          <ListRow title="Updates" toggle={{ value: !on, onValueChange: (v) => setOn(!v) }} />
+          <ListRow title="Security" caption="Security alerts can't be turned off." toggle={{ value: true, onValueChange: noop, disabled: true }} />
+          <ListRow
+            title="Require Face ID to open Q-Vault"
+            caption="Asked when Q-Vault opens, and after a minute away. The app switcher hides your decisions. Also stops screenshots of Q-Vault on this phone."
+            captionLines={0}
+            toggle={{ value: false, onValueChange: noop }}
+          />
+        </List>
+      </Story>
     </>
   );
 }

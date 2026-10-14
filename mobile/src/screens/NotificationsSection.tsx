@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppState, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { Banner, Button, List, ListRow, Section, Switch, Text } from '../ui/index.tsx';
+import { Banner, Button, List, ListRow, Section, Text } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
 import * as api from '../api/endpoints.ts';
@@ -64,21 +64,18 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
   return (
     <Section title={titled ? 'Notifications' : undefined} first={!titled}>
       <List>
-        <ListRow title="On this phone" value={settings.isLoading ? null : line.value} caption={line.caption} />
+        <ListRow title="On this phone" value={settings.isLoading ? null : line.value} caption={line.caption} captionLines={0} />
         {(state === 'on' || state === 'registering') && push
           ? push.groups.map((group) => (
               <ListRow
                 key={group.id}
                 title={group.label}
                 caption={canToggle(group) ? null : "Security alerts can't be turned off."}
-                trailing={
-                  <Switch
-                    label={group.label}
-                    value={group.enabled}
-                    disabled={!canToggle(group) || toggle.isPending}
-                    onValueChange={(enabled) => toggle.mutate({ group: group.id, enabled })}
-                  />
-                }
+                toggle={{
+                  value: group.enabled,
+                  disabled: !canToggle(group) || toggle.isPending,
+                  onValueChange: (enabled) => toggle.mutate({ group: group.id, enabled }),
+                }}
               />
             ))
           : null}
@@ -97,7 +94,7 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
       {toggle.error ? (
         <Banner tone="critical" title={toggle.error instanceof Error ? toggle.error.message : 'Could not change it.'} />
       ) : null}
-      <Text role="caption" tone="muted">
+      <Text role="caption" tone="muted" style={s.footnote}>
         Notifications never show an amount or who is paid, and nothing can be approved from one. Email and
         other settings are on the web.
       </Text>
@@ -107,4 +104,5 @@ export function NotificationsSection({ titled = true }: { titled?: boolean } = {
 
 const useStyles = makeStyles((t) => ({
   action: { paddingTop: t.space[8], paddingBottom: t.space[8] },
+  footnote: { marginTop: t.space[12] },
 }));

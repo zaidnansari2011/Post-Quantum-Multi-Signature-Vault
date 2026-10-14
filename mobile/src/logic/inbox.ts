@@ -16,14 +16,16 @@
 //   - `archiveOffered`: whether a row offers Archive. Never a security alert: the server refuses
 //     it (409 `not_archivable`), so a new device or a changed password can't be hidden.
 //   - `forYouDot`: Activity's tab dot.
+//   - `asShown`: the one place the server's copy is adjusted: this phone's own new-device alert,
+//     and a UTC moment said in local time.
 //
-// Copy is the server's, unsigned, and always sans (I-12): this module never rewrites it.
+// Copy is the server's, unsigned, and always sans (I-12); beyond `asShown` it is never rewritten.
 //
 // No React Native import.
 
 import { parseInstant } from '../time.ts';
 import type { LinkTarget } from './links.ts';
-import { clock, dayMonth } from './words.ts';
+import { clock, dayMonth, localWhen, serverWhen } from './words.ts';
 
 export type InboxFacts = {
   id: number;
@@ -127,6 +129,37 @@ export function removeOffer(n: InboxFacts, thisDeviceId: number | null): LinkTar
 export function archiveOffered(n: Pick<InboxFacts, 'security' | 'archivable'>): boolean {
   if (n.security) return false;
   return n.archivable !== false;
+}
+
+/** The phone's own copy for the new-device alert about this very phone (`asShown`). */
+export const THIS_PHONE_SET_UP = 'This phone was set up';
+
+/**
+ * A row as the phone shows it. The server's copy is kept, with two exceptions (handset audit, 14 Oct):
+ *
+ *   - The new-device alert about THIS phone, read on this phone, is not an alarm: the person is
+ *     holding the device it names. It reads "This phone was set up", in the calm row (not pinned,
+ *     no critical tone) and still never offers Archive. On every other device it stays the
+ *     security alert, with "Not you? Remove that device".
+ *   - The moment the server writes in UTC ("14 Oct at 10:05 UTC") is said in local time, the same
+ *     clock the row's own time uses, so one row never shows two clocks. Only the server's exact
+ *     rendering of the item's own `created_at` is replaced; nothing else in the sentence changes.
+ */
+export function asShown<T extends InboxFacts>(n: T, thisDeviceId: number | null, now: number): T {
+  if (n.kind === 'device_enrolled' && thisDeviceId !== null && n.device_id === thisDeviceId) {
+    const when = localWhen(n.created_at, now);
+    return {
+      ...n,
+      title: THIS_PHONE_SET_UP,
+      body: when ? `You set it up on ${when}.` : '',
+      security: false,
+      archivable: false,
+    };
+  }
+  const utc = serverWhen(n.created_at, now);
+  const local = localWhen(n.created_at, now);
+  if (!utc || !local || !n.body.includes(utc)) return n;
+  return { ...n, body: n.body.split(utc).join(local) };
 }
 
 /** Activity's tab dot (§2.5): something unread in For you. Never a number. */

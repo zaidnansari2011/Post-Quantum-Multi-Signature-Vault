@@ -44,7 +44,8 @@ export default function HelpScreen({ onBack }: { onBack: () => void }) {
     `Version ${Constants.expoConfig?.version ?? 'unknown'}`,
     Updates.runtimeVersion ? `Runtime ${Updates.runtimeVersion}` : null,
     Updates.channel ? `Channel ${Updates.channel}` : null,
-    created ? `Update from ${created}` : null,
+    // Updates.createdAt is when the running update was published, not when it was installed.
+    created ? `Update published ${created}` : null,
   ].filter(Boolean);
 
   return (
