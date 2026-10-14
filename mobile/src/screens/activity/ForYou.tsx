@@ -6,13 +6,12 @@
 //
 // A tap opens the item's screen and marks it read; a swipe left offers Mark read and Archive (the
 // only swipe in the app, and also the row's accessibility actions; a security alert has no Archive,
-// which the server refuses too); the header's "Mark all read"
-// marks the section and says so in a toast. Nothing here acts on a decision: a row opens a screen,
+// which the server refuses too); "Mark all read", under the segmented control while anything is
+// unread, marks the section and says so in a toast. Nothing here acts on a decision: a row opens a screen,
 // where anything that signs happens after reading (I-12). The copy is the server's, unsigned, sans.
 //
 // A push tap (src/push.ts) marks its item read and refreshes this list, so the two agree.
 
-import type { ReactNode } from 'react';
 import { Linking, SectionList, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -26,13 +25,13 @@ import {
   InboxRow,
   List,
   ListRow,
-  Screen,
   SectionTitle,
   SwipeRow,
+  Text,
+  TextLink,
   ThemedRefresh,
+  useCollapsingHeader,
   useToast,
-  type NavAction,
-  type useCollapsingHeader,
 } from '../../ui/index.tsx';
 import { makeStyles } from '../../theme/index.ts';
 import { useEnrolledSession } from '../../session.tsx';
@@ -45,18 +44,11 @@ import { openLink } from '../../links.ts';
 import { keys, meQuery, notificationsQuery } from '../../queries.ts';
 import { INBOX_EMPTY, archiveOffered, forYou, inboxTarget, inboxWhen, removeOffer } from '../../logic/inbox.ts';
 
-type Head = (action: NavAction | undefined, extra?: ReactNode) => ReactNode;
+import type { ActivityHead } from '../ActivityScreen.tsx';
 
-export function ForYou({
-  header,
-  head,
-  onOpenDecision,
-}: {
-  header: ReturnType<typeof useCollapsingHeader>;
-  head: Head;
-  onOpenDecision: (uuid: string) => void;
-}) {
+export function ForYou({ head, onOpenDecision }: { head: ActivityHead; onOpenDecision: (uuid: string) => void }) {
   const s = useStyles();
+  const header = useCollapsingHeader();
   const { token } = useEnrolledSession();
   const toast = useToast();
   const client = useQueryClient();
@@ -130,15 +122,13 @@ export function ForYou({
     else openLink(target);
   };
 
-  const markAll: NavAction | undefined =
-    unread > 0 ? { icon: 'check', label: 'Mark all read', onPress: () => readAll.mutate() } : undefined;
   const webUrl = `${getApiBaseUrl()}/notifications/`;
 
   return (
-    <Screen>
+    <>
       <OfflineNotice at={query.dataUpdatedAt} />
       <View style={s.flex}>
-        <CollapsedBar title="Activity" visible={header.collapsed} action={markAll} />
+        <CollapsedBar title="Activity" visible={header.collapsed} />
         <SectionList
           style={s.list}
           contentContainerStyle={s.listContent}
@@ -191,17 +181,23 @@ export function ForYou({
           }}
           ListHeaderComponent={
             <View style={s.head}>
-              {head(
-                markAll,
-                failed ? (
-                  <Banner
-                    tone="warning"
-                    title="Can't load your updates"
-                    detail="Check your connection and try again."
-                    actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
-                  />
-                ) : null,
-              )}
+              {head(header.onHeaderLayout)}
+              {unread > 0 ? (
+                <View style={s.unread}>
+                  <Text role="caption" tone="muted">
+                    {`${unread} unread`}
+                  </Text>
+                  <TextLink label="Mark all read" onPress={() => readAll.mutate()} disabled={readAll.isPending} />
+                </View>
+              ) : null}
+              {failed ? (
+                <Banner
+                  tone="warning"
+                  title="Can't load your updates"
+                  detail="Check your connection and try again."
+                  actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
+                />
+              ) : null}
             </View>
           }
           ListEmptyComponent={
@@ -230,7 +226,7 @@ export function ForYou({
           }
         />
       </View>
-    </Screen>
+    </>
   );
 }
 
@@ -239,6 +235,15 @@ const useStyles = makeStyles((t) => ({
   list: { flex: 1, backgroundColor: t.color.bg },
   listContent: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32] },
   head: { gap: t.space[12], marginBottom: t.space[8] },
+  // The count and its action on one line; the link's 44pt target sets the row's height.
+  unread: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: t.space[12],
+    marginVertical: -t.space[8],
+  },
   section: { paddingTop: t.space[16], backgroundColor: t.color.bg },
   footer: { marginTop: t.space[24] },
 }));

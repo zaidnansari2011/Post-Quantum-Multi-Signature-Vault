@@ -10,11 +10,17 @@
 // Yours is the person's own decisions from the last 90 days (src/logic/activity.ts): three chips
 // (All, Open, Decided), sections by when it happened, each row saying what happened and when and
 // the person's part ("You approved", from the server's `my_vote`). Workspace-wide history is audit
-// browsing, which stays on the web (D16), and the list's last row says so. Search is a header
-// button, never a pull-down that would fight pull to refresh.
+// browsing, which stays on the web (D16), and the list's last row says so. Search is a button at the
+// end of the chips row, never a pull-down that would fight pull to refresh.
+//
+// Switching segments is instant and nothing redraws but the list (handset walk, 14 Oct: the switch
+// flickered). Both panes stay mounted and the inactive one is hidden, so neither remounts: no
+// skeleton or empty state flashes, and each keeps its own scroll, chip and search. The headline and
+// the segmented control are the same in both panes, with no header action that changes with the
+// segment: each pane's own action ("Mark all read", search) sits in the pane, under the control.
 
 import { useState, type ReactNode } from 'react';
-import { Linking, SectionList, View } from 'react-native';
+import { Linking, SectionList, View, type LayoutChangeEvent } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -28,6 +34,7 @@ import {
   Field,
   GroupedItem,
   GroupedSeparator,
+  IconButton,
   List,
   ListRow,
   RootHeader,
@@ -37,7 +44,6 @@ import {
   TextLink,
   ThemedRefresh,
   useCollapsingHeader,
-  type NavAction,
 } from '../ui/index.tsx';
 import { makeStyles } from '../theme/index.ts';
 import { useEnrolledSession } from '../session.tsx';
@@ -68,33 +74,35 @@ const SEGMENTS: Array<{ value: ActivitySegment; label: string }> = [
   { value: 'yours', label: 'Yours' },
 ];
 
+/** The headline and the segmented control, drawn the same at the top of either pane's list. */
+export type ActivityHead = (onHeaderLayout: (e: LayoutChangeEvent) => void) => ReactNode;
+
 export default function ActivityScreen({ onOpen }: { onOpen: (uuid: string) => void }) {
+  const s = useStyles();
   const [segment, setSegment] = useState<ActivitySegment>('forYou');
-  const header = useCollapsingHeader();
-  const head = (action: NavAction | undefined, extra?: ReactNode) => (
+  const head: ActivityHead = (onHeaderLayout) => (
     <>
-      <RootHeader onLayout={header.onHeaderLayout} title="Activity" action={action} />
+      <RootHeader onLayout={onHeaderLayout} title="Activity" />
       <Segmented label="Show" options={SEGMENTS} value={segment} onChange={setSegment} />
-      {extra}
     </>
   );
-  return segment === 'forYou' ? (
-    <ForYou header={header} head={head} onOpenDecision={onOpen} />
-  ) : (
-    <Yours header={header} head={head} onOpen={onOpen} />
+  // `display: none` keeps the hidden pane mounted (state, scroll, its query) and out of the
+  // accessibility tree, so a screen reader meets only the pane on show.
+  return (
+    <Screen>
+      <View style={[s.flex, segment !== 'forYou' && s.hidden]}>
+        <ForYou head={head} onOpenDecision={onOpen} />
+      </View>
+      <View style={[s.flex, segment !== 'yours' && s.hidden]}>
+        <Yours head={head} onOpen={onOpen} />
+      </View>
+    </Screen>
   );
 }
 
-function Yours({
-  header,
-  head,
-  onOpen,
-}: {
-  header: ReturnType<typeof useCollapsingHeader>;
-  head: (action: NavAction | undefined, extra?: ReactNode) => ReactNode;
-  onOpen: (uuid: string) => void;
-}) {
+function Yours({ head, onOpen }: { head: ActivityHead; onOpen: (uuid: string) => void }) {
   const s = useStyles();
+  const header = useCollapsingHeader();
   const { token, identity } = useEnrolledSession();
   const [chip, setChip] = useState<ActivityChip>('all');
   const [searching, setSearching] = useState(false);
@@ -115,20 +123,16 @@ function Yours({
   const grouped = sections(rows, now).map((sec) => ({ title: sec.title, data: sec.rows }));
   const failed = query.isError && query.data === undefined;
   const webUrl = `${getApiBaseUrl()}/approvals`;
-  const searchButton: NavAction = {
-    icon: searching ? 'x' : 'search',
-    label: searching ? 'Close search' : 'Search your decisions',
-    onPress: () => {
-      setSearching((v) => !v);
-      setSearch('');
-    },
+  const toggleSearch = () => {
+    setSearching((v) => !v);
+    setSearch('');
   };
 
   return (
-    <Screen>
+    <>
       <OfflineNotice at={query.dataUpdatedAt} />
       <View style={s.flex}>
-        <CollapsedBar title="Activity" visible={header.collapsed} action={searchButton} />
+        <CollapsedBar title="Activity" visible={header.collapsed} />
         <SectionList
           style={s.list}
           contentContainerStyle={s.listContent}
@@ -168,33 +172,40 @@ function Yours({
           }}
           ListHeaderComponent={
             <View style={s.head}>
-              {head(
-                searchButton,
-                <>
-                  <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
-                  {searching ? (
-                    <Field
-                      label="Search by title or vault"
-                      value={search}
-                      onChangeText={setSearch}
-                      placeholder="deployer"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      autoFocus
-                      returnKeyType="search"
-                    />
-                  ) : null}
+              {head(header.onHeaderLayout)}
+              <ColdStartHint stage={coldStart} onRetry={() => void query.refetch()} />
+              <View style={s.filters}>
+                <View style={s.flex}>
                   <ChipGroup label="Show" options={ACTIVITY_CHIPS} value={chip} onChange={setChip} />
-                  {failed ? (
-                    <Banner
-                      tone="warning"
-                      title="Can't load your decisions"
-                      detail="Check your connection. Nothing has changed on your decisions."
-                      actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
-                    />
-                  ) : null}
-                </>,
-              )}
+                </View>
+                <View style={s.searchToggle}>
+                  <IconButton
+                    icon={searching ? 'x' : 'search'}
+                    label={searching ? 'Close search' : 'Search your decisions'}
+                    onPress={toggleSearch}
+                  />
+                </View>
+              </View>
+              {searching ? (
+                <Field
+                  label="Search by title or vault"
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="deployer"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  returnKeyType="search"
+                />
+              ) : null}
+              {failed ? (
+                <Banner
+                  tone="warning"
+                  title="Can't load your decisions"
+                  detail="Check your connection. Nothing has changed on your decisions."
+                  actions={[{ label: 'Try again', onPress: () => void query.refetch() }]}
+                />
+              ) : null}
             </View>
           }
           ListEmptyComponent={
@@ -229,15 +240,19 @@ function Yours({
           }
         />
       </View>
-    </Screen>
+    </>
   );
 }
 
 const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
+  hidden: { display: 'none' },
   list: { flex: 1, backgroundColor: t.color.bg },
   listContent: { paddingHorizontal: t.layout.gutter, paddingBottom: t.space[32] },
   head: { gap: t.space[12], marginBottom: t.space[8] },
+  // The chips wrap at large text; the search button stays at the row's end, on the first line.
+  filters: { flexDirection: 'row', alignItems: 'flex-start', gap: t.space[8], marginRight: -t.space[8] },
+  searchToggle: { marginTop: -2 },
   section: { paddingTop: t.space[16], backgroundColor: t.color.bg },
   footer: { marginTop: t.space[24] },
 }));
