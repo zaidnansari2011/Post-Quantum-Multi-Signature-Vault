@@ -197,9 +197,28 @@ export function newVaultRule(m: number, n: number): string {
  * off, or the rule leaves room.
  */
 export function newVaultWarning(m: number, n: number, sodDefault: boolean | undefined): string | null {
+  const caution = newVaultCaution(m, n, sodDefault);
+  return caution ? `${caution.detail} ${caution.title}.` : null;
+}
+
+/**
+ * The same warning as a Banner draws it on New vault: the fix as its title, the reason under it.
+ * The review sheet says it as the one sentence above (`newVaultWarning`).
+ */
+export function newVaultCaution(
+  m: number,
+  n: number,
+  sodDefault: boolean | undefined,
+): { title: string; detail: string } | null {
   if (sodDefault !== true || m < n) return null;
   if (n === 1) {
-    return "Whoever raises a decision can't approve it, so with you as the only approver nothing raised here could pass. Add an approver first.";
+    return {
+      title: 'Add an approver first',
+      detail: "Whoever raises a decision can't approve it, so with you as the only approver nothing raised here could pass.",
+    };
   }
-  return "Whoever raises a decision can't approve it, so with every approver needed nothing raised here could pass. Lower the rule or add an approver.";
+  return {
+    title: 'Lower the rule or add an approver',
+    detail: "Whoever raises a decision can't approve it, so with every approver needed nothing raised here could pass.",
+  };
 }

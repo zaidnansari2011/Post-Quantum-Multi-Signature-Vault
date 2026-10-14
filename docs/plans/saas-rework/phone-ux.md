@@ -2082,11 +2082,14 @@ the web." The native `Alert.alert` goes with it.
    - **The sheet:** search at the top; rows with a 32 avatar, name and email (`caption`) to tell two
      people with the same name apart; and `Checkbox`es (accent). It is scoped to the workspace (R3).
      The footer reads "Done, 2 added".
-   - **Empty state:** "Everyone in Northwind is already here. Invite more people on the web."
+   - **Empty state:** "You're the only member of Northwind so far." with the link "Invite people on
+     the web" for an owner or admin, or "Ask your admin to invite people." for anyone else.
    - **Chosen people** list under the row, each with a 48 pt "Remove" icon button (`close-circle`),
      not a 12 pt red text link.
 4. **Rule:** chips "Any one", "2 of 3", "All 3", with the restating sentence "Any 2 of the 3 approvers
-   must approve each decision."
+   must approve each decision." With no approvers added there is one possible rule: the sentence
+   alone ("You are the only approver."), no lone chip. A rule nothing could pass under is a warning
+   `Banner` (the fix as its title, the reason under it).
 5. **Footer link** (`caption`): "Viewers, roles and separation of duties are set on the web."
 6. **Bottom bar:** primary "Check and create". It opens a review sheet ("Any 2 of Ada, Brij, Chen
    approve every decision in Board approvals. Changing this later needs the web.") with "Create vault".
