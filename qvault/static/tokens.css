@@ -182,6 +182,7 @@
   --bg: var(--neutral-1);
   --bg-subtle: var(--neutral-2);
   --surface: #FFFFFF;           /* cards, panels, inputs: flat, with a hairline border */
+  --qr-ground: #FFFFFF;         /* behind a QR code: white in both themes, as scanners need (A10) */
   --surface-raised: #FFFFFF;    /* menus, popovers, dialogs, sheets: white plus a shadow */
   --fill: var(--neutral-3);
   --fill-hover: var(--neutral-4);
@@ -303,6 +304,7 @@
 
     /* Dark surfaces step lighter instead of casting shadows. bg-subtle and surface share step 2. */
     --surface: var(--neutral-2);
+    --qr-ground: #FFFFFF;
     --surface-raised: var(--neutral-3);
     --fill-raised-hover: var(--neutral-5);
 
@@ -383,6 +385,7 @@
 
   /* Dark surfaces step lighter instead of casting shadows. bg-subtle and surface share step 2. */
   --surface: var(--neutral-2);
+  --qr-ground: #FFFFFF;
   --surface-raised: var(--neutral-3);
   --fill-raised-hover: var(--neutral-5);
 

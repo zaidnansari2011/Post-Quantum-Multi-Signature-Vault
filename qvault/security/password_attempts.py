@@ -24,15 +24,21 @@ once by ``load_user``, never given an id on use: a thief replaying such a cookie
 a fresh count on every request (A10 build review F5). Outside a request (scripts, most unit tests)
 the id is None, which behaves as one session per account, as before.
 
-**A stolen cookie is worth ten guesses, and the owner hears of it** (A10 build review F3). A
-session's tenth wrong password *ends* it: its id is written to ``ended_web_sessions`` and
-``load_user`` refuses it from then on, however the cookie is replayed or re-signed. And the
-account's wrong passwords over 24 hours, whatever the door, raise a security notice (email and
-push too) at the 5th, 20th and 50th. Both are written after the view, in a transaction of their own
-(``settle``, a ``teardown_request``), because the view that saw the wrong password rolls back.
+**A stolen cookie is worth ten guesses, and the owner hears of it** (A10 build review F3, fixes
+review N1 and N3). Every wrong password typed in a web session is a ``password_failures`` row, in
+the database, so a restart (production scales to zero) forgets nothing. A session's tenth
+standing wrong password *ends* it: its id is written to ``ended_web_sessions`` and ``load_user``
+refuses it from then on, however the cookie is replayed or re-signed. The account's standing wrong
+passwords over 24 hours, whatever the door, raise a security notice (email and push too) at the
+5th, 20th and 50th. **A typo is forgiven:** a correct password in the same session deletes that
+session's wrong passwords from the 15 minutes before it, so a person who mistypes and then types it
+right is never alarmed or signed out, while a thief, who never types it right, is counted. All of
+it is written after the view, in a transaction of its own (``settle``, a ``teardown_request``),
+because the view that saw the wrong password rolls back.
 
-In process, like the other limiter (one container, one worker); a restart forgets the counts.
-``key_service`` is the only caller; it skips the check outside an application.
+The 15-minute refusal (``wait``) stays in process: it is the cheap brake before Argon2id, and what
+must survive a restart is the persistent count above. ``key_service`` is the only caller; it skips
+the check outside an application.
 """
 
 from __future__ import annotations
@@ -43,6 +49,7 @@ import secrets
 import threading
 import time
 from collections import deque
+from datetime import UTC, datetime, timedelta
 
 from flask import current_app, g, has_app_context, has_request_context, session
 
@@ -58,6 +65,15 @@ SESSION_ID = "qv_sid"
 #: The session key holding when this web session signed in (seconds since the epoch).
 SESSION_SINCE = "qv_since"
 _PENDING = "_password_failures"
+#: A correct password forgives the same session's wrong passwords from this long before it.
+FORGIVE_WITHIN = timedelta(minutes=15)
+#: Wrong-password rows are kept this long (a session can't live longer).
+FAILURE_RETENTION = timedelta(days=31)
+
+
+def _wall() -> datetime:
+    """Now, for the persistent counts (a function, so tests can move it)."""
+    return datetime.now(UTC)
 
 
 def _prune(times: deque[float], now: float, window: float) -> None:
@@ -71,9 +87,6 @@ class PasswordAttempts:
     def __init__(self) -> None:
         self._failures: dict[tuple[int, str | None], deque[float]] = {}
         self._account: dict[int, deque[float]] = {}
-        #: Every wrong password a session has ever made, and the account's over a day.
-        self._lifetime: dict[tuple[int, str | None], int] = {}
-        self._day: dict[int, deque[float]] = {}
         self._lock = threading.Lock()
 
     def wait(
@@ -108,10 +121,8 @@ class PasswordAttempts:
                     waits.append(max(1.0, every[len(every) - account_limit] + window - now))
             return max(waits)
 
-    def failed(
-        self, user_id: int, now: float, *, session_id: str | None = None
-    ) -> tuple[int, int]:
-        """Count one wrong password. Returns (this session's total ever, the account's today)."""
+    def failed(self, user_id: int, now: float, *, session_id: str | None = None) -> None:
+        """Count one wrong password for the 15-minute refusal."""
         with self._lock:
             times = self._failures.setdefault((user_id, session_id), deque())
             times.append(now)
@@ -121,12 +132,6 @@ class PasswordAttempts:
             every.append(now)
             while len(every) > 4 * ACCOUNT_MAX_FAILURES:
                 every.popleft()
-            key = (user_id, session_id)
-            self._lifetime[key] = self._lifetime.get(key, 0) + 1
-            day = self._day.setdefault(user_id, deque())
-            day.append(now)
-            _prune(day, now, ALARM_WINDOW_SECONDS)
-            return self._lifetime[key], len(day)
 
     def succeeded(self, user_id: int, *, session_id: str | None = None) -> None:
         with self._lock:
@@ -218,6 +223,33 @@ def refusal(user_id: int) -> str | None:
     )
 
 
+def _counts(user_id: int, sid: str, now: datetime) -> tuple[int, int]:
+    """(this session's standing wrong passwords, the account's over the last 24 hours), from the
+    database, plus those this request has noted and not yet written."""
+    from sqlalchemy import func, select
+
+    from qvault.extensions import db
+    from qvault.models.web_session import PasswordFailure
+
+    digest = _sid_hash(sid)
+    in_session = db.session.scalar(
+        select(func.count())
+        .select_from(PasswordFailure)
+        .where(PasswordFailure.user_id == user_id, PasswordFailure.sid_hash == digest)
+    )
+    today = db.session.scalar(
+        select(func.count())
+        .select_from(PasswordFailure)
+        .where(
+            PasswordFailure.user_id == user_id,
+            PasswordFailure.at > now - timedelta(seconds=ALARM_WINDOW_SECONDS),
+        )
+    )
+    queued = [e for e in g.get(_PENDING, []) if e.get("failure") and e["user_id"] == user_id]
+    mine = [e for e in queued if e["sid"] == sid]
+    return (in_session or 0) + len(mine), (today or 0) + len(queued)
+
+
 def record(user_id: int, ok: bool) -> None:
     store = _store()
     if store is None:
@@ -225,13 +257,20 @@ def record(user_id: int, ok: bool) -> None:
     sid = session_id()
     if ok:
         store.succeeded(user_id, session_id=sid)
+        if has_request_context() and sid is not None:
+            # A typo, then the right password: forgiven (fixes review N3).
+            g.setdefault(_PENDING, []).append(
+                {"user_id": user_id, "sid": sid, "forgive": True, "at": _wall()}
+            )
         return
-    total, today = store.failed(user_id, time.monotonic(), session_id=sid)
+    store.failed(user_id, time.monotonic(), session_id=sid)
+    if not has_request_context() or sid is None:
+        return
+    now = _wall()
+    in_session, today = _counts(user_id, sid, now)
+    in_session, today = in_session + 1, today + 1
     limit, _window = _limits()
-    ends = sid is not None and total >= limit
-    alarm = today if today in ALARM_LEVELS else None
-    if not has_request_context() or not (ends or alarm):
-        return
+    ends = in_session >= limit
     if ends:
         from flask import flash
 
@@ -243,41 +282,70 @@ def record(user_id: int, ok: bool) -> None:
     g.setdefault(_PENDING, []).append(
         {
             "user_id": user_id,
-            "end_sid": sid if ends else None,
+            "sid": sid,
+            "failure": True,
+            "at": now,
+            "end": ends,
             "binding": session.get("pairing_binding") if ends else None,
-            "alarm": alarm,
+            "alarm": today if today in ALARM_LEVELS else None,
         }
     )
 
 
 def settle(exc: BaseException | None = None) -> None:
-    """``teardown_request``: end the sessions and raise the alarms ``record`` noted, in a
-    transaction of their own, whatever the view did with its own."""
+    """``teardown_request``: write the wrong passwords ``record`` noted, forgive typos, end the
+    sessions and raise the alarms, in a transaction of their own, whatever the view did."""
     pending = g.pop(_PENDING, None) if has_request_context() else None
     if not pending:
         return
-    from datetime import UTC, datetime
+    from sqlalchemy import delete
 
     from qvault.extensions import db
     from qvault.models.user import User
-    from qvault.models.web_session import EndedWebSession
+    from qvault.models.web_session import EndedWebSession, PasswordFailure
     from qvault.services import notification_service, pairing_service
 
     try:
         db.session.rollback()
-        now = datetime.now(UTC)
         for event in pending:
             user = db.session.get(User, event["user_id"])
             if user is None:
                 continue
-            if event["end_sid"]:
-                digest = _sid_hash(event["end_sid"])
+            digest = _sid_hash(event["sid"])
+            if event.get("forgive"):
+                db.session.execute(
+                    delete(PasswordFailure).where(
+                        PasswordFailure.user_id == user.id,
+                        PasswordFailure.sid_hash == digest,
+                        PasswordFailure.at > event["at"] - FORGIVE_WITHIN,
+                    )
+                )
+                continue
+            db.session.add(PasswordFailure(user_id=user.id, sid_hash=digest, at=event["at"]))
+            db.session.execute(
+                delete(PasswordFailure).where(
+                    PasswordFailure.user_id == user.id,
+                    PasswordFailure.at < event["at"] - FAILURE_RETENTION,
+                )
+            )
+            if event["end"]:
+                db.session.execute(
+                    delete(EndedWebSession).where(
+                        EndedWebSession.user_id == user.id,
+                        EndedWebSession.ended_at
+                        < event["at"] - timedelta(seconds=SESSION_MAX_AGE_SECONDS),
+                    )
+                )
                 if db.session.get(EndedWebSession, digest) is None:
-                    db.session.add(EndedWebSession(sid_hash=digest, user_id=user.id, ended_at=now))
+                    db.session.add(
+                        EndedWebSession(sid_hash=digest, user_id=user.id, ended_at=event["at"])
+                    )
                 if event["binding"]:
-                    pairing_service.cancel_bound(user.id, event["binding"], "signed_out", now=now)
+                    pairing_service.cancel_bound(
+                        user.id, event["binding"], "signed_out", now=event["at"]
+                    )
             if event["alarm"]:
-                notification_service.password_guessed(user, count=event["alarm"], now=now)
+                notification_service.password_guessed(user, count=event["alarm"], now=event["at"])
         db.session.commit()
     except Exception:
         db.session.rollback()

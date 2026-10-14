@@ -281,3 +281,138 @@ def test_f8_and_h1_these_doors_count_wrong_passwords(app, client, ada, clock, do
     for _ in range(password_attempts.MAX_FAILURES):
         client.post(url, data={"password": "wrong", "choice": "password"})
     assert EndedWebSession.query.filter_by(user_id=ada.id).count() == 1
+
+
+# -- the fixes review (review-a10-fixes.md, N1 to N5) --------------------------------------------
+
+
+def test_n1_a_restart_neither_resets_a_sessions_ten_guesses_nor_the_alarm(
+    app, client, ada, monkeypatch
+):
+    _monotonic(monkeypatch)
+    _sign_in(client)
+    data = {
+        "current_password": "nope",
+        "new_password": "a-new-pass-789",
+        "confirm": "a-new-pass-789",
+    }
+    for _cold_start in range(3):
+        for _ in range(4):
+            client.post("/account/password", data=data)
+        app.extensions.pop("password_attempts", None)  # a scale-from-zero forgets the process
+    assert Notification.query.filter_by(recipient_id=ada.id, kind="password_guessed").count() == 1
+    assert EndedWebSession.query.filter_by(user_id=ada.id).count() == 1
+    r = client.get("/account/security")
+    assert r.status_code == 302 and "/login" in r.headers["Location"]
+
+
+def test_n3_typos_followed_by_the_right_password_neither_alarm_nor_sign_out(
+    app, client, ada, monkeypatch
+):
+    from datetime import UTC, datetime, timedelta
+
+    now = [datetime(2026, 10, 14, 9, 0, tzinfo=UTC)]
+    monkeypatch.setattr(password_attempts, "_wall", lambda: now[0])
+    _monotonic(monkeypatch)
+    _sign_in(client)
+    wrong = {"current_password": "nope", "new_password": PW, "confirm": PW}
+    from qvault.services import key_service
+
+    for _day in range(12):
+        client.post("/account/password", data=wrong)
+        now[0] += timedelta(minutes=1)
+        # The right password a minute later, through a door that leaves the password unchanged.
+        r = client.post("/account/signing-choice", data={"choice": "password", "password": PW})
+        assert r.status_code == 302
+        now[0] += timedelta(hours=26)
+    assert Notification.query.filter_by(kind="password_guessed").count() == 0
+    assert EndedWebSession.query.count() == 0
+    assert client.get("/account/security").status_code == 200
+    assert key_service.active_signing_key(ada) is not None
+
+
+def test_n3_the_alarm_says_it_may_have_been_the_owner(app, ada):
+    from qvault.services import notification_service
+
+    notification_service.password_guessed(ada, count=5)
+    db.session.commit()
+    note = Notification.query.filter_by(kind="password_guessed").one()
+    assert "If it was you, you can ignore this" in notification_service.view(note)["body"]
+
+
+def test_n2_a_cookie_copied_before_a_code_cannot_cancel_it(app, client, ada, clock):
+    owner = _sign_in(client)
+    with owner.session_transaction() as s:
+        stolen = dict(s)  # copied before the owner shows a code
+    mine = _show_code(owner)
+    thief = app.test_client()
+    with thief.session_transaction() as s:
+        s.update(stolen)
+    _show_code(thief)
+    db.session.refresh(mine)
+    assert mine.state == "open", "a copied cookie can't end a code shown after the copy"
+    # Spending the browser's budget is possible with its cookie; the page says what to do.
+    for _ in range(pairing_service.CREATE_PER_HOUR - 2):
+        _show_code(thief)
+    r = owner.post("/account/devices/pair", follow_redirects=True)
+    assert "sign out, sign in again" in r.get_data(as_text=True)
+    # Signing in again starts a new count for the owner.
+    fresh = _sign_in(app.test_client())
+    assert fresh.post("/account/devices/pair").status_code == 302
+
+
+def test_n4_a_removal_from_before_a10_is_never_told_by_the_job(app, client, ada, clock):
+    from datetime import timedelta
+
+    device, _, _ = _confirmed(app, client, ada, clock)
+    device.revoked_at = device_service._now() - timedelta(days=6)  # the pre-A10 code: no notice
+    db.session.commit()
+    assert device_service.send_owed_removal_notices() == 0
+    assert Notification.query.filter_by(kind="device_removed").count() == 0
+
+
+def test_n4_an_owed_notice_keeps_who_removed_it(app, client, ada, clock, monkeypatch):
+    from qvault.models.pairing import OwedDeviceNotice
+    from qvault.services import notification_service
+
+    device, _, _ = _confirmed(app, client, ada, clock)
+    monkeypatch.setattr(
+        delivery_service, "_insert", lambda rows: (_ for _ in ()).throw(RuntimeError("x"))
+    )
+    assert (
+        client.post(f"/account/devices/{device.id}/remove", data={"password": PW}).status_code
+        == 302
+    )
+    assert db.session.get(OwedDeviceNotice, device.id).by_label == "web"
+    monkeypatch.undo()
+    assert device_service.send_owed_removal_notices() == 1
+    note = Notification.query.filter_by(kind="device_removed").one()
+    assert "from the web" in notification_service.view(note)["body"]
+    assert OwedDeviceNotice.query.count() == 0
+
+
+def test_n5_claim_then_withdraw_is_logged_and_the_owners_scan_is_a_contest(app, client, ada, clock):
+    _sign_in(client)
+    pairing = _show_code(client)
+    token = pairing_service.token_text(pairing)
+    api = app.test_client()
+    thief = Phone.new()
+    thief.inspect(api, token)
+    thief.claim(api, token, ada.id, pairing.uuid)
+    api.post("/api/v1/pairing/withdraw", headers={"Authorization": f"Bearer {thief.pending}"})
+    refused = [
+        r.payload_json for r in LedgerEntry.query.filter_by(event_type="device_pairing_refused")
+    ]
+    assert any('"withdrawn"' in r for r in refused)
+    r = Phone.new().inspect(api, token)
+    assert r.get_json()["code"] == "pairing_contested"
+    refused = [
+        r.payload_json for r in LedgerEntry.query.filter_by(event_type="device_pairing_refused")
+    ]
+    assert any('"contested"' in r for r in refused)
+    assert (
+        Notification.query.filter_by(recipient_id=ada.id, kind="device_pairing_refused").count()
+        == 1
+    )
+    page = client.get(f"/account/devices/pair/{pairing.uuid}").get_data(as_text=True)
+    assert "The phone that scanned this code cancelled" in page
