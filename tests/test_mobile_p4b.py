@@ -142,6 +142,36 @@ def results(tmp_path_factory):
             "now": now,
             "thisDevice": THIS_DEVICE,
             "dots": [{"updates": 0}, {"updates": 2}, None],
+            # The server's own sentences, with the moment as notification_copy.when writes it.
+            "shownCases": [
+                _item(
+                    20,
+                    "device_enrolled",
+                    _at(2026, 10, 9, 9, 5),
+                    unread=True,
+                    device_id=7,
+                    body="Pixel was enrolled on 9 Oct at 09:05 UTC. If this wasn't you, change "
+                    "your password now: someone else knows it.",
+                ),
+                _item(
+                    21,
+                    "device_enrolled",
+                    _at(2026, 10, 9, 9, 5),
+                    unread=True,
+                    device_id=THIS_DEVICE,
+                    body="Pixel was enrolled on 9 Oct at 09:05 UTC. If this wasn't you, change "
+                    "your password now: someone else knows it.",
+                ),
+                _item(
+                    22,
+                    "password_changed",
+                    _at(2025, 12, 30, 23, 59),
+                    body="Changed on 30 Dec 2025 at 23:59 UTC. Your signing keys now open with "
+                    "the new password only.",
+                ),
+                # Another moment in the sentence is not this item's: left as the server wrote it.
+                _item(23, "decision_approved", _at(2026, 10, 9, 9, 5), body="Due 12 Oct at 18:00 UTC."),
+            ],
             "archiveCases": [
                 {"security": True, "archivable": True},
                 {"security": True},
@@ -397,6 +427,30 @@ def test_a_security_alert_never_offers_archive_whatever_the_reply_says(results):
     # A security alert even if a reply claims otherwise; the server's no; an older server's
     # silence, which offers Archive as before.
     assert results["inbox"]["archiveCases"] == [False, False, False, True, True]
+
+
+def test_the_new_device_alert_about_this_phone_reads_as_a_set_up_not_an_alarm(results):
+    shown = results["inbox"]["shown"]
+    # On this phone, about this phone: calm, never pinned, still never archived.
+    assert shown["21"] == {
+        "title": "This phone was set up",
+        "body": "You set it up on 9 Oct at 09:05.",
+        "security": False,
+        "archive": False,
+    }
+    assert shown["8"]["title"] == "This phone was set up" and shown["8"]["security"] is False
+    # About another device it stays the security alert, pinned while unread.
+    assert shown["20"]["title"] == "Title 20" and shown["20"]["security"] is True
+    assert shown["1"]["security"] is True and results["inbox"]["pinnedShown"] == [1]
+
+
+def test_a_utc_moment_in_the_servers_copy_is_said_in_local_time(results):
+    shown = results["inbox"]["shown"]
+    # The probe runs with TZ=UTC, so local time is UTC: only the " UTC" form changes.
+    assert shown["20"]["body"].startswith("Pixel was enrolled on 9 Oct at 09:05. If this wasn't")
+    assert shown["22"]["body"].startswith("Changed on 30 Dec 2025 at 23:59. Your signing keys")
+    assert shown["23"]["body"] == "Due 12 Oct at 18:00 UTC."
+    assert shown["3"]["body"] == "Body 3"
 
 
 def test_row_times_say_what_the_group_title_does_not(results):

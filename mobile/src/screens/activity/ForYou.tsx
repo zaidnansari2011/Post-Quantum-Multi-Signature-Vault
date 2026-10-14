@@ -2,7 +2,8 @@
 //
 // The server's Updates section, newest first in Today, Yesterday, This week and Earlier; unread
 // security alerts pinned at the top in the critical tone, a new device's with "Not you? Remove that
-// device", which opens Account, Other devices with that device's remove sheet open (§6.18).
+// device", which opens Account, Other devices with that device's remove sheet open (§6.18). The
+// alert about this very phone reads "This phone was set up", as a calm row (`asShown`).
 //
 // A tap opens the item's screen and marks it read; a swipe left offers Mark read and Archive (the
 // only swipe in the app, and also the row's accessibility actions; a security alert has no Archive,
@@ -42,7 +43,7 @@ import type { AppNotification, UnreadCounts } from '../../api/schemas.ts';
 import { OfflineNotice, useRefreshOnFocus } from '../../freshness.tsx';
 import { openLink } from '../../links.ts';
 import { keys, meQuery, notificationsQuery } from '../../queries.ts';
-import { INBOX_EMPTY, archiveOffered, forYou, inboxTarget, inboxWhen, removeOffer } from '../../logic/inbox.ts';
+import { INBOX_EMPTY, archiveOffered, asShown, forYou, inboxTarget, inboxWhen, removeOffer } from '../../logic/inbox.ts';
 
 import type { ActivityHead } from '../ActivityScreen.tsx';
 
@@ -57,7 +58,8 @@ export function ForYou({ head, onOpenDecision }: { head: ActivityHead; onOpenDec
   useRefreshOnFocus([keys.notifications('updates'), keys.unread]);
 
   const now = Date.now();
-  const items = query.data?.notifications ?? [];
+  const thisDevice = me.data?.device.id ?? null;
+  const items = (query.data?.notifications ?? []).map((n) => asShown(n, thisDevice, now));
   const { pinned, groups } = forYou(items, now);
   const sectionsData = [
     ...(pinned.length > 0 ? [{ title: '', data: pinned }] : []),
@@ -65,7 +67,6 @@ export function ForYou({ head, onOpenDecision }: { head: ActivityHead; onOpenDec
   ];
   const unread = query.data?.unread.updates ?? 0;
   const failed = query.isError && query.data === undefined;
-  const thisDevice = me.data?.device.id ?? null;
 
   // The list's own copy changes at once; the server's answer then replaces it, with the counts.
   const patch = (id: number, change: Partial<AppNotification>, counts?: UnreadCounts) => {
