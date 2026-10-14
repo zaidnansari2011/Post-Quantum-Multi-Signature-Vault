@@ -281,6 +281,18 @@ _CANCELLED_BY = {
 }
 
 
+#: Where a phone is removed once the web can do it (A10): the Security page, with the password.
+REMOVE_PHONE = "remove it on the Security page, with your password"
+
+
+def _phone(stored: dict) -> str:
+    """The phone that vouched for a reset, by the name its owner gave it, or "a phone"."""
+    name = stored.get("device_name")
+    if isinstance(name, str) and name.strip():
+        return f"the phone \u201c{_clip(name.strip())}\u201d"
+    return "a phone"
+
+
 def _recovery(notification, stored: dict, now: datetime) -> Copy:
     """The words for an account-recovery notice (plan R9). ``as`` in the stored facts says whose
     eyes it is for: the person (``self``) or one of the people watching over them."""
@@ -305,20 +317,21 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
         due = _moment(stored.get("completes_at"))
         at = when(due, now=now) if due is not None else "in 72 hours"
         if stored.get("route") == "phone":
+            phone = _phone(stored)
             if me:
                 return Copy(
                     "Someone is setting a new web password for your account",
-                    "A phone paired to your account approved a new web password and a new web "
-                    f"signing key. Unless it is cancelled, they take effect on {at}. If this "
-                    "wasn't you, cancel it on Home or in the app, or sign in: using your password "
-                    "cancels it.",
+                    f"{phone[:1].upper()}{phone[1:]} paired to your account approved a new web "
+                    f"password and a new web signing key. Unless it is cancelled, they take effect "
+                    f"on {at}. If this wasn't you, sign in (using your password cancels it), "
+                    f"then {REMOVE_PHONE}.",
                     home,
                 )
             return Copy(
                 f"{name}'s account is being recovered",
-                f"A phone paired to {name}'s account approved a new web password. Unless it is "
-                f"cancelled, on {at} the account gets a new web signing key. If {name} didn't "
-                "start it, cancel it on Home.",
+                f"{phone[:1].upper()}{phone[1:]} paired to {name}'s account approved a new web "
+                f"password. Unless it is cancelled, on {at} the account gets a new web signing "
+                f"key. If {name} didn't start it, cancel it on Home.",
                 home,
             )
         if stored.get("shortened"):
@@ -381,11 +394,13 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
             by = _CANCELLED_BY.get(role, "")
         if me:
             if stored.get("route") == "phone":
+                phone = _phone(stored)
                 then = (
                     ""
-                    if role in ("self", "password", "kit", "device_revoked")
-                    else " If you didn't start it, someone has one of your paired phones and can "
-                    "unlock it: remove it on the Security page."
+                    if role in ("device_revoked", "system", "status_holder")
+                    else f" {phone[:1].upper()}{phone[1:]} can't start another for 7 days. If "
+                    f"you didn't start it, someone has that phone and can unlock it: "
+                    f"{REMOVE_PHONE}."
                 )
             elif stored.get("kit_burned"):
                 then = (
@@ -443,6 +458,20 @@ def _recovery(notification, stored: dict, now: datetime) -> Copy:
 
     if kind == "recovery_kit_changed":
         change = stored.get("change")
+        if change == "phone_codes":
+            phone = _phone(stored)
+            what = (
+                "a new web password"
+                if stored.get("purpose") == "web_reset"
+                else "your recovery's shorter wait"
+            )
+            return Copy(
+                "Wrong codes stopped a code from your phone",
+                f"Five wrong codes were typed for the code {phone} showed for {what}, so that "
+                "code no longer works and nothing changed. If you were typing it, start again "
+                f"on the phone. If you weren't, someone saw that phone's screen: {REMOVE_PHONE}.",
+                security,
+            )
         if change == "paused":
             # The stored name is historical: since design §16 item 20 nothing is paused.
             count = wrong_code_count(stored)

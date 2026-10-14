@@ -3,7 +3,7 @@
 **Route (a2): the phone starts a web reset.** Someone who forgot their password but still has a
 phone they paired at least 7 days ago chooses "Set a new web password" in the app. The server
 makes a request and asks the phone to sign the ``QVAULT-SIG-v1:RECOVERY`` bytes (purpose
-``web_reset``); once that signature verifies, the phone shows an 8-character code. Whoever types
+``web_reset``); once that signature verifies, the phone shows a 12-character code. Whoever types
 that code at ``/recover/phone`` within 10 minutes, with the account's email and a new password,
 claims it: a new ML-DSA-65 web key is made under that password, beside the account, and a 24-hour
 wait starts during which nothing changes and everyone in §4.5 is told and can cancel. At the end
@@ -33,9 +33,16 @@ treasury with fewer usable seats than its threshold, the reset is refused (at th
 approval, at the claim) or ended (at completion), pointing to the Recovery Kit, which keeps the
 key. If it only narrows the margin, the phone and the status page say so.
 
-**Codes** are 8 Crockford symbols (40 bits) from ``secrets``, shown once on the phone that
-signed, kept only as a master-key HMAC bound to their approval, valid for 10 minutes, five wrong
-tries each. Never written to a log, the ledger or a trace.
+**Codes** are 12 Crockford symbols from ``secrets``, shown once on the phone that signed: a
+4-symbol selector, stored in clear, that names the approval, and 8 secret symbols (40 bits) kept
+only as a master-key HMAC bound to it. Valid for 10 minutes, five wrong tries each, spent only on
+the approval the selector names (review M1); running out tells the person. Never written to a log,
+the ledger or a trace.
+
+**After a cancel** by the person, a proof of their password, a watcher or their kit, the phone
+that vouched cannot start another web reset for 7 days (review H1). A phone's cancel never burns
+a kit (review M2). A kit confirmed by phone takes effect no sooner than 6 hours after the
+confirmation (review M3).
 """
 
 from __future__ import annotations
@@ -50,7 +57,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from flask import current_app
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from qvault.crypto import kit_code, sha256_hex
@@ -84,7 +91,23 @@ MIN_PAIRED_AGE = timedelta(days=7)
 CODE_TRIES = 5
 #: Approvals one phone may have waiting at once: enough for a mistake or two, never a flood.
 LIVE_PER_DEVICE = 3
-CODE_SYMBOLS = 8
+#: A code is 12 symbols: 4 public selector symbols that name its approval, then 8 secret ones
+#: (40 bits) checked against the stored HMAC. A guess spends a try only on the approval its selector
+#: names (review M1), so someone who has not seen the phone's screen cannot aim at a reset.
+SELECTOR_SYMBOLS = 4
+SECRET_SYMBOLS = 8
+CODE_SYMBOLS = SELECTOR_SYMBOLS + SECRET_SYMBOLS
+#: A kit request a phone confirms takes effect no sooner than this after the confirmation, even
+#: when 24 hours have already passed since the kit was used (review M3): the "now sooner" notice
+#: must have time to reach the person, who may have been talked into approving.
+KIT_CONFIRM_FLOOR = timedelta(hours=6)
+#: After a phone's web reset is cancelled by the person, a proof of their password, someone
+#: watching over them or their Recovery Kit, that phone cannot start another for this long
+#: (review H1), so a stolen phone cannot restart the moment each one is cancelled.
+RESTART_AFTER_CANCEL = timedelta(days=7)
+#: Who cancelling a phone's reset starts that phone's cool-down: everyone but whoever typed its code
+#: (the status page), a removed device (it can start nothing anyway) and Q-Vault itself.
+COOLDOWN_ROLES = ("self", "password", "manager", "cosigner", "kit")
 #: The new web key a phone reset makes: pinned, never the switchable active algorithm (§7), because
 #: treasuries verify ML-DSA-65 only.
 NEW_KEY_ALG = "ML-DSA-65"
@@ -95,8 +118,8 @@ SELFTEST_PREFIX = b"QVAULT-SIG-v1:RECOVERY-SELFTEST|"
 #: The answer to every claim whose code has not matched (design §4.6): the same for an unknown
 #: email, no waiting approval, a wrong code and an expired one.
 GENERIC_REFUSAL = (
-    "That didn't work. Check the email address and the code your phone shows, then try again. A "
-    "code works for 10 minutes after the phone shows it."
+    "That didn't work. Check the email address and the 12-character code your phone shows, then "
+    "try again. A code works for 10 minutes after the phone shows it."
 )
 
 
@@ -130,20 +153,30 @@ def _readable(moment: datetime) -> str:
 # Codes
 
 
+def _symbols(count: int) -> str:
+    return "".join(secrets.choice(kit_code.ALPHABET) for _ in range(count))
+
+
 def new_code() -> str:
-    """8 symbols of the kit's alphabet from the system's generator: 40 bits."""
-    return "".join(secrets.choice(kit_code.ALPHABET) for _ in range(CODE_SYMBOLS))
+    """12 symbols of the kit's alphabet from the system's generator: a 4-symbol selector, then 8
+    secret symbols (40 bits)."""
+    return _symbols(CODE_SYMBOLS)
 
 
 def grouped(code: str) -> str:
-    return f"{code[:4]}-{code[4:]}"
+    return f"{code[:4]}-{code[4:8]}-{code[8:]}"
+
+
+def split_code(code: str) -> tuple[str, str]:
+    """``(selector, secret)``: the public part that names the approval, and the part checked."""
+    return code[:SELECTOR_SYMBOLS], code[SELECTOR_SYMBOLS:]
 
 
 def normalise_code(typed: object) -> str:
-    """The 8 symbols a person meant: upper case, spaces and hyphens dropped, I and L read as 1 and
+    """The 12 symbols a person meant: upper case, spaces and hyphens dropped, I and L read as 1 and
     O as 0, as a kit code is read. ``PhoneCodeError`` if it cannot be a code."""
-    if not isinstance(typed, str) or len(typed) > 40:
-        raise PhoneCodeError("Type the 8-character code your phone shows.")
+    if not isinstance(typed, str) or len(typed) > 60:
+        raise PhoneCodeError("Type the 12-character code your phone shows.")
     cleaned = []
     for ch in typed.upper():
         if ch in " -\t\r\n":
@@ -156,7 +189,7 @@ def normalise_code(typed: object) -> str:
         cleaned.append(ch)
     if len(cleaned) != CODE_SYMBOLS:
         raise PhoneCodeError(
-            f"The code your phone shows is {CODE_SYMBOLS} characters, in 2 groups of 4. That one "
+            f"The code your phone shows is {CODE_SYMBOLS} characters, in 3 groups of 4. That one "
             f"has {len(cleaned)}."
         )
     return "".join(cleaned)
@@ -198,6 +231,61 @@ def device_problem(device: Device | None, now: datetime) -> RecoveryRefused | No
     return None
 
 
+def cooling_off(device: Device, now: datetime) -> RecoveryRefused | None:
+    """Why ``device`` may not start a web reset yet: one it vouched for was cancelled by the
+    person, a proof of their password, a watcher or their kit less than RESTART_AFTER_CANCEL ago
+    (review H1). Kit confirmations are not held back: they hand over nothing new."""
+    last = db.session.scalar(
+        select(func.max(RecoveryRequest.finished_at))
+        .join(RecoveryPhoneApproval, RecoveryPhoneApproval.request_id == RecoveryRequest.id)
+        .where(
+            RecoveryPhoneApproval.device_id == device.id,
+            RecoveryRequest.route == "phone",
+            RecoveryRequest.state == "cancelled",
+            RecoveryRequest.cancelled_as.in_(COOLDOWN_ROLES),
+            RecoveryRequest.finished_at > now - RESTART_AFTER_CANCEL,
+        )
+    )
+    if last is None:
+        return None
+    again = _aware(last) + RESTART_AFTER_CANCEL
+    return RecoveryRefused(
+        "cooling_off",
+        "A web password reset from this phone was cancelled, so it can't start another until "
+        f"{_readable(again)}. If you didn't start it, someone has this phone: remove it on the "
+        "Security page, with your password.",
+    )
+
+
+def expires_before(device: Device, needed_until: datetime) -> RecoveryRefused | None:
+    """A refusal if ``device`` stops signing in before ``needed_until`` (review L4): a recovery it
+    vouched for would be certain to fail when its token ran out."""
+    ends = _aware(device.expires_at)
+    if ends is not None and ends <= needed_until:
+        return RecoveryRefused(
+            "expires_soon",
+            f"This phone stays signed in only until {_readable(ends)}, before a new password would "
+            "take effect, so a recovery from it could only fail. Pair it again first.",
+        )
+    return None
+
+
+def kit_confirm_target(request: RecoveryRequest, now: datetime) -> datetime:
+    """When a kit request confirmed by a phone now would take effect: 24 hours after the kit was
+    used, and never less than KIT_CONFIRM_FLOOR from now (review M3)."""
+    return max(_aware(request.window_starts_at) + KIT_WITH_PHONE_WAIT, now + KIT_CONFIRM_FLOOR)
+
+
+def vouching_device_name(request: RecoveryRequest) -> str | None:
+    """The name of the phone that vouched for ``request`` (or, for a reset not yet claimed, asked
+    to), for banners and notices (review H1): the person can tell which phone to remove."""
+    approvals = sorted(request.phone_approvals, key=lambda a: (a.state != "used", -a.id))
+    for approval in approvals:
+        if approval.device is not None:
+            return approval.device.name
+    return None
+
+
 # --------------------------------------------------------------------------------------------
 # The treasury lock-out check (design §7)
 
@@ -226,6 +314,17 @@ def treasury_effects(user: User) -> list[SeatEffect]:
     from qvault.services.signing import PAYMENT_NETWORKS
 
     effects = []
+    # A seat whose holder has a phone reset waiting is about to lose its key: two co-signers'
+    # resets must not each count the other's seat as usable (review L1).
+    resetting = set(
+        db.session.scalars(
+            select(RecoveryRequest.user_id).where(
+                RecoveryRequest.route == "phone",
+                RecoveryRequest.state == "waiting",
+                RecoveryRequest.user_id != user.id,
+            )
+        )
+    )
     rows = (
         TreasurySigner.query.join(Treasury, Treasury.id == TreasurySigner.treasury_id)
         .filter(TreasurySigner.user_id == user.id, Treasury.status == "linked")
@@ -243,10 +342,42 @@ def treasury_effects(user: User) -> list[SeatEffect]:
                 network=PAYMENT_NETWORKS.get(treasury.chain_id, f"chain {treasury.chain_id}"),
                 threshold=int(treasury.threshold_m),
                 signers=len(treasury.signers),
-                others_usable=sum(1 for seat in others if _seat_can_sign(seat)),
+                others_usable=sum(
+                    1 for seat in others if seat.user_id not in resetting and _seat_can_sign(seat)
+                ),
             )
         )
     return effects
+
+
+def lock_treasuries(user: User) -> None:
+    """Hold the rows of every linked treasury where ``user``'s seat is a password key, in id order,
+    then read everything afresh (review L1): two completions (or claims) that would each leave the
+    other's treasury short wait for one another, and the second sees the first."""
+    from qvault.models.treasury import Treasury, TreasurySigner
+
+    db.session.flush()
+    ids = sorted(
+        db.session.scalars(
+            select(Treasury.id)
+            .join(TreasurySigner, TreasurySigner.treasury_id == Treasury.id)
+            .join(Key, Key.id == TreasurySigner.key_id)
+            .where(
+                TreasurySigner.user_id == user.id,
+                Treasury.status == "linked",
+                Key.wrap_domain == "password",
+            )
+        )
+    )
+    for treasury_id in ids:
+        db.session.execute(
+            update(Treasury)
+            .where(Treasury.id == treasury_id)
+            .values(threshold_m=Treasury.threshold_m)
+            .execution_options(synchronize_session=False)
+        )
+    if ids:
+        db.session.expire_all()
 
 
 def lock_sentence(effect: SeatEffect) -> str:
@@ -338,7 +469,11 @@ def begin(
             "their codes, or wait 10 minutes and start again.",
         )
     if purpose == "web_reset":
-        refused = lockout(user)
+        refused = (
+            cooling_off(device, now)
+            or expires_before(device, now + APPROVAL_TTL + PHONE_WAIT)
+            or lockout(user)
+        )
         if refused is not None:
             raise refused
         if recovery_service.open_request(user) is not None:
@@ -364,11 +499,16 @@ def begin(
             raise LookupError(request_uuid)
         if request.state != "waiting" or _aware(request.completes_at) <= now:
             raise RecoveryRefused("too_late", "This recovery has already ended.")
-        if _aware(request.completes_at) <= _aware(request.window_starts_at) + KIT_WITH_PHONE_WAIT:
+        target = kit_confirm_target(request, now + APPROVAL_TTL)
+        if _aware(request.completes_at) <= target:
             raise RecoveryRefused(
                 "already_short",
-                "A phone has already confirmed this recovery, so it can't take effect any sooner.",
+                "This recovery can't take effect any sooner: a phone has already confirmed it, or "
+                "it is due within hours anyway.",
             )
+        refused = expires_before(device, target)
+        if refused is not None:
+            raise refused
     else:
         raise RecoveryRefused("bad_purpose", "That isn't something a phone can approve.")
     approval = RecoveryPhoneApproval(
@@ -454,7 +594,7 @@ def approve(
         )
 
     if purpose == "web_reset":
-        refused = lockout(user)
+        refused = cooling_off(device, now) or lockout(user)
         if refused is not None:
             raise refused
         moved = db.session.execute(
@@ -471,15 +611,19 @@ def approve(
         if request.state != "waiting" or _aware(request.completes_at) <= now:
             raise RecoveryRefused("too_late", "This recovery has already ended.")
 
-    code = new_code()
+    code = _unused_code(now)
+    selector, secret = split_code(code)
+    inputs = signing_inputs(approval)
     signed = db.session.execute(
         update(RecoveryPhoneApproval)
         .where(RecoveryPhoneApproval.id == approval.id, RecoveryPhoneApproval.state == "pending")
         .values(
             state="approved",
             approved_at=now,
-            code_tag=master_key.phone_code_tag(approval.id, request.request_uuid, code),
+            code_selector=selector,
+            code_tag=master_key.phone_code_tag(approval.id, request.request_uuid, secret),
             signature_sha256=sha256_hex(signature),
+            signature=signature,
         )
         .execution_options(synchronize_session=False)
     ).rowcount
@@ -514,6 +658,10 @@ def approve(
             "device_id": device.id,
             "key_id": key.id,
             "signature_sha256": approval.signature_sha256,
+            # The signed fields and the signature itself (review L5): with the phone's public key
+            # from its device_enrolled entry, anyone can check offline that it really vouched.
+            "signed": inputs,
+            "signature_b64": base64.b64encode(signature).decode("ascii"),
         },
         **actor,
     )
@@ -526,52 +674,99 @@ def approve(
 
 
 def _end_approval(approval: RecoveryPhoneApproval) -> None:
-    if approval.state in ("pending", "approved"):
-        approval.state = "ended"
+    """End ``approval`` if it is still waiting, by compare-and-set: a concurrent ``used`` (its code
+    typed a moment ago) is never overwritten (review L3)."""
+    db.session.execute(
+        update(RecoveryPhoneApproval)
+        .where(
+            RecoveryPhoneApproval.id == approval.id,
+            RecoveryPhoneApproval.state.in_(("pending", "approved")),
+        )
+        .values(state="ended")
+        .execution_options(synchronize_session=False)
+    )
+    db.session.expire(approval, ["state"])
 
 
-def _try_code(candidates: list[RecoveryPhoneApproval], code: str) -> RecoveryPhoneApproval | None:
-    """Spend one try on each live approval in ``candidates`` (committed before any comparison,
-    so codes typed side by side all count), then compare ``code`` against those that had a try
-    left. Returns the one it matches, or None. Ends the approvals that have run out."""
-    reserved = []
-    for approval in candidates:
+def _unused_code(now: datetime) -> str:
+    """A fresh code whose selector no live approval has, so a selector names one approval."""
+    for _ in range(8):
+        code = new_code()
+        taken = db.session.scalar(
+            select(func.count())
+            .select_from(RecoveryPhoneApproval)
+            .where(
+                RecoveryPhoneApproval.code_selector == split_code(code)[0],
+                RecoveryPhoneApproval.state == "approved",
+                RecoveryPhoneApproval.expires_at > now,
+            )
+        )
+        if not taken:
+            return code
+    raise RecoveryRefused("busy", "Q-Vault couldn't make a code just now. Try again.")
+
+
+def _by_selector(selector: str, now: datetime, *, purpose: str, request_id: int | None = None):
+    """The one live, signed approval whose code starts with ``selector``, or None. The same query
+    whoever is asking, whatever the email (review L2)."""
+    query = _live(RecoveryPhoneApproval.query, now).filter(
+        RecoveryPhoneApproval.code_selector == selector,
+        RecoveryPhoneApproval.state == "approved",
+        RecoveryPhoneApproval.purpose == purpose,
+    )
+    if request_id is not None:
+        query = query.filter(RecoveryPhoneApproval.request_id == request_id)
+    return query.order_by(RecoveryPhoneApproval.id).first()
+
+
+def _try_code(candidate: RecoveryPhoneApproval | None, code: str) -> RecoveryPhoneApproval | None:
+    """Spend one try on the approval the code's selector named (committed before the comparison,
+    so codes typed side by side all count), then compare the secret part. Returns the approval if
+    it matches, else None. A guess whose selector names no approval spends nothing anywhere
+    (review M1). An approval that runs out ends, and its person is told."""
+    selector, secret = split_code(code)
+    took = 0
+    if candidate is not None:
         took = db.session.execute(
             update(RecoveryPhoneApproval)
             .where(
-                RecoveryPhoneApproval.id == approval.id,
+                RecoveryPhoneApproval.id == candidate.id,
                 RecoveryPhoneApproval.state == "approved",
                 RecoveryPhoneApproval.tries < CODE_TRIES,
             )
             .values(tries=RecoveryPhoneApproval.tries + 1)
             .execution_options(synchronize_session=False)
         ).rowcount
-        if took == 1:
-            reserved.append(approval)
-    db.session.commit()
-    if not candidates:
-        # The same work as a comparison, so no candidate reads the same as a wrong code.
-        master_key.phone_code_tag(0, "00000000-0000-0000-0000-000000000000", code)
-    match = None
-    for approval in reserved:
-        db.session.refresh(approval)
-        tag = master_key.phone_code_tag(approval.id, approval.request.request_uuid, code)
-        if approval.code_tag is not None and hmac.compare_digest(tag, approval.code_tag):
-            match = approval
-    if match is None:
-        for approval in reserved:
-            if approval.tries >= CODE_TRIES:
-                _run_out(approval)
         db.session.commit()
-    return match
+    if not took:
+        # The same work as a comparison, so a miss reads the same as a wrong secret.
+        master_key.phone_code_tag(0, "00000000-0000-0000-0000-000000000000", secret)
+        return None
+    db.session.refresh(candidate)
+    tag = master_key.phone_code_tag(candidate.id, candidate.request.request_uuid, secret)
+    if candidate.code_tag is not None and hmac.compare_digest(tag, candidate.code_tag):
+        return candidate
+    if candidate.tries >= CODE_TRIES:
+        _run_out(candidate)
+    db.session.commit()
+    return None
 
 
 def _run_out(approval: RecoveryPhoneApproval) -> None:
-    """Five wrong codes: the approval ends, and a web reset it started with it."""
-    from qvault.services import ledger_service
+    """Five wrong codes with this approval's selector (so typed by someone who saw at least part of
+    the phone's screen): the approval ends, a web reset it started ends with it, and the person is
+    told, naming the phone (review M1)."""
+    from qvault.services import ledger_service, notification_service
 
     _end_approval(approval)
     request = approval.request
+    notification_service.recovery_phone_codes(
+        request.user,
+        request,
+        device_name=approval.device.name if approval.device else None,
+        purpose=approval.purpose,
+        now=_now(),
+    )
     if approval.purpose != "web_reset" or request.state not in PHONE_PRECLAIM_STATES:
         return
     ended = db.session.execute(
@@ -604,24 +799,23 @@ def claim(
 
     now = now or _now()
     code = normalise_code(typed_code)
-    user = User.query.filter_by(email=(email or "").strip().lower()).first()
-    candidates = []
-    if user is not None:
-        candidates = (
-            _live(RecoveryPhoneApproval.query, now)
-            .join(RecoveryRequest, RecoveryRequest.id == RecoveryPhoneApproval.request_id)
-            .filter(
-                RecoveryRequest.user_id == user.id,
-                RecoveryRequest.state == "phone_approved",
-                RecoveryPhoneApproval.purpose == "web_reset",
-                RecoveryPhoneApproval.state == "approved",
-            )
-            .order_by(RecoveryPhoneApproval.id)
-            .all()
-        )
-    match = _try_code(candidates, code)
+    # The account's id only, never its row: an ORM object that is already in the session can cost
+    # a refresh, which would make a known email take more work than an unknown one (review L2).
+    user_id = db.session.scalar(select(User.id).where(User.email == (email or "").strip().lower()))
+    found = _by_selector(split_code(code)[0], now, purpose="web_reset")
+    # A selector of someone else's approval, or of a reset already claimed, is a miss: nothing is
+    # spent on it, so nobody can wear down another person's reset with their own email.
+    if (
+        found is None
+        or user_id is None
+        or found.request.user_id != user_id
+        or found.request.state != "phone_approved"
+    ):
+        found = None
+    match = _try_code(found, code)
     if match is None:
         raise RecoveryRefused("generic", GENERIC_REFUSAL)
+    user = db.session.get(User, user_id)
 
     # The code matched: from here on the answers can be specific.
     request = match.request
@@ -660,6 +854,14 @@ def claim(
     token, token_hash = recovery_service._new_status_token()
     pk_sha = sha256_hex(keypair.public_key)
     request_code = request_code_for(request.request_uuid, pk_sha)
+    # Now hold the treasuries and look again (review L1): another co-signer's reset claimed a
+    # moment ago must count against this one. Held only from here to the commit, never across the
+    # Argon2id work above (on SQLite a held row is the whole database's writer).
+    lock_treasuries(user)
+    refused = lockout(user)
+    if refused is not None:
+        _end_preclaim(request, match, reason=refused.message)
+        raise refused
     active = key_service.active_signing_key(user)
 
     used = db.session.execute(
@@ -805,21 +1007,15 @@ def confirm_kit(status_token: str | None, typed_code: str, *, now: datetime | No
     code = normalise_code(typed_code)
     if request.route != "kit" or request.state != "waiting" or _aware(request.completes_at) <= now:
         raise RecoveryRefused("too_late", "This recovery has already ended.")
-    shortest = _aware(request.window_starts_at) + KIT_WITH_PHONE_WAIT
-    if _aware(request.completes_at) <= shortest:
+    new_completes = kit_confirm_target(request, now)
+    if _aware(request.completes_at) <= new_completes:
         raise RecoveryRefused(
-            "already_short", "A phone has already confirmed this recovery: it can't be any sooner."
+            "already_short",
+            "This recovery can't take effect any sooner: a phone has already confirmed it, or it "
+            "is due within hours anyway.",
         )
-    candidates = (
-        _live(RecoveryPhoneApproval.query.filter_by(request_id=request.id), now)
-        .filter(
-            RecoveryPhoneApproval.purpose == "kit_confirm",
-            RecoveryPhoneApproval.state == "approved",
-        )
-        .order_by(RecoveryPhoneApproval.id)
-        .all()
-    )
-    match = _try_code(candidates, code)
+    found = _by_selector(split_code(code)[0], now, purpose="kit_confirm", request_id=request.id)
+    match = _try_code(found, code)
     if match is None:
         raise RecoveryRefused(
             "wrong_code",
@@ -831,7 +1027,6 @@ def confirm_kit(status_token: str | None, typed_code: str, *, now: datetime | No
         raise RecoveryRefused(
             problem.code, f"The phone that showed this code can't confirm it. {problem.message}"
         )
-    new_completes = max(now, shortest)
     used = db.session.execute(
         update(RecoveryPhoneApproval)
         .where(
@@ -896,9 +1091,19 @@ def phone_assisted(request: RecoveryRequest) -> bool:
 
 
 def end_live_approvals(request: RecoveryRequest) -> None:
-    """Every approval of ``request`` still waiting for a signature or a code ends with it."""
+    """Every approval of ``request`` still waiting for a signature or a code ends with it, by
+    compare-and-set, so a ``used`` committed a moment ago survives (review L3)."""
+    db.session.execute(
+        update(RecoveryPhoneApproval)
+        .where(
+            RecoveryPhoneApproval.request_id == request.id,
+            RecoveryPhoneApproval.state.in_(("pending", "approved")),
+        )
+        .values(state="ended")
+        .execution_options(synchronize_session=False)
+    )
     for approval in request.phone_approvals:
-        _end_approval(approval)
+        db.session.expire(approval, ["state"])
 
 
 def cancellable(user_id: int) -> list[RecoveryRequest]:
@@ -922,6 +1127,9 @@ def on_device_revoked(device: Device, *, actor_id: int | None, now: datetime | N
     by = db.session.get(User, actor_id) if actor_id else None
     ended = 0
     for request in cancellable(device.owner_id):
+        # End what is still waiting first, then look: a confirmation that committed in between is
+        # 'used', not overwritten, and so is seen here (review L3).
+        end_live_approvals(request)
         if phone_assisted(request):
             if recovery_service.cancel(
                 request,
@@ -932,8 +1140,6 @@ def on_device_revoked(device: Device, *, actor_id: int | None, now: datetime | N
                 now=now,
             ):
                 ended += 1
-        else:
-            end_live_approvals(request)
     return ended
 
 
@@ -964,6 +1170,7 @@ def completion_problem(request: RecoveryRequest, *, now: datetime | None = None)
         ):
             return "the phone that vouched for it can no longer sign in"
     if request.route == "phone" and request.user is not None:
+        lock_treasuries(request.user)
         refused = lockout(request.user)
         if refused is not None:
             return refused.message
@@ -1090,7 +1297,12 @@ def phone_reset_state(device: Device, *, now: datetime | None = None) -> dict:
     now = now or _now()
     user = device.owner
     problem = device_problem(device, now)
-    refused = problem or lockout(user)
+    refused = (
+        problem
+        or cooling_off(device, now)
+        or expires_before(device, now + APPROVAL_TTL + PHONE_WAIT)
+        or lockout(user)
+    )
     if refused is None and recovery_service.open_request(user) is not None:
         refused = RecoveryRefused("under_way", "A recovery of your account is already under way.")
     paired = _aware(device.created_at)
@@ -1107,8 +1319,8 @@ def phone_reset_state(device: Device, *, now: datetime | None = None) -> dict:
 def request_json(request: RecoveryRequest, viewer: User, *, role: str, now: datetime) -> dict:
     """One recovery as the phone shows it: whose, how, until when, and what this viewer may do."""
     approval = approving_approval(request)
-    shortest = (
-        _aware(request.window_starts_at) + KIT_WITH_PHONE_WAIT
+    target = (
+        kit_confirm_target(request, now + APPROVAL_TTL)
         if request.window_starts_at is not None
         else None
     )
@@ -1125,14 +1337,19 @@ def request_json(request: RecoveryRequest, viewer: User, *, role: str, now: date
         "completes_at": iso_z(request.completes_at) if request.completes_at else None,
         "request_code": request.request_code,
         "confirmed_by_phone": approval is not None and request.route == "kit",
+        # The phone that vouched for a reset, by its name, so the person knows which to remove.
+        "device_name": vouching_device_name(request) if request.route == "phone" else None,
         "can_cancel": True,
         "can_confirm": (
             role == "self"
             and request.route == "kit"
             and request.state == "waiting"
-            and shortest is not None
-            and _aware(request.completes_at) > max(now, shortest)
+            and target is not None
+            and _aware(request.completes_at) > target
         ),
+        # When a confirmation now would make it take effect (24 hours from the kit's use, never
+        # less than KIT_CONFIRM_FLOOR from now), for the kit-confirm screen.
+        "confirm_would_complete_at": iso_z(target) if target is not None else None,
     }
 
 
@@ -1161,22 +1378,27 @@ def requests_for(device: Device, *, now: datetime | None = None) -> list[dict]:
 def cancel_from_phone(
     device: Device, request_uuid: str, *, now: datetime | None = None
 ) -> RecoveryRequest:
-    """Cancel from a paired phone (bearer token, and the app's presence check): the person
-    themself, which burns a kit it used (design §4.2), or someone watching over them, which does
-    not. Anyone else gets ``LookupError``, as for a request that does not exist. Commits."""
+    """Cancel from a paired phone (bearer token, and the app's presence check, which the server
+    cannot see): the person themself, or someone watching over them. Anyone else gets
+    ``LookupError``, as for a request that does not exist. Commits.
+
+    **It never burns a kit** (review M2). The bearer token alone reaches this, so burning here
+    would let a leaked token, or a stolen phone, destroy the person's only way back without the
+    password. A signed cancel would stop only the leaked token, never the thief holding the phone
+    and its PIN; not burning stops both. The person who knows their password burns a stolen kit by
+    using it (any proof of it cancels and burns), or with Cancel on Home."""
     viewer = device.owner
     request = recovery_service.request_by_uuid(request_uuid)
     if request is None or viewer is None:
         raise LookupError(request_uuid)
     if viewer.id == request.user_id:
-        role, burn = "self", True
+        role = "self"
     else:
         role = recovery_service.watchers(request.user_id).get(viewer.id)
         if role is None or request.state in PHONE_PRECLAIM_STATES:
             raise LookupError(request_uuid)
-        burn = False
     if not recovery_service.cancel(
-        request, by=viewer, as_role=role, reason="cancelled", burn=burn, now=now
+        request, by=viewer, as_role=role, reason="cancelled_from_phone", burn=False, now=now
     ):
         raise RecoveryRefused("too_late", "This recovery can't be cancelled: it has already ended.")
     db.session.commit()

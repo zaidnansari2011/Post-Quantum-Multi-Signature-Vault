@@ -23,7 +23,7 @@
   <form method="post" novalidate autocomplete="off">
     {{ form.hidden_tag() }}
     {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
-    {{ wtf_field(form.code, caption='8 characters, as your phone shows them. It works for 10 minutes.', mono=True,
+    {{ wtf_field(form.code, caption='12 characters in 3 groups of 4, as your phone shows them. It works for 10 minutes.', mono=True,
                  attrs={'autocomplete': 'one-time-code', 'autocapitalize': 'characters', 'spellcheck': 'false'}) }}
     {{ wtf_field(form.password, caption='At least 8 characters. It also unlocks your new web signing key.', attrs={'autocomplete': 'new-password'}) }}
     {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}

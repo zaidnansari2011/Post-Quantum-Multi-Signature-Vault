@@ -1039,6 +1039,8 @@ class Banner:
     completes_at: datetime
     #: self, manager or cosigner: whose eyes it is for, which sets its words.
     viewer_as: str
+    #: For a phone reset, the vouching phone's name (review H1): which phone to remove.
+    device_name: str | None = None
 
 
 def _possibly_watched(viewer_id: int):
@@ -1092,7 +1094,12 @@ def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
             # requests to those of people the viewer could be watching.
             role = watchers(request.user_id).get(viewer.id)
         if role is not None and request.user is not None:
-            found.append(Banner(request, request.user, _aware(request.completes_at), role))
+            phone = None
+            if request.route == "phone":
+                from qvault.services import recovery_phone
+
+                phone = recovery_phone.vouching_device_name(request)
+            found.append(Banner(request, request.user, _aware(request.completes_at), role, phone))
     return found
 
 

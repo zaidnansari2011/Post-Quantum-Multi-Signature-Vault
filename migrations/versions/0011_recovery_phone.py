@@ -10,7 +10,9 @@ requests are rows of ``recovery_requests`` (route ``phone``), whose pending web-
 already made.
 
 - ``recovery_phone_approvals``: a paired phone's signed approval of a web reset or of a kit
-  request, the code it showed (as a master-key HMAC only) and how many wrong codes it has had.
+  request, the code it showed (its 4-symbol selector in clear, its 8 secret symbols as a
+  master-key HMAC only), how many wrong codes it has had, and the phone's signature, kept for
+  audit.
 """
 
 from __future__ import annotations
@@ -40,13 +42,21 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("code_selector", sa.String(length=4), nullable=True),
         sa.Column("code_tag", sa.LargeBinary(length=32), nullable=True),
         sa.Column("tries", sa.Integer(), nullable=False),
         sa.Column("signature_sha256", sa.String(length=64), nullable=True),
+        sa.Column("signature", sa.LargeBinary(), nullable=True),
         sa.ForeignKeyConstraint(["device_id"], ["devices.id"]),
         sa.ForeignKeyConstraint(["key_id"], ["keys.id"]),
         sa.ForeignKeyConstraint(["request_id"], ["recovery_requests.id"]),
         sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        "ix_recovery_phone_approvals_code_selector",
+        "recovery_phone_approvals",
+        ["code_selector"],
+        unique=False,
     )
     op.create_index(
         "ix_recovery_phone_approvals_device_id",
@@ -65,4 +75,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_recovery_phone_approvals_request_id", table_name="recovery_phone_approvals")
     op.drop_index("ix_recovery_phone_approvals_device_id", table_name="recovery_phone_approvals")
+    op.drop_index(
+        "ix_recovery_phone_approvals_code_selector", table_name="recovery_phone_approvals"
+    )
     op.drop_table("recovery_phone_approvals")

@@ -162,7 +162,7 @@ def status():
         now=now,
         confirm_form=PhoneConfirmForm(),
         can_shorten=_can_shorten(found, now),
-        shortest=_shortest(found),
+        shortest=_shortest(found, now),
         confirmed_by_phone=(
             found is not None
             and found.route == "kit"
@@ -177,22 +177,22 @@ def status():
     return _private(make_response(body))
 
 
-def _shortest(found):
+def _shortest(found, now):
+    """When a phone's confirmation now would make a kit request take effect: 24 hours after the kit
+    was used, and never less than recovery_phone.KIT_CONFIRM_FLOOR from now (review M3)."""
     if found is None or found.window_starts_at is None:
         return None
-    start = found.window_starts_at
-    start = start if start.tzinfo else start.replace(tzinfo=UTC)
-    return start + recovery_phone.KIT_WITH_PHONE_WAIT
+    return recovery_phone.kit_confirm_target(found, now)
 
 
 def _can_shorten(found, now) -> bool:
-    """A kit request still waiting, whose end is later than 24 hours after the kit was used."""
-    shortest = _shortest(found)
+    """A kit request still waiting, whose end is later than a confirmation now would make it."""
+    shortest = _shortest(found, now)
     if found is None or found.route != "kit" or found.state != "waiting" or shortest is None:
         return False
     completes = found.completes_at
     completes = completes if completes.tzinfo else completes.replace(tzinfo=UTC)
-    return completes > max(now, shortest)
+    return completes > shortest
 
 
 @bp.post("/recover/status/phone-confirm")

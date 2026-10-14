@@ -50,17 +50,18 @@
     {%- if phone %} So does removing any phone paired to the account.{% endif %}
   </p>
   {%- if confirmed_by_phone %}
-  <p class="q-auth__p">A paired phone confirmed this recovery, so it takes effect 24 hours after the kit was used.</p>
+  <p class="q-auth__p">A paired phone confirmed this recovery, so it takes effect at the time above: 24 hours after the kit was used, and never less than 6 hours after the confirmation, so the account’s owner and the people watching over it can still see it and cancel it.</p>
   {%- elif can_shorten %}
   <h2 class="q-recover__t">Shorten the wait with your phone</h2>
   <p class="q-auth__p">
     If your phone is paired to this account, open this recovery in the Q-Vault app and approve it.
-    Type the code it shows here, and the recovery takes effect on {{ ui_absolute(shortest if shortest > now else now) }}
-    instead. Only do this if you are the one at this computer.
+    Type the code it shows here, and the recovery takes effect on {{ ui_absolute(shortest) }}
+    instead: 24 hours after the kit was used, and never less than 6 hours after you confirm. Only do
+    this if you are the one at this computer.
   </p>
   <form method="post" action="{{ url_for('recover.status_phone_confirm') }}" novalidate autocomplete="off">
     {{ confirm_form.hidden_tag() }}
-    {{ wtf_field(confirm_form.code, caption='8 characters, as your phone shows them.', mono=True,
+    {{ wtf_field(confirm_form.code, caption='12 characters, as your phone shows them.', mono=True,
                  attrs={'autocomplete': 'one-time-code', 'autocapitalize': 'characters', 'spellcheck': 'false'}) }}
     {{ button(confirm_form.submit.label.text, 'secondary', type='submit', block=True, name='submit', value=confirm_form.submit.label.text) }}
   </form>

@@ -227,6 +227,11 @@ def _recovery_push(kind: str, stored: dict) -> tuple[str, str]:
         return "Account recovery stopped", f"The recovery of {whose} was stopped. Nothing changed."
     if kind == "recovery_completed":
         return "Account recovered", f"The recovery of {whose} took effect."
+    if stored.get("change") == "phone_codes":
+        return (
+            "Wrong recovery codes",
+            "Wrong codes stopped a recovery code your phone showed. Nothing changed. Open Q-Vault.",
+        )
     if stored.get("change") == "paused":
         from qvault.services.notification_copy import wrong_code_count
 
@@ -589,7 +594,16 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
                 f"The recovery of {whose} was stopped before it took effect. Nothing about the "
                 "account changed.",
                 "Sign in to Q-Vault to see who stopped it."
-                + (" If you didn't start it, make a new Recovery Kit." if me else ""),
+                + (
+                    (
+                        " If you didn't start it, remove the phone that did on the Security page, "
+                        "with your password."
+                        if stored.get("route") == "phone"
+                        else " If you didn't start it, make a new Recovery Kit."
+                    )
+                    if me
+                    else ""
+                ),
             ),
             "Open Q-Vault",
             mine if me else home,
@@ -637,6 +651,21 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
             facts=account,
         )
     change = stored.get("change")
+    if change == "phone_codes":
+        return EmailCopy(
+            "Wrong codes were typed for a Q-Vault recovery code",
+            "Wrong recovery codes",
+            (
+                "Five wrong codes were typed for a recovery code one of your phones showed, so "
+                "that code no longer works and nothing about your account changed.",
+                "If it wasn't you typing, someone saw that phone's screen: remove the phone on "
+                "the Security page, with your password.",
+            ),
+            "Open Q-Vault",
+            mine,
+            security,
+            preferences=False,
+        )
     if change == "paused":
         from qvault.services.notification_copy import kit_alarm_advice, wrong_code_count
 
