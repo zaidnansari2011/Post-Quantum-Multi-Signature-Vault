@@ -129,11 +129,20 @@ and Android fingerprint are fine. A device or release build is needed to exercis
 Gradle on this machine, rather than the EAS queue:
 
 ```powershell
+$env:QVAULT_API_BASE_URL = "https://qvault-staging.livelybeach-69506dc5.centralindia.azurecontainerapps.io"
+$env:QVAULT_UPDATE_CHANNEL = "rework"   # the rework APK; the live app's channel is "preview"
 npx expo prebuild --platform android --clean
 cd android
 .\gradlew.bat assembleRelease
 # -> android/app/build/outputs/apk/release/app-release.apk
 ```
+
+`credentials/` (the keystore) and `google-services.json` (Firebase, for push) are gitignored: copy
+them in from the live app's `mobile/` folder and the owner's secrets before building.
+
+**The phones already have the local lineage.** The installed app was built this way on
+2026-09-17 and signed with `credentials/release.jks`; an EAS build is signed with Expo's managed
+key, which Android would refuse to install over it. So the rework APK is built here, not on EAS.
 
 Two things make the local build equivalent to a cloud one rather than a toy:
 
@@ -145,11 +154,12 @@ because `prebuild --clean` wipes `android/`. It **no-ops when `credentials/` is 
 Build still works with its own managed credentials.
 
 **It knows its update channel.** EAS Build injects the channel from `eas.json`; a plain Gradle build
-does not, so the APK would ask the update server for no channel and receive nothing. `app.json` sets
-it explicitly:
+does not, so the APK would ask the update server for no channel and receive nothing. `app.json`
+names no channel (so an EAS build's profile decides); `app.config.js` adds, when
+`QVAULT_UPDATE_CHANNEL` is set,
 
 ```json
-"updates": { "requestHeaders": { "expo-channel-name": "preview" } }
+"updates": { "requestHeaders": { "expo-channel-name": "rework" } }
 ```
 
 which `@expo/config-plugins` stringifies into the manifest as

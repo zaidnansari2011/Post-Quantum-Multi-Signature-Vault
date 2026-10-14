@@ -15,6 +15,11 @@
 // environment variable GOOGLE_SERVICES_JSON (OWNER-ACTIONS §2.12); a local build reads
 // ./google-services.json when it is there (gitignored). With neither, the build has no FCM: it
 // starts and works, and the server's pushes simply never reach it.
+//
+// updates.requestHeaders: the over-the-air channel. An EAS build injects it from the profile's
+// `channel`, so app.json names none. A local Gradle build (mobile/README.md) gets nothing injected
+// and would ask for no channel, receiving no updates ever; it sets QVAULT_UPDATE_CHANNEL (`rework`
+// for the rework APK), which is baked into the manifest at prebuild.
 const fs = require('fs');
 const path = require('path');
 
@@ -28,11 +33,25 @@ function apiBaseUrl(fallback) {
   return value;
 }
 
+function updateChannel() {
+  const raw = process.env.QVAULT_UPDATE_CHANNEL;
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const value = raw.trim();
+  if (!/^[a-z0-9-]+$/.test(value)) {
+    throw new Error(`QVAULT_UPDATE_CHANNEL must be a channel name (a-z, 0-9, -), got "${raw}"`);
+  }
+  return value;
+}
+
 module.exports = ({ config }) => {
   const local = path.join(__dirname, 'google-services.json');
   const file = process.env.GOOGLE_SERVICES_JSON || (fs.existsSync(local) ? './google-services.json' : undefined);
+  const channel = updateChannel();
   return {
     ...config,
+    ...(channel
+      ? { updates: { ...config.updates, requestHeaders: { 'expo-channel-name': channel } } }
+      : {}),
     extra: { ...config.extra, apiBaseUrl: apiBaseUrl(config.extra.apiBaseUrl) },
     android: { ...config.android, ...(file ? { googleServicesFile: file } : {}) },
   };
