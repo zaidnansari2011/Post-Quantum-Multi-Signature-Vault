@@ -47,6 +47,22 @@ export function permissions(workspace: WorkspaceFacts): Permissions {
   };
 }
 
+/**
+ * What Vaults and Approvals say to someone in no vault yet, by role (handset audit, 14 Oct: the
+ * workspace's owner was told "Your admin adds you to one", and the owner is the admin). `create`:
+ * whether the empty state leads with a "Create a vault" button.
+ */
+export function noVaults(can: Permissions): { title: string; detail: string; create: boolean } {
+  const title = "You're not in any vaults yet.";
+  if (can.manager) {
+    return { title, detail: 'Create one, then add the people who approve its decisions.', create: true };
+  }
+  if (can.canCreateVault) {
+    return { title, detail: 'Your admin can add you to one, or you can create your own.', create: true };
+  }
+  return { title, detail: 'Your admin adds you to one on the web.', create: false };
+}
+
 /** Whether to offer raising a decision in a vault: its owner and approvers, never an auditor. */
 export function canRaiseIn(vaultRole: string | null | undefined, workspace: WorkspaceFacts): boolean {
   return mayPropose(vaultRole) && workspace?.role !== 'auditor' && workspace !== null;

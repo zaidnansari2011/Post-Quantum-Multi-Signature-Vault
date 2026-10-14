@@ -47,6 +47,7 @@ import {
   canRaiseIn,
   newVaultRule,
   newVaultWarning,
+  noVaults,
   permissions,
   partLine,
   roleLine,
@@ -212,6 +213,7 @@ out.waiting = {
 const w = input.workspace;
 out.workspace = {
   permissions: Object.fromEntries(Object.entries(w.permissions).map(([k, v]) => [k, permissions(v)])),
+  noVaults: Object.fromEntries(Object.entries(w.permissions).map(([k, v]) => [k, noVaults(permissions(v))])),
   raise: Object.fromEntries(w.raise.map((c) => [c.name, canRaiseIn(c.role, c.workspace)])),
   rules: w.rules.map(([m, n]) => ruleSentence(m, n)),
   roles: w.roles.map((r) => roleLine(r)),
