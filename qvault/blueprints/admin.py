@@ -421,19 +421,29 @@ def run_attack_lab():
 # The step-through behind /admin/attack/shor. The page is rendered with the ML-DSA column, the toy
 # LWE instance and the scaling chart; the RSA column is driven from the browser, one JSON POST per
 # button, each computed here by qvault.attack.shor_walkthrough. Runs are held between presses in a
-# small in-process store (one worker, as for the live runs above). Every POST carries the CSRF
-# token in X-CSRFToken and counts against the "attack_shor" rate-limit bucket.
+# small in-process store per kind (one worker, as for the live runs above), so page loads cannot
+# push out a judge's RSA run. Every POST carries the CSRF token in X-CSRFToken and counts against a
+# rate-limit bucket: "attack_shor_sim" for the two that build a state vector, "attack_shor" for
+# the rest. A state vector already being built in this process answers 503 (SimulatorBusy).
 
-_shor_runs = None
+_shor_runs: dict = {}
+_shor_runs_lock = threading.Lock()
 
 
-def _shor_store():
-    global _shor_runs
-    from qvault.attack import shor_walkthrough
+def _shor_store(kind: str):
+    from qvault.attack import shor_walkthrough as walk
 
-    if _shor_runs is None:
-        _shor_runs = shor_walkthrough.RunStore()
-    return _shor_runs
+    with _shor_runs_lock:
+        if kind not in _shor_runs:
+            keep = walk.RSA_RUNS_KEPT if kind == "rsa" else walk.LWE_RUNS_KEPT
+            _shor_runs[kind] = walk.RunStore(keep=keep)
+        return _shor_runs[kind]
+
+
+def _shor_busy(exc: Exception):
+    response = _shor_error(str(exc), 503)
+    response.headers["Retry-After"] = "1"
+    return response
 
 
 def _shor_json() -> dict:
@@ -460,8 +470,9 @@ def shor_side_by_side():
     _require_attack_lab()
     provider = current_app.extensions["crypto"].signature("ML-DSA-65")
     lwe_run = walk.new_lwe_run()
-    lwe_id = _shor_store().put(lwe_run)
-    lwe = walk.lwe_demo(4)
+    lwe_id = _shor_store("lwe").put(lwe_run)
+    # The printed instance is the n = 4 one the brute force searches, not a second draw.
+    lwe = walk.lwe_demo(instance=lwe_run.instances[4])
     return render_template(
         "admin/shor.html",
         mldsa=walk.mldsa_panel(provider),
@@ -487,9 +498,11 @@ def shor_rsa_new():
     _require_attack_lab()
     try:
         run, started = walk.start_run(_shor_json().get("message"))
+    except walk.SimulatorBusy as exc:
+        return _shor_busy(exc)
     except ValueError as exc:
         return _shor_error(str(exc))
-    return jsonify(ok=True, run=_shor_store().put(run), **started)
+    return jsonify(ok=True, run=_shor_store("rsa").put(run), **started)
 
 
 @bp.post("/attack/shor/rsa/base")
@@ -500,12 +513,15 @@ def shor_rsa_base():
     from qvault.attack import shor_walkthrough as walk
 
     _require_attack_lab()
-    run = _shor_store().get(_shor_json().get("run"), walk.RSARun)
+    run = _shor_store("rsa").get(_shor_json().get("run"), walk.RSARun)
     if run is None:
         return _shor_error(_SHOR_EXPIRED, 404)
     if len(run.bases_tried) >= walk.MAX_BASE_DRAWS:
         return _shor_error("This key has had its share of bases. Start a new key.")
-    return jsonify(ok=True, **walk.new_base(run))
+    try:
+        return jsonify(ok=True, **walk.new_base(run))
+    except walk.SimulatorBusy as exc:
+        return _shor_busy(exc)
 
 
 @bp.post("/attack/shor/rsa/measure")
@@ -516,7 +532,7 @@ def shor_rsa_measure():
     from qvault.attack import shor_walkthrough as walk
 
     _require_attack_lab()
-    run = _shor_store().get(_shor_json().get("run"), walk.RSARun)
+    run = _shor_store("rsa").get(_shor_json().get("run"), walk.RSARun)
     if run is None:
         return _shor_error(_SHOR_EXPIRED, 404)
     try:
@@ -534,7 +550,7 @@ def shor_rsa_forge():
 
     _require_attack_lab()
     data = _shor_json()
-    run = _shor_store().get(data.get("run"), walk.RSARun)
+    run = _shor_store("rsa").get(data.get("run"), walk.RSARun)
     if run is None:
         return _shor_error(_SHOR_EXPIRED, 404)
     try:
@@ -552,7 +568,7 @@ def shor_lwe_brute():
 
     _require_attack_lab()
     data = _shor_json()
-    run = _shor_store().get(data.get("run"), walk.LWERun)
+    run = _shor_store("lwe").get(data.get("run"), walk.LWERun)
     if run is None:
         return _shor_error("This instance is no longer held on the server. Reload the page.", 404)
     n = data.get("n")

@@ -125,3 +125,27 @@ Status: **built**. Every item above is done, with these annotations.
 - [x] Tests: `tests/test_shor_walkthrough.py`, `tests/test_shor_routes.py`.
 - [x] Screenshots (desktop and 390px, light and dark): `docs/plans/shor-side-by-side-shots/`.
 - Judgement call: the `<title>` keeps the product-wide em-dash separator; the page copy has none (tested).
+
+### Review fixes (same day)
+
+- [x] The LWE brute force now searches the instance the page prints (`lwe_demo(instance=...)`); the route
+      test compares the printed secret with the one found, over three page loads.
+- [x] Redrawn bases: only their count leaves the server (a discarded base or its gcd is p or q).
+- [x] The input-check table's RSA column is filled from the judge's own key (`start_run` returns
+      `shor_instance` on it); no second RSA key on the page.
+- [x] `shor_instance` reports, per check, what it **computed** from the key (Miller-Rabin on N; ML-DSA key
+      length and t1's largest coefficient, Miller-Rabin on q, factorisation of q - 1) and what it takes **by
+      definition**; each verdict is derived from the computed part (a test flips it with a composite q or an
+      over-long key).
+- [x] New key / new base: own rate-limit bucket `attack_shor_sim` (30 per 10 minutes per address) and a
+      process-wide non-blocking semaphore around the state vector (503 with Retry-After: 1 when busy).
+- [x] Separate run stores: RSA keeps 8, LWE keeps 128.
+- [x] Step 3: alternate periods shaded on the chart, plus a "one row per period" strip view whose rows
+      match column for column.
+- [x] Step 3 and 4 wording: the period is "the period this function has, computed classically here";
+      the quantum steps find it without the picture.
+- [x] Step 6 wording branches on the server's `relation` (period, divisor, multiple); tested with real
+      on-peak and off-peak measurements.
+- [x] 2^-1013 corrected to about (p + q) / N, around 2^-1023, in `shor.py`, `quantum.py`, ADR-0021 and the page.
+- [x] Header: "Every number in the two columns is computed live ...; the published attack estimates are
+      cited where they appear."

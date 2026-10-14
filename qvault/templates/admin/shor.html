@@ -41,7 +41,7 @@
      data-url-brute="{{ url_for('admin.shor_lwe_brute') }}"
      data-lwe-run="{{ lwe_id }}"
      data-brute-cap="{{ brute_cap }}">
-{% call page_header('Shor side by side', description='One quantum attacker, two keys generated on this server just now. Every number on this page is computed live and can be checked by hand.') %}
+{% call page_header('Shor side by side', description='One quantum attacker, two keys generated on this server just now. Every number in the two columns is computed live and can be checked by hand; the published attack estimates are cited where they appear.') %}
   {{ button('Adversary lab', 'secondary', href=url_for('admin.attack_lab')) }}
 {% endcall %}
 {% include "_developer_nav.html" %}
@@ -103,6 +103,7 @@
     {% call step('rsa', 3, 'The repeating function') %}
       <p>f(x) = a<sup>x</sup> mod N repeats. Its period r is what the quantum computer finds; the factors follow from r.</p>
       <div class="q-shor__chart" data-chart="sequence"></div>
+      <div class="q-shor__chart" data-chart="rows" role="img" aria-label="The same values cut into rows one period long, each value a shade from light (small) to dark (large). The rows match column for column."></div>
       <div class="q-shor__seq" data-f="sequence" tabindex="0" aria-label="The values of f(x), in order"></div>
       <p class="q-note" data-f="period-note"></p>
     {% endcall %}
@@ -205,17 +206,17 @@
     {% endcall %}
 
     {% call step('mldsa', 2, "Shor's input check") %}
-      <p>What order-finding needs, checked against both keys by the same function:</p>
+      <p>What order-finding needs. One function, <span class="q-mono">shor_instance()</span>, tests the RSA key in the left column and this {{ mldsa.alg_id }} key. Each answer says what it computed from the key and what it takes from the scheme's definition; the verdict follows from the computed part alone.</p>
       <div class="q-table-wrap q-shor__tw">
         <table class="q-table q-shor__checks">
-          <thead><tr><th scope="col">Shor needs</th><th scope="col">RSA (N = {{ mldsa.rsa_n }})</th><th scope="col">{{ mldsa.alg_id }}</th></tr></thead>
+          <thead><tr><th scope="col">Shor needs</th><th scope="col" data-rsa-head>RSA, the key on the left</th><th scope="col">{{ mldsa.alg_id }}</th></tr></thead>
           <tbody>
-          {% for rsa_check in mldsa.rsa_checks %}
+          {% for requirement in mldsa.requires %}
             {% set ml = mldsa.refusal.checks[loop.index0] if mldsa.refusal else none %}
             <tr>
-              <td>{{ rsa_check.requirement[:1]|upper ~ rsa_check.requirement[1:] }}</td>
-              <td data-label="RSA (N = {{ mldsa.rsa_n }})">{{ badge('Present', 'critical') if rsa_check.present else badge('Absent', 'neutral') }}<span class="q-cap">{{ rsa_check.evidence }}</span></td>
-              <td data-label="{{ mldsa.alg_id }}">{% if ml %}{{ badge('Present', 'critical') if ml.present else badge('Absent', 'neutral') }}<span class="q-cap">{{ ml.evidence }}</span>{% endif %}</td>
+              <td>{{ requirement[:1]|upper ~ requirement[1:] }}</td>
+              <td data-label="RSA, the key on the left" data-rsa-check="{{ loop.index0 }}"><span class="q-small">Press New key in the left column to test its key.</span></td>
+              <td data-label="{{ mldsa.alg_id }}">{% if ml %}{{ badge('Present', 'critical') if ml.present else badge('Absent', 'neutral') }}<span class="q-cap"><span class="q-shor__how">Computed:</span> {{ ml.computed }}</span>{% if ml.stated %}<span class="q-cap"><span class="q-shor__how">By definition:</span> {{ ml.stated }}</span>{% endif %}{% endif %}</td>
             </tr>
           {% endfor %}
           </tbody>
@@ -226,7 +227,7 @@
         <p class="q-shor__rl">The code's answer for {{ mldsa.alg_id }}</p>
         <p class="q-mono">NoShorInstance: {{ mldsa.refusal.reason }}</p>
       </div>
-      <p class="q-note">Raised by <span class="q-mono">shor_instance()</span> in <span class="q-mono">qvault/attack/shor_walkthrough.py</span> after it reads the key. It is a refusal to start, not a failed run: there is nothing to give the algorithm.</p>
+      <p class="q-note">Raised by <span class="q-mono">shor_instance()</span> in <span class="q-mono">qvault/attack/shor_walkthrough.py</span> after it parses the key and tests the scheme's modulus, as listed above. It is a refusal to start, not a failed run: there is nothing to give the algorithm.</p>
       {% endif %}
     {% endcall %}
 

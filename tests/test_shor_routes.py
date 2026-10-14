@@ -91,7 +91,9 @@ def test_the_page_renders_both_columns_with_live_and_cited_content(client, admin
     assert "NoShorInstance: no period-finding instance" in html
     assert "2<sup>182</sup>" in html and "2<sup>165</sup>" in html  # core-SVP, cited
     assert "Table 1, page 8" in html
-    assert "8,380,416 = 2^13 x 3 x 11 x 31" in html
+    assert "8,380,416 = 2^13 x 3 x 11 x 31 (factorised here)" in html
+    assert "Press New key in the left column to test its key." in html  # no second RSA key
+    assert "computed live and can be checked by hand; the published attack estimates" in html
     assert "no known quantum attack" in html.lower()
     assert "impossible" not in html.lower()
     assert 'src="/static/shor.js"' in html
@@ -117,6 +119,10 @@ def test_a_full_attack_through_the_endpoints_forges_the_judges_message(client, a
     started = client.post("/admin/attack/shor/rsa/new", json={"message": "Pay Mallory"}).get_json()
     assert started["ok"] and started["key"]["n"] < 512
     assert set(started["key"]) == {"n", "e", "bits", "public_key"}
+    # The comparison table's RSA side is this key, and nothing in the reply names a factor.
+    assert all(c["present"] for c in started["checks"])
+    assert f"N = {started['key']['n']} is composite" in started["checks"][0]["computed"]
+    assert isinstance(started["base"]["redrawn"], int)
     run = started["run"]
 
     early = client.post("/admin/attack/shor/rsa/forge", json={"run": run, "message": "x"})
@@ -153,11 +159,22 @@ def test_bad_input_and_an_expired_run_are_answered_in_json(client, admin):
 # --- brute force -------------------------------------------------------------------------------
 
 
+def _printed_secret(page: bytes) -> list[int]:
+    """The n = 4 secret as the page prints it: 'The secret s = (1, -1, 0, 1).'"""
+    text = page.decode().replace("&minus;", "-")
+    match = re.search(r'The secret s = <span class="q-shor__vec">\(([^)]*)\)', text)
+    return [int(v) for v in match.group(1).split(", ")]
+
+
 def test_brute_force_runs_against_the_pages_own_instance(client, admin):
+    """The n = 4 row must search the equations the page prints, and find the secret it prints."""
     _login(client, admin.email)
-    run = _lwe_run(client.get("/admin/attack/shor").data)
-    result = client.post("/admin/attack/shor/lwe/brute", json={"run": run, "n": 4}).get_json()
-    assert result["ok"] and result["done"] and result["match"]
+    for _ in range(3):  # three page loads: a coincidence cannot pass three times
+        page = client.get("/admin/attack/shor").data
+        run = _lwe_run(page)
+        result = client.post("/admin/attack/shor/lwe/brute", json={"run": run, "n": 4}).get_json()
+        assert result["ok"] and result["done"] and result["match"]
+        assert result["found"] == _printed_secret(page)
     assert client.post("/admin/attack/shor/lwe/brute", json={"run": run, "n": 5}).status_code == 400
     assert (
         client.post("/admin/attack/shor/lwe/brute", json={"run": run, "n": True}).status_code == 400
@@ -186,20 +203,53 @@ def test_every_post_needs_the_csrf_token(client, app, admin):
         app.config["WTF_CSRF_ENABLED"] = False
 
 
-def test_the_endpoints_count_against_their_own_rate_limit_bucket(app):
+def test_the_endpoints_count_against_their_own_rate_limit_buckets(app):
     endpoints = {rule.endpoint for rule in app.url_map.iter_rules() if rule.rule in POSTS}
     assert len(endpoints) == len(POSTS)
-    assert all(rate_limit.ENDPOINT_BUCKETS.get(e) == "attack_shor" for e in endpoints)
-    assert "attack_shor" in rate_limit.DEFAULT_LIMITS
+    simulating = {"admin.shor_rsa_new", "admin.shor_rsa_base"}
+    for endpoint in endpoints:
+        expected = "attack_shor_sim" if endpoint in simulating else "attack_shor"
+        assert rate_limit.ENDPOINT_BUCKETS.get(endpoint) == expected
+    assert rate_limit.DEFAULT_LIMITS["attack_shor_sim"] == (30, 600)
+    assert rate_limit.DEFAULT_LIMITS["attack_shor"][0] > 30
+
+
+def test_a_second_simulation_at_once_is_refused_with_503(client, admin):
+    from qvault.attack import shor_walkthrough as walk
+
+    _login(client, admin.email)
+    run = client.post("/admin/attack/shor/rsa/new", json={"message": "x"}).get_json()["run"]
+    assert walk._SIMULATOR.acquire(blocking=False)
+    try:
+        busy = client.post("/admin/attack/shor/rsa/new", json={"message": "x"})
+        assert busy.status_code == 503 and busy.headers["Retry-After"] == "1"
+        assert "Try again in a second" in busy.get_json()["error"]
+        assert client.post("/admin/attack/shor/rsa/base", json={"run": run}).status_code == 503
+        # Measuring needs no new state vector, so it is not held up.
+        assert client.post("/admin/attack/shor/rsa/measure", json={"run": run}).status_code == 200
+    finally:
+        walk._SIMULATOR.release()
+
+
+def test_page_loads_do_not_push_out_a_live_rsa_run(client, admin):
+    _login(client, admin.email)
+    run = client.post("/admin/attack/shor/rsa/new", json={"message": "x"}).get_json()["run"]
+    for _ in range(12):
+        client.get("/admin/attack/shor")
+    assert client.post("/admin/attack/shor/rsa/measure", json={"run": run}).status_code == 200
 
 
 def test_the_rate_limit_refuses_past_its_count(client, app, admin):
     _login(client, admin.email)
     app.config["RATE_LIMIT_ENABLED"] = True
-    app.config["RATE_LIMITS"] = {"attack_shor": (2, 600)}
+    app.config["RATE_LIMITS"] = {"attack_shor_sim": (2, 600), "attack_shor": (3, 600)}
     try:
-        codes = [client.post("/admin/attack/shor/rsa/base", json={}).status_code for _ in range(3)]
+        sim = [client.post("/admin/attack/shor/rsa/base", json={}).status_code for _ in range(3)]
+        rest = [
+            client.post("/admin/attack/shor/rsa/measure", json={}).status_code for _ in range(4)
+        ]
     finally:
         app.config["RATE_LIMIT_ENABLED"] = False
         app.config["RATE_LIMITS"] = {}
-    assert codes == [404, 404, 429]
+    assert sim == [404, 404, 429]
+    assert rest == [404, 404, 404, 429]  # its own bucket, untouched by the simulation's

@@ -451,10 +451,11 @@ def shor_factor(
     with N. At the sizes this simulator can reach that is not rare — for N = 143 = 11 x 13, a base
     drawn from [2, 142) shares a factor about 16% of the time, and for N = 21 it is over 40%, so
     a demonstration run would frequently "factor" the modulus by luck and never reach the quantum
-    step at all. For a 2048-bit RSA modulus the same probability is around 2^-1013: it will not
-    happen, ever. So with ``force_quantum`` the loop **redraws** such a base instead of cashing it
-    in, and records that it did. This makes the demonstration represent the cryptographic case
-    rather than the toy case. Set it to False to see the unmodified reduction, shortcut included.
+    step at all. For a 2048-bit RSA modulus the same probability is about (p + q) / N, with p and q
+    near 2^1024: around 2^-1023. It will not happen, ever. So with ``force_quantum`` the loop
+    **redraws** such a base instead of cashing it in, and records that it did. This makes the
+    demonstration represent the cryptographic case rather than the toy case. Set it to False to see
+    the unmodified reduction, shortcut included.
     """
     rng = rng or random.Random()
     started = time.perf_counter()

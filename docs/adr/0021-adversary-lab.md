@@ -109,7 +109,7 @@ Three scaling artefacts are named rather than hidden, because each would otherwi
 algorithm:
 
 - A random base sharing a factor with N lets the reduction finish classically — ~16% of draws at
-  N=143, ~2^-1013 at 2048 bits. `force_quantum` redraws instead of cashing that in, and reports how
+  N=143, ~2^-1023 at 2048 bits. `force_quantum` redraws instead of cashing that in, and reports how
   often it did.
 - Wasted rounds (odd order, or `a^(r/2) ≡ -1`) are far more common in small multiplicative groups,
   so a high round count is reported with that explanation attached.

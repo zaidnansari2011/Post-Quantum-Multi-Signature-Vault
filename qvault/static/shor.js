@@ -151,9 +151,16 @@
         stext(c.svg, L - 6, Y(v) + 4, fmt(v), 'q-shor__axis', 'end');
       });
       stext(c.svg, L, 12, 'f(x) = ' + pic.a + '^x mod ' + pic.n, 'q-shor__axis');
+      // Every other period is shaded, so the eye sees the same shape repeat block by block.
+      for (var start = pic.r, k = 1; start < n; start += pic.r, k++) {
+        if (k % 2) {
+          var end = Math.min(start + pic.r, n - 1);
+          s('rect', { x: X(start), y: T, width: Math.max(0, X(end) - X(start)), height: c.h - T - B, 'class': 'q-shor__band' }, c.svg);
+        }
+      }
       pic.ones.forEach(function (x, i) {
         s('line', { x1: X(x), x2: X(x), y1: T, y2: c.h - B, 'class': 'q-shor__period' }, c.svg);
-        if (i > 0) stext(c.svg, X(x) + 3, T + 10, i === 1 ? 'r = ' + x : i + 'r = ' + x, 'q-shor__lbl q-shor__lbl--strong');
+        if (i > 0) stext(c.svg, X(x) + 5, 12, i === 1 ? 'r = ' + x : i + 'r = ' + x, 'q-shor__lbl q-shor__lbl--strong');
       });
       var d = pic.values.map(function (v, x) { return (x ? 'L' : 'M') + X(x).toFixed(1) + ',' + Y(v).toFixed(1); }).join('');
       s('path', { d: d, 'class': 'q-shor__seqline' }, c.svg);
@@ -162,6 +169,29 @@
         if (v === 1 || dots) s('circle', { cx: X(x), cy: Y(v), r: v === 1 ? 3 : 1.6, 'class': v === 1 ? 'q-shor__dot q-shor__dot--one' : 'q-shor__dot' }, c.svg);
       });
       [0, n - 1].forEach(function (x) { stext(c.svg, X(x), c.h - 8, 'x = ' + x, 'q-shor__axis', x ? 'end' : 'start'); });
+    };
+  }
+
+  // The same values cut into rows one period long: each value a shade, light for small and dark
+  // for large. Identical rows are the repetition, visible without reading a number.
+  function rowsChart(pic) {
+    return function (node) {
+      var rowH = 18, gap = 6, top = 18;
+      var c = canvas(node, top + pic.rows.length * (rowH + gap));
+      var L = 112, R = 8;
+      var cell = (c.w - L - R) / pic.r;
+      stext(c.svg, 0, 12, 'One row per period of ' + pic.r + ' values', 'q-shor__axis');
+      pic.rows.forEach(function (row, i) {
+        var y = top + i * (rowH + gap);
+        var from = i * pic.r;
+        stext(c.svg, 0, y + rowH - 5, 'x = ' + from + ' to ' + (from + row.length - 1), 'q-shor__axis');
+        row.forEach(function (v, j) {
+          s('rect', {
+            x: (L + j * cell).toFixed(2), y: y, width: Math.max(0.5, cell - (cell > 4 ? 1 : 0)).toFixed(2), height: rowH,
+            'class': 'q-shor__cell', 'fill-opacity': (0.06 + 0.94 * v / pic.n).toFixed(3)
+          }, c.svg);
+        });
+      });
     };
   }
 
@@ -279,10 +309,11 @@
     var s2 = rsa.item(2), s3 = rsa.item(3), s4 = rsa.item(4);
     setText(s2, 'a', d.base.a);
     setText(s2, 'base-number', d.base_number === 1 ? 'First base for this key' : 'Base ' + d.base_number + ' for this key');
+    // Only the count: the discarded base, or its gcd with N, would give away a factor.
     var red = d.base.redrawn;
-    setText(s2, 'redrawn', red.length
-      ? 'Redrawn first: ' + red.map(function (b) { return 'a = ' + b.a + ' (gcd ' + b.gcd + ')'; }).join(', ') +
-        '. A base sharing a factor with N would factor it with no quantum step. That only happens at toy sizes (about 2^-1013 of the time for RSA-2048), so such a base is redrawn and counted, not used.'
+    setText(s2, 'redrawn', red
+      ? (red === 1 ? 'One base was' : red + ' bases were') + ' redrawn first: each shared a factor with N. ' +
+        'Such a base would factor N with no quantum step. That only happens at toy sizes (about (p + q) / N, around 2^-1023 of the time, for RSA-2048), so it is redrawn and counted, not used, and not shown.'
       : '');
 
     var pic = d.picture;
@@ -293,11 +324,12 @@
       add(cell, el('i', null, 'x=' + x));
     });
     setText(s3, 'period-note',
-      'f returns to 1 at x = ' + pic.ones.join(', ') + ', so its period is r = ' + pic.r + '. ' +
-      'This picture is computed classically, which only works because N is tiny: at 2048 bits the sequence can run for about 2^2048 steps before it repeats. ' +
-      'The attack below does not use it. It learns r from a measurement.' +
+      'The period this function has is r = ' + pic.r + ': f returns to 1 at x = ' + pic.ones.join(', ') + ', and the rows above match column for column. ' +
+      'It is computed classically here, which only works because N is tiny: at 2048 bits the sequence can run for about 2^2048 steps before it repeats. ' +
+      'The quantum steps below find the period without this picture, from a measurement.' +
       (pic.truncated ? ' Showing the first ' + pic.values.length + ' values.' : ''));
     charts.sequence = sequenceChart(pic);
+    charts.rows = rowsChart(pic);
 
     var reg = d.register;
     setText(s4, 't', reg.t + ' (2 x ' + (reg.qubits - reg.t) + ' bits of N)');
@@ -307,8 +339,8 @@
     setText(s4, 'observed', 'a^x mod N = ' + reg.observed + '. Only the x that give ' + reg.observed + ' remain, every r-th one.');
     setText(s4, 'dist-note',
       fmt(reg.peak_count) + ' peaks, found as local maxima of the distribution; together they hold ' + pct(reg.peak_mass) +
-      ' of the probability (counting each peak and its two neighbours). They sit at multiples of Q/r = ' + fmt(reg.size) + '/' + pic.r +
-      ' = ' + (reg.size / pic.r).toFixed(1) + '. Built and transformed in ' + fmt(reg.elapsed_ms) + ' ms on this server.');
+      ' of the probability (counting each peak and its two neighbours). They sit near multiples of Q/r; with the period from the picture above, that is ' + fmt(reg.size) + '/' + pic.r +
+      ' = ' + (reg.size / pic.r).toFixed(1) + ', though the measurement below does not know it. Built and transformed in ' + fmt(reg.elapsed_ms) + ' ms on this server.');
     S.register = reg;
     drawDist();
   }
@@ -346,10 +378,33 @@
       setText(rsa.item(1), 'n', fmt(d.key.n));
       setText(rsa.item(1), 'e', fmt(d.key.e));
       renderBase(d);
+      renderChecks(d.key, d.checks);
       rsa.showTo(1, true);
       status('');
     }).catch(function (err) { status(err.message); })
       .then(function () { setBusy(false); });
+  }
+
+  // The right column's comparison table, RSA side: shor_instance() run on this very key.
+  function renderChecks(key, checks) {
+    var head = root.querySelector('[data-rsa-head]');
+    var label = 'RSA, N = ' + key.n + ' (the key on the left)';
+    if (head) head.textContent = label;
+    checks.forEach(function (c, i) {
+      var cell = root.querySelector('[data-rsa-check="' + i + '"]');
+      if (!cell) return;
+      clear(cell);
+      cell.setAttribute('data-label', label);
+      cell.appendChild(c.present ? badge('Present', 'critical') : badge('Absent', 'neutral'));
+      var comp = add(cell, el('span', 'q-cap'));
+      add(comp, el('span', 'q-shor__how', 'Computed:'));
+      comp.appendChild(document.createTextNode(' ' + c.computed));
+      if (c.stated) {
+        var st = add(cell, el('span', 'q-cap'));
+        add(st, el('span', 'q-shor__how', 'By definition:'));
+        st.appendChild(document.createTextNode(' ' + c.stated));
+      }
+    });
   }
 
   function newBase() {
@@ -407,12 +462,18 @@
       add(tr, el('td', 'is-num', fmt(t.exponent)));
       add(tr, el('td', 'is-num', String(t.value)));
     });
-    var note = '';
-    if (a.order !== a.chosen) {
+    // The relation is worked out on the server, so each sentence says what actually happened.
+    var m = a.order / a.chosen, note = '';
+    if (a.relation === 'period') {
+      note = 'a^' + a.order + ' mod N = 1 at the first try, so the period is r = ' + a.order + '.';
+    } else if (a.relation === 'divisor') {
       note = a.chosen + ' is a proper divisor of the period: the measurement gave s/r with s and r sharing a factor. ' +
-        'Testing small multiples finds ' + a.chosen + ' x ' + (a.order / a.chosen) + ' = ' + a.order + ', the first exponent that brings a back to 1. This is the step from Shor\'s paper.';
+        'Testing its multiples finds ' + a.chosen + ' x ' + m + ' = ' + a.order + ', the first multiple that brings a back to 1, which is the period. This is the step from Shor\'s paper.';
     } else {
-      note = 'a^' + a.order + ' mod N = 1, so r = ' + a.order + '.';
+      note = (a.chosen === a.order
+        ? 'a^' + a.order + ' mod N = 1, '
+        : 'Testing multiples of ' + a.chosen + ' finds ' + a.chosen + ' x ' + m + ' = ' + a.order + ', the first multiple that brings a back to 1. ') +
+        'This exponent is a multiple of the period rather than the period itself (the measurement was off a peak). The factoring step only needs a^r = 1, so it carries on with r = ' + a.order + '.';
     }
     setText(s6, 'trail-note', note);
   }

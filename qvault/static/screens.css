@@ -402,6 +402,9 @@ p.q-panel__bd { margin: 0; }
 .q-shor__cap { caption-side: top; text-align: left; padding: var(--space-8) var(--space-12) 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
 .q-shor__checks td { vertical-align: top; min-width: 9rem; }
 .q-shor__checks td .q-cap { display: block; margin-top: var(--space-4); }
+.q-shor__how { font-weight: var(--weight-medium); color: var(--text-muted); }
+.q-shor__band { fill: var(--fill); }
+.q-shor__cell { fill: var(--text); }
 .q-shor__lwe tr.q-shor__used td:first-child { font-weight: var(--weight-strong); }
 .q-shor tr.q-shor__pick > td { font-weight: var(--weight-strong); color: var(--text); }
 .q-shor__legend { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-16); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }

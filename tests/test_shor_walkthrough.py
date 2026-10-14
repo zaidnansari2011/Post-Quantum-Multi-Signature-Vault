@@ -99,6 +99,48 @@ def test_the_period_picture_returns_to_one_at_multiples_of_the_order():
     assert pic["r"] == 60
     assert pic["ones"] == [0, 60, 120]
     assert all(v == pow(7, x, 143) for x, v in enumerate(pic["values"]))
+    # One row per period; the rows agree column for column (the last may be shorter).
+    assert [len(row) for row in pic["rows"]] == [60, 60, len(pic["values"]) - 120]
+    assert pic["rows"][1] == pic["rows"][0]
+    assert pic["rows"][2] == pic["rows"][0][: len(pic["rows"][2])]
+
+
+def test_a_redrawn_base_is_counted_without_giving_away_a_factor():
+    """A discarded base, or its gcd with N, is p or q: only the count may leave the server."""
+    rng = random.Random(0)
+    seen = 0
+    for _ in range(200):
+        base = walk.choose_base(21, rng)  # 21 = 3 x 7: about 40% of bases share a factor
+        assert set(base) == {"a", "gcd", "redrawn"}
+        assert isinstance(base["redrawn"], int) and base["gcd"] == 1
+        assert math.gcd(base["a"], 21) == 1
+        seen += base["redrawn"]
+    assert seen > 0
+
+
+def _first(pred, ys, a=7, n=143, t=16):
+    for y in ys:
+        a_ = walk.analyse_measurement(a, n, t, y)
+        if pred(a_):
+            return a_
+    pytest.fail("no such measurement found")  # pragma: no cover
+
+
+def test_the_page_is_told_how_the_found_exponent_relates_to_the_period():
+    """7 has order 60 mod 143. Each relation is found by scanning real measurement values, and the
+    wording the page shows branches on it, so it can never call an off-peak result a divisor."""
+    size = 1 << 16
+    on_peak = [round(s * size / 60) for s in range(1, 60)]
+    exact = _first(lambda a: a["relation"] == "period", on_peak)
+    assert exact["chosen"] == exact["order"] == 60 and exact["minimal"]
+    divisor = _first(lambda a: a["relation"] == "divisor", on_peak)
+    assert 60 % divisor["chosen"] == 0 and divisor["chosen"] < 60 and divisor["order"] == 60
+    # Off-peak values: a semiconvergent whose multiple test lands on a multiple of 60.
+    off = _first(lambda a: a["relation"] == "multiple", range(1, size, 7))
+    assert off["order"] % 60 == 0 and off["order"] > 60 and not off["minimal"]
+    assert pow(7, off["order"], 143) == 1
+    useless = walk.analyse_measurement(7, 143, 16, 0)
+    assert useless["relation"] is None
 
 
 @pytest.fixture(scope="module")
@@ -235,8 +277,20 @@ def test_the_code_refuses_to_build_a_shor_instance_from_an_mldsa_key(mldsa):
         walk.shor_instance("ML-DSA-65", keypair.public_key)
     assert "no group element whose order encodes the secret" in refusal.value.reason
     assert [c["present"] for c in refusal.value.checks] == [False, False, False]
-    assert "2^13 x 3 x 11 x 31" in refusal.value.checks[0]["evidence"]
+    computed = refusal.value.checks[0]["computed"]
+    assert "2^13 x 3 x 11 x 31" in computed and "is prime (Miller-Rabin)" in computed
+    assert "1,952 bytes are exactly rho (32) and t1 (1,920)" in computed
     assert 2**13 * 3 * 11 * 31 == walk.MLDSA65["q"] - 1
+
+
+def test_the_mldsa_verdict_follows_from_what_is_computed(mldsa, monkeypatch):
+    """The 'present' values are not constants: give the function a composite q, or a key with
+    extra bytes, and it stops refusing."""
+    keypair = mldsa.keygen()
+    assert walk.shor_instance("ML-DSA-65", keypair.public_key + b"\x00")["unexpected"]
+    monkeypatch.setitem(walk.MLDSA65, "q", 8380417 * 3)
+    out = walk.shor_instance("ML-DSA-65", keypair.public_key)
+    assert out["unexpected"] and all(c["present"] for c in out["checks"])
 
 
 def test_the_same_function_builds_an_instance_from_an_rsa_key():
@@ -244,15 +298,32 @@ def test_the_same_function_builds_an_instance_from_an_rsa_key():
     instance = walk.shor_instance("RSA-TOY-9", key.public_bytes())
     assert instance["n"] == key.n
     assert [c["present"] for c in instance["checks"]] == [True, True, True]
+    assert f"N = {key.n} is composite (Miller-Rabin)." == instance["checks"][0]["computed"]
     with pytest.raises(ValueError):
         walk.shor_instance("ECDSA-P256", b"")
 
 
-def test_the_panel_pairs_the_two_answers(mldsa):
+def test_the_panel_refuses_and_the_rsa_side_uses_the_judges_key(mldsa):
     panel = walk.mldsa_panel(mldsa)
     assert panel["refusal"] is not None
-    assert all(c["present"] for c in panel["rsa_checks"])
     assert not any(c["present"] for c in panel["refusal"]["checks"])
+    assert "rsa_checks" not in panel and len(panel["requires"]) == 3
+    run, started = walk.start_run("x", seed=4)
+    assert all(c["present"] for c in started["checks"])
+    assert str(run.key.n) in started["checks"][0]["computed"]
+
+
+def test_the_simulator_refuses_a_second_state_vector_at_once():
+    run, _ = walk.start_run("x", seed=5)
+    assert walk._SIMULATOR.acquire(blocking=False)
+    try:
+        with pytest.raises(walk.SimulatorBusy):
+            walk.new_base(run)
+        with pytest.raises(walk.SimulatorBusy):
+            walk.start_run("x", seed=6)
+    finally:
+        walk._SIMULATOR.release()
+    assert walk.new_base(run)["base_number"] == 2  # free again afterwards
 
 
 @pytest.mark.parametrize("seed", range(12))
@@ -269,6 +340,14 @@ def test_lwe_elimination_works_without_noise_and_fails_with_it(seed):
         assert not demo["noisy"]["residual_small"]
     else:  # all-zero noise on the rows used: the page reports this as luck
         assert demo["noisy"]["match"]
+
+
+def test_the_demo_can_be_built_from_a_runs_own_instance():
+    run = walk.new_lwe_run(seed=7)
+    demo = walk.lwe_demo(instance=run.instances[4])
+    assert demo["instance"] is run.instances[4]
+    found = walk.brute_force_step(run, 4)
+    assert found["found"] == demo["instance"]["s"]
 
 
 def test_solve_mod_q_reports_a_singular_matrix():
