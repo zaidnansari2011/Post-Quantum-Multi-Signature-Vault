@@ -51,6 +51,7 @@ def security():
         default_kem=current_app.config.get("DEFAULT_KEM_ALGORITHM"),
         signature_algorithms=registry.list_signature_algs(),
         onchain=bool(current_app.config.get("ONCHAIN_EXECUTION_ENABLED")),
+        witness_configured=public_status.witness_configured(),
     )
 
 

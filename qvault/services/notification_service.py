@@ -1247,6 +1247,25 @@ def mark_all_read(user, *, section: str | None = None, now: datetime | None = No
     return len(ids)
 
 
+def kept_unread(user, *, section: str | None = None, now: datetime | None = None) -> dict:
+    """What ``mark_all_read`` leaves unread, for the page to say why (staging QA F4): notices
+    about a recovery still open (``locked``, unread until it ends) and other security notices
+    (``security``, read one at a time)."""
+    now = now or _utcnow()
+    condition = and_(
+        Notification.recipient_id == user.id,
+        Notification.read_at.is_(None),
+        or_(Notification.kind.in_(SECURITY_KINDS), Notification.id.in_(_locked())),
+    )
+    if section is not None:
+        condition = and_(condition, _in_section(section, now, user.id))
+    rows = db.session.execute(
+        select(Notification.id, Notification.id.in_(_locked()).label("locked")).where(condition)
+    ).all()
+    locked = sum(1 for _id, is_locked_row in rows if is_locked_row)
+    return {"locked": locked, "security": len(rows) - locked}
+
+
 def archive(user, notification_id: int, *, now: datetime | None = None) -> dict | None:
     """Move it out of the inbox, read. Archiving a request does not answer it: the decision is
     still on the approvals page. A security notice is refused (``NotArchivable``): it stays where

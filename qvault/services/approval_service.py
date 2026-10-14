@@ -342,19 +342,25 @@ def _finalize_if_decided(proposal, *, actor_id: int | None) -> None:
         notification_service.decision_closed(
             proposal, "approved", actor_id=actor_id, now=proposal.approved_at
         )
-    elif rejections > proposal.required_n - proposal.required_m:
-        # Even if every remaining signer approved, approvals could not reach M → decide now.
+    elif eligibility.rejection_closes(proposal, rejections):
+        # Even if every remaining voter approved, approvals could not reach M → decide now. Under
+        # separation of duties the person who raised it is not a voter (staging QA F2): the entry
+        # says so, additively, so the offline verifiers count the same voters.
+        excluded = eligibility.requester_excluded(proposal)
         proposal.status = "rejected"
         proposal.rejected_at = datetime.now(UTC)
+        entry = {
+            "proposal_uuid": proposal.proposal_uuid,
+            "vault_id": proposal.vault_id,
+            "rejections": rejections,
+            "M": proposal.required_m,
+            "N": proposal.required_n,
+        }
+        if excluded:
+            entry["requester_excluded"] = True
         ledger_service.append(
             "proposal_rejected",
-            {
-                "proposal_uuid": proposal.proposal_uuid,
-                "vault_id": proposal.vault_id,
-                "rejections": rejections,
-                "M": proposal.required_m,
-                "N": proposal.required_n,
-            },
+            entry,
             actor=actor,
             actor_id=actor_id,
             vault_id=proposal.vault_id,
@@ -381,7 +387,9 @@ def finalize_stalled(*, commit: bool = True) -> int:
     for proposal in Proposal.query.filter_by(status="open").all():
         # Cheap filter first: tally() verifies every signature, and most open decisions are
         # nowhere near decided.
-        enough = min(proposal.required_m, proposal.required_n - proposal.required_m + 1)
+        enough = min(
+            proposal.required_m, eligibility.deciding_n(proposal) - proposal.required_m + 1
+        )
         if len(proposal.signatures) < enough:
             continue
         try:
@@ -433,8 +441,9 @@ def _authorize_vote(
     8. the advisory duplicate check, advisory because ``uq_signature_signer`` is the authority
        and a concurrent vote may not be visible here yet;
     8a. an approval of a decision that can no longer pass is refused (owner decision 2026-10-09,
-       ``eligibility.cannot_pass``); a rejection is still taken, and when a decision becomes
-       Rejected is unchanged;
+       ``eligibility.cannot_pass``); a rejection is still taken. It becomes Rejected when its
+       rejections exceed its voters less M (``eligibility.rejection_closes``; staging QA F2: the
+       requester under S15 is not a voter);
     9. a rejection carries a reason (plan S16), text of at most ``REASON_MAX`` characters. Not
        signed: ``vote_signing_bytes`` is unchanged (S9).
 

@@ -33,8 +33,9 @@ def team(app):
 
 
 def _text(response) -> str:
-    """The page's words: tags dropped, entities read, spaces collapsed."""
-    words = re.sub(r"<[^>]+>", " ", response.get_data(as_text=True))
+    """The page's words: tags dropped, entities read, spaces collapsed. A ``<wbr>`` (a place an
+    address may wrap, ``ui.breakable_url``) is not a space."""
+    words = re.sub(r"<[^>]+>", " ", response.get_data(as_text=True).replace("<wbr>", ""))
     return re.sub(r"\s+", " ", html.unescape(words))
 
 

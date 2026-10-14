@@ -34,6 +34,9 @@
   {% set summary = 'You’re not in a vault yet.' %}
 {% elif not work.approves_anywhere %}
   {% set summary = 'You can see your vaults’ decisions but approve in none of them.' %}
+{% elif work.stuck and work.stuck.total %}
+  {#- Staging QA F2: a decision the reader raised that can't pass waits on them, not on others. -#}
+  {% set summary = ('A decision you raised can’t pass. Only you can end it now, by withdrawing it.' if work.stuck.total == 1 else ui_count_word(work.stuck.total) ~ ' decisions you raised can’t pass. Only you can end them now, by withdrawing them.') %}
 {% elif work.open_total %}
   {% set summary = ui_count_word(work.open_total) ~ (' decision is' if work.open_total == 1 else ' decisions are') ~ ' open in your vaults, none of them waiting on you.' %}
 {% else %}
@@ -102,6 +105,11 @@
                  empty='Nothing else is due in the next 48 hours.',
                  near_empty='Nothing else is due in the next 48 hours.',
                  more={'label': 'Open Expiring soon', 'href': url_for('approvals.index', tab='expiring')}) }}
+    {%- if work.stuck and work.stuck.total %}
+    {{ work_list('home-stuck', 'Can’t pass', work.stuck.rows, work.stuck.total, 'others',
+                 caption='Raised by you. Withdraw to end it.',
+                 empty='') }}
+    {%- endif %}
     {%- if work.approves_anywhere %}
     {{ work_list('home-waiting', 'Waiting on others', work.waiting.rows, work.waiting.total, 'others',
                  empty='Nothing you raised or signed is waiting on anyone.',

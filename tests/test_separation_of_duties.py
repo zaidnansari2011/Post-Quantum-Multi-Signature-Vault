@@ -306,19 +306,17 @@ def test_the_preview_says_you_cannot_approve_your_own_decision(client):
     assert "It can’t pass" not in preview
 
 
-def test_one_rejection_can_leave_a_decision_unable_to_pass(app):
+def test_one_rejection_closes_a_decision_that_needs_both_who_can_vote(app):
     """2 of 3 with the requester out of reach: Brij and Chen must both approve, so one rejection
-    leaves it unable to pass. It is not rejected for that (its signed rule needs 2 rejections);
-    every screen says it can no longer pass."""
+    means it can no longer pass. Since the staging QA of 2026-10-14 (F2) that closes it as
+    Rejected, as in any vault: its rejections are counted against the two who can vote, and the
+    log's entry says the requester was left out so the offline verifier counts the same."""
     ada, brij, _chen, vault = _team("onereject")
     proposal = proposal_service.create_proposal(vault, ada, "T", "Release 33,000.")
     approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not convinced.")
 
-    assert proposal.status == "open"
-    outlook = eligibility.outlook(
-        proposal, approvals=0, voted=[s.signer_id for s in proposal.signatures]
-    )
-    assert outlook.reachable is False
+    assert proposal.status == "rejected"
+    assert eligibility.deciding_n(proposal) == 2
 
 
 # --- the setting itself ------------------------------------------------------------------------

@@ -306,9 +306,11 @@ textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6)
 .q-ph__d { margin: 0; color: var(--text-muted); max-width: 76ch; }
 .q-ph__act { display: flex; align-items: center; gap: var(--space-8); flex: none; }
 .q-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-24); margin: 0; }
-.q-fact { display: flex; align-items: center; gap: var(--space-6); }
+.q-fact { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
 .q-fact dt { color: var(--text-subtle); }
-.q-fact dd { display: flex; align-items: center; gap: var(--space-6); margin: 0; color: var(--text); }
+.q-fact dd { display: flex; align-items: center; gap: var(--space-6); margin: 0; min-width: 0; color: var(--text); }
+/* A web address that wraps only at the <wbr> before a dot or slash (ui.breakable_url, staging QA F5). */
+.q-url { overflow-wrap: normal; word-break: normal; }
 
 /* ---------------------------------------------------------------- panels and key-value (ui/data.html) */
 

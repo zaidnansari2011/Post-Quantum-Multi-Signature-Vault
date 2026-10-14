@@ -3,14 +3,15 @@
 Three concerns live here together because separating them is how disclosure bugs happen.
 
 **Scoping is not a filter.** A reader may see entries for vaults they belong to, their own actions,
-global SYSTEM events (those not recorded against a vault), and the events of a workspace they own,
+global SYSTEM events (those not recorded against a vault), the events of a workspace they own,
 administer or audit (invitations, role changes, removals: plan S10, and the system's events on that
-workspace's vaults: expiries, payouts, treasury changes). That restriction is applied
-first and unconditionally, and every user filter is ANDed onto it. A query builder that let a filter
-*replace* the scope — or that applied filters to the whole table and scoped afterwards with a limit
-already applied — would leak another tenant's activity. ``export`` therefore goes through exactly
-the same builder as the on-screen list rather than its own query; an export path with its own
-scoping logic is a second chance to get it wrong.
+workspace's vaults: expiries, payouts, treasury changes), and account recovery's entries about their
+own account or about someone whose recovery they are told about and can cancel (R9). That
+restriction is applied first and unconditionally, and every user filter is ANDed onto it. A query
+builder that let a filter *replace* the scope — or that applied filters to the whole table and
+scoped afterwards with a limit already applied — would leak another tenant's activity. ``export``
+therefore goes through exactly the same builder as the on-screen list rather than its own query; an
+export path with its own scoping logic is a second chance to get it wrong.
 
 **Narration is shared.** The chain stores machine event names because they go into the hash
 preimage and must never change. Both the screen and the CSV render them as sentences naming the
@@ -127,6 +128,22 @@ SENTENCES = {
 # Events an operator is most likely to want to isolate, in the order they appear in the filter.
 FILTERABLE_EVENTS = tuple(SENTENCES)
 
+#: Account recovery's entries (plan R9), recorded against the person (``ref_type="user"``). The
+#: person sees every one about their own account, whoever acted (staging QA 2026-10-14, F3: QA Kit
+#: couldn't see that an admin cancelled its recovery).
+RECOVERY_EVENTS = tuple(e for e in SENTENCES if e.startswith("recovery_"))
+#: Those that the people told to act on a recovery (design §4.5: the workspace's owners and
+#: admins and the person's fellow approvers, ``recovery_service.watchers``) also see: the ones
+#: they are told about. Not the kit's own issue, replacement or loss, which only the person hears.
+RECOVERY_WATCHED_EVENTS = (
+    "recovery_requested",
+    "recovery_waiting",
+    "recovery_cancelled",
+    "recovery_rejected",
+    "recovery_completed",
+    "recovery_kit_paused",
+)
+
 
 @dataclass(frozen=True)
 class Filters:
@@ -222,7 +239,42 @@ def _scope(user: User):
         # their own workspace, never another's (R6 review).
         and_(LedgerEntry.actor == "SYSTEM", LedgerEntry.vault_id.in_(_audited_vault_ids(user))),
         and_(LedgerEntry.ref_type == "workspace", LedgerEntry.ref_id.in_(audited_workspaces)),
+        # Account recovery (F3): the person's own trail, and the trail of anyone whose recovery
+        # this reader is told about and can cancel; nobody else's.
+        and_(
+            LedgerEntry.ref_type == "user",
+            LedgerEntry.event_type.in_(RECOVERY_EVENTS),
+            LedgerEntry.ref_id == str(user.id),
+        ),
+        and_(
+            LedgerEntry.ref_type == "user",
+            LedgerEntry.event_type.in_(RECOVERY_WATCHED_EVENTS),
+            LedgerEntry.ref_id.in_(_watched_subjects(user)),
+        ),
     )
+
+
+def _watched_subjects(user: User) -> list[str]:
+    """The people (as ref ids) whose recovery entries ``user`` may read: anyone with one in the
+    log who has ``user`` among their ``recovery_service.watchers`` now, the same people a recovery
+    tells and lets cancel. Narrowed in SQL to those with a recovery entry and within the superset
+    ``user`` could watch, so a page costs what this reader's own workspaces and vaults hold."""
+    from qvault.services import recovery_service  # it imports services this module is read by
+
+    candidates = db.session.scalars(
+        select(distinct(LedgerEntry.ref_id)).where(
+            LedgerEntry.ref_type == "user",
+            LedgerEntry.event_type.in_(RECOVERY_WATCHED_EVENTS),
+            LedgerEntry.ref_id.in_(
+                select(cast(recovery_service._possibly_watched(user.id).subquery().c[0], String))
+            ),
+        )
+    ).all()
+    return [
+        ref
+        for ref in candidates
+        if ref and ref.isdigit() and user.id in recovery_service.watchers(int(ref))
+    ]
 
 
 def _audited_vault_ids(user: User) -> list[int]:
@@ -274,9 +326,14 @@ def narrate(entries) -> list[dict]:
         for e in entries
         if e.ref_type == "workspace" and e.ref_id and e.ref_id.isdigit()
     }
+    # Whom a recovery entry is about, so a cancel says whose account (F3).
+    subject_ids = {
+        int(e.ref_id) for e in entries if e.ref_type == "user" and e.ref_id and e.ref_id.isdigit()
+    }
+    named = actor_ids | subject_ids
     people = (
-        {u.id: (u.display_name or u.email) for u in User.query.filter(User.id.in_(actor_ids))}
-        if actor_ids
+        {u.id: (u.display_name or u.email) for u in User.query.filter(User.id.in_(named))}
+        if named
         else {}
     )
     vaults = (
@@ -304,13 +361,31 @@ def narrate(entries) -> list[dict]:
         template = SENTENCES.get(e.event_type)
         # An event this table has not been taught yet must still render as a readable line. An
         # audit view that silently drops rows it does not recognise is worse than an ugly one.
-        sentence = _rule_sentence(e, who, vault) or (
-            template.format(who=who, vault=vault, workspace=workspace)
-            if template
-            else f"{who}: {e.event_type.replace('_', ' ')}."
+        sentence = (
+            _rule_sentence(e, who, vault)
+            or _cancel_sentence(e, who, people)
+            or (
+                template.format(who=who, vault=vault, workspace=workspace)
+                if template
+                else f"{who}: {e.event_type.replace('_', ' ')}."
+            )
         )
         out.append({"entry": e, "sentence": sentence, "who": who, "vault": vault})
     return out
+
+
+def _cancel_sentence(entry: LedgerEntry, who: str, people: dict[int, str]) -> str | None:
+    """A cancelled recovery, naming whose account (F3: "cancelled a recovery of an account" left
+    the canceller and everyone else guessing)."""
+    if entry.event_type != "recovery_cancelled" or entry.ref_type != "user":
+        return None
+    if not (entry.ref_id and entry.ref_id.isdigit()):
+        return None
+    subject_id = int(entry.ref_id)
+    if subject_id == entry.actor_id:
+        return f"{who} cancelled a recovery of their own account."
+    subject = people.get(subject_id)
+    return f"{who} cancelled a recovery of {subject}'s account." if subject else None
 
 
 def _kit_alarm_sentence(entry: LedgerEntry, who: str) -> str | None:

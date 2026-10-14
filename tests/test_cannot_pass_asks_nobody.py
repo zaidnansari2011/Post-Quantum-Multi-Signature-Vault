@@ -1,13 +1,14 @@
 """A decision that can no longer pass asks nobody to approve it (owner decision 2026-10-09).
 
-The staging smoke test's scenario: a 2-of-3 vault where whoever raises a decision can't approve
-it (S15). Ada raises one; Brij rejects it. Only Chen is left to approve, and it needs two
-approvals, so it can't pass. It is not Rejected (one rejection is not more than N - M = 1 by its
-signed rule, which the offline verifier checks and which does not change, S9), but Chen was still
-shown "Needs your signature", offered Approve and told "Your approval is one of the 2 still
-needed", and the reject dialog counted Ada among the voters.
+The staging smoke test's scenario was a 2-of-3 vault where whoever raises a decision can't approve
+it (S15): Ada raised one, Brij rejected it, and only Chen was left to approve. Since the staging QA
+of 2026-10-14 (F2) that closes as Rejected: its rejections are counted against the two who can
+vote, as in any vault. A decision can still be left unable to pass without enough rejections, when
+an approver is demoted, removed or suspended after it was raised; nobody rejected it, so it is not
+Rejected. Here: 2 of 4 under S15 (Brij, Chen and Dev can vote), Brij rejects, then Dev is made a
+viewer. Only Chen is left to approve, and it needs two approvals.
 
-Now: nobody is offered Approve, the vote gate takes no approval, it leaves Needs you, the
+Then: nobody is offered Approve, the vote gate takes no approval, it leaves Needs you, the
 approvals inbox, reminders and pushes, the page says how it still ends from the facts, Reject
 stays with its reason, and the API and the phone agree.
 """
@@ -36,15 +37,18 @@ from qvault.services.approval_service import ApprovalError
 PASSWORD = "password-123"
 
 
-def _staging(prefix):
-    """QA Ada owns a 2-of-3 vault with QA Brij and QA Chen, under separation of duties, and raises
-    a decision due in a week."""
+def _staging(prefix, *, dev=False):
+    """QA Ada owns a 2-of-3 vault with QA Brij and QA Chen (and QA Dev with ``dev``), under
+    separation of duties, and raises a decision due in a week."""
     ada = auth_service.register_user(f"{prefix}-ada@e.com", "QA Ada", PASSWORD)
     brij = auth_service.register_user(f"{prefix}-brij@e.com", "QA Brij", PASSWORD)
     chen = auth_service.register_user(f"{prefix}-chen@e.com", "QA Chen", PASSWORD)
     vault = vault_service.create_vault(ada, f"{prefix} ops", "", 2)
     vault_service.add_member(vault, brij.email, "signer", actor_id=ada.id)
     vault_service.add_member(vault, chen.email, "signer", actor_id=ada.id)
+    if dev:
+        qa_dev = auth_service.register_user(f"{prefix}-dev@e.com", "QA Dev", PASSWORD)
+        vault_service.add_member(vault, qa_dev.email, "signer", actor_id=ada.id)
     vault_service.set_requester_can_approve(vault, False, actor_id=ada.id)
     proposal = proposal_service.create_proposal(
         vault,
@@ -53,6 +57,17 @@ def _staging(prefix):
         "Buy 12 laptops for the support team, budget 18,000 USD.",
         deadline=datetime.now(UTC) + timedelta(days=7),
     )
+    return ada, brij, chen, vault, proposal
+
+
+def _stalled(prefix):
+    """The 2-of-4 case: Brij rejects (still passable by Chen and Dev), then Dev is made a viewer,
+    so only Chen could approve and it needs two approvals: it can't pass, and isn't Rejected."""
+    ada, brij, chen, vault, proposal = _staging(prefix, dev=True)
+    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
+    assert proposal.status == "open" and not eligibility.cannot_pass(proposal)
+    qa_dev = next(m.user for m in vault.members if m.user.display_name == "QA Dev")
+    vault_service.change_member_role(vault, qa_dev.id, "viewer", actor_id=ada.id)
     return ada, brij, chen, vault, proposal
 
 
@@ -67,30 +82,23 @@ def _page(client, vault, proposal):
 
 
 def test_before_any_vote_the_reject_dialog_counts_only_the_people_who_can_vote(client):
-    """Brij's reject dialog said "1 more rejection would end it" as if three could vote. After
-    his rejection it can't pass, and the dialog says so and how it still ends."""
+    """Brij's reject dialog said "1 more rejection would end it" as if three could vote. In 2 of 3
+    under S15 only Brij and Chen can vote and both must approve, so his rejection ends it (F2)."""
     _ada, brij, _chen, vault, proposal = _staging("dlg")
     _login(client, brij)
     page = _page(client, vault, proposal)
     assert "Needs your signature" in page and "dlg-approve" in page
     reject = page.split('id="dlg-reject"', 1)[1]
-    assert (
-        "After yours it can’t pass: it needs 2 approvals, and only QA Chen could still give one."
-        in reject
-    )
-    assert "It ends when QA Chen rejects it, when QA Ada withdraws it, or when it expires on" in (
-        reject
-    )
+    assert "Rejecting ends this decision for everyone." in reject
     assert "1 more rejection would end it" not in reject
-    # The rule counts who can vote: Ada raised it and can't approve it.
-    assert "2 of 2" in page and "QA Ada raised it, so can’t approve it." in page
-    assert "Any 2 of 3" not in page
+    # The signed rule, as the record states it, and who could vote (F7).
+    assert "2 of 3" in page and "Any 2 of 3" not in page
+    assert "QA Ada raised it, so can’t approve it: both of the others must approve." in page
 
 
 def test_after_one_rejection_nobody_is_asked_to_approve_it(client):
-    ada, brij, chen, vault, proposal = _staging("one")
-    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
-    assert proposal.status == "open"  # one rejection does not reject it by its signed rule
+    ada, brij, chen, vault, proposal = _stalled("one")
+    assert proposal.status == "open"  # nobody but Brij rejected it
     assert eligibility.cannot_pass(proposal)
 
     # Every list Chen reads: Can't pass, not Needs your signature; nothing counted as needing him.
@@ -132,12 +140,11 @@ def test_after_one_rejection_nobody_is_asked_to_approve_it(client):
 
 
 def test_the_vote_gate_takes_a_rejection_but_no_approval(app):
-    _ada, brij, chen, _vault, proposal = _staging("gate")
-    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
+    _ada, brij, chen, _vault, proposal = _stalled("gate")
     with pytest.raises(ApprovalError, match="can no longer pass"):
         approval_service.cast_vote(proposal, chen, PASSWORD, "approve")
     assert len(proposal.signatures) == 1
-    # A rejection still needs its reason, and Chen's closes it: 2 > N - M = 1.
+    # A rejection still needs its reason, and Chen's closes it: 2 > 3 voters - M = 1.
     with pytest.raises(ApprovalError, match="Add a reason"):
         approval_service.cast_vote(proposal, chen, PASSWORD, "reject")
     approval_service.cast_vote(proposal, chen, PASSWORD, "reject", reason="Agreed.")
@@ -145,9 +152,7 @@ def test_the_vote_gate_takes_a_rejection_but_no_approval(app):
 
 
 def test_it_leaves_the_notification_inbox_and_its_request_says_why(app):
-    _ada, brij, chen, _vault, proposal = _staging("inbox")
-    assert notification_service.inbox(chen, "needs_you").total == 1
-    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
+    _ada, brij, chen, _vault, proposal = _stalled("inbox")
     assert notification_service.inbox(chen, "needs_you").total == 0
     assert notification_service.unread_counts(chen, now=datetime.now(UTC))["needs_you"] == 0
     updates = notification_service.inbox(chen, "updates").items
@@ -157,8 +162,7 @@ def test_it_leaves_the_notification_inbox_and_its_request_says_why(app):
 
 
 def test_no_reminder_or_push_asks_anyone_to_approve_it(app):
-    _ada, brij, chen, _vault, proposal = _staging("remind")
-    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
+    _ada, brij, chen, _vault, proposal = _stalled("remind")
     before = Notification.query.filter_by(recipient_id=chen.id).count()
     # Six business days on, and within its last day: neither a reminder nor a warning.
     later = datetime.now(UTC) + timedelta(days=6, hours=12)
@@ -168,7 +172,7 @@ def test_no_reminder_or_push_asks_anyone_to_approve_it(app):
 
 def test_a_queued_request_is_not_sent_once_it_cant_pass(app):
     """An email or push queued when it was raised is checked again when sent (R8)."""
-    _ada, brij, chen, _vault, proposal = _staging("push")
+    ada, brij, chen, vault, proposal = _staging("push", dev=True)
     row = SimpleNamespace(
         recipient=chen,
         recipient_id=chen.id,
@@ -178,12 +182,13 @@ def test_a_queued_request_is_not_sent_once_it_cant_pass(app):
     )
     assert delivery_service._still_relevant(row, datetime.now(UTC)) is None
     approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
+    qa_dev = next(m.user for m in vault.members if m.user.display_name == "QA Dev")
+    vault_service.change_member_role(vault, qa_dev.id, "viewer", actor_id=ada.id)
     assert delivery_service._still_relevant(row, datetime.now(UTC)) == "it can no longer pass"
 
 
 def test_the_api_and_the_phone_facts_agree(app, client):
-    _ada, brij, chen, _vault, proposal = _staging("api")
-    approval_service.cast_vote(proposal, brij, PASSWORD, "reject", reason="Not this quarter.")
+    _ada, brij, chen, _vault, proposal = _stalled("api")
     _body, _secret, auth = _enrol_over_http(client, chen)
 
     detail = client.get(f"/api/v1/proposals/{proposal.proposal_uuid}", headers=auth).get_json()
