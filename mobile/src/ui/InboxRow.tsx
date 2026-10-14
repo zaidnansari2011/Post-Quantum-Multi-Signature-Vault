@@ -5,8 +5,10 @@
 //
 // A 24 avatar (the actor; a square vault avatar when the system acted), the server's sentence with
 // its first line strong, a relative time, and an 8pt unread dot at the leading edge, which is also
-// said ("Unread"), never colour alone (§8.5). Security alerts carry the critical tone and the word
-// "Security".
+// said ("Unread"), never colour alone (§8.5). A security alert is the row on `surface` with a 3pt
+// critical accent at its leading edge and the critical shield: not a full critical slab with a
+// salmon title, which was garish in dark (handset audit, 14 Oct). The shield says "security", so
+// no tag repeats it; the screen reader still hears "Security".
 //
 // The copy is the server's, unsigned, so it is sans and never carries an action that signs (I-12):
 // the row opens a screen, and its only sibling is "Not you? Remove that device", which opens a
@@ -60,7 +62,8 @@ export function InboxRow({
     .join('. ');
   const onAction = (e: AccessibilityActionEvent) => actions.find((a) => a.key === e.nativeEvent.actionName)?.onPress();
   return (
-    <View style={[s.wrap, security && s.securityWrap]}>
+    <View style={s.wrap}>
+      {security ? <View style={[s.accent, { backgroundColor: t.color.status.critical.fg }]} /> : null}
       <Touchable
         onPress={onPress}
         accessibilityRole="button"
@@ -83,7 +86,7 @@ export function InboxRow({
         </View>
         <View style={s.text}>
           <View style={s.top}>
-            <Text role="bodyStrong" numberOfLines={3} style={s.title} color={security ? t.color.status.critical.fg : undefined}>
+            <Text role="bodyStrong" numberOfLines={3} style={s.title}>
               {title}
             </Text>
             <Text role="caption" tone="muted" tabular numberOfLines={1}>
@@ -95,9 +98,9 @@ export function InboxRow({
               {body}
             </Text>
           ) : null}
-          {security || vault ? (
-            <Text role="caption" tone={security ? 'critical' : 'subtle'} numberOfLines={1}>
-              {security ? 'Security' : vault}
+          {vault && !security ? (
+            <Text role="caption" tone="subtle" numberOfLines={1}>
+              {vault}
             </Text>
           ) : null}
         </View>
@@ -113,7 +116,7 @@ export function InboxRow({
 
 const useStyles = makeStyles((t) => ({
   wrap: { backgroundColor: t.color.surface },
-  securityWrap: { backgroundColor: t.color.status.critical.bg },
+  accent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   row: {
     flexDirection: 'row',
     gap: t.space[8],

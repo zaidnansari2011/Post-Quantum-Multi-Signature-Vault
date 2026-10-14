@@ -26,6 +26,26 @@ export function dayMonth(iso: string | null | undefined, now: number): string | 
   return `${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
 }
 
+/**
+ * A moment exactly as the server writes it in notification copy (notification_copy.when):
+ * "8 Oct at 17:00 UTC", with the year when it is not this year's (by UTC). Only for finding that
+ * string in the server's sentence, so the phone can say the same moment in local time.
+ */
+export function serverWhen(iso: string | null | undefined, now: number): string | null {
+  const at = parseInstant(iso);
+  if (Number.isNaN(at)) return null;
+  const d = new Date(at);
+  const year = d.getUTCFullYear() === new Date(now).getUTCFullYear() ? '' : ` ${d.getUTCFullYear()}`;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}${year} at ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+}
+
+/** "8 Oct at 22:30": the same moment in the phone's own time, as the row's time shows it. */
+export function localWhen(iso: string | null | undefined, now: number): string | null {
+  const day = dayMonth(iso, now);
+  const time = clock(iso);
+  return day && time ? `${day} at ${time}` : null;
+}
+
 /** "10:24", local, 24-hour. */
 export function clock(iso: string | null | undefined): string | null {
   const at = parseInstant(iso);
