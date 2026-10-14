@@ -10,6 +10,7 @@ so none of them can be altered after signatures exist.
 from __future__ import annotations
 
 import json
+import re
 
 from qvault.crypto import canonical_json
 
@@ -177,3 +178,54 @@ def device_enrolment_bytes(
         }
     )
     return DS_DEVICE_ENROL + b"|" + body
+
+
+DS_RECOVERY = b"QVAULT-SIG-v1:RECOVERY"
+_WHOLE_SECOND_UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", re.ASCII)
+#: Why a paired phone signs a recovery (plan R9, design §6.4).
+RECOVERY_PURPOSES = ("web_reset", "kit_confirm")
+
+
+def recovery_signing_bytes(
+    *,
+    purpose: str,
+    request_uuid: str,
+    user_id: int,
+    device_id: int,
+    key_id: int,
+    deployment: str,
+    expires_at: str,
+) -> bytes:
+    """The exact bytes a paired phone signs to vouch for an account recovery (plan R9, design
+    §6.4): to start a web reset (``web_reset``) or to confirm a Recovery Kit request
+    (``kit_confirm``). The one signed format R9 adds; the tag is frozen like the others.
+
+    Binds, under a domain tag of its own (so it can never be read as a vote, a decision or an
+    enrolment proof, nor they as it):
+
+    - ``purpose``, so a confirmation of someone's kit can never be replayed as a web reset, nor
+      the other way round;
+    - ``request_uuid``, so a signature for one request vouches for no other;
+    - ``user_id``, ``device_id`` and ``key_id``, the account and the phone that vouched;
+    - ``deployment``, the SHA-256 (hex) of this deployment's SYSTEM anchor public key, because
+      demo snapshots clone user ids: a signature made against one deployment is refused by
+      another;
+    - ``expires_at``, ISO-8601 UTC in whole seconds ending ``Z``: the signed end of its 10
+      minutes.
+    """
+    if purpose not in RECOVERY_PURPOSES:
+        raise ValueError(f"invalid recovery purpose: {purpose!r}")
+    if not (isinstance(expires_at, str) and _WHOLE_SECOND_UTC.fullmatch(expires_at)):
+        raise ValueError(f"expires_at must be whole-second ISO-8601 UTC ending Z: {expires_at!r}")
+    body = canonical_json(
+        {
+            "purpose": purpose,
+            "request_uuid": request_uuid,
+            "user_id": user_id,
+            "device_id": device_id,
+            "key_id": key_id,
+            "deployment": deployment,
+            "expires_at": expires_at,
+        }
+    )
+    return DS_RECOVERY + b"|" + body
