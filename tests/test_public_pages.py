@@ -80,7 +80,7 @@ def test_a_reader_who_chose_dark_gets_only_the_dark_screenshot(client):
 def test_the_strip_names_the_signed_head_and_says_there_is_no_witness(client, app):
     strip = _strip(client)
     head = checkpoint_service.latest_checkpoint().tree_size
-    assert f"Log head <strong>#{head:,}</strong>" in strip
+    assert f"Log head <strong>#{head - 1:,}</strong>" in strip  # an entry number, from #0
     assert 'href="/transparency/checkpoint.json"' in strip
     assert "No independent witness on this server" in strip
     assert "Witnessed" not in strip
@@ -117,7 +117,7 @@ def test_the_witness_is_behind_only_when_an_unseen_entry_has_waited_past_the_gra
     db.session.commit()
     facts = public_status.log_facts()
     assert facts.witness == "behind" and facts.unwitnessed == 3
-    assert f"Witness behind: last co-signed #{seen:,}" in _strip(client)
+    assert f"Witness behind: last co-signed #{seen - 1:,}" in _strip(client)
 
 
 def test_a_co_signature_that_does_not_check_is_reported_and_turns_the_status_red(client, witnessed):

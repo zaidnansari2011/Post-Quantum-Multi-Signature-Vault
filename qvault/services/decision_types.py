@@ -471,17 +471,7 @@ def normalise(decision_type: str, raw: object) -> dict:
         raise FieldsError(None, MESSAGES["unknown_field"])
     fields: dict[str, str] = {}
     for spec in specs:
-        value = raw.get(spec.key)
-        if isinstance(value, str):
-            value = value.strip()
-            if spec.kind == "choice":
-                value = value.lower()
-            elif spec.kind == "currency":
-                value = value.upper()
-            elif spec.kind == "amount" and _THOUSANDS.fullmatch(value):
-                value = value.replace(",", "")
-            elif spec.kind == "datetime" and value:
-                value = _utc_minute(value)
+        value = _forgiven(spec, raw.get(spec.key))
         if value is None or value == "":
             continue
         fields[spec.key] = value
@@ -489,6 +479,44 @@ def normalise(decision_type: str, raw: object) -> dict:
     if problem is not None:
         raise FieldsError(problem.field, message(decision_type, problem))
     return fields
+
+
+def _forgiven(spec: Spec, value: object) -> object:
+    """One typed value made canonical where its meaning is certain (``normalise``'s rules)."""
+    if isinstance(value, str):
+        value = value.strip()
+        if spec.kind == "choice":
+            value = value.lower()
+        elif spec.kind == "currency":
+            value = value.upper()
+        elif spec.kind == "amount" and _THOUSANDS.fullmatch(value):
+            value = value.replace(",", "")
+        elif spec.kind == "datetime" and value:
+            value = _utc_minute(value)
+    return value
+
+
+def field_problems(decision_type: str, raw: dict) -> dict[str, str]:
+    """Every field's own refusal at once, by field, for the web form (staging QA F9: a form
+    submitted empty used to say one missing field per submit). Each field is checked alone, by
+    the same rules as ``check_fields``; the rules between fields (value and currency together,
+    an end after the start) are left to ``normalise``, once every field is fine on its own."""
+    if decision_type not in SPECS or not isinstance(raw, dict):
+        return {}
+    specs = SPECS[decision_type]
+    labels = tuple(spec.label for spec in specs)
+    out: dict[str, str] = {}
+    for spec in specs:
+        value = _forgiven(spec, raw.get(spec.key))
+        if value is None or value == "":
+            code = "missing" if spec.required else None
+        elif not isinstance(value, str):
+            code = "not_text"
+        else:
+            code = _value_problem(spec, value, labels)
+        if code is not None:
+            out[spec.key] = message(decision_type, Problem(spec.key, code))
+    return out
 
 
 def _utc_minute(value: str) -> str:

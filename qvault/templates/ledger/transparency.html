@@ -14,7 +14,7 @@
 {%- endmacro %}
 
 {% block content %}
-{% call page_header('Audit log', description='The log publishes signed checkpoints of its Merkle tree.' ~ (' An independent witness co-signs the ones it reaches, each only if it is proved to extend the last, so the log can’t quietly rewrite its past.' if witness.configured else ' No witness is configured, so nothing outside this server vouches for them.'), facts=[('Log', origin)]) %}{% endcall %}
+{% call page_header('Audit log', description='The log publishes signed checkpoints of its Merkle tree.' ~ (' An independent witness co-signs the ones it reaches, each only if it is proved to extend the last, so the log can’t quietly rewrite its past.' if witness.configured else ' No witness is configured, so nothing outside this server vouches for them.'), facts=[('Log', ui_url(origin))]) %}{% endcall %}
 
 {{ tabs([
   {'key': 'log', 'label': 'Log', 'href': url_for('ledger.view')},

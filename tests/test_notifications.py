@@ -274,7 +274,7 @@ def test_being_added_to_a_vault_says_what_you_can_do_there(team):
     approver = _one(team.brij, "vault_member_added")
     assert approver["title"] == "Ada Lovelace added you to Treasury"
     assert approver["body"] == (
-        "You can approve decisions raised from now on. Any 2 of 2 approvers decide."
+        "You can approve decisions raised from now on. Each needs 2 approvals."
     )
     assert approver["path"] == f"/vaults/{team.vault.id}"
     viewer = _one(team.dara, "vault_member_added")

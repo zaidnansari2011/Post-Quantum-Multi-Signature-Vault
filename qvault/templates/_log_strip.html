@@ -5,7 +5,8 @@
    the co-signature is checked against the key stored with it, so the reader can compare it with
    the fingerprint the witness prints itself. The head links to the public signed head
    (/transparency/checkpoint.json, which python -m qvault.verify checks); "Verify offline" goes to
-   the Security page's steps. #}
+   the Security page's steps. A "#" is an entry's number, counted from #0 as on Audit, so the
+   head of a log of 29 entries is #28 (staging QA F8: the strip said #29 where Audit said #28). #}
 {% macro log_strip(facts) -%}
 {%- set tone = {
   'readable': {'current': 'ok', 'behind': 'warn', 'none': 'warn', 'waiting': 'warn', 'failed': 'bad'}[facts.witness],
@@ -24,16 +25,16 @@
     <li>The log has no entries yet</li>
     {%- else %}
     {%- if facts.signed_size %}
-    <li><a href="{{ url_for('public.checkpoint') }}">Log head <strong>#{{ '{:,}'.format(facts.signed_size) }}</strong></a></li>
+    <li><a href="{{ url_for('public.checkpoint') }}">Log head <strong>#{{ '{:,}'.format(facts.signed_size - 1) }}</strong></a></li>
     {%- else %}
     <li>{{ '{:,}'.format(facts.size) }} log entries, no signed head yet</li>
     {%- endif %}
     {%- if facts.witness == 'current' %}
-    <li>Witnessed{% if facts.witnessed_size != facts.signed_size %} to #{{ '{:,}'.format(facts.witnessed_size) }},{% endif %}
+    <li>Witnessed{% if facts.witnessed_size != facts.signed_size %} to #{{ '{:,}'.format(facts.witnessed_size - 1) }},{% endif %}
       <time datetime="{{ ui_iso(facts.witnessed_at) }}" title="{{ ui_absolute(facts.witnessed_at) }}">{{ ui_ago(facts.witnessed_at) }}</time>,
       key <code class="q-logstrip__fp">{{ facts.witness_fingerprint }}</code></li>
     {%- elif facts.witness == 'behind' %}
-    <li>Witness behind: last co-signed #{{ '{:,}'.format(facts.witnessed_size) }},
+    <li>Witness behind: last co-signed #{{ '{:,}'.format(facts.witnessed_size - 1) }},
       <time datetime="{{ ui_iso(facts.witnessed_at) }}" title="{{ ui_absolute(facts.witnessed_at) }}">{{ ui_ago(facts.witnessed_at) }}</time>,
       key <code class="q-logstrip__fp">{{ facts.witness_fingerprint }}</code></li>
     {%- elif facts.witness == 'failed' %}

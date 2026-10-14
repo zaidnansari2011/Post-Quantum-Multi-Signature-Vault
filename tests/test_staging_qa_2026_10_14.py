@@ -388,3 +388,106 @@ def test_a_kit_burned_by_the_owners_cancel_reads_as_stopped_working(app, client)
     # A new kit puts it right.
     recovery_support.issue(team.ada)
     assert recovery_service.kit_state(team.ada).problem == "unconfirmed"
+
+
+# --- F5: a long site address wraps between its parts, never inside a word -----------------------
+
+
+def test_an_address_breaks_only_before_a_dot_or_a_slash():
+    assert str(ui.breakable_url("https://qvault-staging.example.io/recover")) == (
+        '<span class="q-url">https://qvault-staging<wbr>.example<wbr>.io<wbr>/recover</span>'
+    )
+    assert "&lt;b&gt;" in str(ui.breakable_url("https://x.io/<b>"))
+
+
+def test_the_recover_page_and_the_transparency_page_use_it(app, client):
+    page = client.get("/recover").get_data(as_text=True)
+    assert 'Type this code only at <span class="q-url">' in page and "<wbr>/recover" in page
+    ada = auth_service.register_user("wrap-ada@e.com", "Ada", PASSWORD)
+    _login(client, ada)
+    assert '<span class="q-url">' in client.get("/ledger/transparency").get_data(as_text=True)
+
+
+# --- F6: the Changelog and Security name the Recovery Kit ---------------------------------------
+
+
+def test_the_changelog_and_the_security_page_name_the_recovery_kit(client):
+    changelog = client.get("/changelog").get_data(as_text=True)
+    assert "14 October 2026</time>: the Recovery Kit" in changelog
+    assert "Decision types: General, Production access and Contract" in changelog
+    security = client.get("/security").get_data(as_text=True)
+    assert "We can't reset your password." in security
+    assert "A Recovery Kit, a code you keep offline" in security
+    assert "Someone with your Recovery Kit and your email address" in security
+    assert "If nobody does, they have your account and your signing key." in security
+
+
+# --- F8: one numbering for the log head ----------------------------------------------------------
+
+
+def test_the_landing_and_status_name_the_head_as_audit_does(app, client):
+    """Audit numbers entries from #0 and says "Sealed up to #28" for a log of 29; the landing
+    strip and Status said #29 for the same head."""
+    ada = auth_service.register_user("head-ada@e.com", "Ada", PASSWORD)
+    vault_service.create_vault(ada, "Heads", "", 1)
+    checkpoint_service.create_checkpoint()
+    size = checkpoint_service.latest_checkpoint().tree_size
+    assert f"Log head <strong>#{size - 1:,}</strong>" in client.get("/").get_data(as_text=True)
+    assert f"Newest signed head: #{size - 1:,}" in client.get("/status").get_data(as_text=True)
+    _login(client, ada)
+    audit = client.get("/ledger/").get_data(as_text=True)
+    assert f"#{size - 1:,} with" in audit  # "Sealed up to #N with ML-DSA-…"
+
+
+# --- F9: a typed decision form marks every missing field at once --------------------------------
+
+
+def test_an_empty_production_access_form_marks_every_required_field_at_once(app, client):
+    ada = auth_service.register_user("form-ada@e.com", "Ada", PASSWORD)
+    vault = vault_service.create_vault(ada, "Forms", "", 1)
+    _login(client, ada)
+    page = client.post(
+        f"/vaults/{vault.id}/proposals/new?kind=access", data={"title": ""}
+    ).get_data(as_text=True)
+    for label in ("Who gets access", "System", "Access", "Until", "Reason"):
+        assert f"{label} is required." in page, label
+    assert "This field is required." in page  # the title, beside them
+    # With a title but a bad value and a missing one, both are marked in one go.
+    page = client.post(
+        f"/vaults/{vault.id}/proposals/new?kind=access",
+        data={"title": "Access", "person": "Brij", "system": "prod-db", "level": "owner"},
+    ).get_data(as_text=True)
+    assert "Choose read-only, read and write, or administrator." in page
+    assert "Until is required." in page and "Reason is required." in page
+
+
+# --- F12: the landing hero promises a witness only when there is one ---------------------------
+
+
+def test_the_hero_says_there_is_no_witness_when_none_is_configured(client):
+    page = client.get("/").get_data(as_text=True)
+    hero = page.split('class="q-hero__lead"', 1)[1].split("</p>", 1)[0]
+    assert "This server has no witness yet, so nothing outside it vouches for the log." in hero
+    assert "co-signs the log" not in hero
+    assert "This server has no witness at the moment" in client.get("/security").get_data(
+        as_text=True
+    )
+
+
+def test_the_hero_names_the_witness_when_there_is_one(client, witnessed):
+    page = client.get("/").get_data(as_text=True)
+    hero = page.split('class="q-hero__lead"', 1)[1].split("</p>", 1)[0]
+    assert "A witness with its own key co-signs the log; for now our team" in hero
+    assert "no witness" not in hero
+
+
+# --- F13: the vault-created toast is plain ------------------------------------------------------
+
+
+def test_creating_a_vault_says_so_plainly(app, client):
+    ada = auth_service.register_user("toast-ada@e.com", "Ada", PASSWORD)
+    _login(client, ada)
+    page = client.post(
+        "/vaults/new", data={"name": "Payroll", "threshold_m": "1"}, follow_redirects=True
+    ).get_data(as_text=True)
+    assert "Vault created." in page and "keypair was generated" not in page
