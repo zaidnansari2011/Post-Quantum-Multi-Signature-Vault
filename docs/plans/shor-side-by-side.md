@@ -86,3 +86,42 @@ Captions state that the ML-DSA figures are the published best known attacks, not
 
 ## Later (not in this build)
 Real IBM quantum hardware for N = 15 (owner, 14 Oct: "note down ibm for later").
+
+## Build log (14 Oct 2026, branch `rework/shor-visual`)
+
+Status: **built**. Every item above is done, with these annotations.
+
+- [x] Page `/admin/attack/shor`: `admin_required` + `_require_attack_lab()` (404 when off), linked from
+      `/admin/attack`, sits under Developer (crumb, sidebar, tab). Two columns from 62rem, stacked below.
+      Next step and Run all per column.
+- [x] Left 1-9 as specified. Every number comes from `qvault/attack/shor_walkthrough.py`, which reuses
+      `shor.py` (new small public helpers: `confirm_order_trail`, `phase_denominator`, `measure_register`,
+      `observed_order_distribution`, `true_order`, `control_width`; `find_order` samples through them with
+      identical draws, existing tests untouched) and `toy_rsa.py`. The forgery is judged by
+      `ToyRSASignatureProvider.verify`; the same signature on an edited message is shown rejected.
+  - Deviation, step 8: d is computed mod lambda = lcm(p-1, q-1), not mod phi, because that is how the toy
+    keys (and `shor.recover_rsa_exponent`) make d; phi is shown too. Mod phi would not "match" the key's d.
+  - Deviation, step 6: a measurement whose best fraction has denominator 1 (y = 0) is marked "no
+    information" and the page measures again. `find_order` would run the multiple test on it, which at toy
+    sizes finds a small r by trying exponents 1..64; presenting that as the quantum step would be dishonest.
+  - Step 4: the inset is a second, magnified chart under the main one (an overlay was cramped on a phone).
+    Peaks are found as local maxima of the distribution itself; the true period (computed classically) is
+    used only to draw f(x) and to size the zoom, and the page says so.
+- [x] Right 1-4. `shor_instance(alg_id, public_key)` builds an instance from an RSA key and raises
+      `NoShorInstance` for ML-DSA after reading the key (no modulus in it; the scheme's q = 8,380,417 is
+      prime and q - 1 = 2^13 x 3 x 11 x 31 is factorised, so every period there is public). The real key's
+      layout is confirmed against its secret key (same rho, tr = SHAKE-256(pk)) before s1 is decoded.
+  - Brute force: n = 4, 8, 12 **and 16**. On this laptop n = 12 finishes in under a second, so n = 16
+    (43,046,721 candidates) was added to show the cap and the "estimated" extrapolation. Live counter via
+    0.25 s slices; 2 s total per size enforced server-side.
+- [x] Core-SVP figures verified from the round-3 spec PDF, Table 1, page 8 (Dilithium3: LWE 182 / 165,
+      SIS 186 / 169; Dilithium2 123 / 112; Dilithium5 LWE 252 / 229, SIS 265 / 241), cited in code and on
+      the page, pinned by a test.
+- [x] Scaling chart: drawn by `static/shor.js` at its box's own width (a server-drawn SVG shrank its text
+      to about 6px on a phone), with an HTML legend and a "numbers behind the chart" table that works
+      without JavaScript.
+- [x] JSON endpoints under `/admin/attack/shor/...`, CSRF via `X-CSRFToken`, rate-limit bucket
+      `attack_shor` (600 per 10 minutes per address). Runs held in an in-process store of 8.
+- [x] Tests: `tests/test_shor_walkthrough.py`, `tests/test_shor_routes.py`.
+- [x] Screenshots (desktop and 390px, light and dark): `docs/plans/shor-side-by-side-shots/`.
+- Judgement call: the `<title>` keeps the product-wide em-dash separator; the page copy has none (tested).

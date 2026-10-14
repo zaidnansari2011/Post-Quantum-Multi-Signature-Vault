@@ -214,8 +214,8 @@
             {% set ml = mldsa.refusal.checks[loop.index0] if mldsa.refusal else none %}
             <tr>
               <td>{{ rsa_check.requirement[:1]|upper ~ rsa_check.requirement[1:] }}</td>
-              <td>{{ badge('Present', 'critical') if rsa_check.present else badge('Absent', 'neutral') }}<span class="q-cap">{{ rsa_check.evidence }}</span></td>
-              <td>{% if ml %}{{ badge('Present', 'critical') if ml.present else badge('Absent', 'neutral') }}<span class="q-cap">{{ ml.evidence }}</span>{% endif %}</td>
+              <td data-label="RSA (N = {{ mldsa.rsa_n }})">{{ badge('Present', 'critical') if rsa_check.present else badge('Absent', 'neutral') }}<span class="q-cap">{{ rsa_check.evidence }}</span></td>
+              <td data-label="{{ mldsa.alg_id }}">{% if ml %}{{ badge('Present', 'critical') if ml.present else badge('Absent', 'neutral') }}<span class="q-cap">{{ ml.evidence }}</span>{% endif %}</td>
             </tr>
           {% endfor %}
           </tbody>
@@ -261,7 +261,7 @@
       <p>Try every s in {&minus;1, 0, 1}<sup>n</sup> until one leaves all residuals in {&minus;1, 0, 1}. Measured on this server, at most {{ brute_cap|int }} seconds per size; anything longer is extrapolated and marked estimated.</p>
       <div class="q-btnrow">{{ button('Run brute force', 'secondary', attrs={'data-brute': ''}) }}</div>
       <div class="q-table-wrap q-shor__tw">
-        <table class="q-table q-table--compact">
+        <table class="q-table q-table--compact q-shor__brute">
           <thead><tr><th scope="col" class="is-num">n</th><th scope="col" class="is-num">Candidates</th><th scope="col" class="is-num">Checked</th><th scope="col" class="is-num">Time</th><th scope="col">Result</th></tr></thead>
           <tbody>
           {% for n in lwe_sizes %}

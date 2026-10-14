@@ -71,6 +71,14 @@ def test_the_adversary_lab_links_to_the_page(client, admin):
     assert b"/admin/attack/shor" in client.get("/admin/attack").data
 
 
+def test_the_page_sits_under_developer_beside_the_adversary_lab(client, admin):
+    _login(client, admin.email)
+    html = client.get("/admin/attack/shor").data.decode()
+    crumbs = html[html.index('class="q-crumbs') :][:600]
+    assert "Developer" in crumbs and "Security" not in crumbs
+    assert re.search(r'href="/admin/attack"[^>]*aria-current="page"', html)
+
+
 # --- the page ----------------------------------------------------------------------------------
 
 
