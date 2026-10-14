@@ -1,6 +1,6 @@
 // The JavaScript twin of `qvault/services/signing.py`.
 //
-// Three domain-separated message formats, byte-for-byte identical to the server's. The tags are
+// Four domain-separated message formats, byte-for-byte identical to the server's. The tags are
 // FROZEN: changing one invalidates every signature ever made under it.
 
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -10,6 +10,7 @@ import { concatBytes, toHex, utf8Encode } from './bytes.ts';
 export const DS_PROPOSAL = 'QVAULT-SIG-v1:PROPOSAL';
 export const DS_VOTE = 'QVAULT-SIG-v1:VOTE';
 export const DS_DEVICE_ENROL = 'QVAULT-SIG-v1:DEVICE-ENROL';
+export const DS_RECOVERY = 'QVAULT-SIG-v1:RECOVERY';
 
 /** `TAG + b"|" + canonical_json(body)` -- the shape every signed message takes here. */
 function domainSeparated(tag: string, body: Record<string, unknown>): Uint8Array {
@@ -166,5 +167,45 @@ export function deviceEnrolmentBytes(args: {
     // text that will be sent. Never re-encode the key between here and the request body.
     public_key: args.publicKeyB64,
     challenge: args.challenge,
+  });
+}
+
+/** Why a paired phone signs a recovery (plan R9, design §6.4). */
+export type RecoveryPurpose = 'web_reset' | 'kit_confirm';
+
+/** The fields a recovery signature covers, exactly as the server sends them. */
+export interface RecoverySigningInputs {
+  purpose: RecoveryPurpose;
+  request_uuid: string;
+  user_id: number;
+  device_id: number;
+  key_id: number;
+  /** SHA-256 (hex) of the deployment's SYSTEM anchor public key. */
+  deployment: string;
+  /** ISO-8601 UTC in whole seconds, ending `Z`. */
+  expires_at: string;
+}
+
+/**
+ * The bytes a paired phone signs to vouch for an account recovery: to start a web reset, or to
+ * confirm a Recovery Kit request. The twin of `recovery_signing_bytes` in
+ * qvault/services/signing.py. Copied field by field, so an extra key in what the server sent is
+ * never signed.
+ */
+export function recoverySigningBytes(inputs: RecoverySigningInputs): Uint8Array {
+  if (inputs.purpose !== 'web_reset' && inputs.purpose !== 'kit_confirm') {
+    throw new Error(`invalid recovery purpose: ${String(inputs.purpose)}`);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(inputs.expires_at)) {
+    throw new Error(`expires_at must be whole-second ISO-8601 UTC ending Z: ${inputs.expires_at}`);
+  }
+  return domainSeparated(DS_RECOVERY, {
+    purpose: inputs.purpose,
+    request_uuid: inputs.request_uuid,
+    user_id: inputs.user_id,
+    device_id: inputs.device_id,
+    key_id: inputs.key_id,
+    deployment: inputs.deployment,
+    expires_at: inputs.expires_at,
   });
 }

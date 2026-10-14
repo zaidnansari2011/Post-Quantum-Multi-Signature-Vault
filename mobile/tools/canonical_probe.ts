@@ -11,6 +11,7 @@ import { toHex, utf8Encode } from '../src/crypto/bytes.ts';
 import {
   deviceEnrolmentBytes,
   proposalSigningBytes,
+  recoverySigningBytes,
   signingInputsToPayloadHash,
   voteSigningBytes,
 } from '../src/crypto/signing.ts';
@@ -49,6 +50,15 @@ for (const c of input.enrolments ?? []) {
       }),
     ),
   };
+}
+
+for (const c of input.recoveries ?? []) {
+  // A refused input must throw, as the server's recovery_signing_bytes raises.
+  try {
+    out[c.name] = { hex: toHex(recoverySigningBytes(c.inputs)) };
+  } catch (err) {
+    out[c.name] = { error: String(err) };
+  }
 }
 
 writeFileSync(process.argv[3], JSON.stringify(out, null, 1));
