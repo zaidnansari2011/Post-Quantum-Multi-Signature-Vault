@@ -172,11 +172,14 @@ def test_banners_say_whose_account_which_way_and_when(results):
     own_phone = by_name["own phone reset"]
     assert own_phone["title"] == "Someone is setting a new web password for your account"
     assert "tomorrow at 12:00" in own_phone["detail"] and "Recovery Kit" not in own_phone["detail"]
-    assert "remove that phone" in own_phone["detail"]
+    assert "Security page on the web, with your password" in own_phone["detail"]
+    assert "can’t start another for 7 days" in own_phone["detail"]
     own_kit = by_name["own kit request"]
     assert own_kit["title"] == "Someone is recovering your account"
-    assert "your kit then stops working too" in own_kit["detail"]
-    assert "Recovery Kit stops working" in own_kit["cancel"]
+    # A phone's cancel never stops the kit (review M2): the words say how to stop it instead.
+    assert "make a new Recovery Kit on the web" in own_kit["detail"]
+    assert "your Recovery Kit keeps working" in own_kit["cancel"]
+    assert "stops working too" not in own_kit["detail"]
     assert by_name["own reset awaiting its code"]["title"] == (
         "A new web password is waiting for its code"
     )
@@ -255,7 +258,7 @@ def test_the_phone_parses_every_recovery_reply_the_server_sends(app, client, tmp
         "overview",
         client.get("/api/v1/recovery", headers={"Authorization": f"Bearer {chen_token}"}),
     )
-    assert re.fullmatch(r"[0-9A-Z]{4}-[0-9A-Z]{4}", approved.get_json()["code"])
+    assert re.fullmatch(r"[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}", approved.get_json()["code"])
 
     payload = {
         "schemas": [
@@ -264,15 +267,15 @@ def test_the_phone_parses_every_recovery_reply_the_server_sends(app, client, tmp
         ]
         + [
             {
-                "name": "a code that is not 8 symbols",
+                "name": "a code that is not 12 symbols",
                 "schema": "approve",
-                "body": {**approved.get_json(), "code": "ABC-DEFG"},
+                "body": {**approved.get_json(), "code": "ABCD-EFGH"},
             }
         ]
     }
     parsed = run_probe(payload, tmp_path)["schemas"]
     for name in replies:
         assert parsed[name]["ok"], (name, parsed[name])
-    assert parsed["a code that is not 8 symbols"]["ok"] is False
+    assert parsed["a code that is not 12 symbols"]["ok"] is False
     (watched,) = parsed["overview, watcher"]["data"]["requests"]
     assert watched["viewer_as"] == "cosigner" and watched["route"] == "kit"

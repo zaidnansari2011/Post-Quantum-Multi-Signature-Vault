@@ -29,6 +29,7 @@ function facts(r: RecoveryRequest) {
     subject_name: r.subject.display_name,
     completes_at: r.completes_at,
     confirmed_by_phone: r.confirmed_by_phone,
+    device_name: r.device_name ?? null,
   };
 }
 
