@@ -604,6 +604,8 @@ Time is frozen in every test; never the real clock.
 
 ## 12. Questions for the owner
 
+**Owner decision, 2026-10-14: all seven as recommended.**
+
 | # | Question | Recommendation |
 | --- | --- | --- |
 | ⚑1 | Must the person type their password on the web to add a QR-paired phone? | **Yes.** Without it a stolen cookie becomes a 90-day signing key that survives a password change and can lead to a full takeover via R9's phone reset (T9). It is typed on the web, where a password manager fills it, so the phone still never asks for it. |
