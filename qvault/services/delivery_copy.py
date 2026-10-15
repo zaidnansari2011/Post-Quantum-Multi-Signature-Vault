@@ -601,14 +601,16 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
                 "Someone is recovering your account",
                 (
                     (
-                        "A phone paired to your Q-Vault account approved a new web password and "
-                        "a new web signing key. Unless it is cancelled, they take effect after a "
-                        "24-hour wait."
-                    )
-                    if phone
-                    else (
-                        "A phone paired to your Q-Vault account confirmed the recovery that used "
-                        "your Recovery Kit, so it takes effect sooner."
+                        (
+                            "A phone paired to your Q-Vault account approved a new web password "
+                            "and a new web signing key. Unless it is cancelled, they take effect "
+                            "after a 24-hour wait."
+                        )
+                        if phone
+                        else (
+                            "A phone paired to your Q-Vault account confirmed the recovery that "
+                            "used your Recovery Kit, so it takes effect sooner."
+                        )
                     ),
                     "If this wasn't you, sign in to Q-Vault: using your password cancels it. "
                     "You can also cancel it on Home or in the app.",
@@ -625,16 +627,18 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
                 "An account is being recovered",
                 (
                     (
-                        "A phone paired to the account of a person you work with approved a new "
-                        "web password. Unless someone cancels it, the account gets a new web "
-                        "signing key after a 24-hour wait."
-                    )
-                    if phone
-                    else (
-                        "A phone paired to the account of a person you work with confirmed the "
-                        "recovery that used their Recovery Kit, so it takes effect sooner. It "
-                        "gives whoever started it that person's signing key, including any place "
-                        "on a treasury."
+                        (
+                            "A phone paired to the account of a person you work with approved a "
+                            "new web password. Unless someone cancels it, the account gets a new "
+                            "web signing key after a 24-hour wait."
+                        )
+                        if phone
+                        else (
+                            "A phone paired to the account of a person you work with confirmed "
+                            "the recovery that used their Recovery Kit, so it takes effect "
+                            "sooner. It gives whoever started it that person's signing key, "
+                            "including any place on a treasury."
+                        )
                     ),
                     "If they didn't start it, sign in to Q-Vault and cancel it on Home.",
                 ),
@@ -775,9 +779,11 @@ def _recovery_email(kind: str, stored: dict, now: datetime) -> EmailCopy:
     else:
         line = "You made a Recovery Kit. Keep it where you keep your passport."
     return EmailCopy(
-        "Your Q-Vault Recovery Kit changed"
-        if me
-        else "Wrong codes were typed for a Q-Vault Recovery Kit",
+        (
+            "Your Q-Vault Recovery Kit changed"
+            if me
+            else "Wrong codes were typed for a Q-Vault Recovery Kit"
+        ),
         "Recovery Kit",
         (line,),
         "Open Q-Vault",

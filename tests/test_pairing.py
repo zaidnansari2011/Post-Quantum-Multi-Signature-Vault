@@ -732,9 +732,9 @@ def test_29_web_remove_is_limited_per_session_and_a_password_proof(
     notice = _notices(ada, "device_removed")
     assert notice and "from the web" in notification_service.view(notice[0])["body"]
     pushes = Delivery.query.filter_by(kind="device_removed", channel="push").all()
-    assert pushes and pushes[0].push_to == "ExponentPushToken[x]", (
-        "the removed phone hears too (F5)"
-    )
+    assert (
+        pushes and pushes[0].push_to == "ExponentPushToken[x]"
+    ), "the removed phone hears too (F5)"
     revoked = json.loads(
         LedgerEntry.query.filter_by(event_type="device_revoked").one().payload_json
     )

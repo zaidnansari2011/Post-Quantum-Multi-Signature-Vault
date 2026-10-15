@@ -1073,8 +1073,7 @@ def _stalled(now: datetime, user_id: int) -> list[int]:
     if not vaults:
         return []
     open_here = db.session.scalars(
-        select(Proposal)
-        .where(
+        select(Proposal).where(
             Proposal.vault_id.in_(vaults),
             Proposal.status == "open",
             or_(Proposal.expires_at.is_(None), Proposal.expires_at > now),

@@ -96,9 +96,12 @@ def test_a_removed_notice_that_cannot_be_written_is_owed_and_the_recovery_still_
     assert _revoked_in_the_database(other)
     request = db.session.get(RecoveryRequest, request.id)
     assert request.state == "cancelled" and request.cancelled_as == "device_revoked"
-    assert Notification.query.filter_by(
-        dedupe_key=f"recovery_cancelled:{request.request_uuid}", recipient_id=team.ada.id
-    ).count() == 1
+    assert (
+        Notification.query.filter_by(
+            dedupe_key=f"recovery_cancelled:{request.request_uuid}", recipient_id=team.ada.id
+        ).count()
+        == 1
+    )
     # The notice rolled back with its savepoint alone: owed, and sent on the next pass.
     assert _removed_notices(other) == 0
     monkeypatch.undo()

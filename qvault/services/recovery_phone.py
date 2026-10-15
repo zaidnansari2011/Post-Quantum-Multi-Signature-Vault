@@ -1399,12 +1399,16 @@ def request_json(request: RecoveryRequest, viewer: User, *, role: str, now: date
         # The phone that vouched for a reset, by its name, so the person knows which to remove.
         "device_name": vouching_device_name(request) if request.route == "phone" else None,
         # And what names it beyond a name its holder can change (re-review N3).
-        "device_paired": device_facts(vouching_device(request)).get("device_paired")
-        if request.route == "phone"
-        else None,
-        "device_key": device_facts(vouching_device(request)).get("device_key")
-        if request.route == "phone"
-        else None,
+        "device_paired": (
+            device_facts(vouching_device(request)).get("device_paired")
+            if request.route == "phone"
+            else None
+        ),
+        "device_key": (
+            device_facts(vouching_device(request)).get("device_key")
+            if request.route == "phone"
+            else None
+        ),
         "can_cancel": True,
         "can_confirm": (
             role == "self"

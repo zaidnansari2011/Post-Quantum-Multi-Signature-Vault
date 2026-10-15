@@ -11,7 +11,8 @@ target-version = ["py312"]
 # chain/lib holds pinned third-party submodules (ZKNox, OpenZeppelin, forge-std). Their code is
 # audited by commit hash, not reformatted: a formatter rewriting a dependency would detach it
 # from the upstream commit the pin exists to identify.
-extend-exclude = "^/chain/lib/"
+# docs/plans and mobile/tools hold one-off screenshot scripts kept beside their evidence.
+extend-exclude = "^/(chain/lib|docs/plans|mobile/tools)/"
 
 [tool.ruff]
 line-length = 100

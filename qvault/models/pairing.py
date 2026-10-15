@@ -23,7 +23,6 @@ LIVE_STATES = ("open", "claimed")
 END_STATES = ("confirmed", "contested", "declined", "cancelled", "expired")
 
 
-
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 

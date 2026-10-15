@@ -1193,9 +1193,11 @@ def banners_for(viewer: User, *, now: datetime | None = None) -> list[Banner]:
                     role,
                     phone.name if phone is not None else None,
                     _aware(phone.created_at) if phone is not None else None,
-                    phone.key.public_fingerprint()[:8]
-                    if phone is not None and phone.key is not None
-                    else None,
+                    (
+                        phone.key.public_fingerprint()[:8]
+                        if phone is not None and phone.key is not None
+                        else None
+                    ),
                 )
             )
     return found

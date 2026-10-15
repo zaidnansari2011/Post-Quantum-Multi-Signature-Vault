@@ -100,6 +100,7 @@ def init_scheduler(app):
         id="recovery",
         replace_existing=True,
     )
+
     # Pairing by a code (A10): live codes past their deadline are marked expired (every reader
     # already treats them so) and ended rows older than 30 days are deleted; the ledger keeps them.
     def _pairing_and_owed_notices():
