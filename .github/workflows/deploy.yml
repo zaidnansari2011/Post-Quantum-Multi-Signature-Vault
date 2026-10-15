@@ -19,11 +19,13 @@ name: Deploy to Azure
 # hard failure rather than a skip: a deployment that quietly does not happen is the problem this
 # file exists to fix.
 
+# MANUAL ONLY SINCE 2026-10-15. The live app moved to a teammate's subscription (resource group
+# `rg-qvault`, docs/OWNER-ACTIONS.md section 2.9) and has been released by hand since; it is also
+# paused between evaluations to save credits. Releasing whatever lands on main would now start a
+# stopped app, or deploy a branch merge nobody meant to ship. Run it deliberately with
+# `gh workflow run deploy.yml -f sha=<sha>`, after adding AZURE_CREDENTIALS scoped to `rg-qvault`.
+
 on:
-  workflow_run:
-    workflows: ["Build container image"]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       sha:
@@ -36,17 +38,13 @@ concurrency:
 
 env:
   APP_NAME: qvault
-  RESOURCE_GROUP: qvault-rg
+  RESOURCE_GROUP: rg-qvault
   IMAGE_REPO: ghcr.io/zaidnansari2011/post-quantum-multi-signature-vault
 
 jobs:
   deploy:
     name: Release to Container Apps
     runs-on: ubuntu-24.04
-    # A failed or cancelled build has nothing worth deploying.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Resolve the commit being deployed
@@ -120,6 +118,18 @@ jobs:
           done
           echo "::error::The new revision never reached Running."
           exit 1
+
+      - name: Deactivate every older revision
+        run: |
+          # `az containerapp update` has re-activated a deactivated revision before (2026-10-05),
+          # leaving two replicas and two schedulers running. Keep only the newest active.
+          newest=$(az containerapp revision list --name "$APP_NAME" --resource-group "$RESOURCE_GROUP"             --query "sort_by([?properties.active], &properties.createdTime)[-1].name" -o tsv)
+          for rev in $(az containerapp revision list --name "$APP_NAME" --resource-group "$RESOURCE_GROUP"               --query "[?properties.active].name" -o tsv); do
+            if [ "$rev" != "$newest" ]; then
+              echo "Deactivating $rev"
+              az containerapp revision deactivate --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --revision "$rev"
+            fi
+          done
 
       - name: Report
         run: |
