@@ -9,8 +9,10 @@ hash-chained audit ledger whose head is signed by the system's own PQC key**. Th
 algorithm can be **switched at runtime** without changing a line of application or database code,
 and keys **rotate on a schedule without invalidating a single historical signature**.
 
-Built on the three NIST post-quantum standards finalised in August 2024:
-**ML-KEM (FIPS 203)**, **ML-DSA (FIPS 204)**, **SLH-DSA (FIPS 205)**.
+Built on the NIST post-quantum standards finalised in August 2024: **ML-KEM (FIPS 203)** and
+**ML-DSA (FIPS 204)**. The hash-based alternative is round-3 **SPHINCS+**, the basis of SLH-DSA
+(FIPS 205) but not interoperable with it; its `alg_id` still reads `SLH-DSA-SHAKE-256f` because
+stored artefacts pin that string (see `qvault/crypto/providers/quantcrypt_signature.py`).
 
 > **Status:** feature-complete (P0–P8, plus device-held signing keys). 668 tests, CI green on
 > Windows and Linux.
