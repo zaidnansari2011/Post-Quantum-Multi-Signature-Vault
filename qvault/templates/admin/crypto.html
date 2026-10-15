@@ -1,195 +1,178 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Crypto-agility lab{% endblock %}
-{% block content %}
+{% from "ui/forms.html" import select, checkbox %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/feedback.html" import banner %}
+{% from "ui/status.html" import badge %}
+{% from "ui/data.html" import hash %}
+{% block title %}Algorithms — Security — Q-Vault{% endblock %}
 {% set max_sig = sig_metas | map(attribute='sizes.signature') | max %}
 {% set max_pk = sig_metas | map(attribute='sizes.public_key') | max %}
 
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
-  <div>
-    <div class="eyebrow mb-1">Crypto-agility lab</div>
-    <h1 class="h2 mb-0">Algorithms</h1>
-  </div>
-  <span class="chip chip--muted">backend: {{ backend }}</span>
-</div>
+{% block content %}
+<div class="q-admin">
+{% set issuing = [('Signing new keys with', cfg.active_signature_alg), ('Encrypting with', cfg.active_kem_alg), ('Library', backend)] %}
+{% set state %}
+  {%- if verify.total == 0 %}{{ badge('Nothing signed yet') }}
+  {%- elif verify.all_pass %}{{ badge(verify.ok ~ '/' ~ verify.total ~ ' artefacts verify', 'success') }}
+  {%- else %}{{ badge((verify.total - verify.ok) ~ ' of ' ~ verify.total ~ ' failed', 'critical') }}{% endif %}
+  <span class="q-small">{{ verify.elapsed_ms }} ms</span>
+{%- endset %}
+{{ page_header('Security', facts=issuing, status=state) }}
+{% include "admin/_nav.html" %}
 
-<p class="text-muted mb-3" style="max-width:66ch;">
-  Switching the active signature algorithm changes only which algorithm <strong>new</strong> keys
-  are generated under. Every existing key, signature and ledger anchor carries its own
-  <code>alg_id</code> and is always verified by the matching provider — so a switch can never
-  invalidate stored data. The check at the bottom re-verifies every artefact live to prove it.
-</p>
-
-{# --- Live proof: everything still verifies, across a mixed algorithm set ------------------ #}
-{% if verify.total == 0 %}
-<div class="panel mb-3 text-muted small">No signatures or anchors to verify yet.</div>
-{% elif verify.all_pass %}
-<div class="verify-hero ok mb-3">
-  <div class="verify-hero__icon">✓</div>
-  <div>
-    <div class="verify-hero__title">{{ verify.total }} artefacts verify under their own algorithms</div>
-    <div class="verify-hero__sub">
-      Every stored signature and ledger anchor was just re-checked against the provider pinned on
-      it — not against the current default. That is what crypto-agility has to mean.
-    </div>
-  </div>
-</div>
-{% else %}
-<div class="verify-hero bad mb-3">
-  <div class="verify-hero__icon">✗</div>
-  <div>
-    <div class="verify-hero__title">{{ verify.total - verify.ok }} of {{ verify.total }} artefacts failed verification</div>
-    <div class="verify-hero__sub">A stored artefact no longer verifies under its pinned algorithm.</div>
-  </div>
-</div>
+{% if verify.total and not verify.all_pass %}
+{{ banner('critical', 'Verification failure', 'A stored signature or seal no longer verifies under the algorithm pinned to it. Stored data has been altered.', announce=True) }}
 {% endif %}
 
-{% if verify.by_alg %}
-<div class="stat-row mb-3">
-  {% for alg, c in verify.by_alg.items() %}
-  <div class="stat">
-    <div class="stat__num" style="color: {{ 'var(--ok)' if c.ok == c.total else 'var(--danger)' }};">
-      {{ c.ok }}<span class="text-muted" style="font-size:1rem;">/{{ c.total }}</span>
-    </div>
-    <div class="stat__label">{{ alg }}</div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<div class="row g-3">
-  <div class="col-lg-5">
-    <div class="panel mb-3">
-      <div class="panel__head">
-        <div class="eyebrow">Active configuration</div>
-      </div>
-      <dl class="kv mb-3">
-        <dt>Signatures (new keys)</dt><dd><span class="algo-chip">{{ cfg.active_signature_alg }}</span></dd>
-        <dt>Key encapsulation</dt><dd><span class="chip chip--muted">{{ cfg.active_kem_alg }}</span></dd>
-      </dl>
-      {% set current_cat = (sig_metas | selectattr('alg_id', 'equalto', cfg.active_signature_alg)
-                            | map(attribute='security_category') | first) %}
-      <form method="post" action="{{ url_for('admin.switch_crypto') }}">
-        {{ form.hidden_tag() }}
-        <label class="form-label small mb-1 fw-semibold">{{ form.algorithm.label.text }}</label>
-        {{ form.algorithm(class="form-select form-select-sm mb-2") }}
-
-        {# Agility must not be direction-neutral: moving to a weaker category is a decision, not
-           a preference, so it costs an explicit tick and a written reason. See ADR-0012. #}
-        <div class="mb-2 p-2" style="border:1px solid var(--danger-line); border-radius:var(--radius-sm); background:var(--danger-050);">
-          <div class="form-check">
-            {{ form.confirm_downgrade(class="form-check-input") }}
-            <label class="form-check-label small fw-semibold" for="{{ form.confirm_downgrade.id }}"
-                   style="color:var(--danger);">
-              {{ form.confirm_downgrade.label.text }}
-            </label>
-          </div>
-          <div class="text-muted mt-1" style="font-size:.75rem;">
-            Currently category <strong>{{ current_cat }}</strong>. Selecting a lower category is
-            refused unless you tick this and give a reason, and it is recorded in the ledger as
-            <code>algorithm_downgraded</code> rather than as an ordinary switch.
-          </div>
-          {{ form.downgrade_reason(class="form-control form-control-sm mt-2",
-                                   placeholder="Reason for lowering the category") }}
-        </div>
-
-        {{ form.submit(class="btn btn-primary btn-sm") }}
-      </form>
-      <p class="text-muted small mt-2 mb-0">
-        Existing users keep signing with their current key until they re-issue it, and the SYSTEM
-        anchor key keeps its own algorithm — so the system runs a genuinely mixed set, on purpose.
-        A downgrade governs new keys only; artefacts already signed under a stronger algorithm keep
-        their own <code>alg_id</code> and cannot be weakened retroactively.
-      </p>
-    </div>
-
-    <div class="panel">
-      <div class="panel__head">
-        <div class="eyebrow">Active signing keys by algorithm</div>
-      </div>
-      {% for alg, n in keys_by_alg.items() %}
-      <div class="d-flex justify-content-between align-items-center py-1">
-        <span class="algo-chip">{{ alg }}</span>
-        <span class="text-mono">{{ n }}</span>
-      </div>
-      {% else %}
-      <p class="text-muted small mb-0">No signing keys yet.</p>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="col-lg-7">
-    <div class="panel">
-      <div class="panel__head">
-        <div>
-          <div class="eyebrow">Registered signature algorithms</div>
-          <div class="text-muted small">the size/assumption trade-off, to scale</div>
-        </div>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle small">
-          <thead><tr>
-            <th>alg_id</th><th>Standard</th><th>Cat.</th>
-            <th style="min-width:130px">Public key</th><th style="min-width:130px">Signature</th>
-          </tr></thead>
-          <tbody>
+{# Full width, not a split: these tables carry six columns including byte counts, and a
+   25rem sidebar clipped them mid-number. The controls move below. #}
+<div class="q-stack q-stack--lg">
+  <section class="q-panel q-panel--table" aria-labelledby="sig-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="sig-t">Signature algorithms</h2></div>
+    <div class="q-table-wrap">
+      <table class="q-table" aria-labelledby="sig-t">
+        <thead>
+          <tr><th scope="col" style="width:26%">Algorithm</th><th scope="col">Standard</th><th scope="col" class="is-num">Cat.</th>
+              <th scope="col" style="width:22%">Public key</th><th scope="col" style="width:22%">Signature</th><th scope="col" class="is-num">In use</th></tr>
+        </thead>
+        <tbody>
           {% for m in sig_metas %}
-            <tr>
-              <td>
-                <span class="algo-chip">{{ m.alg_id }}</span>
-                {% if m.alg_id == cfg.active_signature_alg %}
-                  <span class="chip ms-1">active</span>
-                {% endif %}
-                <div class="text-muted">{{ m.human_name }}</div>
-              </td>
-              <td>{{ m.nist_standard }}</td>
-              <td class="text-mono">{{ m.security_category }}</td>
-              <td>
-                <div class="text-mono">{{ m.sizes.public_key }} B</div>
-                <div class="bar mt-1"><div class="bar__fill alt" style="width: {{ (m.sizes.public_key / max_pk * 100)|round(1) }}%"></div></div>
-              </td>
-              <td>
-                <div class="text-mono">{{ m.sizes.signature }} B</div>
-                <div class="bar mt-1"><div class="bar__fill" style="width: {{ (m.sizes.signature / max_sig * 100)|round(1) }}%"></div></div>
-              </td>
-            </tr>
+          <tr>
+            <td>
+              <span class="q-tag">{{ m.alg_id }}</span>
+              {% if m.alg_id == cfg.active_signature_alg %}{{ badge('Issuing', 'success') }}{% endif %}
+              <span class="q-cap">{{ m.human_name }}</span>
+            </td>
+            <td>{% set std, note = ui_standard(m.nist_standard) %}<span class="q-nowrap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
+            <td class="is-num">{{ m.security_category }}</td>
+            <td>
+              <span class="q-nowrap">{{ m.sizes.public_key }} B</span>
+              <span class="q-bar"><span class="q-bar__fill q-bar__fill--alt" style="width: {{ (m.sizes.public_key / max_pk * 100)|round(1) }}%"></span></span>
+            </td>
+            <td>
+              <span class="q-nowrap">{{ m.sizes.signature }} B</span>
+              <span class="q-bar"><span class="q-bar__fill" style="width: {{ (m.sizes.signature / max_sig * 100)|round(1) }}%"></span></span>
+            </td>
+            <td class="is-num">{{ keys_by_alg.get(m.alg_id, 0) }}</td>
+          </tr>
           {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if sig_metas | length > 1 %}
-      <p class="text-muted small mt-3 mb-0">
-        The largest signature here is
-        {{ (max_sig / (sig_metas | map(attribute='sizes.signature') | min))|round|int }}× the
-        smallest: the hash-based option buys security resting on nothing but the hash function, and
-        pays for it in bytes. Being able to adopt it later — without re-signing history — is the
-        point of the agility layer.
-      </p>
-      {% endif %}
+        </tbody>
+      </table>
     </div>
+  </section>
 
-    <div class="panel mt-3">
-      <div class="panel__head">
-        <div class="eyebrow">Key-encapsulation providers</div>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle small">
-          <thead><tr><th>alg_id</th><th>Standard</th><th>Cat.</th>
-            <th class="text-end">Public key</th><th class="text-end">Ciphertext</th></tr></thead>
-          <tbody>
-          {% for m in kem_metas %}
-            <tr>
-              <td><span class="algo-chip">{{ m.alg_id }}</span>
-                  <div class="text-muted">{{ m.human_name }}</div></td>
-              <td>{{ m.nist_standard }}</td>
-              <td class="text-mono">{{ m.security_category }}</td>
-              <td class="text-end text-mono">{{ m.sizes.public_key }} B</td>
-              <td class="text-end text-mono">{{ m.sizes.ciphertext }} B</td>
-            </tr>
+  {% if verify.artefacts %}
+  <section class="q-panel q-panel--table" aria-labelledby="art-t">
+    <div class="q-panel__hd">
+      <h2 class="q-panel__t" id="art-t">Stored artefacts</h2>
+      <span class="q-small">
+        {{ verify.by_alg|length }} algorithm{{ '' if verify.by_alg|length == 1 else 's' }} in use, all
+        verified again in {{ verify.elapsed_ms }} ms
+      </span>
+    </div>
+    <div class="q-table-wrap">
+      <table class="q-table" aria-labelledby="art-t">
+        <thead>
+          <tr><th scope="col" style="width:34%">Artefact</th><th scope="col">Algorithm</th><th scope="col">Signing key</th>
+              <th scope="col" class="is-num">Bytes</th><th scope="col">Verified</th><th scope="col" class="is-num">Created</th></tr>
+        </thead>
+        <tbody>
+          {% for a in verify.artefacts %}
+          <tr>
+            <td>
+              <span class="q-strong">{{ a.who }} {{ a.action }} {{ a.what }}</span>
+              <span class="q-cap q-line">{{ a.kind|capitalize }}, fingerprint {{ hash(a.fingerprint, 'fingerprint', 16, 0) }}</span>
+            </td>
+            <td><span class="q-tag">{{ a.alg_id }}</span></td>
+            <td>
+              {% if a.key_status == 'retired' %}{{ badge('Retired') }}
+              {% else %}{{ badge('Active', 'success') }}{% endif %}
+            </td>
+            <td class="is-num">{{ a.size_bytes }}</td>
+            <td>
+              {% if a.verified %}{{ badge('Yes', 'success') }}
+              {% else %}{{ badge('No', 'critical') }}{% endif %}
+            </td>
+            <td class="q-small q-when">{% if a.created_at %}<time datetime="{{ ui_iso(a.created_at) }}">{{ ui_absolute(a.created_at) }}</time>{% else %}Not recorded{% endif %}</td>
+          </tr>
           {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="q-panel q-panel--table" aria-labelledby="kem-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="kem-t">Key encapsulation</h2></div>
+    <div class="q-table-wrap">
+      <table class="q-table" aria-labelledby="kem-t">
+        <thead>
+          <tr><th scope="col" style="width:30%">Algorithm</th><th scope="col">Standard</th><th scope="col" class="is-num">Cat.</th>
+              <th scope="col" class="is-num">Public key</th><th scope="col" class="is-num">Ciphertext</th></tr>
+        </thead>
+        <tbody>
+          {% for m in kem_metas %}
+          <tr>
+            <td>
+              <span class="q-tag">{{ m.alg_id }}</span>
+              {% if m.alg_id == cfg.active_kem_alg %}{{ badge('Issuing', 'success') }}{% endif %}
+              <span class="q-cap">{{ m.human_name }}</span>
+            </td>
+            <td>{% set std, note = ui_standard(m.nist_standard) %}<span class="q-nowrap">{{ std }}</span>{% if note %}<span class="q-cap">{{ note }}</span>{% endif %}</td>
+            <td class="is-num">{{ m.security_category }}</td>
+            <td class="is-num">{{ m.sizes.public_key }} B</td>
+            <td class="is-num">{{ m.sizes.ciphertext }} B</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="q-split q-split--even">
+    <section class="q-panel" aria-labelledby="switch-t">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="switch-t">Change signature algorithm</h2></div>
+      <div class="q-panel__bd">
+        {% set current_cat = (sig_metas | selectattr('alg_id', 'equalto', cfg.active_signature_alg)
+                              | map(attribute='security_category') | first) %}
+        <form method="post" action="{{ url_for('admin.switch_crypto') }}">
+          {{ form.hidden_tag() }}
+          {{ select('algorithm', form.algorithm.label.text, form.algorithm.choices, form.algorithm.data, id=form.algorithm.id) }}
+
+          {# Lowering the security category is a decision, not a preference (ADR-0012). #}
+          <div class="q-downgrade">
+            {{ checkbox('confirm_downgrade', form.confirm_downgrade.label.text, checked=form.confirm_downgrade.data, value='y',
+                        id=form.confirm_downgrade.id,
+                        caption='Currently category ' ~ current_cat ~ '. A lower category is refused without this and a stated reason, and is recorded as a downgrade.') }}
+            {{ form.downgrade_reason(class="q-input", placeholder="Reason", **{'aria-label': form.downgrade_reason.label.text}) }}
+          </div>
+
+          {{ button(form.submit.label.text, 'primary', type='submit', name='submit', value=form.submit.label.text) }}
+        </form>
+        <p class="q-note">Affects new keys only. Existing artefacts keep their own algorithm.</p>
+      </div>
+    </section>
+
+    {% if verify.by_alg %}
+    <section class="q-panel q-panel--table" aria-labelledby="byalg-t">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="byalg-t">Verification by algorithm</h2></div>
+      <div class="q-table-wrap">
+        <table class="q-table" aria-labelledby="byalg-t">
+          <thead><tr><th scope="col">Algorithm</th><th scope="col" class="is-num">Verified</th></tr></thead>
+          <tbody>
+            {% for alg, c in verify.by_alg.items() %}
+            <tr>
+              <td><span class="q-tag">{{ alg }}</span></td>
+              <td class="is-num">{{ badge(c.ok ~ '/' ~ c.total, 'success' if c.ok == c.total else 'critical') }}</td>
+            </tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
+    {% endif %}
   </div>
+</div>
 </div>
 {% endblock %}

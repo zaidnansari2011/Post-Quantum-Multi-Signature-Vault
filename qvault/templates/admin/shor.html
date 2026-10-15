@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/status.html" import badge %}
+{% block title %}Shor side by side — Developer — Q-Vault{% endblock %}
+
+{#
+  Shor side by side (docs/plans/shor-side-by-side.md). The same attacker, two columns.
+
+  Left: Shor's algorithm against a live 9-bit RSA key. The steps are empty shells here and are
+  filled by shor.js from one JSON POST per button; every number comes from
+  qvault/attack/shor_walkthrough.py, which reuses shor.py and toy_rsa.py. Nothing in this template
+  is a result.
+
+  Right: a real ML-DSA-65 key, the code's own refusal to build a Shor instance from it, a toy LWE
+  instance (rendered here, generated for this request) and a capped brute-force search driven by
+  shor.js. Without JavaScript the right column still reads top to bottom; the left needs it.
+
+  Copy rules: no em or en dashes in copy, "no known quantum attack" and never "impossible", and no
+  test counts.
+#}
+
+{% macro step(col, n, title, open=False) -%}
+<li class="q-shor__step" data-step="{{ n }}" id="{{ col }}-s{{ n }}"{% if not open %} data-later{% endif %}>
+  <div class="q-shor__sh"><span class="q-shor__n">{{ n }}</span><h3 class="q-shor__t">{{ title }}</h3></div>
+  <div class="q-shor__bd">{{ caller() }}</div>
+</li>
+{%- endmacro %}
+
+{% macro vec(values) -%}
+<span class="q-shor__vec">({% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %})</span>
+{%- endmacro %}
+
+{% block content %}
+<div class="q-admin q-shor" data-shor
+     data-csrf="{{ csrf_token() }}"
+     data-url-new="{{ url_for('admin.shor_rsa_new') }}"
+     data-url-base="{{ url_for('admin.shor_rsa_base') }}"
+     data-url-measure="{{ url_for('admin.shor_rsa_measure') }}"
+     data-url-forge="{{ url_for('admin.shor_rsa_forge') }}"
+     data-url-brute="{{ url_for('admin.shor_lwe_brute') }}"
+     data-lwe-run="{{ lwe_id }}"
+     data-brute-cap="{{ brute_cap }}">
+{% call page_header('Shor side by side', description='One quantum attacker, two keys generated on this server just now. Every number in the two columns is computed live and can be checked by hand; the published attack estimates are cited where they appear.') %}
+  {{ button('Adversary lab', 'secondary', href=url_for('admin.attack_lab')) }}
+{% endcall %}
+{% include "_developer_nav.html" %}
+
+<section class="q-panel q-shor__honest" aria-labelledby="shor-honest-t">
+  <div class="q-panel__hd"><h2 class="q-panel__t" id="shor-honest-t">What is real and what is scaled</h2></div>
+  <ul class="q-panel__bd q-shor__list">
+    <li>The RSA key is 9 bits because a laptop cannot simulate the machine RSA-2048 needs: about {{ '{:,}'.format(shor_2048.logical_qubits) }} logical qubits. The algorithm and its maths are the real ones, and its cost grows polynomially with the key size.</li>
+    <li>The quantum register is simulated exactly: the full state vector is built and the quantum Fourier transform applied to it. The modular exponentiation inside it (the oracle) is computed classically.</li>
+    <li>The forged signature is checked by the same verifier a genuine signature goes through.</li>
+    <li>For ML-DSA the page shows the best known attacks, as published. There is no known quantum attack that breaks it; that is the state of public knowledge, not a proof.</li>
+  </ul>
+</section>
+
+<div class="q-shor__cols">
+
+{# RSA #}
+<section class="q-panel q-shor__col" aria-labelledby="rsa-t" data-col="rsa">
+  <div class="q-panel__hd">
+    <h2 class="q-panel__t" id="rsa-t">Shor's algorithm against RSA</h2>
+    <span data-rsa-verdict hidden>{{ badge('Key recovered', 'critical') }}</span>
+  </div>
+  <div class="q-panel__bd q-shor__start">
+    <form class="q-shor__form" data-rsa-start>
+      <div class="q-field">
+        <label class="q-field__label" for="shor-msg">Message to forge</label>
+        <input class="q-input" id="shor-msg" name="message" type="text" maxlength="{{ message_max }}" required
+               value="Approve the transfer of 250,000 to account 4471" aria-describedby="shor-msg-cap">
+        <p class="q-field__cap" id="shor-msg-cap">Type anything. At the end it is signed with a private key the attacker was never given.</p>
+      </div>
+      <div class="q-btnrow">
+        {{ button('New key', 'primary', type='submit', attrs={'data-rsa-newkey': ''}) }}
+      </div>
+    </form>
+    <noscript><p class="q-note">This column needs JavaScript: each step is computed on the server when you press its button.</p></noscript>
+    <p class="q-note" data-rsa-status role="status" aria-live="polite"></p>
+  </div>
+
+  <ol class="q-shor__steps" data-steps="rsa">
+    {% call step('rsa', 1, 'The public key') %}
+      <p>The attacker is given N and e and nothing else.</p>
+      <dl class="q-shor__eq">
+        <div><dt>N</dt><dd data-f="n"></dd></div>
+        <div><dt>e</dt><dd data-f="e"></dd></div>
+        <div><dt>p and q</dt><dd>Hidden until step 8</dd></div>
+      </dl>
+    {% endcall %}
+
+    {% call step('rsa', 2, 'Pick a random base') %}
+      <p>A random a with gcd(a, N) = 1.</p>
+      <dl class="q-shor__eq">
+        <div><dt>a</dt><dd data-f="a"></dd></div>
+        <div><dt>gcd(a, N)</dt><dd>1</dd></div>
+        <div><dt>Attempt</dt><dd data-f="base-number"></dd></div>
+      </dl>
+      <p class="q-note" data-f="redrawn"></p>
+    {% endcall %}
+
+    {% call step('rsa', 3, 'The repeating function') %}
+      <p>f(x) = a<sup>x</sup> mod N repeats. Its period r is what the quantum computer finds; the factors follow from r.</p>
+      <div class="q-shor__chart" data-chart="sequence"></div>
+      <div class="q-shor__chart" data-chart="rows" role="img" aria-label="The same values cut into rows one period long, each value a shade from light (small) to dark (large). The rows match column for column."></div>
+      <div class="q-shor__seq" data-f="sequence" tabindex="0" aria-label="The values of f(x), in order"></div>
+      <p class="q-note" data-f="period-note"></p>
+    {% endcall %}
+
+    {% call step('rsa', 4, 'The quantum register') %}
+      <dl class="q-shor__eq">
+        <div><dt>Control qubits t</dt><dd data-f="t"></dd></div>
+        <div><dt>States Q = 2<sup>t</sup></dt><dd data-f="size"></dd></div>
+        <div><dt>Qubits in the circuit</dt><dd data-f="qubits"></dd></div>
+        <div><dt>Amplitudes held</dt><dd data-f="held"></dd></div>
+        <div><dt>Second register read</dt><dd data-f="observed"></dd></div>
+      </dl>
+      <p>The chance of each outcome after the quantum Fourier transform: almost zero everywhere, with sharp peaks near multiples of Q/r.</p>
+      <div class="q-shor__chart" data-chart="dist"></div>
+      <div class="q-shor__chart q-shor__chart--zoom" data-chart="zoom"></div>
+      <p class="q-note" data-f="dist-note"></p>
+    {% endcall %}
+
+    {% call step('rsa', 5, 'Measure') %}
+      <p>Each measurement samples one outcome y from the distribution above. Each lands as a mark on the chart.</p>
+      <div class="q-btnrow">{{ button('Measure', 'secondary', attrs={'data-rsa-measure': ''}) }}</div>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-table--compact">
+          <thead><tr><th scope="col">#</th><th scope="col" class="is-num">y</th><th scope="col" class="is-num">Chance of this y</th><th scope="col">On a peak</th><th scope="col">Period found</th></tr></thead>
+          <tbody data-f="shots"></tbody>
+        </table>
+      </div>
+      <p class="q-note" data-f="shots-note"></p>
+    {% endcall %}
+
+    {% call step('rsa', 6, 'The period, from the measurement') %}
+      <dl class="q-shor__eq">
+        <div><dt>y / Q</dt><dd data-f="phase"></dd></div>
+        <div><dt>Continued fraction</dt><dd data-f="terms"></dd></div>
+      </dl>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-table--compact">
+          <caption class="q-shor__cap">Convergents of y / Q</caption>
+          <thead><tr><th scope="col" class="is-num">p</th><th scope="col" class="is-num">q</th><th scope="col">Below N</th></tr></thead>
+          <tbody data-f="convergents"></tbody>
+        </table>
+      </div>
+      <p data-f="chosen"></p>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-table--compact">
+          <caption class="q-shor__cap">Checking the candidate and its small multiples</caption>
+          <thead><tr><th scope="col" class="is-num">Multiple</th><th scope="col" class="is-num">Exponent m</th><th scope="col" class="is-num">a<sup>m</sup> mod N</th></tr></thead>
+          <tbody data-f="trail"></tbody>
+        </table>
+      </div>
+      <p class="q-note" data-f="trail-note"></p>
+    {% endcall %}
+
+    {% call step('rsa', 7, 'The factors') %}
+      <div data-f="factoring"></div>
+    {% endcall %}
+
+    {% call step('rsa', 8, 'The private key') %}
+      <div data-f="private"></div>
+    {% endcall %}
+
+    {% call step('rsa', 9, 'Forge the signature') %}
+      <div data-f="forgery"></div>
+      <form class="q-shor__form q-shor__again" data-rsa-forge>
+        <div class="q-field">
+          <label class="q-field__label" for="shor-msg2">Forge another message</label>
+          <input class="q-input" id="shor-msg2" name="message" type="text" maxlength="{{ message_max }}" required>
+        </div>
+        <div class="q-btnrow">{{ button('Forge', 'secondary', type='submit') }}</div>
+      </form>
+    {% endcall %}
+  </ol>
+
+  <div class="q-panel__ft q-shor__ft">
+    {{ button('Next step', 'secondary', attrs={'data-next': 'rsa', 'disabled': ''}) }}
+    {{ button('Run all', 'ghost', attrs={'data-runall': 'rsa', 'disabled': ''}) }}
+  </div>
+</section>
+
+{# ML-DSA #}
+<section class="q-panel q-shor__col" aria-labelledby="mldsa-t" data-col="mldsa">
+  <div class="q-panel__hd">
+    <h2 class="q-panel__t" id="mldsa-t">The same attacker against {{ mldsa.alg_id }}</h2>
+    {% if mldsa.refusal %}{{ badge('No instance', 'neutral') }}{% endif %}
+  </div>
+
+  <ol class="q-shor__steps" data-steps="mldsa">
+    {% call step('mldsa', 1, 'The public key', open=True) %}
+      {% set L = mldsa.layout %}
+      <p>A real {{ mldsa.alg_id }} key, generated for this page. {{ '{:,}'.format(L.public_key_bytes) }} bytes:</p>
+      <dl class="q-shor__eq">
+        <div><dt>rho</dt><dd>32 bytes, the seed the public matrix A is expanded from<br><span class="q-mono q-shor__hex">{{ L.rho_hex }}</span></dd></div>
+        <div><dt>t1</dt><dd>{{ L.k }} polynomials &times; {{ L.n }} coefficients &times; {{ L.t1_bits }} bits = {{ '{:,}'.format(L.t1_bytes) }} bytes</dd></div>
+        <div><dt>First coefficients of t1</dt><dd>{{ vec(L.t1_preview) }} &hellip;</dd></div>
+      </dl>
+      {% if L.layout_confirmed %}
+      <p>The secret is short. Its first part, s1, has {{ '{:,}'.format(L.s1_count) }} coefficients, every one between &minus;{{ L.eta }} and {{ L.eta }}{% if L.s1_in_range %} (checked on this key){% endif %}. The first few: {{ vec(L.s1_preview) }}.</p>
+      {% endif %}
+      <p class="q-shor__key">There is no N here: no number to factor and no group whose order is secret.</p>
+    {% endcall %}
+
+    {% call step('mldsa', 2, "Shor's input check") %}
+      <p>What order-finding needs. One function, <span class="q-mono">shor_instance()</span>, tests the RSA key in the left column and this {{ mldsa.alg_id }} key. Each answer says what it computed from the key and what it takes from the scheme's definition; the verdict follows from the computed part alone.</p>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-shor__checks">
+          <thead><tr><th scope="col">Shor needs</th><th scope="col" data-rsa-head>RSA, the key on the left</th><th scope="col">{{ mldsa.alg_id }}</th></tr></thead>
+          <tbody>
+          {% for requirement in mldsa.requires %}
+            {% set ml = mldsa.refusal.checks[loop.index0] if mldsa.refusal else none %}
+            <tr>
+              <td>{{ requirement[:1]|upper ~ requirement[1:] }}</td>
+              <td data-label="RSA, the key on the left" data-rsa-check="{{ loop.index0 }}"><span class="q-small">Press New key in the left column to test its key.</span></td>
+              <td data-label="{{ mldsa.alg_id }}">{% if ml %}{{ badge('Present', 'critical') if ml.present else badge('Absent', 'neutral') }}<span class="q-cap"><span class="q-shor__how">Computed:</span> {{ ml.computed }}</span>{% if ml.stated %}<span class="q-cap"><span class="q-shor__how">By definition:</span> {{ ml.stated }}</span>{% endif %}{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if mldsa.refusal %}
+      <div class="q-shor__refusal">
+        <p class="q-shor__rl">The code's answer for {{ mldsa.alg_id }}</p>
+        <p class="q-mono">NoShorInstance: {{ mldsa.refusal.reason }}</p>
+      </div>
+      <p class="q-note">Raised by <span class="q-mono">shor_instance()</span> in <span class="q-mono">qvault/attack/shor_walkthrough.py</span> after it parses the key and tests the scheme's modulus, as listed above. It is a refusal to start, not a failed run: there is nothing to give the algorithm.</p>
+      {% endif %}
+    {% endcall %}
+
+    {% call step('mldsa', 3, 'What does apply: learning with errors') %}
+      {% set I = lwe.instance %}
+      <p>ML-DSA's secret hides behind noisy equations. Here is a real toy instance, generated for this page: q = {{ I.q }}, a secret s of {{ I.n }} numbers in {&minus;1, 0, 1}, {{ I.m }} equations t = A&middot;s + e (mod {{ I.q }}), with noise e in {&minus;1, 0, 1}.</p>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-table--compact q-shor__lwe">
+          <caption class="q-shor__cap">The public equations, and the hidden noise</caption>
+          <thead><tr><th scope="col">Row</th><th scope="col">A</th><th scope="col" class="is-num">t without noise</th><th scope="col" class="is-num">t (public)</th><th scope="col" class="is-num">Noise e</th></tr></thead>
+          <tbody>
+          {% for row in I.a %}
+            <tr{% if loop.index0 < I.n %} class="q-shor__used"{% endif %}>
+              <td>{{ loop.index }}</td><td>{{ vec(row) }}</td><td class="is-num">{{ I.t_clean[loop.index0] }}</td><td class="is-num">{{ I.t[loop.index0] }}</td><td class="is-num">{{ I.e[loop.index0] }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="q-note">The secret s = {{ vec(I.s) }}. Gaussian elimination below uses the first {{ I.n }} rows.</p>
+
+      <h4 class="q-shor__h">Without noise</h4>
+      <p>Elimination mod {{ I.q }} gives s&prime; = {{ vec(lwe.clean.found) }}. {% if lwe.clean.match %}{{ badge('Matches s', 'critical') }}{% else %}{{ badge('Does not match', 'neutral') }}{% endif %}</p>
+      <p class="q-note">With no noise this is school algebra: the secret falls out at once.</p>
+
+      <h4 class="q-shor__h">With the noise</h4>
+      <p>The same elimination gives s&prime; = {{ vec(lwe.noisy.found) }}. {% if lwe.noisy.match %}{{ badge('Matches s', 'critical') }}{% else %}{{ badge('Not the secret', 'neutral') }}{% endif %}</p>
+      <p>Check: t &minus; A&middot;s&prime; (mod {{ I.q }}) over all {{ I.m }} rows = {{ vec(lwe.noisy.residual) }}. {% if lwe.noisy.residual_small %}Small everywhere.{% else %}Not small: s&prime; fits the {{ I.n }} rows it used and misses the rest.{% endif %}</p>
+      {% if not lwe.noise_on_used_rows %}<p class="q-note">On this instance the noise on the first {{ I.n }} rows happened to be zero, a chance of 1 in {{ 3 ** I.n }}, so elimination worked anyway. Reload for another instance.</p>{% endif %}
+
+      <h4 class="q-shor__h">Brute force</h4>
+      <p>Try every s in {&minus;1, 0, 1}<sup>n</sup> until one leaves all residuals in {&minus;1, 0, 1}. Measured on this server, at most {{ brute_cap|int }} seconds per size; anything longer is extrapolated and marked estimated.</p>
+      <div class="q-btnrow">{{ button('Run brute force', 'secondary', attrs={'data-brute': ''}) }}</div>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-table--compact q-shor__brute">
+          <thead><tr><th scope="col" class="is-num">n</th><th scope="col" class="is-num">Candidates</th><th scope="col" class="is-num">Checked</th><th scope="col" class="is-num">Time</th><th scope="col">Result</th></tr></thead>
+          <tbody>
+          {% for n in lwe_sizes %}
+            <tr data-brute-row="{{ n }}"><td class="is-num">{{ n }}</td><td class="is-num">{{ '{:,}'.format(3 ** n) }}</td><td class="is-num" data-b="checked">0</td><td class="is-num" data-b="time"></td><td data-b="result"><span class="q-small">Not run</span></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="q-note" data-brute-note></p>
+    {% endcall %}
+
+    {% call step('mldsa', 4, 'At real size') %}
+      <p>{{ mldsa.alg_id }} has {{ '{:,}'.format(mldsa.layout.s1_count) }} secret coefficients in s1 and {{ '{:,}'.format(mldsa.layout.s2_count) }} in s2, each between &minus;{{ mldsa.layout.eta }} and {{ mldsa.layout.eta }}, over a {{ mldsa.layout.n }}-coefficient ring with modulus 8,380,417. Brute force is hopeless, so the published estimates are for the best known attacks, lattice reduction:</p>
+      <div class="q-table-wrap q-shor__tw">
+        <table class="q-table q-table--compact">
+          <thead><tr><th scope="col">Best known attack (core-SVP)</th><th scope="col" class="is-num">Classical</th><th scope="col" class="is-num">Quantum</th></tr></thead>
+          <tbody>
+            <tr><td>Recover the key (LWE)</td><td class="is-num">2<sup>{{ hardness.lwe.classical }}</sup></td><td class="is-num">2<sup>{{ hardness.lwe.quantum }}</sup></td></tr>
+            <tr><td>Forge a signature (SIS)</td><td class="is-num">2<sup>{{ hardness.sis.classical }}</sup></td><td class="is-num">2<sup>{{ hardness.sis.quantum }}</sup></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A quantum computer lowers the exponent a little, through a faster search inside lattice sieving. It stays exponential: no known quantum attack does better.</p>
+      <p class="q-note">Source: {{ hardness.source }}, the NIST level {{ hardness.level }} parameter set (Dilithium3), whose lattice parameters ML-DSA-65 keeps. <a class="q-link" href="{{ hardness.url }}" rel="noopener noreferrer">Specification (PDF)</a>. These are the best attacks known today, not a proof that none better exists.</p>
+    {% endcall %}
+  </ol>
+
+  <div class="q-panel__ft q-shor__ft">
+    {{ button('Next step', 'secondary', attrs={'data-next': 'mldsa', 'hidden': ''}) }}
+    {{ button('Run all', 'ghost', attrs={'data-runall': 'mldsa', 'hidden': ''}) }}
+  </div>
+</section>
+</div>
+
+{# scaling #}
+<section class="q-panel q-shor__scale" aria-labelledby="scale-t">
+  <div class="q-panel__hd"><h2 class="q-panel__t" id="scale-t">How the work to break each grows with key size</h2></div>
+  <div class="q-panel__bd">
+    <figure class="q-shor__fig">
+      <div class="q-shor__chart" data-chart="scaling" role="img" aria-label="Log-scale chart of the work to break each scheme against public key size. Its numbers are in the table below."></div>
+      <script type="application/json" data-scaling>{{ scaling|tojson }}</script>
+      <figcaption class="q-shor__figcap">
+        <span>RSA classical: the general number field sieve's growth, L(1/3), with its constant term dropped (<span class="q-mono">cost.py</span>). RSA with Shor: on the order of n<sup>3</sup> gates (Beauregard, 2003). ML-DSA-44, 65 and 87: core-SVP estimates from the {{ hardness.source }}.</span>
+        <span>Each source counts work in its own unit, so read the slopes rather than the exact heights. The ML-DSA figures are the published best known attacks, not a proof. For ML-DSA-65 the quantum estimate is {{ hardness.classical - hardness.quantum }} bits below the classical one: 2<sup>{{ hardness.quantum }}</sup> against 2<sup>{{ hardness.classical }}</sup>.</span>
+      </figcaption>
+    </figure>
+    <details class="q-shor__data">
+      <summary>The numbers behind the chart</summary>
+      <div class="q-table-wrap">
+        <table class="q-table q-table--compact">
+          <thead><tr><th scope="col">Series</th><th scope="col" class="is-num">Public key, bits</th><th scope="col" class="is-num">Work, log<sub>2</sub></th></tr></thead>
+          <tbody>
+          {% for s in scaling %}{% for p in s.points %}
+            <tr><td>{{ s.label }}{% if p.label %} ({{ p.label }}){% endif %}</td><td class="is-num">{{ '{:,}'.format(p.x) }}</td><td class="is-num">{{ p.y }}</td></tr>
+          {% endfor %}{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</section>
+</div>
+<script src="{{ url_for('static', filename='shor.js') }}" defer></script>
+{% endblock %}

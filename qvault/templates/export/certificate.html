@@ -1,0 +1,194 @@
+{#- The human-readable half of a decision package.
+
+    Deliberately NOT extending base.html and deliberately breaking rule 1 ("the interface explains
+    nothing"). That rule governs working screens, where explanation is clutter because the reader
+    already has context. This file is the opposite case: it leaves the product entirely, lands in
+    the hands of an auditor or an examiner who has never seen Q-Vault, and has to survive being
+    opened from a folder in five years. So it is standalone, carries its own styles, and states
+    what it is.
+
+    Every style is inline for the same reason: there is no server to serve a stylesheet from.
+-#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision {{ bundle.decision.proposal_uuid[:8] }} — {{ bundle.decision.title }}</title>
+<style>
+  :root{
+    --paper:#FBFBF9; --surface:#FFF; --sunk:#F5F5F2; --rule:#E2E2DC; --rule-2:#EDEDE8;
+    --ink:#16181C; --ink-2:#4A4E56; --ink-3:#6A6F78;
+    --chrome:#15191C; --chrome-ink:#ECEEED; --chrome-ink-2:#98A1A6;
+    --sealed:#1B6B4F; --sealed-tint:#EAF3EE; --sealed-line:#B9D8C8;
+    --waiting:#8A5A12; --waiting-tint:#FAF2E4; --waiting-line:#E8D4AC;
+    --broken:#A82D20; --broken-tint:#FBECEA; --broken-line:#EFC4BE;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .sheet{max-width:860px;margin:0 auto;padding:0 28px 72px}
+  header{background:var(--chrome);color:var(--chrome-ink)}
+  .head-in{max-width:860px;margin:0 auto;padding:30px 28px 26px}
+  .eyebrow{font-size:.66rem;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--chrome-ink-2);margin-bottom:9px}
+  h1{margin:0 0 6px;font-size:1.5rem;letter-spacing:-.015em;line-height:1.2}
+  .vault{color:var(--chrome-ink-2);font-size:.9rem;margin:0}
+  .verdict{margin-top:22px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .count{font-family:var(--mono);font-size:1.7rem;letter-spacing:-.02em}
+  .verdict-label{font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--chrome-ink-2)}
+
+  h2{font-size:.68rem;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);
+    margin:36px 0 10px;font-weight:600}
+  .panel{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:16px 18px}
+  .action{font-size:1.02rem;line-height:1.55;margin:0;white-space:pre-wrap}
+  dl{margin:0;display:grid;grid-template-columns:150px 1fr;gap:7px 16px}
+  dt{color:var(--ink-3);font-size:.85rem}
+  dd{margin:0;font-size:.9rem;overflow-wrap:anywhere}
+  .mono{font-family:var(--mono);font-size:.78rem}
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.87rem}
+  th{text-align:left;font-size:.65rem;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-3);padding:0 12px 7px 0;border-bottom:1px solid var(--rule);font-weight:600}
+  td{padding:9px 12px 9px 0;border-bottom:1px solid var(--rule-2);vertical-align:top}
+  td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+  .chip{display:inline-block;font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;
+    font-weight:600;padding:2px 7px;border-radius:4px;border:1px solid;white-space:nowrap}
+  .c-sealed{color:var(--sealed);background:var(--sealed-tint);border-color:var(--sealed-line)}
+  .c-broken{color:var(--broken);background:var(--broken-tint);border-color:var(--broken-line)}
+  .c-plain{color:var(--ink-2);background:var(--sunk);border-color:var(--rule)}
+  .note{border-left:2px solid var(--rule);padding:2px 0 2px 14px;color:var(--ink-2);
+    font-size:.88rem;margin:14px 0 0;max-width:70ch}
+  .note strong{color:var(--ink)}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--rule);
+    color:var(--ink-3);font-size:.8rem}
+  @media print{
+    body{background:#fff}
+    header{background:#fff;color:#000;border-bottom:2px solid #000}
+    .eyebrow,.vault,.verdict-label{color:#444}
+    .panel{border-color:#bbb}
+    .sheet{padding-bottom:0}
+    a[href]:after{content:""}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-in">
+    <div class="eyebrow">Q-Vault &middot; Decision record</div>
+    <h1>{{ bundle.decision.title }}</h1>
+    <p class="vault">{{ bundle.decision.vault_name or "Vault %s"|format(bundle.decision.vault_id) }}
+      &middot; {{ bundle.decision.proposal_uuid }}</p>
+    <div class="verdict">
+      <span class="count">{{ approvals }}/{{ bundle.decision.required_m }}</span>
+      <span class="verdict-label">approved &middot; {{ bundle.decision.required_m }}-of-{{ bundle.decision.required_n }} required
+        {%- if device_signed %} &middot; {{ device_signed }} device-held{% endif %}</span>
+    </div>
+  </div>
+</header>
+
+<div class="sheet">
+
+  <h2>The action approved</h2>
+  <div class="panel"><p class="action">{{ bundle.decision.action_text }}</p></div>
+
+  <h2>What was signed</h2>
+  <div class="panel">
+    <dl>
+      <dt>Status</dt><dd>{{ bundle.decision.status }}</dd>
+      <dt>Payload hash</dt><dd class="mono">{{ bundle.decision.payload_hash }}</dd>
+      <dt>Attached file</dt>
+      <dd class="{% if bundle.decision.file_sha256 %}mono{% endif %}">
+        {{ bundle.decision.file_sha256 or "None" }}</dd>
+      <dt>Nonce</dt><dd class="mono">{{ bundle.decision.nonce_hex }}</dd>
+      <dt>Raised</dt><dd>{{ bundle.decision.created_at_iso }}</dd>
+      <dt>Exported</dt><dd>{{ bundle.exported_at }}</dd>
+    </dl>
+    <p class="note">The payload hash covers the vault, the exact wording above, the attached file,
+      the {{ bundle.decision.required_m }}-of-{{ bundle.decision.required_n }} rule, the list of who
+      was permitted to sign, the nonce and the timestamp &mdash; <strong>all at once</strong>. Alter
+      any one of them and the hash changes, so every signature below stops matching.</p>
+  </div>
+
+  <h2>Signatures ({{ bundle.signatures|length }})</h2>
+  <div class="panel">
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Signer</th><th>Decision</th><th>Custody</th><th>Algorithm</th>
+              <th class="num">Bytes</th><th>Signed</th></tr>
+        </thead>
+        <tbody>
+          {% for s in bundle.signatures %}
+          <tr>
+            <td>{{ s.signer_name or s.signer_email or "Signer %s"|format(s.signer_id) }}
+              {%- if s.reason %}<div style="color:var(--ink-3);font-size:.8rem">{{ s.reason }}</div>{% endif %}</td>
+            <td>{% if s.decision == 'approve' %}<span class="chip c-sealed">Approve</span>
+                {%- else %}<span class="chip c-broken">Reject</span>{% endif %}</td>
+            <td>{% if s.custody == 'device' %}<span class="chip c-sealed">Device</span>
+                {%- else %}<span class="chip c-plain">Server</span>{% endif %}</td>
+            <td class="mono">{{ s.alg_id }}</td>
+            <td class="num">{{ signature_sizes[loop.index0] }}</td>
+            <td class="mono" style="font-size:.74rem">{{ (s.signed_at or "")[:16]|replace("T", " ") }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>Custody</strong> is the difference between evidence and record. A
+      <strong>device</strong> signature was made by a key generated on the signer's own hardware that
+      the Q-Vault server has never held &mdash; so not even a compromised server could have produced
+      it. A <strong>server</strong> signature was made by a key this server unwrapped with the
+      signer's password: genuine and attributable, but the server had the means to produce it.</p>
+  </div>
+
+  <h2>Position in the transparency log</h2>
+  <div class="panel">
+    <dl>
+      <dt>Log origin</dt><dd class="mono">{{ bundle.log.origin }}</dd>
+      <dt>Tree size</dt><dd class="mono">{{ bundle.log.checkpoint.tree_size }}</dd>
+      <dt>Root hash</dt><dd class="mono">{{ bundle.log.checkpoint.root_hash }}</dd>
+      <dt>Log signature</dt><dd class="mono">{{ bundle.log.checkpoint_signature.alg_id }}</dd>
+      <dt>Witnesses</dt>
+      <dd>
+        {%- if bundle.log.witnesses %}
+          {%- for w in bundle.log.witnesses %}{{ w.witness }}
+            <span class="chip c-plain">{{ w.alg_id }}</span>{% if not loop.last %}, {% endif %}
+          {%- endfor %}
+        {%- else %}None &mdash; this export carries one fewer independent signature{% endif %}
+      </dd>
+    </dl>
+    <p class="note">A chained log stops entries being edited. It does not by itself stop the whole
+      log being replaced with a different, internally consistent one &mdash; which is what an
+      independent <strong>witness</strong> co-signature rules out, because the witness saw an earlier
+      state and will not vouch for a substitute.</p>
+  </div>
+
+  <h2>How to check this yourself</h2>
+  <div class="panel">
+    <p style="margin:0 0 10px">This certificate is for reading. It proves nothing on its own
+      &mdash; a certificate is only ever a claim about a document, and this one could have been
+      typed by anybody.</p>
+    <p style="margin:0 0 10px"><strong>The evidence is <span class="mono">decision.json</span></strong>,
+      in the same folder. To check it, open <span class="mono">verifier.html</span> in any browser
+      and load <span class="mono">decision.json</span> into it. No internet connection, no account
+      and no installation are required, and it does not contact this server.</p>
+    <p style="margin:0">The verifier rebuilds the payload hash from the decision's own contents and
+      checks every signature against the public keys in the file. Edit one character of the action
+      text in <span class="mono">decision.json</span>, reload it, and watch the signatures fail
+      &mdash; that is the property being demonstrated.</p>
+  </div>
+
+  <footer>
+    Q-Vault decision package &middot; bundle format {{ bundle.format }} &middot;
+    exported {{ bundle.exported_at }}<br>
+    Signatures use post-quantum algorithms standardised by NIST (FIPS 204 / FIPS 205).
+  </footer>
+
+</div>
+</body>
+</html>

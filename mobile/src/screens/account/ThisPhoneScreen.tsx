@@ -1,0 +1,180 @@
+// This phone (phone-ux §6.18): its name, when it was set up, how signing is confirmed and until
+// when, the optional app lock (§6.1), the key's details one tap away, and, at the end, the one
+// destructive action, "Remove this phone" (§6.19, D14).
+
+import { useEffect, useState } from 'react';
+import { Platform, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+
+import {
+  Button,
+  DisclosureRow,
+  GroupedValue,
+  InlineMessage,
+  KeyValue,
+  List,
+  ListRow,
+  NavBar,
+  Screen,
+  Scroll,
+  Section,
+  Sheet,
+  Text,
+  TextLink,
+} from '../../ui/index.tsx';
+import { makeStyles } from '../../theme/index.ts';
+import { useEnrolledSession } from '../../session.tsx';
+import { useAppLock } from '../../appLock.tsx';
+import * as keystore from '../../keystore.ts';
+import { devicesQuery } from '../../queries.ts';
+import { useSigningMethod } from '../../signingMethod.ts';
+import { dayMonth } from '../../logic/words.ts';
+import { RemoveThisPhoneSheet } from './RemoveThisPhoneSheet.tsx';
+import { canCoverSwitcher } from '../../native/screenCapture.ts';
+import { RenameDeviceSheet } from './RenameDeviceSheet.tsx';
+
+const ALGORITHMS: Record<string, string> = {
+  'ML-DSA-44': 'ML-DSA-44, FIPS 204',
+  'ML-DSA-65': 'ML-DSA-65, FIPS 204',
+  'ML-DSA-87': 'ML-DSA-87, FIPS 204',
+};
+
+export default function ThisPhoneScreen({ onBack }: { onBack: () => void }) {
+  const s = useStyles();
+  const { token, identity } = useEnrolledSession();
+  const method = useSigningMethod();
+  const lock = useAppLock();
+  const devices = useQuery(devicesQuery(token));
+  const [keySheet, setKeySheet] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockProblem, setLockProblem] = useState<string | null>(null);
+  // App lock asks for the phone's own lock: without one it can't ask, so the switch says so.
+  const [noScreenLock, setNoScreenLock] = useState(false);
+  useEffect(() => {
+    void keystore.detectProtection().then((p) => setNoScreenLock(p === 'none')).catch(() => {});
+  }, []);
+
+  const now = Date.now();
+  const current = devices.data?.devices.find((d) => d.is_current);
+  const ends = dayMonth(current?.expires_at ?? null, now);
+  const name = method?.name ?? 'your screen lock';
+
+  const toggleLock = async (on: boolean) => {
+    if (lockBusy) return;
+    setLockBusy(true);
+    setLockProblem(null);
+    const ok = await lock.setEnabled(on);
+    setLockBusy(false);
+    if (!ok) {
+      setLockProblem(
+        method ? 'Nothing changed: the check was cancelled.' : 'App lock needs a screen lock on this phone. Set one in Settings first.',
+      );
+    }
+  };
+
+  return (
+    <Screen>
+      <NavBar onBack={onBack} title="This phone" />
+      <Scroll>
+        <View style={s.stack}>
+          <List>
+            <ListRow
+              title="Name"
+              value={current?.name ?? identity.deviceName}
+              trailing={
+                current ? (
+                  <View style={s.change}>
+                    <TextLink label="Change" accessibilityLabel="Change this phone's name" onPress={() => setRenaming(true)} />
+                  </View>
+                ) : null
+              }
+            />
+            <ListRow title="Set up" value={dayMonth(identity.enrolledAt, now) ?? 'Unknown'} />
+            <ListRow
+              title="Signing confirmed by"
+              value={method ? method.name.charAt(0).toUpperCase() + method.name.slice(1) : 'Checking…'}
+            />
+            {ends ? (
+              // The consequence, not the concept (review B4): the device token's expiry.
+              <ListRow title="Approves here until" value={ends} caption="After that, sign in again on this phone." />
+            ) : null}
+          </List>
+
+          <View style={s.group}>
+            <List>
+              <ListRow
+                title={`Require ${name} to open Q-Vault`}
+                caption={
+                  Platform.OS === 'ios'
+                    ? 'Asked when Q-Vault opens, and after a minute away. The app switcher shows a cover instead of your decisions.'
+                    : canCoverSwitcher()
+                      ? 'Asked when Q-Vault opens, and after a minute away. The app switcher hides your decisions. Also stops screenshots of Q-Vault on this phone.'
+                      : 'Asked when Q-Vault opens, and after a minute away.'
+                }
+                captionLines={0}
+                toggle={{
+                  value: lock.enabled,
+                  onValueChange: (v) => void toggleLock(v),
+                  disabled: lockBusy || (noScreenLock && !lock.enabled),
+                }}
+              />
+            </List>
+            {noScreenLock ? (
+              <InlineMessage
+                tone="neutral"
+                text={
+                  lock.enabled
+                    ? "App lock can't ask while this phone has no screen lock, so Q-Vault opens without it. Set a screen lock in Settings."
+                    : 'App lock needs a screen lock on this phone. Set one in Settings to turn it on.'
+                }
+              />
+            ) : null}
+            {lockProblem ? <InlineMessage tone="warning" text={lockProblem} /> : null}
+          </View>
+
+          <List>
+            <DisclosureRow icon="key" title="Key details" onPress={() => setKeySheet(true)} />
+          </List>
+
+          <Text role="caption" tone="muted">
+            {"Getting a new phone? Set it up first, then remove this one. Lost this phone? Remove it on the web or from another device, then set up your new phone with your password. Forgotten your password too? Your Recovery Kit gets you back in on the web."}
+          </Text>
+
+          <Section>
+            {/* Outlined with a red label, not a red slab: it opens the confirming sheet, where the
+                one filled danger button is (§6.19). */}
+            <Button label="Remove this phone" variant="dangerSecondary" onPress={() => setRemoving(true)} full />
+          </Section>
+        </View>
+      </Scroll>
+
+      <Sheet visible={keySheet} onClose={() => setKeySheet(false)} title="Key details">
+        <View style={s.stack16}>
+          <View accessible accessibilityLabel={`Fingerprint ${identity.fingerprint.split('').join(' ')}`}>
+            <Text role="caption" tone="muted">
+              Fingerprint
+            </Text>
+            <GroupedValue value={identity.fingerprint} emphasiseEnds={false} />
+          </View>
+          <Text role="caption" tone="muted">
+            Compare this with your device list on the web.
+          </Text>
+          <KeyValue label="Algorithm" value={ALGORITHMS[identity.algId] ?? identity.algId} />
+          <KeyValue label="Custody" value="Made on this phone. It never leaves it." />
+        </View>
+      </Sheet>
+
+      <RemoveThisPhoneSheet visible={removing} onClose={() => setRemoving(false)} />
+      <RenameDeviceSheet device={renaming && current ? current : null} onClose={() => setRenaming(false)} />
+    </Screen>
+  );
+}
+
+const useStyles = makeStyles((t) => ({
+  stack: { gap: t.space[24], paddingTop: t.space[8] },
+  stack16: { gap: t.space[16] },
+  group: { gap: t.space[8] },
+  change: { justifyContent: 'center', paddingRight: t.space[8] },
+}));

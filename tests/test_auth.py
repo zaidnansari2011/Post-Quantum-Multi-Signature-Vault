@@ -55,15 +55,76 @@ def test_registration_logs_ledger_event_and_chain_stays_valid(app):
 
 
 def test_safe_next_rejects_offsite_and_backslash():
-    from qvault.blueprints.auth import _safe_next
+    from qvault.security.redirects import safe_next
 
-    assert _safe_next("/vaults/1") == "/vaults/1"  # legitimate same-site path
-    assert _safe_next(None) is None
-    assert _safe_next("https://evil.com") is None  # absolute URL
-    assert _safe_next("//evil.com") is None  # protocol-relative
-    assert _safe_next("/\\evil.com") is None  # backslash → normalises to //evil.com
-    assert _safe_next("\\\\evil.com") is None
-    assert _safe_next("http:/evil") is None
+    assert safe_next("/vaults/1") == "/vaults/1"  # legitimate same-site path
+    assert safe_next("/notifications/?section=updates") == "/notifications/?section=updates"
+    assert safe_next(None) is None
+    assert safe_next("https://evil.com") is None  # absolute URL
+    assert safe_next("//evil.com") is None  # protocol-relative
+    assert safe_next("/\\evil.com") is None  # backslash → normalises to //evil.com
+    assert safe_next("\\\\evil.com") is None
+    assert safe_next("http:/evil") is None
+
+
+@pytest.mark.parametrize(
+    "target", ["/\t/evil.com", "/\n/evil.com", "/\r\n/evil.com", "/\x0b/evil.com", "/\x7f/evil.com"]
+)
+def test_safe_next_rejects_control_characters(target):
+    # Browsers and Werkzeug drop a tab or newline from a URL, so "/<tab>/evil.com" would be
+    # followed as "//evil.com"; any control character is refused rather than reasoned about.
+    from qvault.security.redirects import safe_next
+
+    assert safe_next(target) is None
+
+
+def test_safe_next_keeps_percent_encoding_on_this_site():
+    # Nobody decodes a Location header before following it, so this is a path here.
+    from qvault.security.redirects import safe_next
+
+    assert safe_next("/%09/evil.com") == "/%09/evil.com"
+
+
+@pytest.mark.parametrize("target", ["/\t/evil.com", "//evil.com", "https://evil.com"])
+def test_login_ignores_a_next_off_this_site(client, target):
+    auth_service.register_user("next@auth-e.com", "Next Person", "password-123")
+    resp = client.post(
+        "/login",
+        query_string={"next": target},
+        data={"email": "next@auth-e.com", "password": "password-123"},
+    )
+    assert resp.status_code == 302
+    # Home, where every sign-in lands (it was /dashboard, which led to Account; staging 2026-10-09).
+    assert resp.headers["Location"] == "/"
+
+
+def test_signing_in_lands_on_home_not_account(client):
+    auth_service.register_user("home@auth-e.com", "Home Person", "password-123")
+    resp = client.post("/login", data={"email": "home@auth-e.com", "password": "password-123"})
+    assert resp.status_code == 302 and resp.headers["Location"] == "/"
+    page = client.get("/").get_data(as_text=True)
+    assert "<title>Home" in page
+
+
+def test_signing_in_still_goes_back_to_the_page_that_sent_you(client):
+    auth_service.register_user("next2@auth-e.com", "Next Two", "password-123")
+    resp = client.post(
+        "/login",
+        query_string={"next": "/vaults/"},
+        data={"email": "next2@auth-e.com", "password": "password-123"},
+    )
+    assert resp.headers["Location"] == "/vaults/"
+
+
+def test_a_signed_in_person_opening_sign_in_or_sign_up_goes_home(client):
+    auth_service.register_user("again@auth-e.com", "Again Person", "password-123")
+    client.post("/login", data={"email": "again@auth-e.com", "password": "password-123"})
+    assert client.get("/login").headers["Location"] == "/"
+    assert client.get("/register").headers["Location"] == "/"
+    assert client.get("/login?next=/vaults/").headers["Location"] == "/vaults/"
+    assert client.get("/login?next=//evil.com").headers["Location"] == "/"
+    # The old /dashboard link lands on Home too.
+    assert client.get("/dashboard").headers["Location"] == "/"
 
 
 def test_login_unknown_email_returns_none(app):
@@ -79,8 +140,17 @@ def test_register_endpoint_logs_user_in(client):
             "email": "dana@e.com",
             "password": "a-strong-password",
             "confirm": "a-strong-password",
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )
     assert resp.status_code == 200
-    assert b"post-quantum" in resp.data.lower()  # dashboard mentions the PQC identity
+    # Sign-up shows the Recovery Kit once (plan R9), with the flash saying the signing key was
+    # made; then Home (plan S21), where the new workspace's checklist is. The key itself is the
+    # PQC identity.
+    page = resp.get_data(as_text=True)
+    assert "Save your Recovery Kit" in page and "signing key were created" in page
+    assert "Get Test workspace started" in client.get("/").get_data(as_text=True)
+    user = User.query.filter_by(email="dana@e.com").one()
+    assert active_signing_key(user).alg_id.startswith("ML-DSA")

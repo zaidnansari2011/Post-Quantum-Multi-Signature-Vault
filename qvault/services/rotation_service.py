@@ -37,18 +37,30 @@ def _now(now: datetime | None) -> datetime:
 
 
 def active_system_key() -> Key | None:
+    # role + wrap_domain + owner_id together identify the one SYSTEM anchor key. The wrap_domain
+    # term also excludes device-custodied keys (Phase 1), which the server cannot sign with.
     return Key.query.filter_by(
         role="sig", wrap_domain="master", owner_id=None, status="active"
     ).first()
 
 
 def due_user_signing_keys(now: datetime | None = None) -> list[Key]:
-    """Active user signing keys past their rotation deadline (rotated interactively, not here)."""
+    """Active user signing keys past their rotation deadline (rotated interactively, not here).
+
+    Password-custodied only. A device key's private half never leaves the signer's phone, so the
+    server cannot re-issue it and must not advertise it as due — the "Replace key" prompt would
+    be an instruction the user has no way to carry out. Device custody is time-bounded on the
+    *token* instead (``DEVICE_TOKEN_MAX_AGE_DAYS``): the server cannot rotate a key it does not
+    hold, but it can stop accepting a device that has not re-authenticated. See ADR-0016.
+    """
     now = _now(now)
     return [
         k
         for k in Key.query.filter_by(role="sig", status="active").all()
-        if k.owner_id is not None and k.rotate_after is not None and k.rotate_after < now
+        if k.owner_id is not None
+        and k.wrap_domain == "password"
+        and k.rotate_after is not None
+        and k.rotate_after < now
     ]
 
 
@@ -68,7 +80,10 @@ def demo_expire_keys(*, actor: str = "SYSTEM", actor_id: int | None = None) -> i
     proposal demonstrations, the gate lives at the route so there is exactly one of it.
     """
     yesterday = datetime.now(UTC) - timedelta(days=1)
-    keys = Key.query.filter_by(status="active").all()
+    # Device keys are excluded explicitly, not merely by their NULL rotate_after: this function
+    # writes a deadline onto every active key it selects, so without the filter it would
+    # manufacture a "due" row that nothing can action — in front of an examiner.
+    keys = Key.query.filter_by(status="active").filter(Key.wrap_domain != "device").all()
     for key in keys:
         key.rotate_after = yesterday
 

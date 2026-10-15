@@ -1,0 +1,10 @@
+# Dependencies needed only to RUN the application on a server — never for development or CI.
+#
+# Kept separate from requirements.txt / requirements.lock.txt deliberately. CI installs the lock
+# file verbatim, and adding a WSGI server and a PostgreSQL driver there would mean regenerating it
+# and re-pinning every transitive dependency for two packages no test ever imports.
+#
+# Installed by the Dockerfile alongside requirements.lock.txt.
+
+gunicorn>=23.0            # WSGI server. Run with ONE worker — see the Dockerfile CMD and ADR-0007.
+psycopg[binary]>=3.2      # PostgreSQL driver for SQLAlchemy 2.x (URL scheme: postgresql+psycopg://)

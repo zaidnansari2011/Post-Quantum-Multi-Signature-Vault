@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
+{% block title %}Invitation link — Q-Vault{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members', tab='invited')), ('Invitation link', None)]) }}{% endblock %}
+
+{% block content %}
+{{ page_header(('New link' if resent else 'Invitation created') ~ ' for ' ~ invitation.email,
+               description='Expires ' ~ (invitation.expires_at | ws_when)) }}
+
+<div class="q-acct">
+  <section class="q-panel" aria-labelledby="link-send">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="link-send">Send them this link</h2></div>
+    <div class="q-panel__bd">
+      <div class="q-link">
+        <input class="q-input q-input--mono" id="invite-link" value="{{ link }}" readonly aria-label="Invitation link"
+               data-select-on-focus>
+        {{ button('Copy', 'primary', attrs={'data-copy-link': 'invite-link'}) }}
+      </div>
+      <p>
+        <strong>This is the only time the link is shown.</strong>
+        Q-Vault keeps only a fingerprint of it, so it can't show it again.
+        {% if resent %}The previous link no longer works.{% endif %}
+        {% if emailing %}Q-Vault will email it to {{ invitation.email }}; the Invited list shows when it's sent. You can also send it yourself.{% else %}Q-Vault isn't emailing this link: send it yourself.{% endif %}
+      </p>
+    </div>
+  </section>
+
+  <section class="q-panel" aria-labelledby="link-grants">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="link-grants">What it grants</h2></div>
+    <dl class="q-kv">
+      <div><dt>Email</dt><dd>{{ invitation.email }}</dd></div>
+      <div><dt>Role</dt><dd>{{ role_name(invitation.role) }}</dd></div>
+      <div><dt>Vaults</dt>
+      <dd>{% for g in grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}{% else %}None{% endfor %}</dd></div>
+      <div><dt>Expires</dt><dd>{{ invitation.expires_at | ws_when }}</dd></div>
+    </dl>
+  </section>
+
+  <section>
+    <div class="q-btnrow">
+      {{ button('Back to invitations', 'secondary', href=url_for('workspace.members', tab='invited')) }}
+      {{ button('Invite someone else', 'ghost', href=url_for('workspace.invite')) }}
+    </div>
+  </section>
+</div>
+
+<script>
+  document.addEventListener('click', function (e) {
+    var button = e.target.closest('[data-copy-link]');
+    if (!button) return;
+    var field = document.getElementById(button.getAttribute('data-copy-link'));
+    var label = button.querySelector('span') || button;
+    field.select();
+    if (navigator.clipboard) navigator.clipboard.writeText(field.value);
+    else document.execCommand('copy');
+    label.textContent = 'Copied';
+    setTimeout(function () { label.textContent = 'Copy'; }, 1500);
+  });
+</script>
+{% endblock %}

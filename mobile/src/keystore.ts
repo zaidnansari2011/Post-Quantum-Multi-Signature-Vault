@@ -1,0 +1,269 @@
+// Device key custody. This module is the reason ADR-0016 exists: the private half lives here and
+// is never sent anywhere.
+//
+// WHAT IS STORED IS A 32-BYTE SEED, NOT THE KEY.
+//
+// FIPS 204 key generation is deterministic in a 32-byte seed, so the expanded secret key (4,032
+// bytes for ML-DSA-65, 4,896 for ML-DSA-87) never needs to be written down at all -- it is
+// re-derived in memory for each signature and discarded. That is better custody than storing it,
+// and it also sidesteps a hard limit: expo-secure-store documents a ceiling of about 2,048 bytes
+// per value, which the base64 of either secret key comfortably exceeds. Storing the expanded key
+// would have failed on real devices, and the seed approach is what we want anyway.
+//
+// The public key is likewise not stored: it is not secret, it is re-derived from the seed, and for
+// ML-DSA-87 its base64 would breach the same limit. Only a fingerprint is kept, for display.
+
+import * as SecureStore from 'expo-secure-store';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as Crypto from 'expo-crypto';
+import { getAlgorithm, setRandomSource } from './crypto/algorithms.ts';
+import { publicKeyFingerprint } from './crypto/fingerprint.ts';
+import { fromBase64, toBase64 } from './crypto/bytes.ts';
+import type { NewKeyPair, PromptStrings, ProtectionLevel, StoredIdentity } from './custody.ts';
+import { beginAuthPrompt, endAuthPrompt } from './authPrompt.ts';
+import type { PendingPairing } from './logic/pairing.ts';
+
+// Installed on import, before anything can sign. This module is the only Custody implementation
+// the app has, so no signing path can reach noble without passing through here first -- which is
+// what makes this the right place for it rather than the entry point, where it could be reordered.
+setRandomSource((byteLength) => Crypto.getRandomBytes(byteLength));
+
+const SEED_KEY = 'qvault.device.seed.v1';
+const TOKEN_KEY = 'qvault.device.token.v1';
+const IDENTITY_KEY = 'qvault.device.identity.v1';
+// App lock (phone-ux §6.1): optional and off by default (owner, §12 Q7). A preference, not a secret;
+// kept beside the identity so it goes when the phone is removed or set up again.
+const APP_LOCK_KEY = 'qvault.device.applock.v1';
+// A pairing with the web in flight (A10, pairing-design §8): kept from the moment of the claim so a
+// killed app resumes it instead of scanning again. Holds the pending token until the web confirms.
+const PAIRING_KEY = 'qvault.pairing.v1';
+
+// THIS_DEVICE_ONLY so the item is excluded from iCloud Keychain and from encrypted backups. A
+// device-held signing key that could restore onto a second handset would defeat the point.
+const OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
+// The shapes live in custody.ts so the signing flows can be exercised without a handset.
+export type { Custody, ProtectionLevel, StoredIdentity } from './custody.ts';
+
+export async function detectProtection(): Promise<ProtectionLevel> {
+  const [hasHardware, enrolled, level] = await Promise.all([
+    LocalAuthentication.hasHardwareAsync(),
+    LocalAuthentication.isEnrolledAsync(),
+    LocalAuthentication.getEnrolledLevelAsync(),
+  ]);
+  if (hasHardware && enrolled && level === LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG) {
+    return 'biometric';
+  }
+  if (level !== LocalAuthentication.SecurityLevel.NONE) return 'device_credential';
+  return 'none';
+}
+
+export class AuthenticationCancelled extends Error {
+  constructor() {
+    super('Authentication was cancelled.');
+    this.name = 'AuthenticationCancelled';
+  }
+}
+
+/**
+ * The handset could not run the check at all -- no sensor, nothing enrolled, locked out, or the
+ * biometric permissions missing from the build.
+ *
+ * Distinct from `AuthenticationCancelled` on purpose. `authenticateAsync` RESOLVES with
+ * `{ success: false, error: 'not_available' }` for a hardware or manifest fault rather than
+ * rejecting, so collapsing every falsy `success` into "cancelled" would make a broken build
+ * indistinguishable from a signer changing their mind -- the app would look like it was working
+ * and quietly never sign anything.
+ */
+export class AuthenticationUnavailable extends Error {
+  readonly reason: string;
+  constructor(reason: string, detail?: string) {
+    super(detail ?? `This device could not verify you (${reason}).`);
+    this.name = 'AuthenticationUnavailable';
+    this.reason = reason;
+  }
+}
+
+/** Outcomes that mean a human declined, as opposed to a device that could not ask. */
+const DECLINED: ReadonlySet<string> = new Set([
+  'user_cancel',
+  'app_cancel',
+  'system_cancel',
+  'user_fallback',
+]);
+
+/**
+ * Ask the OS to confirm the human is present, immediately before a signature.
+ *
+ * `disableDeviceFallback: false` lets the PIN or pattern stand in for a fingerprint. That is a
+ * deliberate choice rather than laziness: a strict biometric-only gate locks out a signer whose
+ * sensor fails, and the recovery path for that is worse than the marginal strength gained.
+ *
+ * Returns the STRONGEST FACTOR THIS HANDSET OFFERS -- not the factor actually used. The OS does
+ * not tell us which one was: a successful `authenticateAsync` resolves to bare `{ success: true }`,
+ * and `warning` exists only on the failure branch. So on an iOS device with Face ID unavailable
+ * this still reports 'biometric' even though the passcode satisfied the prompt. Claiming otherwise
+ * would be inventing precision the platform does not give us; the label is recorded locally for
+ * display only and is never sent to the server.
+ *
+ * When the handset has no lock at all this returns 'none' rather than throwing, and the caller
+ * refuses to sign (flows.ts, phone-ux I-9): with no lock there is nothing to confirm it is the owner.
+ */
+export async function confirmPresence(prompt: PromptStrings): Promise<ProtectionLevel> {
+  const protection = await detectProtection();
+  if (protection === 'none') return 'none';
+
+  // Marked for as long as the OS prompt is up, so the app going to the background behind it (the
+  // PIN screen on Android) refetches nothing mid-signature (src/authPrompt.ts, phone-ux §2.6).
+  beginAuthPrompt();
+  let result: LocalAuthentication.LocalAuthenticationResult;
+  try {
+    result = await LocalAuthentication.authenticateAsync({
+      promptMessage: prompt.message,
+      promptSubtitle: prompt.subtitle,
+      promptDescription: prompt.description,
+      cancelLabel: 'Cancel',
+      disableDeviceFallback: false,
+      // The handset-proven options, kept on purpose. `biometricsSecurityLevel: 'strong'` with the PIN
+      // fallback makes expo-local-authentication 57.0.2 ask androidx.biometric for
+      // BIOMETRIC_STRONG | DEVICE_CREDENTIAL, a combination androidx documents as unsupported on
+      // Android 9 and 10 (API 28-29): `PromptInfo.Builder.build()` throws there, outside the module's
+      // try, so those phones could not sign at all. Class 3 only, and the confirm after a face match,
+      // wait for a handset check (docs/OWNER-ACTIONS.md, "Rework: phone handset checks").
+      requireConfirmation: false,
+    });
+  } finally {
+    endAuthPrompt();
+  }
+  if (!result.success) {
+    if (DECLINED.has(result.error)) throw new AuthenticationCancelled();
+    throw new AuthenticationUnavailable(result.error, result.warning);
+  }
+  return protection;
+}
+
+/** The biometric hardware the phone lists, for the button's method name (src/logic/methodLabel.ts). */
+export async function supportedHardware(): Promise<number[]> {
+  try {
+    return await LocalAuthentication.supportedAuthenticationTypesAsync();
+  } catch {
+    return [];
+  }
+}
+
+// -- persistence ---------------------------------------------------------------------------------
+
+export async function saveIdentity(identity: StoredIdentity): Promise<void> {
+  await SecureStore.setItemAsync(IDENTITY_KEY, JSON.stringify(identity), OPTIONS);
+}
+
+export async function loadIdentity(): Promise<StoredIdentity | null> {
+  const raw = await SecureStore.getItemAsync(IDENTITY_KEY, OPTIONS);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredIdentity;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveToken(token: string): Promise<void> {
+  await SecureStore.setItemAsync(TOKEN_KEY, token, OPTIONS);
+}
+
+export async function loadToken(): Promise<string | null> {
+  return SecureStore.getItemAsync(TOKEN_KEY, OPTIONS);
+}
+
+/** Generate a fresh seed and persist it. Returns the derived public key, which is not stored. */
+export async function createKeyPair(algId: string): Promise<NewKeyPair> {
+  const alg = getAlgorithm(algId);
+  // Native CSPRNG rather than a JS one: the seed IS the private key here.
+  const seed = await Crypto.getRandomBytesAsync(32);
+  await SecureStore.setItemAsync(SEED_KEY, toBase64(seed), OPTIONS);
+  const kp = alg.keygen(seed);
+  return {
+    publicKeyB64: toBase64(kp.publicKey),
+    fingerprint: publicKeyFingerprint(kp.publicKey),
+    sign: (message: Uint8Array) => alg.sign(message, kp.secretKey),
+  };
+}
+
+/**
+ * Re-derive the key pair from the stored seed.
+ *
+ * Call `confirmPresence` first. This deliberately does not do it itself: the caller knows what the
+ * signature is FOR, and a prompt that cannot name the action it authorises is a prompt people
+ * learn to dismiss without reading.
+ */
+export async function deriveKeyPair(algId: string): Promise<{
+  publicKey: Uint8Array;
+  secretKey: Uint8Array;
+} | null> {
+  const stored = await SecureStore.getItemAsync(SEED_KEY, OPTIONS);
+  if (!stored) return null;
+  const seed = fromBase64(stored);
+  if (seed.length !== 32) throw new Error('Stored key seed is corrupt.');
+  return getAlgorithm(algId).keygen(seed);
+}
+
+/**
+ * Whether the seed is still here, without deriving a key from it. The session asks at start-up: an
+ * identity whose seed has gone (SecureStore cleared) cannot sign, and says so (phone-ux §6.20).
+ */
+export async function hasSeed(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(SEED_KEY, OPTIONS)) !== null;
+}
+
+/** Forget the token and identity, keeping the seed: re-setup after a session ended (§6.20). */
+export async function forgetSession(): Promise<void> {
+  await Promise.all([
+    SecureStore.deleteItemAsync(TOKEN_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(IDENTITY_KEY, OPTIONS),
+  ]);
+}
+
+/** Remove every trace of this device's identity. Used after revocation or a failed enrolment. */
+export async function forgetEverything(): Promise<void> {
+  await Promise.all([
+    SecureStore.deleteItemAsync(SEED_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(TOKEN_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(IDENTITY_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(APP_LOCK_KEY, OPTIONS),
+    SecureStore.deleteItemAsync(PAIRING_KEY, OPTIONS),
+  ]);
+}
+
+/** Keep the pairing in flight (§8). */
+export async function savePendingPairing(pending: PendingPairing): Promise<void> {
+  await SecureStore.setItemAsync(PAIRING_KEY, JSON.stringify(pending), OPTIONS);
+}
+
+export async function loadPendingPairing(): Promise<PendingPairing | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(PAIRING_KEY, OPTIONS);
+    return raw ? (JSON.parse(raw) as PendingPairing) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function forgetPendingPairing(): Promise<void> {
+  await SecureStore.deleteItemAsync(PAIRING_KEY, OPTIONS);
+}
+
+/** Whether app lock is on (§6.1). Off unless this phone turned it on. */
+export async function loadAppLock(): Promise<boolean> {
+  try {
+    return (await SecureStore.getItemAsync(APP_LOCK_KEY, OPTIONS)) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+export async function saveAppLock(on: boolean): Promise<void> {
+  if (on) await SecureStore.setItemAsync(APP_LOCK_KEY, 'on', OPTIONS);
+  else await SecureStore.deleteItemAsync(APP_LOCK_KEY, OPTIONS);
+}

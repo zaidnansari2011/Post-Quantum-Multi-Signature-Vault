@@ -9,12 +9,15 @@ so none of them can be altered after signatures exist.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 
 from qvault.crypto import canonical_json
 
 DS_PROPOSAL = b"QVAULT-SIG-v1:PROPOSAL"
 DS_VOTE = b"QVAULT-SIG-v1:VOTE"
+DS_DEVICE_ENROL = b"QVAULT-SIG-v1:DEVICE-ENROL"
 
 
 def proposal_signing_bytes(
@@ -28,20 +31,73 @@ def proposal_signing_bytes(
     authorized_signers: list[int],
     nonce_hex: str,
     created_at_iso: str,
+    action: dict | None = None,
 ) -> bytes:
-    """Return the exact canonical bytes to be signed for this proposal."""
-    body = canonical_json(
-        {
-            "vault_id": vault_id,
-            "proposal_id": proposal_uuid,
-            "action_text": action_text,
-            "file_sha256": file_sha256,  # hex string, or null when there is no file
-            "policy": {"M": required_m, "N": required_n, "signers": sorted(authorized_signers)},
-            "nonce": nonce_hex,
-            "created_at": created_at_iso,
-        }
+    """Return the exact canonical bytes to be signed for this proposal.
+
+    ``action`` is the payment a payment decision authorises, in the fixed shape of
+    ``qvault.chain.action`` (plan D22). It is added **only when present**, so every proposal
+    without one hashes exactly as it always has (``tests/test_payload_vectors.py``). It is hashed
+    as given, not validated here: this module is shared with the offline verifier, which must
+    reproduce whatever was signed, and a malformed action must produce a different hash rather
+    than an exception.
+    """
+    fields = {
+        "vault_id": vault_id,
+        "proposal_id": proposal_uuid,
+        "action_text": action_text,
+        "file_sha256": file_sha256,  # hex string, or null when there is no file
+        "policy": {"M": required_m, "N": required_n, "signers": sorted(authorized_signers)},
+        "nonce": nonce_hex,
+        "created_at": created_at_iso,
+    }
+    if action is not None:
+        fields["action"] = action
+    return DS_PROPOSAL + b"|" + canonical_json(fields)
+
+
+#: Networks a payment can name, for its text. Mirrors ``qvault.chain.action.NETWORKS``.
+PAYMENT_NETWORKS = {11_155_111: "Sepolia"}
+_WEI_PER_ETH = 10**18
+
+
+def format_wei(value_wei: int) -> str:
+    """An exact ETH amount: ``100000000000000`` wei is ``"0.0001 ETH"``. Never via a float."""
+    whole, fraction = divmod(value_wei, _WEI_PER_ETH)
+    if not fraction:
+        return f"{whole} ETH"
+    return f"{whole}.{str(fraction).rjust(18, '0').rstrip('0')} ETH"
+
+
+def payment_text(action: object) -> str | None:
+    """The only text a payment decision may carry (plan D24), or ``None`` for a malformed action.
+
+    Here rather than in ``qvault.chain.action`` because the offline verifier needs it and must not
+    need Ethereum libraries: a verifier that checked only the hash would call a decision whose
+    text says "0.0001 ETH to you" verified while the signed payment sends 5 ETH elsewhere. Kept to
+    plain string and integer operations so the browser verifier's copy can match it exactly.
+    """
+    if not isinstance(action, dict):
+        return None
+    value, chain = action.get("value_wei"), action.get("chain_id")
+    treasury, to = action.get("treasury"), action.get("to")
+    if not (
+        isinstance(value, str)
+        and 0 < len(value) <= 78
+        and value.isascii()
+        and value.isdigit()
+        and (value == "0" or not value.startswith("0"))  # one decimal form, as in the browser
+        and isinstance(chain, int)
+        and not isinstance(chain, bool)
+        and chain in PAYMENT_NETWORKS
+        and isinstance(treasury, str)
+        and isinstance(to, str)
+    ):
+        return None
+    return (
+        f"Pay {format_wei(int(value))} from this vault's treasury {treasury} "
+        f"to {to} on {PAYMENT_NETWORKS[chain]}."
     )
-    return DS_PROPOSAL + b"|" + body
 
 
 def vote_signing_bytes(*, proposal_payload_hash: str, decision: str, signer_id: int) -> bytes:
@@ -67,8 +123,11 @@ def vote_signing_bytes(*, proposal_payload_hash: str, decision: str, signer_id: 
 
 
 def signing_bytes_for(proposal) -> bytes:
-    """Recompute the canonical signing bytes from a stored Proposal (+ its optional file)."""
+    """Recompute the canonical signing bytes from a stored Proposal (+ its optional file and
+    payment)."""
     file_sha = proposal.file.content_sha256 if proposal.file is not None else None
+    stored_action = getattr(proposal, "action", None)
+    action = stored_action.canonical() if stored_action is not None else None
     return proposal_signing_bytes(
         vault_id=proposal.vault_id,
         proposal_uuid=proposal.proposal_uuid,
@@ -79,4 +138,150 @@ def signing_bytes_for(proposal) -> bytes:
         authorized_signers=json.loads(proposal.authorized_signers_snapshot),
         nonce_hex=proposal.nonce.hex(),
         created_at_iso=proposal.created_at_iso,
+        action=action,
     )
+
+
+def device_enrolment_bytes(
+    *, user_id: int, alg_id: str, public_key_b64: str, challenge: str
+) -> bytes:
+    """The exact bytes a device signs to prove it holds the private half it is enrolling.
+
+    Enrolment is the moment a new signing identity is admitted to the vault, so the server must
+    not take a public key on trust: without a proof of possession, anyone able to POST could
+    register a key **they do not hold** against a user, and every later signature by the real
+    holder of that key would be attributed to that user — deniable delegation of approval
+    authority, which is the exact property a multi-signature vault exists to prevent. Requiring a
+    signature here is the enrolment analogue of ADR-0010's verify-after-sign: never record a key
+    we have not just watched produce a valid signature under it.
+
+    It also catches the mundane failures loudly and early — a truncated base64 body, or a byte
+    format that drifted between the device's implementation and ours — at enrolment rather than at
+    the first vote, where the same symptom is indistinguishable from a compromised device.
+
+    Binds four things under a domain tag of its own:
+
+    - ``user_id`` — so an enrolment proof cannot be replayed against a different account;
+    - ``alg_id`` and ``public_key_b64`` — so the proof covers the exact key being registered, not
+      merely *some* key the device holds;
+    - ``challenge`` — the server-issued, master-key-MAC'd, time-bounded nonce, so a proof captured
+      once cannot be replayed later.
+
+    ``DS_DEVICE_ENROL`` keeps these bytes disjoint from ``DS_PROPOSAL`` and ``DS_VOTE``: an
+    enrolment proof can never be reinterpreted as a vote, nor a vote as an enrolment.
+    """
+    body = canonical_json(
+        {
+            "user_id": user_id,
+            "alg_id": alg_id,
+            "public_key": public_key_b64,
+            "challenge": challenge,
+        }
+    )
+    return DS_DEVICE_ENROL + b"|" + body
+
+
+DS_DEVICE_PAIR = b"QVAULT-SIG-v1:DEVICE-PAIR"
+
+
+def device_pairing_bytes(
+    *,
+    user_id: int,
+    pairing_uuid: str,
+    alg_id: str,
+    public_key_b64: str,
+    pending_token_digest: str,
+) -> bytes:
+    """The exact bytes a phone signs to claim a pairing by code (A10, pairing-design §3.8).
+
+    The enrolment proof's job (possession of the key being registered, bound to the account), plus
+    two bindings that route needs and the password route did not:
+
+    - ``pairing_uuid``, the server-chosen id of a pairing session that lives at most four minutes:
+      the freshness the enrolment challenge gives the password route, so no challenge is issued;
+    - ``pending_token_digest``, the digest of the bearer token the phone chose and keeps: a proof
+      captured or replayed cannot install anyone else's token, so a retry that repeats the body is
+      harmless and one that changes the digest needs the private key.
+
+    ``DS_DEVICE_PAIR`` keeps these bytes disjoint from proposals, votes and password enrolment.
+    """
+    body = canonical_json(
+        {
+            "user_id": user_id,
+            "pairing_uuid": pairing_uuid,
+            "alg_id": alg_id,
+            "public_key": public_key_b64,
+            "pending_token_digest": pending_token_digest,
+        }
+    )
+    return DS_DEVICE_PAIR + b"|" + body
+
+
+def pairing_check_code(
+    *, pairing_uuid: str, public_key_sha256: str, pending_token_digest: str
+) -> str:
+    """The six digits the phone shows and the person types on the web (A10, §3.8).
+
+    Derived from the pairing, the claimed key and the pending token's digest. The web page never
+    holds the digest, so only the server and the phone that won the claim can compute it: typing
+    it forces the code to come from a phone in the person's hand."""
+    digest = hashlib.sha256(
+        b"qvault:pair-check:v1|"
+        + pairing_uuid.encode("ascii")
+        + b"|"
+        + public_key_sha256.encode("ascii")
+        + b"|"
+        + pending_token_digest.encode("ascii")
+    ).digest()
+    return f"{int.from_bytes(digest[:8], 'big') % 1_000_000:06d}"
+
+
+DS_RECOVERY = b"QVAULT-SIG-v1:RECOVERY"
+_WHOLE_SECOND_UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", re.ASCII)
+#: Why a paired phone signs a recovery (plan R9, design §6.4).
+RECOVERY_PURPOSES = ("web_reset", "kit_confirm")
+
+
+def recovery_signing_bytes(
+    *,
+    purpose: str,
+    request_uuid: str,
+    user_id: int,
+    device_id: int,
+    key_id: int,
+    deployment: str,
+    expires_at: str,
+) -> bytes:
+    """The exact bytes a paired phone signs to vouch for an account recovery (plan R9, design
+    §6.4): to start a web reset (``web_reset``) or to confirm a Recovery Kit request
+    (``kit_confirm``). The one signed format R9 adds; the tag is frozen like the others.
+
+    Binds, under a domain tag of its own (so it can never be read as a vote, a decision or an
+    enrolment proof, nor they as it):
+
+    - ``purpose``, so a confirmation of someone's kit can never be replayed as a web reset, nor
+      the other way round;
+    - ``request_uuid``, so a signature for one request vouches for no other;
+    - ``user_id``, ``device_id`` and ``key_id``, the account and the phone that vouched;
+    - ``deployment``, the SHA-256 (hex) of this deployment's SYSTEM anchor public key, because
+      demo snapshots clone user ids: a signature made against one deployment is refused by
+      another;
+    - ``expires_at``, ISO-8601 UTC in whole seconds ending ``Z``: the signed end of its 10
+      minutes.
+    """
+    if purpose not in RECOVERY_PURPOSES:
+        raise ValueError(f"invalid recovery purpose: {purpose!r}")
+    if not (isinstance(expires_at, str) and _WHOLE_SECOND_UTC.fullmatch(expires_at)):
+        raise ValueError(f"expires_at must be whole-second ISO-8601 UTC ending Z: {expires_at!r}")
+    body = canonical_json(
+        {
+            "purpose": purpose,
+            "request_uuid": request_uuid,
+            "user_id": user_id,
+            "device_id": device_id,
+            "key_id": key_id,
+            "deployment": deployment,
+            "expires_at": expires_at,
+        }
+    )
+    return DS_RECOVERY + b"|" + body

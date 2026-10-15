@@ -7,6 +7,7 @@ Flask-Login>=0.6
 Flask-WTF>=1.2
 WTForms>=3.1
 email-validator>=2.0     # WTForms Email() validator
+segno>=1.6               # QR codes drawn as inline SVG on the server (A10, pairing by code)
 
 # --- Persistence ---
 SQLAlchemy>=2.0
@@ -20,6 +21,14 @@ APScheduler>=3.10
 cryptography>=42.0        # AES-256-GCM, SHA-256
 argon2-cffi>=23.1         # Argon2id KDF / password hashing
 quantcrypt>=1.0.1         # PQC backend: ML-DSA / SLH-DSA / ML-KEM (prebuilt PQClean)
+
+# --- On-chain execution (docs/plans/onchain-execution.md) ---
+# The relayer's Ethereum transactions are signed with secp256k1. That key only pays gas — the
+# approvals themselves are ML-DSA-65 and checked by the contract — but it is still not something
+# to hand-roll, so transaction signing and RLP come from the reference Python implementation.
+eth-account>=0.14         # EIP-1559 transaction signing for the relayer
+eth-abi>=6.0              # ABI encoding: must match Solidity's abi.encode byte for byte
+pycryptodome>=3.23        # keccak-256 (eth-hash backend); hashlib's sha3_256 is NOT keccak
 
 # --- Config ---
 python-dotenv>=1.0

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/feedback.html" import banner %}
+{% block title %}Set a new web password — Q-Vault{% endblock %}
+
+{#- /recover/phone (plan R9 Phase 2, design §6.2): the code a paired phone shows after "Set a new
+    web password" in the app, typed here with the email and a new password. The reset starts on
+    the phone, so there is never a code to relay from this page to anyone. An unknown email, no
+    waiting approval and a wrong code get the same words; the code is never written back. -#}
+{% macro body() %}
+<div class="q-auth q-auth--wide">
+  <h1 class="q-auth__t">Set a new web password</h1>
+  <p class="q-auth__p">
+    Type the code your phone shows and choose a new password. You get a new web signing key with
+    it. They take effect 24 hours from now. Until then nothing changes, and you, your workspace’s
+    admins and your fellow approvers are told and can cancel it. Your phone keeps working.
+  </p>
+  {{ banner('info', 'Start this on your phone, never from a link.', 'In the Q-Vault app, open Security and choose “Set a new web password”. If anyone asks you to type a code they sent you, it isn’t us.') }}
+  {%- if refusal %}
+  {{ banner('critical', refusal, announce=True) }}
+  {%- endif %}
+  <form method="post" novalidate autocomplete="off">
+    {{ form.hidden_tag() }}
+    {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
+    {{ wtf_field(form.code, caption='12 characters in 3 groups of 4, as your phone shows them. It works for 10 minutes.', mono=True,
+                 attrs={'autocomplete': 'one-time-code', 'autocapitalize': 'characters', 'spellcheck': 'false'}) }}
+    {{ wtf_field(form.password, caption='At least 8 characters. It also unlocks your new web signing key.', attrs={'autocomplete': 'new-password'}) }}
+    {{ wtf_field(form.confirm, attrs={'autocomplete': 'new-password'}) }}
+    {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
+  </form>
+  <p class="q-auth__foot">
+    No phone? <a href="{{ url_for('auth.forgot_password') }}">See the other ways back</a>
+  </p>
+</div>
+{% endmacro %}
+
+{% block content %}{{ body() }}{% endblock %}
+{% block anon_content %}{{ body() }}{% endblock %}

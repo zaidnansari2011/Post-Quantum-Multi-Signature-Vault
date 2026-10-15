@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
+{% block title %}Remove {{ member.user.display_name }} — Q-Vault{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Remove ' ~ member.user.display_name, None)]) }}{% endblock %}
+
+{% block content %}
+{{ page_header('Remove ' ~ member.user.display_name, description=workspace.name) }}
+
+<div class="q-acct">
+  {% if vaults %}
+  <section class="q-panel" aria-labelledby="rm-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rm-t">Not yet</h2></div>
+    <div class="q-panel__bd">
+      <p>
+        {{ member.user.display_name }} still belongs to
+        {% for v in vaults %}<a href="{{ url_for('vaults.vault_detail', vid=v.id, tab='members') }}">{{ v.name }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+        Each vault's owner removes them from it first, so the vault's approvers only change under its own rules.
+      </p>
+      {{ button('Back to members', 'secondary', href=url_for('workspace.members')) }}
+    </div>
+  </section>
+  {% else %}
+  <section class="q-panel" aria-labelledby="rm-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rm-t">Remove from the workspace</h2></div>
+    <div class="q-panel__bd">
+      <p>
+        {{ member.user.display_name }} ({{ member.user.email }}) will no longer appear in
+        {{ workspace.name }} and can't be added to its vaults. Their account, their signing keys and
+        every signature they made stay as they are, and the removal is recorded in Audit.
+        To bring them back, invite them again.
+      </p>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="q-field">
+          <label class="q-field__label" for="confirm">Type <strong>{{ member.user.email }}</strong> to confirm</label>
+          <input class="q-input" id="confirm" name="confirm" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="q-btnrow">
+          {{ button('Remove ' ~ member.user.display_name, 'danger', type='submit') }}
+          {{ button('Cancel', 'ghost', href=url_for('workspace.members')) }}
+        </div>
+      </form>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

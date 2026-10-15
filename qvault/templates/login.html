@@ -1,30 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Log in{% endblock %}
-{% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-6 col-lg-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h1 class="h4 mb-4">Log in</h1>
-        <form method="post" novalidate>
-          {{ form.hidden_tag() }}
-          <div class="mb-3">
-            {{ form.email.label(class="form-label") }}
-            {{ form.email(class="form-control") }}
-            {% for e in form.email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.password.label(class="form-label") }}
-            {{ form.password(class="form-control") }}
-            {% for e in form.password.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          {{ form.submit(class="btn btn-primary w-100") }}
-        </form>
-      </div>
-    </div>
-    <p class="text-center text-muted small mt-3">
-      No account? <a href="{{ url_for('auth.register') }}">Register</a>.
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% block title %}Sign in — Q-Vault{% endblock %}
+{% block anon_content %}
+<div class="q-auth">
+  <h1 class="q-auth__t">Sign in</h1>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
+    {% set forgot %}<a class="q-field__aside" href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>{% endset %}
+    {{ wtf_field(form.password, attrs={'autocomplete': 'current-password'}, aside=forgot) }}
+    {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
+  </form>
+
+  {# The credentials belong on the form that needs them, not on the landing page one navigation
+     step away. Someone demonstrating this live should never have to go back for them. #}
+  {% if demo_enabled %}
+  <div class="q-dev">
+    {{ button('Use the demonstration account', 'secondary', size='sm', block=True,
+              attrs={'data-fill-email': 'ada@qvault.demo', 'data-fill-password': 'demo-password-2026'}) }}
+    <p class="q-small">
+      Email <code class="q-mono">ada@qvault.demo</code>, password <code class="q-mono">demo-password-2026</code>
     </p>
   </div>
+  {% endif %}
+
+  <p class="q-auth__foot">
+    New to Q-Vault? <a href="{{ url_for('auth.register') }}">Create your workspace</a>
+  </p>
 </div>
 {% endblock %}

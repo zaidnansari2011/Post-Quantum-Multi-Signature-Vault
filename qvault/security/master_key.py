@@ -18,6 +18,11 @@ from flask import current_app
 
 _MASTER_AAD = b"qvault:master-wrap:v1"
 _MAC_DS = b"qvault:system-pubkey-mac:v1"
+# Deliberately NOT _MAC_DS. That tag authenticates the SYSTEM anchor public key — the root of the
+# ledger's trust. A challenge MAC is issued freely to anyone who can type a password, so sharing a
+# tag would let an attacker who could steer bytes into one verifier obtain a token the other
+# accepts. One tag, one meaning.
+_CHALLENGE_DS = b"qvault:device-enrol-challenge:v1"
 
 
 def _parse_hex_key(raw: str) -> bytes | None:
@@ -69,3 +74,92 @@ def verify_mac(data: bytes, tag: bytes | None) -> bool:
     if not tag:
         return False
     return hmac.compare_digest(mac(data), tag)
+
+
+def challenge_mac(data: bytes) -> bytes:
+    """HMAC-SHA256 over a device-enrolment challenge, under a domain tag of its own.
+
+    Lets an enrolment challenge carry its own expiry and be handed back to the server as evidence,
+    with no table to write and no sweep to expire it: the MAC proves *we* minted it and the
+    embedded deadline proves *when*. Keyed by the master key because the challenge is server-issued
+    state that must survive a restart without being stored.
+    """
+    return hmac.new(get_master_key(), _CHALLENGE_DS + data, hashlib.sha256).digest()
+
+
+def verify_challenge_mac(data: bytes, tag: bytes | None) -> bool:
+    """Constant-time check that ``tag`` is a valid challenge MAC over ``data``.
+
+    Authenticity only — the caller must still enforce the expiry encoded in ``data``.
+    """
+    if not tag:
+        return False
+    return hmac.compare_digest(challenge_mac(data), tag)
+
+
+# -- Recovery Kit (R9, design section 5.1) ---------------------------------------------------------
+# Three more tags, each with one meaning. None of them is _MAC_DS: a kit's MAC must never be
+# accepted as the SYSTEM key's, nor the other way round.
+_KIT_PEPPER_DS = b"qvault:kit-pepper:v1|"
+_KIT_PK_DS = b"qvault:recovery-kit-pk:v1|"
+_KIT_CONFIRM_DS = b"qvault:kit-confirm:v1|"
+
+
+def kit_pepper(kit_uuid: str) -> bytes:
+    """The secret only the live server can add to a kit's key: HMAC-SHA256(master key,
+    ``qvault:kit-pepper:v1|`` + kit uuid). Mixed into the kit KEK, so a stolen database and a
+    stolen kit, without ``SERVER_MASTER_KEY``, open nothing (review M2). Never stored."""
+    return hmac.new(
+        get_master_key(), _KIT_PEPPER_DS + kit_uuid.encode("ascii"), hashlib.sha256
+    ).digest()
+
+
+def kit_pk_mac(data: bytes) -> bytes:
+    """HMAC-SHA256 over a kit's public-key record (``recovery_kit.pk_mac_input``): its owner, its
+    uuid, its KEM algorithm, its Argon2id parameters and salt, when it was made and the public
+    key. A database writer cannot swap in a key of their own, relabel the algorithm, or weaken
+    the derivation, without the master key (review L5)."""
+    return hmac.new(get_master_key(), _KIT_PK_DS + data, hashlib.sha256).digest()
+
+
+def verify_kit_pk_mac(data: bytes, tag: bytes | None) -> bool:
+    if not tag:
+        return False
+    return hmac.compare_digest(kit_pk_mac(data), tag)
+
+
+def kit_confirm_tag(kit_uuid: str, last_group: str) -> bytes:
+    """A tag the kit page carries so the server can check the last group typed back without
+    seeing the code again or storing anything from it. It is sent only to the browser that is
+    showing the whole code, and is never stored."""
+    data = kit_uuid.encode("ascii") + b"|" + last_group.encode("ascii")
+    return hmac.new(get_master_key(), _KIT_CONFIRM_DS + data, hashlib.sha256).digest()
+
+
+# A pairing code's token (A10, pairing-design §3.2). Derived, so the bound web page can draw the QR
+# again on a reload, while the database holds only its hash and a salt: a reader of the database
+# alone cannot rebuild a code someone is about to scan.
+_PAIR_TOKEN_DS = b"qvault:pair-token:v1|"
+
+
+def pairing_token(pairing_uuid: str, salt: bytes) -> bytes:
+    """The 32 bytes behind a pairing code, for this pairing's uuid and salt."""
+    return hmac.new(
+        get_master_key(),
+        _PAIR_TOKEN_DS + pairing_uuid.encode("ascii") + b"|" + salt,
+        hashlib.sha256,
+    ).digest()
+
+
+# -- Recovery by phone (R9 Phase 2, design section 6) ----------------------------------------------
+# The code a paired phone shows, to be typed on the web. Its own tag: never _MAC_DS, never a kit's.
+_PHONE_CODE_DS = b"qvault:recovery-phone-code:v1|"
+
+
+def phone_code_tag(approval_id: int, request_uuid: str, code: str) -> bytes:
+    """HMAC-SHA256(master key, ``qvault:recovery-phone-code:v1|`` + approval id + request uuid +
+    code): how a phone approval's code is kept. A copy of the database holds no code and cannot
+    test guesses at one (8 symbols are 40 bits, which a plain hash would give up offline), and a
+    tag made for one approval opens no other."""
+    data = f"{int(approval_id)}|{request_uuid}|{code}".encode("ascii")
+    return hmac.new(get_master_key(), _PHONE_CODE_DS + data, hashlib.sha256).digest()

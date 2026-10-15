@@ -1,0 +1,13 @@
+{{ copy.heading }}
+
+{% for line in copy.lines %}{{ line }}
+
+{% endfor %}{% for label, value in copy.facts %}{{ label }}: {{ value }}
+{% endfor %}{% if copy.facts %}
+{% endif %}{{ copy.action }}:
+{{ url }}
+
+--
+{{ copy.reason }}
+{% if preferences %}Choose which emails you get: {{ preferences }}
+{% endif %}Q-Vault never asks you to approve or sign from an email. If an email does, it isn't from us.

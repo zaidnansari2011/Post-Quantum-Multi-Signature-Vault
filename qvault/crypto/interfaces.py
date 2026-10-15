@@ -26,13 +26,22 @@ class AlgMeta:
     """
 
     alg_id: str  # canonical id stored in the DB, e.g. "ML-DSA-65"
-    family: str  # "ML-DSA" | "SLH-DSA" | "ML-KEM" | "AES-GCM"
+    family: str  # "ML-DSA" | "SLH-DSA" | "ML-KEM" | "AES-GCM" | "RSA" | "ECDSA"
     human_name: str  # "CRYSTALS-Dilithium (category 3)"
     nist_standard: str  # "FIPS 204"
-    security_category: int  # NIST security level 1..5
+    security_category: int  # NIST *post-quantum* security level 1..5, or 0 — see below
     backend: str  # "quantcrypt" | "liboqs" | "cryptography"
     sizes: dict  # {"public_key": int, "secret_key": int, "signature": int} etc.
     pqclean_name: str | None = None  # underlying reference-impl name, for the report
+    quantum_vulnerable: bool = False  # True => a large quantum computer breaks this outright
+    broken_by: str | None = None  # the attack that does it, e.g. "Shor's algorithm (factoring)"
+
+    # ``security_category`` is the NIST *post-quantum* category. Classical algorithms
+    # (RSA, ECDSA) are registered with category **0**: not "weak", but "no post-quantum
+    # security at all" — Shor's algorithm reduces them to polynomial time regardless of
+    # key size, so there is no parameter choice that earns them a category. Encoding that
+    # as 0 is what makes ``config_service``'s existing downgrade refusal fire on any
+    # attempt to make one of them the active algorithm, with no special case for it.
 
 
 @dataclass(frozen=True)
