@@ -288,15 +288,22 @@ def create(user: User, *, now: datetime | None = None) -> DevicePairing:
         raise PairingError("not_set_up", "Pairing by code isn't set up on this server.")
     tag = _session_tag()
     hour = now - timedelta(hours=1)
-    mine = select(func.count()).select_from(DevicePairing).where(
-        DevicePairing.user_id == user.id, DevicePairing.created_at > hour
+    mine = (
+        select(func.count())
+        .select_from(DevicePairing)
+        .where(DevicePairing.user_id == user.id, DevicePairing.created_at > hour)
     )
     account = db.session.scalar(mine) or 0
-    session_count = db.session.scalar(
-        mine.where(
-            DevicePairing.session_tag.is_(None) if tag is None else DevicePairing.session_tag == tag
+    session_count = (
+        db.session.scalar(
+            mine.where(
+                DevicePairing.session_tag.is_(None)
+                if tag is None
+                else DevicePairing.session_tag == tag
+            )
         )
-    ) or 0
+        or 0
+    )
     if session_count >= CREATE_PER_HOUR or account >= CREATE_PER_HOUR_ACCOUNT:
         raise PairingError(
             "too_many",

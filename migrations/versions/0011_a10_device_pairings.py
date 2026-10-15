@@ -36,7 +36,6 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-
 def upgrade() -> None:
     op.create_table(
         "device_pairings",

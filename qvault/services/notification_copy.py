@@ -241,9 +241,7 @@ def describe(notification, *, waits: bool, now: datetime) -> Copy:
         how = (
             " from the web"
             if by == "web"
-            else " from the phone itself"
-            if by == "itself"
-            else (f" by {_clip(by)}" if by else "")
+            else " from the phone itself" if by == "itself" else (f" by {_clip(by)}" if by else "")
         )
         return Copy(
             "A device was removed",

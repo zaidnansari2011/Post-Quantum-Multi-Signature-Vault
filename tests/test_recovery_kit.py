@@ -375,9 +375,7 @@ def test_no_code_hash_of_the_code_kek_or_pepper_is_stored(app, ada):
                 blob = (
                     value
                     if isinstance(value, bytes)
-                    else str(value).encode()
-                    if value is not None
-                    else b""
+                    else str(value).encode() if value is not None else b""
                 )
                 for secret in secrets:
                     assert secret not in blob, f"a kit secret is stored in {table}"

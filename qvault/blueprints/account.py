@@ -290,7 +290,7 @@ def pair_confirm(pairing_uuid: str):
 @bp.post("/devices/pair/<pairing_uuid>/decline")
 @login_required
 def pair_decline(pairing_uuid: str):
-    """"My phone didn't scan this": nothing is added, and it is logged and told (⚑9)."""
+    """ "My phone didn't scan this": nothing is added, and it is logged and told (⚑9)."""
     from qvault.services import pairing_service
     from qvault.services.pairing_service import PairingError
 

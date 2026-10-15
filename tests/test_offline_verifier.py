@@ -122,9 +122,9 @@ def agree(app, page, bundle, pins=None):
     js_failed = {c["key"] for c in js["checks"] if not c["ok"] and not c["skipped"]}
     py_failed = {c.key for c in py.failures}
     assert js["ok"] == py.ok, f"verdicts differ: browser={js['ok']} python={py.ok}\n{js['summary']}"
-    assert js_failed == py_failed, (
-        f"different checks failed: browser={js_failed} python={py_failed}"
-    )
+    assert (
+        js_failed == py_failed
+    ), f"different checks failed: browser={js_failed} python={py_failed}"
     return js
 
 
@@ -140,9 +140,9 @@ def test_the_committed_verifier_matches_its_sources():
     sys.path.insert(0, str(ROOT / "scripts"))
     from build_verifier import render
 
-    assert VERIFIER.read_text(encoding="utf-8") == render(), (
-        "qvault/static/verifier.html is out of date — run scripts/build_verifier.py"
-    )
+    assert (
+        VERIFIER.read_text(encoding="utf-8") == render()
+    ), "qvault/static/verifier.html is out of date — run scripts/build_verifier.py"
 
 
 def test_the_verifier_fetches_nothing():
