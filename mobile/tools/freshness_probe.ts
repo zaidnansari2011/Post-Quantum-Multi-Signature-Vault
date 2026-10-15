@@ -54,6 +54,9 @@ import {
 
 const out: Record<string, unknown> = {};
 const NOW = Date.parse('2026-10-08T09:40:00Z');
+// Cached data is stamped at NOW, not at the real clock: the disk cache drops entries over 7 days
+// old, so data stamped by Date.now() stopped reading back a week after NOW (15 Oct 2026).
+const AT_NOW = { updatedAt: NOW };
 const UUID = '00000000-0000-4000-8000-000000000001';
 const EMAIL = 'ada@qvault.demo';
 const RECIPIENT = '0x41Ed2b6f0C8fE4b1aC3D5e7F9a0B1c2D3e4F8A19';
@@ -277,8 +280,8 @@ const NONCE = Uint8Array.from({ length: 12 }, (_, i) => 200 - i);
 
 function fullCache(): QueryClient {
   const c = client();
-  c.setQueryData(keys.awaiting, { ok: true, state: 'awaiting', proposals: [LEAKY_SUMMARY] });
-  c.setQueryData(keys.all, { ok: true, state: 'all', proposals: [LEAKY_SUMMARY, { ...SUMMARY, proposal_uuid: 'x' }] });
+  c.setQueryData(keys.awaiting, { ok: true, state: 'awaiting', proposals: [LEAKY_SUMMARY] }, AT_NOW);
+  c.setQueryData(keys.all, { ok: true, state: 'all', proposals: [LEAKY_SUMMARY, { ...SUMMARY, proposal_uuid: 'x' }] }, AT_NOW);
   c.setQueryData(keys.vaults, {
     ok: true,
     vaults: [
@@ -295,14 +298,14 @@ function fullCache(): QueryClient {
         members: [{ user_id: 1, name: 'Ada', email: EMAIL, role: 'owner', is_me: true }],
       },
     ],
-  });
-  c.setQueryData(keys.proposal(UUID), detailResponse());
-  c.setQueryData(keys.me, { ok: true, user: { id: 1, email: EMAIL, display_name: 'Ada' } });
-  c.setQueryData(keys.devices, { ok: true, devices: [{ id: 9, name: 'Probe phone', fingerprint: '0123456789abcdef' }] });
-  c.setQueryData(['treasury', 4], { ok: true, treasury: { address: TREASURY, signers: [{ address: RECIPIENT }] } });
-  c.setQueryData(keys.vault(4), { ok: true, vault: { members: [{ email: EMAIL }], proposals: [LEAKY_SUMMARY] } });
-  c.setQueryData(['people'], { ok: true, people: [{ user_id: 2, name: 'Brij' }] });
-  c.setQueryData(['session', 'token'], { token: TOKEN });
+  }, AT_NOW);
+  c.setQueryData(keys.proposal(UUID), detailResponse(), AT_NOW);
+  c.setQueryData(keys.me, { ok: true, user: { id: 1, email: EMAIL, display_name: 'Ada' } }, AT_NOW);
+  c.setQueryData(keys.devices, { ok: true, devices: [{ id: 9, name: 'Probe phone', fingerprint: '0123456789abcdef' }] }, AT_NOW);
+  c.setQueryData(['treasury', 4], { ok: true, treasury: { address: TREASURY, signers: [{ address: RECIPIENT }] } }, AT_NOW);
+  c.setQueryData(keys.vault(4), { ok: true, vault: { members: [{ email: EMAIL }], proposals: [LEAKY_SUMMARY] } }, AT_NOW);
+  c.setQueryData(['people'], { ok: true, people: [{ user_id: 2, name: 'Brij' }] }, AT_NOW);
+  c.setQueryData(['session', 'token'], { token: TOKEN }, AT_NOW);
   return c;
 }
 
@@ -397,7 +400,7 @@ function persistence() {
     ok: true,
     state: 'awaiting',
     proposals: [{ ...SUMMARY, title: 'Café ✓ 日本 😀' }],
-  });
+  }, AT_NOW);
   const accentedBody = cacheBody(dehydrate(accented, { shouldDehydrateQuery }), BUSTER, NOW);
   const reopened = openCache(KEY, sealCache(KEY, NONCE, accentedBody, BUSTER), BUSTER);
   const entries = reopened ? readCacheBody(reopened, BUSTER, NOW) : null;
