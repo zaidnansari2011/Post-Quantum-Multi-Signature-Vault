@@ -136,6 +136,8 @@ def test_a_faulted_vote_over_http_does_not_report_success(app, client, inject_fa
             "email": "http-fault@e.com",
             "password": PASSWORD,
             "confirm": PASSWORD,
+            "workspace_name": "Test workspace",
+            "understood": "y",
         },
         follow_redirects=True,
     )

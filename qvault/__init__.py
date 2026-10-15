@@ -3,22 +3,82 @@
 ``create_app`` wires configuration, the crypto-agile registry, the database, authentication,
 CSRF, and blueprints. Tables are created and the database seeded (algorithm_config + genesis
 ledger entry) on startup for dev/demo convenience.
+
+**Nothing is imported at module level.** ``qvault.verify`` and ``qvault.transparency`` are meant
+to run on a third party's machine with neither Flask nor a database installed, and every import
+here would be inherited by ``import qvault.verify``. Keeping the factory's dependencies inside the
+factory is what makes ``tests/test_verifier_purity.py`` able to assert that, rather than merely
+document it.
 """
 
 from __future__ import annotations
 
-from flask import Flask
+from typing import TYPE_CHECKING
 
-from config import get_config
-
-from .crypto import build_registry
-from .extensions import csrf, db, login_manager
+if TYPE_CHECKING:  # pragma: no cover - typing only, never executed at runtime
+    from flask import Flask
 
 __version__ = "0.1.0"
 
 
+def _glassbox_actor() -> str | None:
+    """Who triggered the request being traced, for the trace header.
+
+    A display name, never an email or an id: the trace page is a demonstration surface that gets
+    projected onto a wall and screenshotted into a dissertation, and it should not be the one
+    place in the product that leaks an address.
+    """
+    try:
+        from flask_login import current_user
+
+        if current_user.is_authenticated:
+            return current_user.display_name or f"user {current_user.id}"
+    except Exception:  # noqa: BLE001 - no session, no actor; never fail a request over a label
+        return None
+    return None
+
+
+def _build_relayer(app):
+    """The relayer from the environment, or ``None`` when it is not configured or not usable."""
+    import os
+
+    from .chain.relayer import RelayerError, RelayerSettings
+
+    if app.config.get("TESTING"):
+        # The suite never talks to a chain: a test that wants one puts its own here.
+        return None
+
+    try:
+        relayer = RelayerSettings.from_environ(os.environ).build()
+    except RelayerError as exc:
+        app.logger.info("no relayer: %s", exc)
+        return None
+    except Exception:  # noqa: BLE001 - never stop the app starting over this
+        app.logger.exception("the relayer could not be built")
+        return None
+    app.logger.info("relayer %s ready", relayer.address)
+    return relayer
+
+
 def create_app(config_name: str | None = None) -> Flask:
+    from flask import Flask, jsonify, request
+    from werkzeug.exceptions import HTTPException
+
+    from config import get_config
+
+    from .crypto import build_registry
+    from .extensions import csrf, db, login_manager
+
     app = Flask(__name__)
+    # An <int:> id past a 64-bit integer cannot name a row; unbounded, it reached the database
+    # and raised OverflowError (a 500) on every route with an id (review 7b L2). Now it is a 404.
+    from werkzeug.routing import IntegerConverter
+
+    class BoundedIntegerConverter(IntegerConverter):
+        def __init__(self, url_map, fixed_digits=0, min=None, max=2**63 - 1, signed=False):
+            super().__init__(url_map, fixed_digits=fixed_digits, min=min, max=max, signed=signed)
+
+    app.url_map.converters["int"] = BoundedIntegerConverter
     app.config.from_object(get_config(config_name))
     app.config.setdefault("VERSION", __version__)
 
@@ -27,48 +87,267 @@ def create_app(config_name: str | None = None) -> Flask:
     registry = build_registry(prefer=app.config["CRYPTO_BACKEND"])
     app.extensions["crypto"] = registry
 
+    # One relayer per process (plan D36): the account that pays gas for treasury work. It holds no
+    # authority over anyone's funds, and the app runs perfectly well without it — there is simply
+    # no chain work until its settings are present.
+    app.extensions["relayer"] = _build_relayer(app)
+
     # --- Extensions -------------------------------------------------------
     db.init_app(app)
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Password-guessing doors (sign-in, sign-up, phone pairing): per address, in this process.
+    from .security import rate_limit
+
+    rate_limit.init_app(app)
+
+    # No page of the app is ever framed, so none may be (A10 review L1): a framed Security page
+    # with a password manager that fills on click is a clickjack on the forms that remove a phone,
+    # add one, or choose the treasury key.
+    @app.after_request
+    def _refuse_framing(response):
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        policy = response.headers.get("Content-Security-Policy")
+        if policy is None:
+            response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        elif "frame-ancestors" not in policy:
+            response.headers["Content-Security-Policy"] = f"{policy}; frame-ancestors 'none'"
+        return response
+
     @login_manager.user_loader
     def load_user(user_id: str):
         from .models.user import User
+        from .services import recovery_service
 
-        return db.session.get(User, int(user_id))
+        user = db.session.get(User, int(user_id))
+        # A session signed in before the person's credential epoch was bumped (a completed
+        # recovery, a password change) is signed out here, on its next request (plan R9).
+        from .security import password_attempts
+
+        if user is not None and (
+            not recovery_service.session_is_current(user.id)
+            # A10 build review F3, F5: a session from before A10 (no id), one past its 30 days
+            # however often re-signed, or one ended for wrong passwords, is signed out.
+            or password_attempts.session_refusal(user.id) is not None
+        ):
+            # A pairing code this session showed is no longer its to confirm (A10 review L3).
+            from flask import session
+
+            session.pop("pairing_binding", None)
+            return None
+        return user
+
+    from flask_login import user_logged_in
+
+    def _stamp_credential_epoch(sender, user, **extra):
+        from flask import session
+
+        from .services import recovery_service
+
+        # The epoch read before the password was checked, so a recovery that completed during
+        # the check signs this session out on its next request (plan R9, design §16 item 23).
+        recovery_service.stamp_session(user.id, recovery_service.sign_in_epoch(user.id))
+        # A fresh id for the per-session wrong-password count (A10 review M6).
+        from .security import password_attempts
+
+        password_attempts.stamp_session()
+        # A kit reminder hidden "for now" comes back at every sign-in (plan R9).
+        session.pop(recovery_service.KIT_REMINDER_HIDDEN, None)
+
+    # Blinker holds receivers weakly: without a strong reference this closure would be collected
+    # and sign-ins would stop being stamped, locking everyone out after their first password
+    # change. The app holds it, so it lives exactly as long as the app.
+    app.extensions["credential_epoch_stamp"] = _stamp_credential_epoch
+    user_logged_in.connect(_stamp_credential_epoch, app)
+
+    # The component macros' helpers: the status vocabulary, times, hashes (templates/ui/).
+    from . import ui
+
+    ui.register(app)
+    # The password rule, shown under every new-password field before anyone types.
+    from .forms import PASSWORD_RULE
+
+    app.jinja_env.globals["password_rule"] = PASSWORD_RULE
+
+    # The evidence screens' rules: decision code, check words, precise times (rework R2).
+    from . import evidence
+
+    evidence.register(app)
 
     # --- Blueprints -------------------------------------------------------
+    from .blueprints.account import bp as account_bp
     from .blueprints.admin import bp as admin_bp
+    from .blueprints.api import bp as api_bp
+    from .blueprints.approvals import bp as approvals_bp
     from .blueprints.auth import bp as auth_bp
     from .blueprints.core import bp as core_bp
+    from .blueprints.docs import bp as docs_bp
+    from .blueprints.glassbox import bp as glassbox_bp
     from .blueprints.ledger import bp as ledger_bp
+    from .blueprints.notifications import bp as notifications_bp
+    from .blueprints.public import bp as public_bp
+    from .blueprints.record import bp as record_bp
+    from .blueprints.recover import bp as recover_bp
+    from .blueprints.theme import bp as theme_bp
     from .blueprints.vaults import bp as vaults_bp
+    from .blueprints.verify import bp as verify_bp
+    from .blueprints.workspace import bp as workspace_bp
 
     app.register_blueprint(core_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(approvals_bp)
     app.register_blueprint(vaults_bp)
     app.register_blueprint(ledger_bp)
+    app.register_blueprint(account_bp)
+    app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(docs_bp)
+    app.register_blueprint(verify_bp)
+    app.register_blueprint(workspace_bp)
+    # Account recovery (plan R9): the Recovery Kit's entry page, its status page and Cancel.
+    app.register_blueprint(recover_bp)
+    # Security, Pricing, Changelog and Status: read-only, the same signed in or out (plan S22).
+    app.register_blueprint(public_bp)
+    # Every route inside 404s unless GLASSBOX_ENABLED, so registering it unconditionally keeps
+    # one gate in one place rather than splitting it between here and the blueprint.
+    app.register_blueprint(glassbox_bp)
+    # The public record of a shared decision. GET-only and session-free, so it needs neither
+    # login_required nor a CSRF exemption -- there is no form here to forge.
+    app.register_blueprint(record_bp)
+    # The reader's colour theme: a cookie, read on every page so <html> is themed before first
+    # paint (rework S25).
+    app.register_blueprint(theme_bp)
+    # Public verification takes no session and writes nothing, so there is no state for a CSRF
+    # token to protect — and requiring one would break `curl -F bundle=@decision.json /verify/`,
+    # which is how anyone would actually script a check.
+    csrf.exempt(verify_bp)
+
+    app.register_blueprint(api_bp)
+    # The mobile client authenticates with a bearer token in a header, which a browser never
+    # attaches to a cross-site request. There is no ambient authority for a forged POST to ride
+    # on, so a CSRF token here would only be a second copy of the token already in the header.
+    # This holds ONLY while no /api/ view is reachable by session cookie — enforced mechanically
+    # by the before_request in qvault/blueprints/api.py, not by convention.
+    csrf.exempt(api_bp)
+
+    @app.errorhandler(HTTPException)
+    def _errors(exc):
+        """JSON for /api/ failures; everywhere else, an error page with a next step.
+
+        Registered app-wide rather than on the blueprint because a 404 or 405 raised during URL
+        *matching* has no blueprint to attribute it to — ``request.blueprint`` is None — so a
+        blueprint-scoped handler would never fire for an unknown /api/ path, and a mobile client
+        would get an HTML error page where it expected JSON. An unhandled exception reaches here
+        too, as a 500.
+        """
+        if not request.path.startswith("/api/"):
+            from .errors import render_error_page
+
+            return render_error_page(exc)
+        return (
+            jsonify(
+                ok=False,
+                code=(exc.name or "error").lower().replace(" ", "_"),
+                error=exc.description,
+            ),
+            exc.code,
+        )
+
+    # Two things every template may need: the navigation badge ("3 waiting on you"), and whether
+    # this deployment is a demonstration instance. Both are computed once per request here rather
+    # than threaded through every render_template call — `demo_enabled` in particular is a global
+    # configuration predicate, and passing it by hand meant the signed-out pages that needed it
+    # silently rendered without it.
+    @app.context_processor
+    def _inject_globals():
+        from flask_login import current_user
+
+        from .security.demo_gate import demo_enabled
+
+        globals_ = {
+            "demo_enabled": demo_enabled(),
+            # The rail needs to know whether to offer /trace at all. Read from config rather than
+            # from a url_for probe, so the link and the blueprint's 404 gate agree by sharing one
+            # source of truth instead of two.
+            "glassbox_enabled": bool(app.config.get("GLASSBOX_ENABLED")),
+        }
+        if current_user.is_authenticated:
+            from .services import inbox_service
+
+            globals_["pending_count"] = inbox_service.awaiting_signature(current_user)
+        return globals_
+
+    # --- Glass box: record what the cryptography did, for the /trace page (ADR-0020) ----------
+    # An operation is opened for *every* request, because whether a request does any cryptography
+    # is not knowable in advance, and closed in teardown — which runs even when the view raises,
+    # so a failed vote is traced rather than lost. `close_operation` discards operations that
+    # recorded no steps, so opening one unconditionally costs a dataclass that is immediately
+    # thrown away, and only requests that actually did cryptographic work reach the page.
+    #
+    # Registered here rather than in a blueprint: the steps worth seeing are appended by
+    # `after_request` (the head anchor and the Merkle checkpoint), which is outside every
+    # blueprint's view function.
+    @app.before_request
+    def _open_glassbox_operation():
+        from flask import g, request
+
+        from . import glassbox
+
+        g.glassbox = glassbox.open_operation(
+            request.endpoint or request.path, kind="request", actor=_glassbox_actor()
+        )
+
+    # Any proof of the current password cancels an open recovery (plan R9, ⚑5). The cancel is made
+    # in the request's own transaction; this makes it again, in one of its own, after a view that
+    # rolled back or never committed (a sign-in commits nothing).
+    # Wrong passwords end the session at the tenth and raise the owner's alarm (A10 build review
+    # F3), in a transaction of their own after the view, which rolled back.
+    @app.teardown_request
+    def _settle_wrong_passwords(exc):
+        from .security import password_attempts
+
+        password_attempts.settle(exc)
+
+    @app.teardown_request
+    def _settle_recovery_password_proofs(exc):
+        from .services import recovery_service
+
+        recovery_service.settle_password_proofs(exc)
+
+    @app.teardown_request
+    def _close_glassbox_operation(exc):
+        from flask import g
+
+        from . import glassbox
+
+        glassbox.close_operation(g.pop("glassbox", None), failed=exc is not None)
 
     # --- Database: create tables + seed config/genesis --------------------
     from .services.bootstrap_service import init_database
 
     init_database(app)
 
-    # --- SYSTEM head anchor: re-sign the ledger head once per request that appended entries.
+    # --- SYSTEM head anchor + Merkle checkpoint: re-sign once per request that appended entries.
     # Doing it here (rather than inside append()) keeps a single anchor per logical operation and
     # never re-signs a same-seq hash change (a rewrite), so tampering stays detectable.
+    #
+    # The checkpoint is a second, stronger commitment over the same head (ADR-0015): the anchor
+    # says "this head is mine", the checkpoint says "and here is a root you can prove single
+    # entries against". Both are best-effort — a failure to sign must never fail a user's request,
+    # and a *stalled* checkpoint sequence is itself the tamper signal, so swallowing the error
+    # here loses nothing that verification would not surface anyway.
     @app.after_request
     def _anchor_ledger_head(response):
         from flask import request
 
         if request.endpoint == "static":
             return response
-        from .services import ledger_service
+        from .services import checkpoint_service, ledger_service
 
         try:
             ledger_service.maybe_anchor()
+            checkpoint_service.maybe_checkpoint()
         except Exception:  # noqa: BLE001 - anchoring must never break the response
             db.session.rollback()
         return response

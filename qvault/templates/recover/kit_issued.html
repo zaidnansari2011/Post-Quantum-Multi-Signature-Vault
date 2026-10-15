@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/feedback.html" import banner %}
+{% block title %}Save your Recovery Kit — Q-Vault{% endblock %}
+
+{#- The Recovery Kit, shown once (plan R9, design §5.4), in answer to the request that made it: at
+    sign-up or from the Security page. Served no-store with no referrer; the code is in this page
+    and nowhere else, and nothing can fetch it again. Continuing asks for the last group typed
+    back (checked against a tag, so the server never sees the code again); "Do this later" stops
+    this code working, and Home and Security keep asking. recover.js offers the download (a text
+    file made in the browser) and checks the typed group before it is sent. -#}
+{% macro body() %}
+<div class="q-kitpage">
+  <h1 class="q-auth__t">Save your Recovery Kit</h1>
+  <p class="q-auth__p">
+    If you forget your password, this code lets you choose a new one and keep your signing key.
+    Anyone with this code and your email can do the same after a 72-hour wait, during which you,
+    your admins and your fellow approvers are warned. Keep it where you keep your passport.
+  </p>
+  {%- if treasury_signer %}
+  {{ banner('warning', 'This matters most for you: a treasury holds your password key.', 'Only this kit gives you back that same key. Any other way back gives you a new one, and the treasury’s signers would then have to move your seat.') }}
+  {%- endif %}
+
+  <article class="q-kit" aria-labelledby="kit-t" data-kit>
+    <header class="q-kit__hd">
+      <h2 class="q-kit__t" id="kit-t">Q-Vault Recovery Kit</h2>
+      <span class="q-kit__id">Kit {{ short_id }}</span>
+    </header>
+    <dl class="q-kv">
+      <div><dt>Account</dt><dd>{{ email }}</dd></div>
+      <div><dt>Made</dt><dd>{{ ui_absolute(made) }}</dd></div>
+      <div><dt>Type it only at</dt><dd><code class="q-mono">{{ ui_url(address) }}</code></dd></div>
+    </dl>
+    <h3 class="visually-hidden">Your code, in 8 groups of 4</h3>
+    <p class="q-kit__code">
+      {%- for g in groups %}<span class="q-kit__g"{% if loop.last %} data-kit-last{% endif %}>{{ g }}</span>{% if not loop.last %}<span class="q-kit__sep" aria-hidden="true"> </span>{% endif %}{% endfor -%}
+    </p>
+    <p class="q-kit__note">
+      This is not a backup code. It replaces your password for your signing key. A new kit stops
+      this one working in Q-Vault. If you think someone also had a copy of Q-Vault’s data, replace
+      your signing key too.
+    </p>
+  </article>
+  <pre class="q-kit__file" hidden data-kit-file data-kit-filename="qvault-recovery-kit-{{ short_id }}.txt">Q-Vault Recovery Kit
+Kit {{ short_id }}
+
+Account: {{ email }}
+Made: {{ ui_absolute(made) }}
+Type it only at: {{ address }}
+
+Code: {{ groups | join('-') }}
+
+This is not a backup code. It replaces your password for your signing key.
+A new kit stops this one working in Q-Vault. If you think someone also had
+a copy of Q-Vault's data, replace your signing key too.
+</pre>
+  <div class="q-kit__acts">
+    {{ button('Download as a text file', 'secondary', attrs={'data-kit-download': '', 'hidden': True}) }}
+  </div>
+
+  <form class="q-kit__confirm" method="post" action="{{ url_for('recover.confirm') }}" novalidate autocomplete="off" data-kit-confirm>
+    {{ confirm_form.hidden_tag() }}
+    {{ wtf_field(confirm_form.last_group, caption='The 4 characters at the end of the code, to show you have it.', mono=True,
+                 attrs={'autocomplete': 'off', 'autocapitalize': 'characters', 'spellcheck': 'false', 'maxlength': '12'}) }}
+    <p class="q-field__err" data-kit-mismatch hidden>That isn’t the last group. Check what you saved.</p>
+    {{ button(confirm_form.submit.label.text, 'primary', type='submit', block=True) }}
+  </form>
+  <form class="q-kit__later" method="post" action="{{ url_for('recover.later') }}">
+    {#- Written out without ids: the confirm form above already has inputs with these names. #}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="kit_uuid" value="{{ later_form.kit_uuid.data }}">
+    {{ button('Do this later', 'ghost', type='submit', block=True) }}
+    <p class="q-cap">This code then stops working{% if after_signup %}, your account carries on as it is{% endif %}, and Home reminds you to make a kit.</p>
+  </form>
+</div>
+{% endmacro %}
+
+{% block content %}{{ body() }}<script src="{{ url_for('static', filename='recover.js') }}" defer></script>{% endblock %}
+{% block anon_content %}{{ body() }}<script src="{{ url_for('static', filename='recover.js') }}" defer></script>{% endblock %}

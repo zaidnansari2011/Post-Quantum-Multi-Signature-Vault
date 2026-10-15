@@ -12,26 +12,72 @@ The server never stores a plaintext private key or the KEK.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from flask import current_app
 
-from qvault.crypto.kdf import derive_kek
+from qvault import glassbox
+from qvault.crypto import sha256_hex
+from qvault.crypto.kdf import derive_kek, new_salt
 from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.models.user import User
-from qvault.security.passwords import verify_password
-from qvault.services import ledger_service
+from qvault.security import password_attempts
+from qvault.security.passwords import hash_password, verify_password
+from qvault.services import ledger_service, notification_service
 from qvault.services.rotation_policy import rotation_deadline
 
 # Additional authenticated data binding the wrap to its purpose (not secret, but tamper-bound).
 _WRAP_AAD = b"qvault:sk-wrap:v1"
 _SYMMETRIC_ALG = "AES-256-GCM"
 
+# Algorithms a device may enrol with. Deliberately an explicit allowlist, and deliberately NOT
+# ``AlgorithmConfig.current().active_signature_alg``: quantcrypt's SLH-DSA-SHAKE-256f wraps
+# PQClean's SPHINCS+ **round-3** submission, which is not byte-compatible with FIPS 205 (see the
+# interoperability note in crypto/providers/quantcrypt_signature.py). Its key and signature sizes
+# are *identical* to a conforming FIPS 205 implementation's, so nothing catches the mismatch by
+# shape — it surfaces only at the first vote, as a bare "signature did not verify", which is
+# indistinguishable from a compromised device. Switching the active algorithm is a frictionless
+# admin action (ADR-0012), so inheriting it here would silently strand every device enrolled
+# afterwards. Refuse loudly at enrolment instead. Both entries below are verified byte-compatible
+# with @noble/post-quantum in both directions.
+DEVICE_ELIGIBLE_SIG_ALGS = ("ML-DSA-65", "ML-DSA-87")
+
 
 class KeyUnlockError(Exception):
     """Raised when a private key cannot be decrypted (typically a wrong password)."""
+
+
+class PasswordLockedError(KeyUnlockError):
+    """Too many wrong passwords for this account recently: the password was not checked
+    (``qvault.security.password_attempts``). ``str()`` is the sentence to show the person."""
+
+
+def _guard_password(user: User) -> None:
+    """Refuse before any Argon2id work while this account is locked out (R6 review, item 13)."""
+    refusal = password_attempts.refusal(user.id)
+    if refusal:
+        raise PasswordLockedError(refusal)
+
+
+def prove_password(user: User, password: str, *, via: str) -> None:
+    """Check ``user``'s password for a signed-in door that unlocks no key (A10: confirming a phone
+    paired by code, removing a phone on the web). Raises ``PasswordLockedError`` while this session
+    or the account is locked, before any Argon2id work, or ``KeyUnlockError`` for a wrong one.
+
+    The one way those doors check a password, kept here rather than in a view so none can skip the
+    limit (A10 review H1). A correct password is a proof of it (plan R9, ⚑5): any open recovery of
+    the account is cancelled and its kit burned, in the caller's transaction."""
+    _guard_password(user)
+    from qvault.services import recovery_service
+
+    if not verify_password(user.password_hash, password or ""):
+        password_attempts.record(user.id, ok=False)
+        raise KeyUnlockError("incorrect password")
+    password_attempts.record(user.id, ok=True)
+    recovery_service.password_proven(user, via=via)
 
 
 class SignFaultError(Exception):
@@ -56,6 +102,10 @@ def generate_signing_key(
 ) -> Key:
     """Generate a signing keypair for ``user`` under the current default algorithm (or
     ``alg_id`` if given) and persist it with the private key wrapped at rest.
+
+    If the person has a Recovery Kit, the new key's kit copy is added in the same transaction
+    (``recovery_kit.on_new_key``), so a reissue, an algorithm switch or a rotation never leaves the
+    kit holding yesterday's key (plan R9, design §5.1).
     """
     registry = _registry()
     if alg_id is None:
@@ -84,26 +134,81 @@ def generate_signing_key(
         rotate_after=rotation_deadline(),
     )
     db.session.add(key)
+    db.session.flush()  # the kit copy's AAD names the key's id
+    from qvault.services import recovery_kit
+
+    recovery_kit.on_new_key(user, key, keypair.secret_key)
     if commit:
         db.session.commit()
     return key
 
 
 def unlock_secret_key(user: User, key: Key, password: str) -> bytes:
-    """Return the decrypted private key bytes, or raise ``KeyUnlockError`` on a wrong password."""
+    """Return the decrypted private key bytes, or raise ``KeyUnlockError`` on a wrong password.
+
+    Refuses a key with no server-held private half before deriving anything. A device-custodied
+    key (``wrap_domain='device'``) stores only its public part, so both ciphertext columns are
+    NULL; ``AESGCM.decrypt(None, None, aad)`` raises ``TypeError``, which the ``except InvalidTag``
+    below does NOT catch — it would escape as an unhandled 500 through every caller. Failing here
+    keeps the whole class of "the server tried to open a key it does not hold" as one loud,
+    attributable error.
+    """
     from cryptography.exceptions import InvalidTag
 
-    kek = _derive_user_kek(user, password)
-    try:
-        return (
-            _registry()
-            .symmetric(_SYMMETRIC_ALG)
-            .decrypt(kek, key.secret_key_nonce, key.secret_key_wrapped, _WRAP_AAD)
+    if key.secret_key_wrapped is None or key.secret_key_nonce is None:
+        raise KeyUnlockError(
+            f"key {key.id} has no server-held private half (wrap_domain={key.wrap_domain!r})"
         )
+    _guard_password(user)
+    from qvault.services import recovery_service
+
+    # A recovery whose wait is over has won (design §4.2, §16 item 23): the old password opens
+    # nothing from completes_at, whether or not the scheduler has run. Refused here without
+    # writing anything, so the caller's transaction is never committed from inside an unlock;
+    # the completion itself is made by the scheduler, the status page, the next sign-in, or a
+    # credential write (``prepare_password_write``), each in a transaction of its own.
+    if recovery_service.recovery_due(user):
+        raise KeyUnlockError(
+            "a recovery of this account has taken effect, so this password no longer opens your "
+            "signing key. Sign in with the new one"
+        )
+
+    with glassbox.step("Derive the key-encryption key (Argon2id)", code=derive_kek) as trace:
+        trace.input("password", glassbox.Withheld("never shown, never logged, never stored"))
+        trace.input("salt", glassbox.Hex(user.kek_salt, note="per-user, stored in the clear"))
+        trace.input(
+            "parameters", glassbox.Json(user.get_kdf_params(), note="Argon2id, OWASP-aligned")
+        )
+        kek = _derive_user_kek(user, password)
+        trace.output(
+            "kek",
+            glassbox.Withheld("a password-equivalent secret; discarded when this call returns"),
+        )
+        trace.output("kek length", glassbox.Number(len(kek), unit="bytes"))
+
+    symmetric = _registry().symmetric(_SYMMETRIC_ALG)
+    try:
+        with glassbox.step("Unwrap the private key (AES-256-GCM)", code=symmetric.decrypt) as trace:
+            trace.input("wrapped key", glassbox.Hex(key.secret_key_wrapped))
+            trace.input("nonce", glassbox.Hex(key.secret_key_nonce, full=True))
+            trace.input("associated data", glassbox.Text(_WRAP_AAD, note="binds the wrap"))
+            secret_key = symmetric.decrypt(
+                kek, key.secret_key_nonce, key.secret_key_wrapped, _WRAP_AAD
+            )
+            trace.output(
+                "private key",
+                glassbox.Opaque(secret_key, why="the secret this whole system exists to protect"),
+            )
+            password_attempts.record(user.id, ok=True)
     except InvalidTag as exc:
+        password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: could not unlock the signing key") from exc
     finally:
         del kek
+    # The password was just proven: any open recovery of this account is cancelled, and its kit
+    # burned (plan R9, ⚑5). This covers votes, approvals, a password change and a new kit.
+    recovery_service.password_proven(user, via="signing")
+    return secret_key
 
 
 def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
@@ -122,27 +227,82 @@ def sign_with_key(user: User, key: Key, password: str, message: bytes) -> bytes:
     SLH-DSA-SHAKE-256f (1.77 ms on 38.66 ms). The scheme that is slowest to sign pays the least
     proportionally to be safe.
     """
+    return sign_messages(user, key, password, [message])[0]
+
+
+def sign_messages(user: User, key: Key, password: str, messages: Sequence[bytes]) -> list[bytes]:
+    """Unlock ``key`` once and sign every message, verifying each before any is returned.
+
+    One unlock for several messages, because unlocking is an Argon2id run — deliberately ~80 ms —
+    and one act of approval can commit to more than one thing. Approving a payment signs both the
+    vote a person is held to and the execution digest the treasury checks on chain; they are one
+    decision and must be produced together, from one password, or a vote could be recorded that
+    nothing is able to execute.
+
+    ADR-0010's invariant holds per message: each signature is verified immediately after it is
+    produced, while the private half is still in memory, because a fault in one says nothing
+    about the next. Nothing is returned unless every one of them verified.
+    """
     provider = _registry().signature(key.alg_id)
+    signatures: list[bytes] = []
     secret_key = unlock_secret_key(user, key, password)
     try:
-        signature = provider.sign(secret_key, message)
+        for message in messages:
+            with glassbox.step(f"Sign with {key.alg_id}", code=provider.sign) as trace:
+                trace.annotate(
+                    "The provider hands the message to a compiled PQClean implementation. The "
+                    "lattice arithmetic inside it is not Python and cannot be shown here; what is "
+                    "shown is every input it received and the exact bytes it returned."
+                )
+                trace.input("message", glassbox.Text(message))
+                trace.input("private key", glassbox.Opaque(secret_key, why="held only in memory"))
+                signature = provider.sign(secret_key, message)
+                trace.output("signature", glassbox.Hex(signature))
+
+            with glassbox.step(
+                "Verify the signature before releasing it", code=provider.verify
+            ) as trace:
+                # ADR-0010's invariant, made visible. A reader who does not believe the claim in
+                # the docstring can watch this step run on every signature the system produces.
+                trace.annotate(
+                    "ADR-0010: never emit a signature we have not just verified. A faulted "
+                    "ML-DSA signature can leak private key material, so this check runs before "
+                    "the bytes leave this function."
+                )
+                trace.input("public key", glassbox.Hex(key.public_key))
+                trace.input(
+                    "message", glassbox.Digest(sha256_hex(message), note="sha256 of the message")
+                )
+                trace.input("signature", glassbox.Hex(signature))
+                accepted = provider.verify(key.public_key, message, signature)
+                trace.output("accepted", glassbox.Label(accepted))
+
+            if not accepted:
+                # Do not return it, do not persist it, do not log the bytes. The caller's
+                # transaction should abort; a signature that fails its own verification is
+                # evidence of a fault or a corrupted key, not something to retry silently.
+                raise SignFaultError(
+                    f"signature produced under {key.alg_id} (key {key.id}) failed immediate "
+                    "verification"
+                )
+            signatures.append(signature)
     finally:
         del secret_key
-
-    if not provider.verify(key.public_key, message, signature):
-        # Do not return it, do not persist it, do not log the bytes. The caller's transaction
-        # should abort; a signature that fails its own verification is evidence of a fault or a
-        # corrupted key, not something to retry silently.
-        raise SignFaultError(
-            f"signature produced under {key.alg_id} (key {key.id}) failed immediate verification"
-        )
-    return signature
+    return signatures
 
 
 def active_signing_key(user: User) -> Key | None:
-    """Return the user's currently active signing key, if any."""
+    """Return the user's currently active *password-custodied* signing key, if any.
+
+    The ``wrap_domain`` term is load-bearing, in the same register as ``password_wrapped_keys``
+    below. Since Phase 1 a user may also own device-custodied signing keys, whose private half
+    the server has never held. Every caller of this function ultimately wants a key the server
+    can *unlock* — the web vote path, the account page, and reissue — so returning a device key
+    here would surface as a ``KeyUnlockError`` (at best) on a key the user cannot fix by typing
+    their password. Device keys are reached through ``device_signing_keys`` instead.
+    """
     return (
-        Key.query.filter_by(owner_id=user.id, role="sig", status="active")
+        Key.query.filter_by(owner_id=user.id, role="sig", status="active", wrap_domain="password")
         .order_by(Key.created_at.desc(), Key.id.desc())  # id breaks same-timestamp ties
         .first()
     )
@@ -153,12 +313,119 @@ def retired_signing_keys(user: User) -> list[Key]:
 
     Rotation never deletes a key: signatures it made must keep verifying, so a retired key stays
     on record with ``can_verify=True`` and ``can_sign=False``.
+
+    Password-custodied only, for the same reason as ``active_signing_key``: this feeds the
+    account page's "previous keys" list, which is about keys the user themselves held. That
+    includes ``wrap_domain='lost'``: a password key a recovery could not carry over, which nobody
+    can open any more but whose signatures still verify (plan R9, design §4.3).
     """
     return (
-        Key.query.filter_by(owner_id=user.id, role="sig", status="retired")
+        Key.query.filter(
+            Key.owner_id == user.id,
+            Key.role == "sig",
+            Key.status == "retired",
+            Key.wrap_domain.in_(("password", "lost")),
+        )
         .order_by(Key.retired_at.desc(), Key.id.desc())
         .all()
     )
+
+
+def password_wrapped_keys(user: User) -> list[Key]:
+    """Every key of ``user``'s whose private half is encrypted under their password.
+
+    Deliberately filtered on ``wrap_domain``, never on ownership alone. A user also *owns* the
+    ML-KEM keys of vaults they created, but those carry ``wrap_domain='master'`` and are wrapped
+    under the server master key — the server must be able to open them with no human present, to
+    decrypt vault files. Anything that re-derives or re-wraps password-protected material must use
+    this function, or it will eventually reach for a master-wrapped key with a password KEK.
+    """
+    return Key.query.filter_by(owner_id=user.id, wrap_domain="password").order_by(Key.id).all()
+
+
+def change_password(
+    user: User, current_password: str, new_password: str, *, commit: bool = True
+) -> int:
+    """Change ``user``'s password, re-wrapping every private key it protects. Returns the count.
+
+    This is not really a password change; it is a re-encryption of private key material. A user's
+    signing keys are wrapped under a KEK derived from their password (Argon2id → AES-256-GCM), so
+    replacing the password verifier without re-wrapping would produce a user who can log in and
+    cannot sign — an account that looks healthy and has silently lost its cryptographic identity.
+
+    Three properties make it safe, and all three matter:
+
+    **Only password-wrapped keys are touched.** See ``password_wrapped_keys``: selecting by
+    ``owner_id`` alone would sweep up the vault KEM keys and re-wrap them under a password KEK,
+    making every encrypted file in those vaults permanently unreadable by the server.
+
+    **Every password-wrapped key is re-wrapped, not just the active one.** Retired keys stay
+    password-wrapped — retire-but-retain never re-wraps them — and while nothing today needs a
+    retired *private* key (verification uses the public half), leaving them under a password that
+    no longer exists turns them into permanent garbage.
+
+    **Nothing is mutated until everything has been unwrapped.** All plaintexts are recovered under
+    the old KEK first, so a key that fails to unwrap aborts with the account untouched; and the
+    re-wraps, the new salt and the new verifier all land in one transaction, so an interruption
+    cannot leave behind a password that opens nothing.
+
+    The KEK salt is rotated as well, so the new KEK shares no derivation input with the old one.
+
+    It signs out every other web session (plan R9): the credential epoch is bumped, and the
+    session that made the change, if there is one, is re-stamped so it stays signed in. Any open
+    recovery of the account is cancelled, because the password was just proven (⚑5).
+    """
+    _guard_password(user)
+    from qvault.services import recovery_service
+
+    # One writer per account (plan R9): a recovery whose wait is over takes effect first, and a
+    # completing one cannot cross this change.
+    recovery_service.prepare_password_write(user)
+    if not verify_password(user.password_hash, current_password):
+        password_attempts.record(user.id, ok=False)
+        raise KeyUnlockError("incorrect password: cannot change the password")
+
+    keys = password_wrapped_keys(user)
+
+    # Recover every plaintext BEFORE touching a single row. If any key fails to unwrap, the
+    # account is left exactly as it was rather than half-migrated to a new password.
+    plaintexts: dict[int, bytes] = {}
+    try:
+        for key in keys:
+            plaintexts[key.id] = unlock_secret_key(user, key, current_password)
+
+        symmetric = _registry().symmetric(_SYMMETRIC_ALG)
+        new_salt_bytes = new_salt()
+        new_kek = derive_kek(new_password, new_salt_bytes, **user.get_kdf_params())
+        try:
+            for key in keys:
+                nonce, wrapped = symmetric.encrypt(new_kek, plaintexts[key.id], _WRAP_AAD)
+                key.secret_key_nonce = nonce
+                key.secret_key_wrapped = wrapped
+        finally:
+            del new_kek
+    finally:
+        # Best-effort: Python cannot guarantee zeroisation, but do not keep them reachable.
+        plaintexts.clear()
+
+    user.kek_salt = new_salt_bytes
+    user.password_hash = hash_password(new_password)
+    recovery_service.stamp_session(user.id, recovery_service.bump_epoch(user.id))
+
+    entry = ledger_service.append(
+        "password_changed",
+        {"user_id": user.id, "keys_rewrapped": len(keys)},
+        actor=f"user:{user.id}",
+        actor_id=user.id,
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
+    # A security notification, which cannot be switched off.
+    notification_service.password_changed(user, entry=entry)
+    if commit:
+        db.session.commit()
+    return len(keys)
 
 
 def reissue_signing_key(
@@ -174,8 +441,18 @@ def reissue_signing_key(
 
     Phase 7 automates this on a schedule and adds a rotation policy; here it is user-initiated.
     """
+    _guard_password(user)
+    from qvault.services import recovery_kit, recovery_service
+
+    # One writer per account (plan R9): a recovery whose wait is over takes effect first, and a
+    # completing one cannot cross this reissue.
+    recovery_service.prepare_password_write(user)
     if not verify_password(user.password_hash, password):
+        password_attempts.record(user.id, ok=False)
         raise KeyUnlockError("incorrect password: cannot re-issue the signing key")
+    password_attempts.record(user.id, ok=True)
+
+    recovery_service.password_proven(user, via="key_replaced")
 
     old = active_signing_key(user)
     new = generate_signing_key(user, password, alg_id=alg_id, commit=False)
@@ -185,6 +462,8 @@ def reissue_signing_key(
         old.status = "retired"
         old.can_sign = False
         old.retired_at = datetime.now(UTC)  # can_verify stays True: retire-but-retain
+    # The kit keeps the new key (added above) and any key a treasury seat names, not the rest.
+    recovery_kit.forget_unneeded_wraps(user)
 
     ledger_service.append(
         "key_reissued",
@@ -193,6 +472,8 @@ def reissue_signing_key(
             "old_key_id": old.id if old is not None else None,
             "new_key_id": new.id,
             "alg_id": new.alg_id,
+            # Additive (plan R9, design §4.4): a verifier can follow a person's key lineage.
+            "public_key_sha256": sha256_hex(new.public_key),
         },
         actor=f"user:{user.id}",
         actor_id=user.id,
@@ -203,3 +484,111 @@ def reissue_signing_key(
     if commit:
         db.session.commit()
     return new
+
+
+class DeviceKeyError(Exception):
+    """Raised when a device key cannot be enrolled or is not usable for signing."""
+
+
+def enrol_device_key(user: User, *, alg_id: str, public_key: bytes, commit: bool = True) -> Key:
+    """Register ``public_key`` as a device-custodied signing key for ``user``.
+
+    The ONLY construction site for a ``wrap_domain='device'`` Key. Such a row is unlike every
+    other key here: both ciphertext columns stay NULL because the private half was generated on
+    the signer's device and has never reached this server. That is the entire point — a
+    compromised server cannot forge this user's approval, which the password-custodied path
+    cannot claim (ADR-0004's stated limitation, ADR-0016).
+
+    ``rotate_after`` is NULL because rotation re-issues a keypair, and this server cannot re-issue
+    a private half it does not hold; advertising such a key as "due" would be an instruction the
+    user has no way to carry out. Custody is time-bounded on the device *token* instead.
+
+    ``backend='noble-pqc'`` records what actually produced the key. Verification always resolves
+    a provider from ``alg_id``, never from ``backend`` — the field is descriptive, and recording
+    ``quantcrypt`` here would be a claim this server never made (ADR-0011).
+
+    Caller MUST have already verified a proof of possession over this public key. This function
+    does not do it: it has no challenge to bind against. See ``device_service.enrol``.
+    """
+    if alg_id not in DEVICE_ELIGIBLE_SIG_ALGS:
+        raise DeviceKeyError(
+            f"{alg_id} cannot be enrolled on a device; "
+            f"eligible algorithms are {', '.join(DEVICE_ELIGIBLE_SIG_ALGS)}"
+        )
+    provider = _registry().signature(alg_id)
+    expected = provider.meta.sizes["public_key"]
+    if len(public_key) != expected:
+        raise DeviceKeyError(
+            f"public key for {alg_id} must be {expected} bytes, got {len(public_key)}"
+        )
+
+    key = Key(
+        owner_id=user.id,
+        role="sig",
+        alg_id=alg_id,
+        backend="noble-pqc",
+        public_key=public_key,
+        secret_key_wrapped=None,  # never held here
+        secret_key_nonce=None,
+        wrap_domain="device",
+        status="active",
+        can_sign=True,
+        can_verify=True,
+        version=1,
+        rotate_after=None,
+    )
+    db.session.add(key)
+    if commit:
+        db.session.commit()
+    return key
+
+
+def device_key_of(user: User, key_id: int) -> Key | None:
+    """One of ``user``'s active device keys by id, or None: the caller decides what that means."""
+    return next((key for key in device_signing_keys(user) if key.id == key_id), None)
+
+
+def device_signing_keys(user: User) -> list[Key]:
+    """``user``'s active device-custodied signing keys, newest first.
+
+    The device-custody counterpart to ``active_signing_key``. Separate rather than merged because
+    the two are used for opposite purposes: that one finds a key this server can *unlock*, this
+    one finds keys it can only *verify*.
+    """
+    return (
+        Key.query.filter_by(owner_id=user.id, role="sig", status="active", wrap_domain="device")
+        .order_by(Key.created_at.desc(), Key.id.desc())
+        .all()
+    )
+
+
+def _forget_treasury_choice(key: Key) -> None:
+    """A revoked phone cannot be the key a treasury registers (plan D37, review M-6)."""
+    from qvault.models.signer_preference import SignerPreference
+
+    preference = SignerPreference.query.filter_by(device_key_id=key.id).one_or_none()
+    if preference is not None:
+        preference.custody = "password"
+        preference.device_key_id = None
+
+
+def revoke_device_key(key: Key, *, commit: bool = True) -> Key:
+    """Retire a device key: it can no longer sign, but everything it signed still verifies.
+
+    The same retire-but-retain triple rotation uses (ADR-0007). Revoking a stolen phone must not
+    retroactively invalidate the approvals it legitimately cast — a vote is a record of consent
+    that was genuinely given, and erasing it would rewrite history rather than stop future harm.
+    ``public_key`` and ``can_verify`` are therefore left untouched.
+    """
+    if key.wrap_domain != "device":
+        raise DeviceKeyError(
+            f"key {key.id} is not device-custodied (wrap_domain={key.wrap_domain!r})"
+        )
+    key.status = "retired"
+    key.can_sign = False
+    key.can_verify = True
+    key.retired_at = datetime.now(UTC)
+    _forget_treasury_choice(key)
+    if commit:
+        db.session.commit()
+    return key

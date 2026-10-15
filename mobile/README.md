@@ -1,0 +1,197 @@
+# Q-Vault mobile
+
+An Expo client for approving and rejecting vault decisions, where the signing key is generated on
+the handset and never leaves it (ADR-0016).
+
+The web client and this app are two front ends over the same Flask API. They are kept in step by a
+shared *contract* rather than shared code: the canonical byte formats, the domain-separation tags,
+and the JSON shapes are each pinned by a test that runs both implementations against each other.
+
+## What makes this more than a remote control
+
+Two properties, both enforced in [`src/flows.ts`](src/flows.ts):
+
+**The device derives the payload hash; it never accepts one.** `GET /proposals/<uuid>` returns the
+complete canonical inputs — vault, action, file hash, policy, frozen signer set, nonce, timestamp
+— and the client recomputes `payload_hash` from them before signing. If the server's stated hash
+disagrees with the hash of the server's own stated contents, the app refuses and says so. Without
+this check a compromised server could display one action and collect a signature over another, and
+holding the private key off that server would prove nothing.
+
+**Nothing is emitted that has not just been verified.** Every signature is checked against this
+device's own public key before it is sent (ADR-0010's verify-after-sign, applied client-side). A
+damaged key then fails locally and legibly, instead of arriving as a server-side
+"signature did not verify" — which is indistinguishable from a forgery attempt.
+
+## Key custody
+
+`expo-secure-store` holds **a 32-byte seed**, not a key.
+
+FIPS 204 key generation is deterministic in that seed, so the expanded secret key (4,032 bytes for
+ML-DSA-65) is re-derived in memory for each signature and discarded. That is better custody than
+storing it, and it also avoids a hard limit: `expo-secure-store` documents a ceiling around 2,048
+bytes per value, which the base64 of either secret key exceeds. Storing the expanded key would
+have failed on real hardware.
+
+The public key is likewise not stored — it is re-derived, and only a 16-character fingerprint is
+kept for display. That fingerprint is computed exactly as `Key.public_fingerprint()` computes it
+server-side, so the value on the phone can be compared by eye with the value in the web UI.
+
+Items are written with `WHEN_UNLOCKED_THIS_DEVICE_ONLY`, so the seed is excluded from iCloud
+Keychain and from encrypted backups: a device-held key that could restore onto a second handset
+would defeat the point.
+
+Each signature is gated by `expo-local-authentication` — biometric where available, device PIN or
+pattern otherwise. Declining fails closed.
+
+## Algorithms
+
+`ML-DSA-65` and `ML-DSA-87` only, as an explicit allowlist in
+[`src/crypto/algorithms.ts`](src/crypto/algorithms.ts) that mirrors
+`key_service.DEVICE_ELIGIBLE_SIG_ALGS`. The server's advertised list is intersected with it, never
+trusted.
+
+**SLH-DSA is excluded because it does not interoperate.** `@noble/post-quantum` implements
+FIPS 205; `quantcrypt` wraps PQClean's round-3 SPHINCS+. Their public keys and signatures are
+byte-identical in *size* (64 / 49,856), so nothing about the shape of the data reveals the
+mismatch — the signatures simply do not verify across the two.
+`tests/test_device_interop.py::test_slh_dsa_does_not_interoperate` keeps that finding pinned.
+
+## Layout
+
+```
+src/crypto/     bytes, canonical JSON, domain-separated messages, algorithm allowlist
+src/api/        zod schemas mirroring api.py, HTTP client, one function per route
+src/custody.ts  the port the signing flows need from key storage
+src/keystore.ts the Expo implementation of that port
+src/flows.ts    enrolment and voting — no Expo imports, so it is testable off-device
+src/time.ts     how the app talks about time: relative language, coarse urgency bands
+src/ui/         the component vocabulary, plus Seal, Assurance, Sheet, TabBar
+src/screens/    enrol, home, decision, activity, account
+tools/          Node harnesses used by the pytest suite
+```
+
+`flows.ts` takes a `Custody` object rather than importing the keystore. That is not indirection for
+its own sake: it is what allows the most security-critical code in the app to be exercised against
+a real server in CI instead of only by hand on a phone.
+
+## Design
+
+Designed for an approver rather than ported from the console — see
+[ADR-0022](../docs/adr/0022-handset-client-for-an-approver.md) for the full argument. The previous
+version of [`src/theme.ts`](src/theme.ts) was a direct port of `qvault.css`, and it carried across
+three console habits that do not survive the move to a phone: uppercase tracked micro-labels, a
+monospace face for ordinary labels, and metadata joined with middle dots. None of those are here.
+
+What carries over is the part that is semantic rather than decorative: **colour never decorates
+data.** `sealed` / `waiting` / `broken` keep their exact values from the web client and remain the
+only saturated hues in the system. There is no brand accent, and no button is coloured to attract
+a tap.
+
+What is specific to this client:
+
+- **A quorum is drawn, not written.** `2/3 approved` is a number you have to parse; three marks
+  with two filled is a state you take in without reading. [`src/ui/Seal.tsx`](src/ui/Seal.tsx).
+- **Two typefaces with a job each.** Source Serif 4 sets the decision, because the decision is a
+  document; Public Sans sets the interface around it. Monospace is restricted to hashes and
+  fingerprints — values a reader compares character by character.
+- **Cryptography is quiet when it holds and loud when it fails.** One line, expandable; on an
+  integrity mismatch it opens, cannot be collapsed, and the signing controls withdraw.
+  [`src/ui/Assurance.tsx`](src/ui/Assurance.tsx).
+- **One orchestrated moment.** The seal closes when *your* signature completes the quorum, and only
+  then. Everywhere else, motion answers something the person just did.
+
+**Import fonts and icons by their subpath, never from the package root.** Metro bundles any asset
+it can see a `require` for, so `@expo-google-fonts/public-sans` pulls all eighteen faces and
+`@expo/vector-icons` pulls all nine icon families. The root form put 34 `.ttf` files in the build;
+the subpath form puts six. That is about 2MB, in the APK and in every OTA update.
+
+There is no NativeWind. It cannot share anything with a Flask/Jinja front end, so it would buy no
+synchronisation while adding a babel, metro and CSS-interop layer to debug.
+
+## Running it
+
+```bash
+pnpm install    # layout comes from pnpm-workspace.yaml; no flags needed
+pnpm start      # then scan the QR code with Expo Go
+```
+
+It points at the deployed instance by default. Override without touching source via
+`expo.extra.apiBaseUrl` in `app.json`.
+
+`expo-secure-store` and `expo-local-authentication` both load under Expo Go, so an iPhone with no
+Apple Developer account can run this as-is -- with one exception: **Face ID does not work in Expo
+Go**, because the usage description belongs to the Expo Go binary rather than to this app. Touch ID
+and Android fingerprint are fine. A device or release build is needed to exercise Face ID.
+
+## Building a release APK locally
+
+Gradle on this machine, rather than the EAS queue:
+
+```powershell
+$env:QVAULT_API_BASE_URL = "https://qvault-staging.livelybeach-69506dc5.centralindia.azurecontainerapps.io"
+$env:QVAULT_UPDATE_CHANNEL = "rework"   # the rework APK; the live app's channel is "preview"
+npx expo prebuild --platform android --clean
+cd android
+.\gradlew.bat assembleRelease
+# -> android/app/build/outputs/apk/release/app-release.apk
+```
+
+`credentials/` (the keystore) and `google-services.json` (Firebase, for push) are gitignored: copy
+them in from the live app's `mobile/` folder and the owner's secrets before building.
+
+**The phones already have the local lineage.** The installed app was built this way on
+2026-09-17 and signed with `credentials/release.jks`; an EAS build is signed with Expo's managed
+key, which Android would refuse to install over it. So the rework APK is built here, not on EAS.
+
+Two things make the local build equivalent to a cloud one rather than a toy:
+
+**It is signed with a real key.** Expo's template signs the *release* build type with
+`signingConfigs.debug`, whose keystore ships inside the template and is therefore identical in every
+Expo project. [`plugins/withReleaseSigning.js`](plugins/withReleaseSigning.js) replaces that with a
+4096-bit RSA key from `credentials/` (gitignored). It is a config plugin rather than a hand edit
+because `prebuild --clean` wipes `android/`. It **no-ops when `credentials/` is absent**, so EAS
+Build still works with its own managed credentials.
+
+**It knows its update channel.** EAS Build injects the channel from `eas.json`; a plain Gradle build
+does not, so the APK would ask the update server for no channel and receive nothing. `app.json`
+names no channel (so an EAS build's profile decides); `app.config.js` adds, when
+`QVAULT_UPDATE_CHANNEL` is set,
+
+```json
+"updates": { "requestHeaders": { "expo-channel-name": "rework" } }
+```
+
+which `@expo/config-plugins` stringifies into the manifest as
+`expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY`, where `UpdatesConfiguration.kt`
+reads it. Baked at build time — changing channel needs a new APK.
+
+**The keystore is the app's identity for its lifetime.** Back up `credentials/` somewhere outside
+this repo. A different key means Android refuses to install over an existing copy, and the ML-DSA
+seed in that install's keychain becomes unreachable — every enrolled device has to enrol again.
+A locally-signed APK and an EAS-signed one are two separate lineages: pick one and stay on it.
+
+Verify a build without a phone — substitute your installed build-tools version:
+
+```powershell
+$bt = "$env:LOCALAPPDATA/Android/Sdk/build-tools/36.0.0"
+& "$bt/apksigner.bat" verify --print-certs app-release.apk   # which certificate signed it
+& "$bt/aapt2.exe" dump badging app-release.apk               # package, version, ABI, permissions
+```
+
+Note the deployed server runs with `min-replicas 0`, so the first request after an idle period pays
+a cold start of roughly forty seconds. The client's timeout is set to 75s for that reason.
+
+## Tests
+
+Three, each pinning a layer the others cannot see:
+
+| Test | Proves |
+| --- | --- |
+| `tests/test_mobile_canonical.py` | The app's canonical JSON and signing messages are byte-identical to CPython's, including nested key sorting, astral-plane characters and control characters |
+| `tests/test_device_interop.py` | noble and quantcrypt ML-DSA signatures verify across implementations, in both directions |
+| `tests/test_mobile_e2e.py` | The shipped `flows.ts` enrols, recomputes the hash, signs and votes against a real HTTP server — and refuses when the payload has been tampered with |
+
+Locally, `pnpm typecheck` and `pnpm bundle:check` cover the rest: the first catches type errors
+Node's type stripping ignores, the second proves Metro can resolve every import and Hermes can
+compile the result, without needing a device.

@@ -1,0 +1,1141 @@
+/* Q-Vault components: the component library (rework S7), built only from tokens.css.
+ *
+ * Each block here is the style half of a Jinja macro in templates/ui/ (the macro's file is named
+ * in the block's heading). Every class carries the q- prefix. The old unprefixed compatibility
+ * layer (qvault.css) was deleted once the last screen moved over (R5).
+ *
+ * Rules: colour from tokens only; font sizes from the type scale only; radius by role (4 badges,
+ * 6 controls, 8 cards and popovers, 12 dialogs); shadows on overlays only (e2 menus, e3 dialogs).
+ */
+
+:root {
+  --gutter: var(--gutter-desktop);
+}
+@media (max-width: 767px) {
+  :root { --gutter: var(--gutter-mobile); }
+}
+
+/* ---------------------------------------------------------------- icons (ui/icons.html) */
+
+.q-icon {
+  flex: none; display: inline-block; width: 16px; height: 16px; vertical-align: -3px;
+  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  overflow: visible;
+}
+.q-mark { flex: none; display: block; color: var(--accent); }
+
+/* ---------------------------------------------------------------- buttons (ui/buttons.html) */
+
+.q-btn {
+  --btn-h: var(--control-h);
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-6);
+  height: var(--btn-h); padding-inline: var(--space-12); margin: 0;
+  border: var(--border-width) solid transparent; border-radius: var(--radius-control);
+  font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight);
+  white-space: nowrap; user-select: none; text-decoration: none; cursor: pointer; flex: none;
+  transition: background-color var(--duration-press) var(--ease-standard),
+    border-color var(--duration-press) var(--ease-standard),
+    transform var(--duration-press) var(--ease-standard);
+}
+.q-btn--primary { background: var(--accent); color: var(--accent-text); }
+.q-btn--primary:hover { background: var(--accent-hover); color: var(--accent-text); }
+.q-btn--secondary { background: var(--surface); color: var(--text); border-color: var(--border-hover); }
+.q-btn--secondary:hover { background: var(--fill); color: var(--text); }
+.q-btn--ghost { background: transparent; color: var(--text); }
+.q-btn--ghost:hover { background: var(--fill); color: var(--text); }
+.q-btn--danger { background: var(--danger); color: var(--danger-text); }
+.q-btn--danger:hover { background: var(--danger-hover); color: var(--danger-text); }
+.q-btn:active:not(:disabled):not([aria-busy="true"]) { transform: scale(0.98); }
+.q-btn--secondary:active:not(:disabled), .q-btn--ghost:active:not(:disabled) { background: var(--fill-hover); }
+.q-btn:disabled, .q-btn[aria-disabled="true"] {
+  background: var(--fill-disabled); color: var(--text-disabled); border-color: var(--border-disabled);
+  cursor: not-allowed; transform: none;
+}
+.q-btn--ghost:disabled { background: transparent; border-color: transparent; }
+.q-btn--sm { --btn-h: var(--control-h-sm); padding-inline: var(--space-8); }
+.q-btn--lg { --btn-h: var(--control-h-lg); padding-inline: var(--space-16); }
+.q-btn--block { width: 100%; }
+.q-btn--icon { width: var(--btn-h); padding: 0; }
+.q-btn .q-icon { color: inherit; }
+
+/* Loading keeps the label: the dots sit beside it, the button keeps its width, and the label is
+ * still what a screen reader announces (aria-busy says the rest). */
+.q-btn[aria-busy="true"] { cursor: progress; }
+.q-btn__busy { display: none; align-items: center; gap: 3px; height: 16px; }
+.q-btn[aria-busy="true"] .q-btn__busy { display: inline-flex; }
+.q-btn__busy i {
+  width: 5px; height: 5px; border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.25px currentColor;
+  animation: q-busy 1200ms steps(1, end) infinite;
+}
+.q-btn__busy i:nth-child(2) { animation-delay: 300ms; }
+.q-btn__busy i:nth-child(3) { animation-delay: 600ms; }
+@keyframes q-busy { 0% { background: transparent; } 25% { background: currentColor; } 75% { background: transparent; } }
+
+/* An icon-only button in a bar: square, quiet, the hover fill is its only edge. */
+.q-ib {
+  position: relative; flex: none;
+  display: inline-grid; place-items: center;
+  width: var(--control-h); height: var(--control-h); padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted);
+  cursor: pointer; list-style: none;
+  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
+}
+.q-ib::-webkit-details-marker { display: none; }
+.q-ib:hover, [open] > .q-ib { background: var(--fill); color: var(--text); }
+
+/* ---------------------------------------------------------------- forms (ui/forms.html) */
+
+.q-field { display: grid; gap: var(--space-6); min-width: 0; align-content: start; margin-bottom: var(--space-16); }
+.q-field__label { font-weight: var(--weight-medium); color: var(--text); }
+/* A label with something at the end of its line ("Forgot password?" on sign-in). */
+.q-field__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-8); }
+.q-field__aside { display: inline-block; padding: var(--space-4) 0; font-size: var(--text-caption-size); }
+.q-field__cap { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight); color: var(--text-subtle); margin: 0; }
+.q-field__err {
+  display: flex; gap: var(--space-6); align-items: flex-start; margin: 0;
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  color: var(--status-critical-fg);
+}
+.q-field__err .q-icon { width: 14px; height: 14px; margin-top: 1px; vertical-align: 0; }
+
+.q-input, .q-select {
+  display: block; width: 100%; height: var(--control-h); padding-inline: var(--space-12); margin: 0;
+  border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-control);
+  background: var(--surface); color: var(--text);
+  transition: border-color var(--duration-press) var(--ease-standard);
+}
+textarea.q-input { height: auto; min-height: 76px; padding-block: var(--space-6); resize: vertical; }
+.q-input::placeholder { color: var(--text-subtle); opacity: 1; }
+.q-input:hover, .q-select:hover { border-color: var(--text-subtle); }
+.q-input:focus, .q-select:focus { outline: none; }
+.q-input:focus-visible, .q-select:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-input[aria-invalid="true"], .q-select[aria-invalid="true"] { border-color: var(--status-critical-fg); }
+.q-input:disabled, .q-select:disabled { background: var(--fill-disabled); border-color: var(--border-disabled); color: var(--text-disabled); cursor: not-allowed; }
+.q-input--mono { font-family: var(--font-mono); font-size: var(--text-code-size); font-variant-ligatures: none; }
+
+/* The select keeps the native control (keyboard, mobile pickers, form posting) and draws its own
+ * chevron, so it looks like the inputs beside it. */
+.q-selwrap { position: relative; display: block; }
+.q-select { appearance: none; -webkit-appearance: none; padding-right: var(--space-32); cursor: pointer; }
+.q-selwrap > .q-icon { position: absolute; right: var(--space-8); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+
+.q-cb, .q-rd {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 2px 0 0;
+  width: 16px; height: 16px; display: inline-grid; place-content: center;
+  border: var(--border-width) solid var(--border-strong); background: var(--surface); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-cb { border-radius: var(--radius-badge); }
+.q-cb::before {
+  content: ""; width: 10px; height: 10px; background: var(--accent-text); transform: scale(0);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transition: transform var(--duration-press) var(--ease-enter);
+}
+.q-cb:checked { background: var(--accent); border-color: var(--accent); }
+.q-cb:checked::before { transform: scale(1); }
+.q-rd { border-radius: var(--radius-full); }
+.q-rd:checked { border: 5px solid var(--accent); background: var(--accent-text); }
+.q-cb:hover:not(:checked):not(:disabled), .q-rd:hover:not(:checked):not(:disabled) { border-color: var(--text-subtle); }
+.q-cb:disabled, .q-rd:disabled { background: var(--fill-disabled); border-color: var(--border-disabled); cursor: not-allowed; }
+.q-cb:disabled::before { background: var(--text-disabled); }
+.q-choice { display: flex; gap: var(--space-8); align-items: flex-start; }
+.q-choice label { cursor: pointer; }
+.q-choice__txt { min-width: 0; }
+.q-choice__txt > label { display: block; }
+.q-choice__cap { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-choices { display: grid; gap: var(--space-8); border: 0; margin: 0 0 var(--space-16); padding: 0; min-width: 0; }
+.q-choices > legend { padding: 0; margin-bottom: var(--space-6); font-weight: var(--weight-medium); }
+
+.q-sw {
+  appearance: none; -webkit-appearance: none; position: relative; flex: none; margin: 0;
+  width: 32px; height: 20px; border-radius: var(--radius-full); background: var(--border-strong); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-sw::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: var(--radius-full); background: var(--accent-text);
+  transition: transform var(--duration-popover) var(--ease-standard);
+}
+.q-sw:checked { background: var(--accent); }
+.q-sw:checked::before { transform: translateX(12px); }
+.q-sw:disabled { background: var(--border-disabled); cursor: not-allowed; }
+.q-sw:disabled::before { background: var(--fill-disabled); }
+.q-swrow { display: flex; gap: var(--space-12); align-items: flex-start; }
+.q-swrow label { cursor: pointer; }
+
+/* On a touch screen the box stays 16px (the switch 32 by 20) but its hit area grows to 44px around
+ * it (S24), drawn by an empty ::after the box owns, so a tap on it is a tap on the box. The box sits
+ * 2px into its row, so the area reaches 12px above the row: rows are at least 44px tall and 12px
+ * apart, so the area never reaches the row above, and a tap between two options cannot land on the
+ * wrong one. A box away from its label (a table cell) relies on this most; its row is made as tall
+ * where it is drawn (notifications.css). */
+@media (pointer: coarse) {
+  .q-cb, .q-rd { position: relative; }
+  .q-cb::after, .q-rd::after, .q-sw::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: var(--target-touch); height: var(--target-touch); transform: translate(-50%, -50%);
+  }
+  .q-choice, .q-swrow { min-height: var(--target-touch); }
+  .q-choices { gap: var(--space-12); }
+  /* A link on a label's line keeps its small type but gets a 44px tap area. It grows upwards, into
+     the margin above the field, so it never covers the input under it. */
+  .q-field__aside { position: relative; }
+  .q-field__aside::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--target-touch); }
+}
+
+/* ---------------------------------------------------------------- segmented control
+ * A small set of mutually exclusive choices that apply at once, such as the theme. The current
+ * choice is aria-pressed="true" on its button. */
+
+.seg {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2);
+  border: var(--border-width) solid var(--border-hover); border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.seg__b {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--target-min); padding: 0 var(--space-8);
+  border: 0; border-radius: var(--radius-badge);
+  background: transparent; color: var(--text-muted);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
+}
+.seg__b:hover { background: var(--fill-raised-hover); color: var(--text); }
+.seg__b[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-fg); }
+
+/* The theme choice, inside a menu: the label on the left, the three-way control on the right. */
+.themepick { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); margin: 0; }
+.themepick__label { color: var(--text-muted); }
+
+/* ---------------------------------------------------------------- badges and counts (ui/status.html) */
+
+.q-badge {
+  display: inline-flex; align-items: center; gap: var(--space-4);
+  min-height: 20px; padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-badge);
+  background: var(--b-bg); color: var(--b-fg);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-badge-weight);
+  white-space: nowrap; flex: none; vertical-align: middle;
+}
+.q-badge--neutral { --b-fg: var(--status-neutral-fg); --b-bg: var(--status-neutral-bg); }
+.q-badge--info { --b-fg: var(--status-info-fg); --b-bg: var(--status-info-bg); }
+.q-badge--success { --b-fg: var(--status-success-fg); --b-bg: var(--status-success-bg); }
+.q-badge--warning { --b-fg: var(--status-warning-fg); --b-bg: var(--status-warning-bg); }
+.q-badge--critical { --b-fg: var(--status-critical-fg); --b-bg: var(--status-critical-bg); }
+
+.q-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding-inline: var(--space-6);
+  border-radius: var(--radius-badge); background: var(--fill-hover); color: var(--text-muted);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums; flex: none;
+}
+
+/* ---------------------------------------------------------------- the quorum marks (ui/status.html)
+ * One mark per approval the rule needs, filled as approvals arrive. A count of people, never a bar. */
+
+.q-marks { --mark: 10px; --mark-gap: 4px; display: inline-flex; align-items: center; gap: var(--mark-gap); flex: none; vertical-align: middle; }
+.q-marks--md { --mark: 12px; --mark-gap: 6px; }
+.q-marks--lg { --mark: 20px; --mark-gap: 8px; }
+.q-mark-dot {
+  flex: none; width: var(--mark); height: var(--mark);
+  border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.5px var(--mark-empty);
+}
+.q-marks--lg .q-mark-dot { box-shadow: inset 0 0 0 2px var(--mark-empty); }
+.q-mark-dot.is-on { background: var(--mark-filled); box-shadow: none; }
+.q-quorum { display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+
+/* ---------------------------------------------------------------- avatars (ui/avatars.html) */
+
+.q-av {
+  --av: 24px;
+  flex: none; display: inline-grid; place-items: center;
+  width: var(--av); height: var(--av); border-radius: var(--radius-full);
+  background: var(--fill); color: var(--text-muted);
+  box-shadow: inset 0 0 0 var(--border-width) var(--border);
+  font-size: var(--text-caption-size); line-height: 1; font-weight: var(--text-body-strong-weight);
+  user-select: none;
+}
+.q-av--20 { --av: 20px; }
+/* Two initials (QB, QC) at 20px or in an overlapping stack: drawn a little smaller than the
+   caption step, which has no smaller size, so the next avatar doesn't cover the second letter. */
+.q-av--20 .q-av__t, .q-avs .q-av__t { transform: scale(0.8); letter-spacing: -0.02em; }
+.q-av--32 { --av: 32px; font-size: var(--text-body-size); }
+.q-avs { display: inline-flex; align-items: center; flex: none; }
+.q-avs .q-av { box-shadow: inset 0 0 0 var(--border-width) var(--border), 0 0 0 2px var(--av-ring, var(--surface)); }
+/* A small gap, not an overlap: overlapping 20px circles of two initials read as one word
+   ("AOBMCW", staging re-shoot 2026-10-13). */
+.q-avs .q-av + .q-av, .q-avs .q-av + .q-avs__more { margin-left: 2px; }
+.q-avs__more {
+  display: inline-grid; place-items: center; height: var(--av, 24px); min-width: 20px; padding-inline: var(--space-4);
+  border-radius: var(--radius-full); background: var(--fill-hover); color: var(--text-muted);
+  box-shadow: 0 0 0 2px var(--av-ring, var(--surface));
+  font-size: var(--text-caption-size); line-height: 1; font-weight: var(--text-body-strong-weight);
+}
+
+/* ---------------------------------------------------------------- tabs (ui/navigation.html)
+ * Tabs are links: each is its own URL, so the back button, a shared link and a reload all land on
+ * the same tab. The current one is aria-current="page". */
+
+.q-tabs { display: flex; align-items: stretch; gap: var(--space-8); box-shadow: inset 0 -1px 0 var(--border); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.q-tab {
+  position: relative; display: inline-flex; align-items: center; height: 40px; flex: none;
+  color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none;
+}
+.q-tab__l { display: inline-flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-8); border-radius: var(--radius-control); transition: background-color var(--duration-press) var(--ease-standard); }
+.q-tab:hover { color: var(--text); }
+.q-tab:hover .q-tab__l { background: var(--fill); }
+.q-tab[aria-current="page"] { color: var(--text); }
+.q-tab[aria-current="page"]::after {
+  content: ""; position: absolute; left: var(--space-8); right: var(--space-8); bottom: 0; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--accent);
+}
+.q-tab:focus-visible { outline: none; }
+.q-tab:focus-visible .q-tab__l { outline: var(--focus-width) solid var(--focus); outline-offset: 0; }
+.q-tab .q-count { height: 18px; min-width: 18px; padding-inline: var(--space-4); }
+
+/* ---------------------------------------------------------------- page header (ui/navigation.html) */
+
+.q-ph { display: grid; gap: var(--space-8); margin-bottom: var(--space-24); }
+.q-ph__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-16) var(--space-24); flex-wrap: wrap; }
+.q-ph__tw { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8) var(--space-12); min-width: 0; }
+.q-ph__t { margin: 0; font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); text-wrap: balance; }
+.q-ph__d { margin: 0; color: var(--text-muted); max-width: 76ch; }
+.q-ph__act { display: flex; align-items: center; gap: var(--space-8); flex: none; }
+.q-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-24); margin: 0; }
+.q-fact { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
+.q-fact dt { color: var(--text-subtle); }
+.q-fact dd { display: flex; align-items: center; gap: var(--space-6); margin: 0; min-width: 0; color: var(--text); }
+/* A web address that wraps only at the <wbr> before a dot or slash (ui.breakable_url, staging QA F5). */
+.q-url { overflow-wrap: normal; word-break: normal; }
+
+/* ---------------------------------------------------------------- panels and key-value (ui/data.html) */
+
+.q-panel { background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); min-width: 0; --av-ring: var(--surface); }
+.q-panel__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-12) var(--space-16); border-bottom: var(--border-width) solid var(--border); }
+.q-panel__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-kv { display: grid; grid-template-columns: var(--kv-label, 168px) minmax(0, 1fr); margin: 0; }
+.q-kv > div { display: contents; }
+.q-kv dt { padding: var(--space-12) var(--space-16); color: var(--text-muted); }
+.q-kv dd { padding: var(--space-12) var(--space-16) var(--space-12) 0; margin: 0; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.q-kv > div + div > dt, .q-kv > div + div > dd { border-top: var(--border-width) solid var(--border); }
+@media (max-width: 767px) {
+  .q-kv { grid-template-columns: minmax(0, 1fr); }
+  .q-kv dt { padding: var(--space-12) var(--space-16) 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+  .q-kv dd { padding: var(--space-2) var(--space-16) var(--space-12); }
+  .q-kv > div + div > dd { border-top: 0; }
+}
+
+/* ---------------------------------------------------------------- hash with copy (ui/data.html) */
+
+.q-hash { display: inline-flex; align-items: center; gap: var(--space-4); min-width: 0; max-width: 100%; vertical-align: middle; }
+.q-hash__v { font-family: var(--font-mono); font-size: var(--text-code-size); line-height: var(--text-code-line); color: var(--text-muted); font-variant-ligatures: none; white-space: nowrap; }
+.q-copy {
+  position: relative; display: inline-grid; place-items: center; flex: none;
+  width: var(--target-min); height: var(--target-min); padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-subtle); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), color var(--duration-press) var(--ease-standard);
+}
+.q-copy:hover { background: var(--fill); color: var(--text); }
+.q-copy .q-copy__ok { display: none; }
+.q-copy.is-done { color: var(--status-success-fg); }
+.q-copy.is-done .q-copy__i { display: none; }
+.q-copy.is-done .q-copy__ok { display: block; }
+
+/* ---------------------------------------------------------------- data table (ui/data.html) */
+
+.q-table-wrap { overflow-x: auto; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); --av-ring: var(--surface); }
+.q-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.q-table th, .q-table td { height: var(--row-h); padding: var(--space-8) var(--space-16); text-align: left; vertical-align: middle; }
+.q-table thead th {
+  height: 36px; background: var(--bg-subtle); color: var(--text-subtle); white-space: nowrap;
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
+  border-bottom: var(--border-width) solid var(--border);
+}
+.q-table tbody tr + tr > * { border-top: var(--border-width) solid var(--border); }
+.q-table tbody tr:hover > * { background: var(--fill); }
+.q-table .is-num { text-align: right; }
+.q-table--compact td { height: var(--row-h-compact); padding-block: var(--space-4); }
+.q-sort { display: inline-flex; align-items: center; gap: var(--space-4); color: inherit; text-decoration: none; }
+.q-sort:hover { color: var(--text); }
+.q-sort .q-icon { width: 12px; height: 12px; vertical-align: 0; }
+th[aria-sort] .q-sort { color: var(--text); }
+.q-table__none > td { height: auto; padding: 0; }
+.q-table tbody tr.q-table__none:hover > * { background: none; }
+
+/* ---------------------------------------------------------------- banner, empty state (ui/feedback.html) */
+
+.q-banner {
+  display: flex; gap: var(--space-12); align-items: flex-start; margin-bottom: var(--space-16);
+  padding: var(--space-12) var(--space-16); border: var(--border-width) solid var(--bn-line); border-radius: var(--radius-card);
+  background: var(--bn-bg); color: var(--text);
+}
+.q-banner > .q-icon { color: var(--bn-fg); margin-top: 2px; vertical-align: 0; }
+.q-banner__b { display: grid; gap: var(--space-2); min-width: 0; flex: 1; }
+.q-banner__b p { margin: 0; }
+.q-banner__t { font-weight: var(--text-body-strong-weight); }
+.q-banner__act { flex: none; display: flex; gap: var(--space-8); }
+.q-banner--neutral { --bn-fg: var(--status-neutral-fg); --bn-bg: var(--status-neutral-bg); --bn-line: var(--status-neutral-border); }
+.q-banner--info { --bn-fg: var(--status-info-fg); --bn-bg: var(--status-info-bg); --bn-line: var(--status-info-border); }
+.q-banner--success { --bn-fg: var(--status-success-fg); --bn-bg: var(--status-success-bg); --bn-line: var(--status-success-border); }
+.q-banner--warning { --bn-fg: var(--status-warning-fg); --bn-bg: var(--status-warning-bg); --bn-line: var(--status-warning-border); }
+.q-banner--critical { --bn-fg: var(--status-critical-fg); --bn-bg: var(--status-critical-bg); --bn-line: var(--status-critical-border); }
+
+.q-empty { display: grid; gap: var(--space-2); justify-items: start; padding: var(--space-24) var(--space-16); }
+.q-empty__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-empty__c { margin: 0; color: var(--text-muted); max-width: 60ch; }
+.q-empty .q-btn { margin-top: var(--space-12); }
+
+/* ---------------------------------------------------------------- toast (ui/feedback.html)
+ * Server-rendered, so the message is in the page with or without JavaScript; qvault.js only adds
+ * the timed dismissal, which pauses while the pointer or focus is on the toast. */
+
+.q-toasts {
+  position: fixed; left: var(--gutter); bottom: calc(var(--space-24) + env(safe-area-inset-bottom, 0px)); z-index: var(--z-toast);
+  display: grid; gap: var(--space-8); max-width: min(420px, calc(100vw - 2 * var(--gutter)));
+}
+.q-toast {
+  display: flex; align-items: flex-start; gap: var(--space-8);
+  padding: var(--space-12) var(--space-12) var(--space-12) var(--space-16); border-radius: var(--radius-card);
+  background: var(--chrome-bg); color: var(--chrome-text); box-shadow: var(--shadow-e2);
+  transition: opacity var(--duration-dialog) var(--ease-enter), transform var(--duration-dialog) var(--ease-enter);
+}
+.q-toast > .q-icon { color: var(--chrome-text-muted); margin-top: 2px; vertical-align: 0; }
+.q-toast__m { flex: 1; min-width: 0; }
+.q-toast .q-ib { width: var(--target-min); height: var(--target-min); color: var(--chrome-text-muted); margin: -2px -4px -2px 0; }
+.q-toast .q-ib:hover { background: var(--chrome-bg-raised); color: var(--chrome-text); }
+.q-toast.is-leaving { opacity: 0; transform: translateY(4px); transition-duration: var(--duration-dialog-exit); transition-timing-function: var(--ease-exit); }
+@starting-style { .q-toast { opacity: 0; transform: translateY(8px); } }
+
+/* ---------------------------------------------------------------- menus (ui/menus.html)
+ * A menu is a <details>: it opens and closes without JavaScript, and qvault.js adds Escape, the
+ * outside click, arrow keys and returning focus to the button. */
+
+.q-menu { position: relative; display: inline-flex; }
+.q-menu > summary { list-style: none; }
+.q-menu > summary::-webkit-details-marker { display: none; }
+.q-menu__panel {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: var(--z-popover);
+  min-width: 224px; max-width: calc(100vw - 2 * var(--gutter)); padding: var(--space-4);
+  background: var(--surface-raised); border-radius: var(--radius-card); box-shadow: var(--shadow-e2);
+  color: var(--text); text-align: left;
+}
+.q-menu--start .q-menu__panel { right: auto; left: 0; }
+.q-menu--up .q-menu__panel { top: auto; bottom: calc(100% + 4px); }
+.q-menu[open] .q-menu__panel { animation: q-pop-in var(--duration-popover) var(--ease-enter) both; }
+@keyframes q-pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.q-menu__i {
+  display: flex; align-items: center; gap: var(--space-8); width: 100%; min-height: var(--control-h);
+  padding: var(--space-6) var(--space-8); margin: 0; border: 0; border-radius: var(--radius-control);
+  background: transparent; color: var(--text); font: inherit; text-align: left; text-decoration: none;
+  cursor: pointer; white-space: nowrap;
+}
+.q-menu__i .q-icon { color: var(--text-subtle); }
+.q-menu__i:hover { background: var(--fill-raised-hover); color: var(--text); }
+.q-menu__i:focus-visible { outline-offset: -2px; }
+.q-menu__i--danger, .q-menu__i--danger .q-icon { color: var(--status-critical-fg); }
+.q-menu__sep { height: var(--border-width); margin: var(--space-4) calc(-1 * var(--space-4)); background: var(--border); border: 0; }
+.q-menu__head { display: grid; gap: var(--space-2); padding: var(--space-8) var(--space-8) var(--space-6); min-width: 0; }
+.q-menu__head b { font-weight: var(--text-body-strong-weight); overflow: hidden; text-overflow: ellipsis; }
+.q-menu__head span { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; }
+.q-menu form { margin: 0; }
+
+/* ---------------------------------------------------------------- dialog (ui/feedback.html) */
+
+.q-dialog {
+  width: min(480px, calc(100vw - 2 * var(--gutter))); max-width: none; max-height: calc(100dvh - 48px);
+  margin: auto; padding: 0; border: 0; border-radius: var(--radius-dialog);
+  background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-e3);
+  overflow: hidden; --av-ring: var(--surface-raised);
+  transition: opacity var(--duration-dialog) var(--ease-enter), transform var(--duration-dialog) var(--ease-enter),
+    overlay var(--duration-dialog) allow-discrete, display var(--duration-dialog) allow-discrete;
+}
+.q-dialog[open] { display: flex; flex-direction: column; }
+.q-dialog:not([open]) { opacity: 0; transform: translateY(4px); transition-duration: var(--duration-dialog-exit); transition-timing-function: var(--ease-exit); }
+@starting-style { .q-dialog[open] { opacity: 0; transform: translateY(8px) scale(0.98); } }
+.q-dialog::backdrop { background: var(--backdrop); }
+.q-dlg__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); padding: var(--space-20) var(--space-24) 0; }
+.q-dlg__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-dlg__bd { display: grid; gap: var(--space-16); padding: var(--space-16) var(--space-24); overflow-y: auto; min-height: 0; }
+.q-dlg__ft { display: flex; justify-content: flex-end; gap: var(--space-8); padding: var(--space-16) var(--space-24) var(--space-24); border-top: var(--border-width) solid var(--border); }
+.q-dlg__ft form { margin: 0; }
+@media (max-width: 640px) {
+  .q-dialog { width: 100%; max-height: calc(100dvh - 24px); margin: auto 0 0; border-radius: var(--radius-dialog) var(--radius-dialog) 0 0; }
+  .q-dlg__ft { flex-direction: column-reverse; padding-bottom: calc(var(--space-16) + env(safe-area-inset-bottom, 0px)); }
+  .q-dlg__ft .q-btn, .q-dlg__ft form { width: 100%; }
+  .q-dlg__ft .q-btn { --btn-h: var(--target-touch); }
+}
+
+/* ---------------------------------------------------------------- skip link (base.html)
+ * The first stop for a keyboard: off screen until it is focused, then a raised chip at the top left,
+ * over the sidebar and the sticky top bar, so it never takes a line of the page for anyone else.
+ * Hidden with the clip pattern rather than display: none, which would drop it from the tab order. */
+
+.q-skip {
+  position: fixed; top: var(--space-8); left: var(--space-8); z-index: var(--z-toast);
+  padding: var(--space-8) var(--space-12); border-radius: var(--radius-control);
+  font: var(--text-body-strong); color: var(--text); text-decoration: none;
+  background: var(--surface-raised); box-shadow: var(--shadow-e2);
+}
+.q-skip:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-skip:not(:focus-visible) {
+  width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; box-shadow: none;
+}
+
+/* ================================================================ the shell (base.html, ui/shell.html)
+ * A 240px sidebar that collapses to a 56px icon rail; a 48px top bar; below 768px the sidebar is a
+ * drawer behind the menu button. */
+
+.q-shell { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.q-shell.is-rail { grid-template-columns: var(--sidebar-w-rail) minmax(0, 1fr); }
+
+.q-side {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: var(--space-20);
+  padding: 0 var(--space-12) var(--space-12);
+  background: var(--bg-subtle); border-right: var(--border-width) solid var(--border);
+  --av-ring: var(--bg-subtle);
+}
+.q-side__brand {
+  display: flex; align-items: center; gap: var(--space-8); height: var(--topbar-h); flex: none;
+  padding-inline: var(--space-8); color: var(--text); text-decoration: none;
+  font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong);
+}
+.q-side__brand:hover { color: var(--text); }
+.q-side__brand .q-mark { width: 20px; height: 20px; }
+.q-nav { display: grid; gap: var(--space-2); }
+.q-nav__label { padding: 0 var(--space-8) var(--space-4); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); }
+.q-nav-i {
+  display: flex; align-items: center; gap: var(--space-8); height: var(--control-h); padding-inline: var(--space-8);
+  border-radius: var(--radius-control); color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none;
+  white-space: nowrap; transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-nav-i .q-icon { color: var(--text-subtle); }
+.q-nav-i:hover { background: var(--fill); color: var(--text); }
+.q-nav-i:hover .q-icon { color: var(--text-muted); }
+.q-nav-i[aria-current="page"] { background: var(--accent-subtle); color: var(--accent-fg); }
+.q-nav-i[aria-current="page"] .q-icon { color: var(--accent-fg); }
+.q-nav-i .q-count { margin-left: auto; }
+.q-nav-i[aria-current="page"] .q-count { background: var(--accent-subtle-hover); color: var(--accent-fg); }
+.q-side__foot { margin-top: auto; display: flex; }
+.q-side__close { display: none; }
+
+/* The icon rail: labels leave the screen but stay in the accessibility tree. */
+.q-shell.is-rail .q-side { padding-inline: var(--space-8); align-items: center; }
+.q-shell.is-rail .q-side__brand { padding-inline: 0; justify-content: center; width: 100%; }
+.q-shell.is-rail .q-nav { width: 100%; }
+.q-shell.is-rail .q-nav-i { justify-content: center; padding: 0; }
+.q-shell.is-rail .q-side__word, .q-shell.is-rail .q-nav-i__l, .q-shell.is-rail .q-nav__label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.q-shell.is-rail .q-nav-i .q-count { position: absolute; transform: translate(12px, -10px); min-width: 16px; height: 16px; padding-inline: var(--space-4); }
+.q-shell.is-rail .q-nav-i { position: relative; }
+.q-shell.is-rail .q-side__foot { justify-content: center; }
+.q-shell.is-rail .q-rail-icon--collapse, .q-shell:not(.is-rail) .q-rail-icon--expand { display: none; }
+
+.q-main { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
+.q-top {
+  position: sticky; top: 0; z-index: var(--z-sticky);
+  display: flex; align-items: center; gap: var(--space-12); height: var(--topbar-h); flex: none;
+  padding-inline: var(--gutter) var(--space-12);
+  background: var(--bg); border-bottom: var(--border-width) solid var(--border);
+}
+.q-top__menu { display: none; }
+.q-crumbs-nav { flex: 1; min-width: 0; }
+.q-crumbs { display: flex; align-items: center; gap: var(--space-6); flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; color: var(--text-muted); }
+.q-crumbs li { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
+.q-crumbs li + li::before { content: "/"; color: var(--text-subtle); }
+.q-crumbs a { color: var(--text-muted); text-decoration: none; white-space: nowrap; }
+.q-crumbs a:hover { color: var(--text); text-decoration: underline; }
+.q-crumbs [aria-current="page"] { color: var(--text); font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-top__end { display: flex; align-items: center; gap: var(--space-4); }
+.q-avbtn { width: var(--control-h); height: var(--control-h); border-radius: var(--radius-full); }
+.q-avbtn:hover .q-av, [open] > .q-avbtn .q-av { background: var(--fill-hover); color: var(--text); }
+.q-avbtn:hover, [open] > .q-avbtn { background: transparent; }
+.q-scrim { display: none; }
+
+@media (max-width: 767px) {
+  .q-shell, .q-shell.is-rail { grid-template-columns: minmax(0, 1fr); }
+  .q-side, .q-shell.is-rail .q-side {
+    position: fixed; inset: 0 auto 0 0; z-index: var(--z-dialog); width: min(300px, 85vw); height: 100dvh;
+    padding-inline: var(--space-12); align-items: stretch;
+    box-shadow: var(--shadow-e3); transform: translateX(-100%); visibility: hidden;
+    transition: transform var(--duration-dialog) var(--ease-exit), visibility 0s linear var(--duration-dialog);
+  }
+  .q-shell.is-drawer .q-side { transform: none; visibility: visible; transition: transform var(--duration-dialog) var(--ease-enter); }
+  /* The drawer is always the full sidebar, whatever the desktop rail setting. */
+  .q-shell.is-rail .q-side__word, .q-shell.is-rail .q-nav-i__l, .q-shell.is-rail .q-nav__label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .q-shell.is-rail .q-side__brand { justify-content: flex-start; padding-inline: var(--space-8); }
+  .q-shell.is-rail .q-nav-i { justify-content: flex-start; padding-inline: var(--space-8); }
+  .q-shell.is-rail .q-nav-i .q-count { position: static; transform: none; }
+  .q-side__foot { display: none; }
+  .q-side__close { display: inline-grid; margin-left: auto; }
+  .q-scrim { display: block; position: fixed; inset: 0; z-index: calc(var(--z-dialog) - 1); background: var(--backdrop); opacity: 0; pointer-events: none; transition: opacity var(--duration-dialog) var(--ease-standard); }
+  .q-shell.is-drawer .q-scrim { opacity: 1; pointer-events: auto; }
+  .q-top { padding-inline: var(--space-8); gap: var(--space-8); }
+  .q-top__menu { display: inline-grid; }
+  /* At phone width the top bar names the page; the full trail is one tap away in the drawer. */
+  .q-crumbs li:not(:last-child) { display: none; }
+  .q-crumbs li + li::before { content: none; }
+}
+
+/* ---------------------------------------------------------------- the public header (signed out) */
+
+.q-pub { display: flex; flex-direction: column; min-height: 100vh; }
+.q-pub__bar {
+  display: flex; align-items: center; gap: var(--space-16); height: var(--topbar-h); flex: none;
+  padding-inline: var(--gutter); border-bottom: var(--border-width) solid var(--border); background: var(--bg);
+}
+.q-pub__brand { display: inline-flex; align-items: center; gap: var(--space-8); color: var(--text); text-decoration: none; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--weight-strong); }
+.q-pub__brand:hover { color: var(--text); }
+.q-pub__brand .q-mark { width: 20px; height: 20px; }
+.q-pub__nav { display: flex; align-items: center; gap: var(--space-4); margin-left: auto; }
+.q-pub__nav > a { padding: var(--space-6) var(--space-8); border-radius: var(--radius-control); color: var(--text-muted); font-weight: var(--weight-medium); text-decoration: none; white-space: nowrap; }
+.q-pub__nav > a:hover { background: var(--fill); color: var(--text); }
+.q-pub__nav > a[aria-current="page"] { color: var(--text); }
+@media (max-width: 560px) { .q-pub__nav > a.q-pub__opt { display: none; } }
+/* At the narrowest phones (320px, WCAG 1.4.10 reflow) the word beside the mark goes, so the bar
+ * fits without scrolling sideways; the link keeps "Q-Vault" as its name for a screen reader. */
+@media (max-width: 379px) {
+  .q-pub__bar { gap: var(--space-8); }
+  .q-pub__brand > span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+}
+
+/* ---------------------------------------------------------------- error pages (errors.html) */
+
+.q-error { max-width: 36rem; padding: var(--space-48) 0; display: grid; gap: var(--space-12); justify-items: start; }
+.q-error__code { color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.q-error__t { margin: 0; font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); }
+.q-error__p { margin: 0; color: var(--text-muted); }
+.q-error__act { display: flex; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); }
+.q-pub .q-error { margin: 0 auto; padding-inline: var(--gutter); width: 100%; }
+
+/* ================================================================ the work screens (rework R2)
+ * Home, the Approvals inbox, a vault and New decision. Each block names its macro in ui/work.html,
+ * ui/data.html or ui/forms.html. */
+
+/* ---------------------------------------------------------------- tags and links (ui/work.html)
+ * A tag is a fact about a thing (its type, a vault's rule, "Testnet"): a neutral outline at radius 4,
+ * never a status colour, so it can sit beside a status badge without competing with it. */
+
+.q-tag {
+  display: inline-flex; align-items: center; gap: var(--space-4); flex: none;
+  min-height: 20px; padding: 0 var(--space-6);
+  border: var(--border-width) solid var(--border-hover); border-radius: var(--radius-badge);
+  color: var(--text-muted); background: transparent;
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
+  white-space: nowrap;
+}
+.q-tag--rule { color: var(--text); font-weight: var(--weight-medium); }
+/* A link that is an action in a list footer or at a sentence's end: medium weight, underlined on
+ * hover only, because it stands on its own and is not running text. */
+.q-lnk { color: var(--link); font-weight: var(--weight-medium); text-decoration: none; }
+.q-lnk:hover { color: var(--link-hover); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.q-av--entity { border-radius: var(--radius-badge); }
+.q-narrow { display: none; }
+@media (max-width: 767px) {
+  .q-wide { display: none; }
+  .q-narrow { display: inline; }
+}
+
+/* A menu item with a caption under its label (a vault and its rule). */
+.q-menu__i--2 { min-height: 44px; }
+.q-menu__il { display: grid; min-width: 0; }
+.q-menu__ic { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* ---------------------------------------------------------------- due times (ui/work.html) */
+
+.q-due { display: grid; gap: var(--space-2); min-width: 0; }
+.q-due__abs { display: inline-flex; align-items: center; gap: var(--space-4); color: var(--text); white-space: nowrap; }
+.q-due__rel { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); white-space: nowrap; }
+.q-due.is-soon .q-due__abs { color: var(--status-warning-fg); }
+.q-due.is-past .q-due__abs { color: var(--text-muted); }
+.q-due--none { color: var(--text-subtle); }
+.q-due--done .q-due__abs { color: var(--text-muted); }
+
+/* ---------------------------------------------------------------- signatures in a table (ui/work.html) */
+
+.q-sigs { display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+.q-sigs__n { color: var(--text); }
+
+/* ---------------------------------------------------------------- Home (home.html) */
+
+.q-home { container-type: inline-size; }
+.q-home__cols { display: grid; gap: var(--space-40) var(--space-32); align-items: start; }
+@container (min-width: 1040px) {
+  .q-home__cols { grid-template-columns: minmax(0, 1fr) 296px; }
+}
+.q-home__work { display: grid; gap: var(--space-32); min-width: 0; }
+
+/* The getting-started checklist (plan R3): the panel above the work for a new workspace. */
+.q-start { margin-bottom: var(--space-32); max-width: 720px; }
+.q-start .q-panel__hd { justify-content: flex-start; padding-block: var(--space-8); }
+.q-start__n { color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-start__hide { margin: 0 0 0 auto; }
+.q-start__list { display: grid; gap: var(--space-8); margin: 0; padding: var(--space-16); list-style: none; }
+.q-start__i { display: flex; align-items: center; gap: var(--space-12); }
+.q-start__i.is-done { color: var(--text-muted); }
+.q-start__mark {
+  flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px;
+  border-radius: var(--radius-full); box-shadow: inset 0 0 0 1.5px var(--border-strong);
+}
+.q-start__i.is-done .q-start__mark { background: var(--mark-filled); color: var(--accent-text); box-shadow: none; }
+.q-start__mark .q-icon { width: 12px; height: 12px; vertical-align: 0; stroke-width: 2; }
+.q-start__cap { margin: 0; padding: 0 var(--space-16) var(--space-16); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* ---------------------------------------------------------------- work lists (ui/work.html)
+ * One column template for all three lists (decision, amount 72, signatures 160, due 168), so the
+ * columns line up down the page. Two-line rows, 56px at least; the whole row is one link. */
+
+.q-wsec { display: grid; gap: var(--space-12); min-width: 0; }
+.q-wsec__hd { display: flex; align-items: center; gap: var(--space-8); min-height: 24px; }
+.q-wsec__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-wsec__n { color: var(--text-subtle); }
+.q-wl {
+  --c-amt: 72px; --c-sig: 160px; --c-due: 168px;
+  background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+  overflow: hidden; --av-ring: var(--surface);
+}
+.q-wl__hd, .q-wl__row {
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--c-amt) var(--c-sig) var(--c-due);
+  column-gap: var(--space-12); padding-inline: var(--space-16);
+}
+.q-wl__hd {
+  height: 36px; align-items: center; background: var(--bg-subtle); border-bottom: var(--border-width) solid var(--border);
+  color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--text-caption-weight);
+}
+.q-wl__hd .is-num, .q-wl__amt { text-align: right; }
+.q-wl__list { margin: 0; padding: 0; list-style: none; }
+.q-wl__row {
+  grid-template-areas: "t amt sig due" "m amt sig due"; grid-template-rows: auto 1fr; row-gap: var(--space-2);
+  min-height: 56px; padding-block: var(--space-8); align-items: start;
+  color: var(--text); text-decoration: none;
+  transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-wl__list li + li .q-wl__row { border-top: var(--border-width) solid var(--border); }
+.q-wl__row:hover { background: var(--fill); color: var(--text); --av-ring: var(--fill); }
+.q-wl__row:focus-visible { outline-offset: -2px; border-radius: var(--radius-card); }
+.q-wl__t { grid-area: t; font-weight: var(--text-body-strong-weight); text-wrap: pretty; min-width: 0; }
+.q-wl__m { grid-area: m; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8); min-width: 0; color: var(--text-muted); }
+.q-wl__clip { display: inline-flex; color: var(--text-subtle); }
+.q-wl__amt { grid-area: amt; white-space: nowrap; }
+.q-wl__sig { grid-area: sig; display: grid; gap: var(--space-2); min-width: 0; align-content: start; }
+.q-wl__s1 { display: flex; align-items: center; height: 20px; color: var(--text); }
+.q-wl__note { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-wl__note + .q-wl__note { color: var(--text-subtle); }
+.q-wl__due { grid-area: due; min-width: 0; }
+.q-wl__ft { margin: 0; padding: var(--space-12) var(--space-16); border-top: var(--border-width) solid var(--border); color: var(--text-muted); }
+.q-wl__ft--empty { border-top: 0; }
+.q-wl__ft--phone { display: none; }
+
+/* Recent activity: one item per decision, its latest event (screens.md A.7). */
+.q-act { display: grid; gap: var(--space-16); align-content: start; min-width: 0; --av-ring: var(--bg); }
+.q-act__list { display: grid; gap: var(--space-20); margin: 0; padding: 0; list-style: none; }
+.q-act__i { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--space-12); align-items: start; }
+.q-act__b { min-width: 0; }
+.q-act__s { margin: 0; color: var(--text-muted); overflow-wrap: anywhere; }
+.q-act__t { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; }
+.q-act__t:hover { color: var(--text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.q-act__meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin: var(--space-4) 0 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-act__none, .q-act__ft { margin: 0; color: var(--text-muted); }
+
+@media (max-width: 767px) {
+  .q-home__work { gap: var(--space-24); }
+  /* Rows become list items: title; vault, type and amount; marks and due (screens.md C.2). */
+  .q-wl { border-radius: 0; border-inline: 0; margin-inline: calc(-1 * var(--gutter)); }
+  .q-wl__hd { display: none; }
+  .q-wl__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "t t" "m amt" "sig due"; grid-template-rows: auto;
+    row-gap: var(--space-4); padding: var(--space-12) var(--gutter); min-height: 0;
+  }
+  .q-wl__row:focus-visible { border-radius: 0; }
+  .q-wl__t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .q-wl__amt { align-self: center; }
+  .q-wl__sig { display: flex; align-items: center; gap: var(--space-8); }
+  .q-wl__note { display: none; }
+  .q-wl__note--keep { display: inline; }
+  .q-wl__due { align-self: center; justify-self: end; }
+  .q-wl__due .q-due__rel { display: none; }
+  .q-wl__list li:nth-child(n + 4) { display: none; }
+  .q-wl__ft { padding-inline: var(--gutter); }
+  .q-wl__ft--phone { display: block; }
+}
+
+/* ---------------------------------------------------------------- toolbar filters (ui/forms.html)
+ * Filters live in the URL: the toolbar is a GET form that submits itself when a select changes
+ * (qvault.js, data-autosubmit) and on Enter in the search box. */
+
+.q-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin: var(--space-16) 0; }
+.q-field--inline { margin: 0; }
+.q-field--inline .q-select { width: auto; max-width: 220px; }
+.q-search { position: relative; flex: 1 1 220px; max-width: 320px; min-width: 0; }
+.q-search > .q-icon { position: absolute; left: var(--space-8); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+.q-search .q-input { padding-left: var(--space-32); }
+.q-search .q-input::-webkit-search-cancel-button { cursor: pointer; }
+.q-toolbar__n { margin-left: auto; color: var(--text-subtle); white-space: nowrap; }
+@media (max-width: 767px) {
+  .q-search { flex-basis: 100%; max-width: none; }
+  .q-field--inline { flex: 1 1 0; min-width: 0; }
+  .q-field--inline .q-select { width: 100%; max-width: none; }
+  .q-toolbar__n { flex-basis: 100%; margin-left: 0; }
+  .q-input, .q-select { font-size: var(--text-input-size-touch); }
+}
+
+/* ---------------------------------------------------------------- decision rows in a table
+ * The title is the row's link and covers the whole row, so the row is one target; the decision
+ * code sits under it in mono, the one place a list names it (S17). */
+
+.q-drow { position: relative; }
+.q-dec { display: grid; gap: var(--space-2); min-width: 0; }
+.q-dec__link { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; overflow-wrap: anywhere; }
+.q-dec__link::after { content: ""; position: absolute; inset: 0; }
+.q-dec__link:hover { color: var(--text); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.q-dec__link:focus-visible { outline: none; }
+.q-dec__link:focus-visible::after { outline: var(--focus-width) solid var(--focus); outline-offset: -2px; border-radius: var(--radius-card); }
+.q-dec__m { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8); }
+.q-dec__code { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); letter-spacing: 0.02em; }
+.q-trunc { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-c-raised { white-space: nowrap; }
+.q-drow__by { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-table td.q-c-main { min-width: 220px; }
+@media (max-width: 1279px) { .q-c-raised { display: none; } }
+
+/* Below 768px a stacked table is a list of small cards: the decision, then its vault and amount,
+ * then its status and due time (screens.md C.2, the phone's list item). */
+@media (max-width: 767px) {
+  .q-table-wrap--stack { margin-inline: calc(-1 * var(--gutter)); border-radius: 0; border-inline: 0; overflow: visible; }
+  .q-table--stack, .q-table--stack tbody { display: block; }
+  .q-table--stack thead { display: none; }
+  .q-table--stack tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-12); row-gap: var(--space-4);
+    grid-template-areas: "main main" "meta aside" "status end";
+    padding: var(--space-12) var(--gutter);
+  }
+  .q-table--stack tbody tr + tr { border-top: var(--border-width) solid var(--border); }
+  .q-table--stack td, .q-table--stack tbody tr + tr > * { display: block; height: auto; padding: 0; border: 0; background: none; }
+  .q-table--stack tr.q-table__none { display: block; padding: 0; }
+  .q-table--stack .q-c-main { grid-area: main; min-width: 0; }
+  .q-table--stack .q-c-meta { grid-area: meta; color: var(--text-muted); min-width: 0; }
+  .q-table--stack .q-c-aside { grid-area: aside; }
+  .q-table--stack .q-c-status { grid-area: status; }
+  .q-table--stack .q-c-end { grid-area: end; justify-self: end; text-align: right; }
+  .q-table--stack .q-c-wide-only { display: none; }
+  .q-table--stack .q-due__rel { display: none; }
+  .q-trunc { max-width: none; }
+}
+
+/* ---------------------------------------------------------------- pager (ui/data.html) */
+
+.q-pager { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin-top: var(--space-16); color: var(--text-muted); }
+.q-pager__b { display: flex; gap: var(--space-8); }
+
+/* ---------------------------------------------------------------- a vault (vaults/detail.html) */
+
+.q-vault .q-ph { margin-bottom: var(--space-16); }
+.q-vault__body { margin-top: var(--space-24); }
+.q-split { display: grid; gap: var(--space-24); align-items: start; }
+@media (min-width: 1100px) {
+  .q-split { grid-template-columns: minmax(0, 1fr) 320px; }
+  .q-split--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.q-panel__bd { padding: var(--space-16); }
+.q-panel__bd > .q-field:last-of-type { margin-bottom: var(--space-16); }
+.q-panel__ft { margin: 0; padding: 0 var(--space-16) var(--space-16); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-muted { color: var(--text-subtle); }
+
+/* A person in a table: the avatar, then their name over their email. */
+.q-person { display: flex; align-items: center; gap: var(--space-12); min-width: 0; }
+.q-person__t { display: grid; min-width: 0; }
+.q-person__n { font-weight: var(--text-body-strong-weight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-person__you { color: var(--text-subtle); font-weight: var(--text-body-weight); }
+.q-person__e { color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Row actions: small forms side by side, right-aligned, never wrapping into the row above. */
+.q-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-8); }
+.q-inline-form { display: flex; align-items: center; gap: var(--space-6); margin: 0; }
+.q-inline-form .q-select { height: var(--control-h-sm); width: auto; }
+.q-c-actions { text-align: right; }
+@media (max-width: 767px) {
+  .q-table--stack .q-c-actions { grid-column: 1 / -1; justify-self: start; }
+  .q-actions { justify-content: flex-start; flex-wrap: wrap; }
+}
+
+/* Adding a member: one row above the members table, so the table keeps the page's width. */
+.q-addrow { margin: 0 0 var(--space-20); max-width: 760px; }
+.q-addrow__f { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; gap: var(--space-8); align-items: end; }
+.q-addrow__f .q-field { margin: 0; }
+.q-addrow__cap { margin: var(--space-8) 0 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); max-width: 76ch; }
+.q-nowrap { white-space: nowrap; }
+@media (max-width: 767px) {
+  .q-addrow__f { grid-template-columns: minmax(0, 1fr) auto; }
+  .q-addrow__f .q-field:first-child { grid-column: 1 / -1; }
+}
+
+/* ---------------------------------------------------------------- New decision (vaults/proposal_new.html) */
+
+/* The type: a card each (General, Payment, Production access, Contract), each its own URL
+ * (?kind=payment), so the choice survives a reload. Four fit across the form and its preview. */
+.q-typepick { display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-24); }
+.q-typecard {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: var(--space-8); row-gap: var(--space-2);
+  flex: 1 1 200px; max-width: 300px; padding: var(--space-12) var(--space-16);
+  border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card);
+  background: var(--surface); color: var(--text); text-decoration: none;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-typecard > .q-icon { margin-top: 2px; color: var(--text-subtle); }
+.q-typecard__t { font-weight: var(--text-body-strong-weight); }
+.q-typecard__c { grid-column: 2; color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+a.q-typecard:hover { background: var(--fill); color: var(--text); }
+.q-typecard[aria-current="page"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-subtle); }
+.q-typecard[aria-current="page"] > .q-icon { color: var(--accent-fg); }
+.q-typecard.is-off { border-style: dashed; border-color: var(--border-hover); background: transparent; color: var(--text-subtle); cursor: not-allowed; }
+.q-typecard.is-off .q-typecard__c { color: var(--text-subtle); }
+
+/* The form, the preview beside it, and the actions under the form. One column on a phone, where
+ * the preview comes before the button it is about. */
+.q-compose {
+  display: grid; gap: var(--space-8) var(--space-32); align-items: start;
+  grid-template-columns: minmax(0, 640px); grid-template-areas: "fields" "preview" "act";
+}
+@media (min-width: 1100px) {
+  .q-compose { grid-template-columns: minmax(0, 640px) 320px; grid-template-areas: "fields preview" "act preview"; }
+}
+.q-compose__fields { grid-area: fields; min-width: 0; }
+.q-compose__act { grid-area: act; display: flex; gap: var(--space-8); align-items: center; padding-top: var(--space-8); }
+.q-compose__note { margin: 0 0 var(--space-16); color: var(--text-muted); }
+/* Two fields on one line: a value and its currency, a start and an end (decision types, R5). */
+.q-pair { display: grid; grid-template-columns: minmax(0, 1fr) 128px; column-gap: var(--space-16); }
+.q-pair--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* The decision text is what people sign, so it is set as the product sets signed words. */
+.q-compose textarea.q-input {
+  min-height: 168px; padding-block: var(--space-8);
+  font-family: var(--font-serif); font-size: var(--text-decision-size); line-height: var(--text-decision-line);
+}
+
+.q-preview {
+  grid-area: preview; display: grid; gap: var(--space-16); align-content: start; min-width: 0;
+  padding: var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card);
+  background: var(--bg-subtle); --av-ring: var(--bg-subtle);
+}
+@media (min-width: 1100px) { .q-preview { position: sticky; top: calc(var(--topbar-h) + var(--space-24)); } }
+.q-preview__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-preview__rule { display: flex; align-items: center; gap: var(--space-12); margin: 0; font-weight: var(--text-body-strong-weight); }
+.q-preview__people { display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-16); margin: 0; padding: 0; list-style: none; }
+.q-preview__people li { display: inline-flex; align-items: center; gap: var(--space-8); }
+.q-preview__facts { display: grid; gap: var(--space-12); margin: 0; padding-top: var(--space-16); border-top: var(--border-width) solid var(--border); }
+.q-preview__facts > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--space-8); }
+.q-preview__facts dt { color: var(--text-subtle); }
+.q-preview__facts dd { margin: 0; color: var(--text); }
+.q-preview__cap { margin: 0; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+/* S15 with a threshold of every approver: the decision could never pass (R5). */
+.q-preview__warn { display: flex; gap: var(--space-8); margin: 0; padding: var(--space-8) var(--space-12); color: var(--status-warning-fg); background: var(--status-warning-bg); border: var(--border-width) solid var(--status-warning-border); border-radius: var(--radius-control); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* An input with a unit inside its right edge ("ETH"). */
+.q-inwrap { position: relative; display: block; }
+.q-inwrap .q-input { padding-right: var(--space-48); }
+.q-inwrap__sfx { position: absolute; right: var(--space-12); top: 50%; transform: translateY(-50%); color: var(--text-subtle); pointer-events: none; }
+
+/* ---------------------------------------------------------------- the due field (ui/forms.html: due_field)
+ * A typed text input with a calendar button; qvault.js draws the month grid and the time list. */
+
+.q-date { position: relative; display: block; max-width: 320px; }
+.q-date__in { padding-right: var(--space-40); font-variant-numeric: tabular-nums; }
+.q-date__btn {
+  position: absolute; right: 2px; top: 2px; display: inline-grid; place-items: center;
+  width: 28px; height: 28px; padding: 0; margin: 0; border: 0; border-radius: var(--radius-badge);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.q-date__btn:hover, .q-date__btn[aria-expanded="true"] { background: var(--fill); color: var(--text); }
+.q-date__read { display: block; color: var(--text); font-weight: var(--weight-medium); }
+.q-date__pop {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-popover);
+  width: 296px; padding: var(--space-12);
+  background: var(--surface-raised); border-radius: var(--radius-card); box-shadow: var(--shadow-e2);
+  animation: q-pop-in var(--duration-popover) var(--ease-enter) both;
+}
+.q-cal__hd { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-bottom: var(--space-8); }
+.q-cal__m { font-weight: var(--text-body-strong-weight); }
+.q-cal__nav { display: flex; gap: var(--space-2); }
+.q-cal__nav .q-ib:disabled { color: var(--text-disabled); background: transparent; cursor: not-allowed; }
+.q-cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.q-cal__wd { display: grid; place-items: center; height: 24px; color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-cal__d {
+  display: grid; place-items: center; height: 36px; padding: 0; margin: 0;
+  border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text); cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.q-cal__d:hover:not(:disabled) { background: var(--fill-raised-hover); }
+.q-cal__d.is-today { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.q-cal__d[aria-pressed="true"], .q-cal__d[aria-pressed="true"]:hover { background: var(--accent); color: var(--accent-text); box-shadow: none; }
+.q-cal__d:disabled { color: var(--text-disabled); cursor: not-allowed; }
+.q-cal__d.is-out { visibility: hidden; }
+.q-cal__time { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); margin-top: var(--space-12); padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
+.q-cal__time label { color: var(--text-muted); }
+.q-cal__time .q-selwrap { width: 112px; }
+.q-cal__ft { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-12); }
+@media (max-width: 767px) {
+  .q-date { max-width: none; }
+  .q-date__pop { width: min(320px, calc(100vw - 2 * var(--gutter))); }
+  .q-cal__d { height: 40px; }
+}
+
+/* ---------------------------------------------------------------- file drop zone (ui/forms.html: file_drop) */
+
+.q-drop { position: relative; display: block; }
+.q-drop__in { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip-path: inset(50%); }
+.q-drop__zone {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-8);
+  min-height: 64px; padding: var(--space-12) var(--space-16);
+  border: var(--border-width) dashed var(--border-strong); border-radius: var(--radius-card);
+  background: var(--surface); color: var(--text-muted); cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-standard), border-color var(--duration-press) var(--ease-standard);
+}
+.q-drop__zone > .q-icon { color: var(--text-subtle); }
+.q-drop__zone:hover, .q-drop.is-over .q-drop__zone { background: var(--fill); border-color: var(--text-subtle); }
+.q-drop__in:focus-visible + .q-drop__zone { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.q-drop__act { color: var(--link); font-weight: var(--weight-medium); }
+.q-drop__name { flex-basis: 100%; color: var(--text); font-weight: var(--text-body-strong-weight); overflow-wrap: anywhere; }
+.q-drop__name:empty { display: none; }
+.q-drop.is-filled .q-drop__or { display: none; }
+/* Why a chosen or dropped file was refused (qvault.js); empty, and so absent, otherwise. */
+.q-drop__bad:empty, .q-date__bad:empty { display: none; }
+
+/* ---------------------------------------------------------------- number (ui/forms.html: number)
+ * A native number input; qvault.js adds .is-on, shows the − and + buttons and hides the
+ * browser's spinner. Without the script the native spinner stays, so nothing is lost. */
+
+.q-num { display: inline-flex; align-items: stretch; max-width: 100%; vertical-align: top; }
+.q-num__in { width: 6.5rem; font-variant-numeric: tabular-nums; }
+.q-num.is-on .q-num__in {
+  width: 4.5rem; border-radius: 0; text-align: center;
+  appearance: textfield; -moz-appearance: textfield;
+}
+.q-num.is-on .q-num__in::-webkit-inner-spin-button,
+.q-num.is-on .q-num__in::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.q-num__in:focus-visible { position: relative; z-index: 1; }
+.q-num__b {
+  display: inline-grid; place-items: center; flex: none; width: var(--control-h); padding: 0; margin: 0;
+  border: var(--border-width) solid var(--border-strong); background: var(--surface); color: var(--text-muted);
+  cursor: pointer; transition: background-color var(--duration-press) var(--ease-standard);
+}
+.q-num__b:first-child { border-right: 0; border-radius: var(--radius-control) 0 0 var(--radius-control); }
+.q-num__b:last-child { border-left: 0; border-radius: 0 var(--radius-control) var(--radius-control) 0; }
+.q-num__b:hover:not(:disabled) { background: var(--fill); color: var(--text); }
+.q-num__b:disabled { color: var(--text-disabled); background: var(--surface); cursor: not-allowed; }
+/* Two rules, not one list: a browser without :has() would drop the whole list. */
+.q-num__in[aria-invalid="true"] ~ .q-num__b { border-color: var(--status-critical-fg); }
+.q-num__b:has(~ .q-num__in[aria-invalid="true"]) { border-color: var(--status-critical-fg); }
+.q-field--inline .q-num { width: auto; }
+@media (max-width: 767px) {
+  /* A thumb needs the full touch target, so the buttons, and the input between them, grow to it. */
+  .q-num__b { width: var(--target-touch); }
+  .q-num__b, .q-num.is-on .q-num__in { height: var(--target-touch); }
+}
+
+@media (max-width: 767px) {
+  /* A phone keeps the one primary action beside the headline, as an icon (screens.md C.2). */
+  .q-home .q-ph__row { flex-wrap: nowrap; }
+  .q-home .q-ph__act .q-btn--primary { width: var(--target-touch); height: var(--target-touch); padding: 0; }
+  .q-home .q-ph__act .q-btn--primary > span:not(.q-btn__busy),
+  .q-home .q-ph__act .q-btn--primary > .q-icon:last-child:not(:first-child) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .q-compose__act { flex-direction: column; align-items: stretch; }
+  .q-compose__act .q-btn { --btn-h: var(--target-touch); }
+  .q-typecard { max-width: none; }
+}
+
+/* ---------------------------------------------------------------- the vaults list (vaults/list.html) */
+
+.q-dec__d { color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 56ch; }
+.q-c-label { display: none; }
+@media (max-width: 767px) {
+  .q-c-label { display: inline; color: var(--text-muted); }
+  .q-table--stack .q-c-status.is-num { text-align: left; }
+}
+
+.q-table td.is-num { white-space: nowrap; }
+
+/* ---------------------------------------------------------------- R2 review fixes */
+
+/* The breadcrumb's wrapper takes the bar's free space, so the bell, help and avatar sit at the
+ * right edge rather than against the trail. */
+.q-crumbs-nav { flex: 1; min-width: 0; }
+
+/* Rejections under the approval count: "Rejected 0 of 2" alone hides why. */
+.q-sigs__rej { display: block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* The date popover opens upwards when there is no room below the field (qvault.js decides). */
+.q-date__pop.is-up { top: auto; bottom: calc(100% + 4px); }
+.q-date__pop.is-end { left: auto; right: 0; }
+.q-date__read { font-weight: var(--weight-regular); color: var(--text-muted); }
+.q-inwrap { max-width: 280px; }
+
+/* Remove is a quiet action until it is pointed at. */
+.q-c-actions .q-btn--ghost { color: var(--text-muted); }
+.q-c-actions .q-btn--ghost:hover { color: var(--status-critical-fg); }
+
+@media (max-width: 767px) {
+  /* Tabs that run off a phone's edge fade there and scroll, so the hidden ones read as more. */
+  .q-tabs { scroll-padding-inline: var(--gutter); mask-image: linear-gradient(to right, var(--text) 85%, transparent); }
+  .q-tabs.is-end { mask-image: none; }
+  .q-toolbar .q-field--inline:first-of-type { flex-basis: 100%; }
+  .q-toolbar .q-field--inline { flex: 1 1 40%; }
+  .q-date__btn { right: 0; top: 0; width: 40px; height: 100%; }
+  .q-vault .q-ph__act .q-btn--primary { width: var(--target-touch); height: var(--target-touch); padding: 0; }
+  .q-vault .q-ph__act .q-btn--primary > span:not(.q-btn__busy) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .q-vault .q-ph__row { flex-wrap: nowrap; }
+}
+.q-sigs--rej { flex-wrap: wrap; row-gap: 0; }
+.q-sigs--rej .q-sigs__rej { flex-basis: 100%; }
+
+/* A table's header says "(UTC)" once; a stacked phone row has no header, so its time says it. */
+.q-table .q-due__zone { display: none; }
+@media (max-width: 767px) { .q-table--stack .q-due__zone { display: inline; } }
+
+/* ================================================================ rule change diff (R5)
+ * A vault rule change as before -> after: the old value struck through and muted, the new one in
+ * the text colour. Its own line under a sentence; a small row of its own elsewhere. */
+.q-diff { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-6); margin-top: var(--space-2); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-diff__l { color: var(--text-muted); }
+.q-diff__l::after { content: ":"; }
+.q-diff__b { color: var(--text-subtle); text-decoration: line-through; text-decoration-thickness: 1px; }
+.q-diff__a { color: var(--text-subtle); }
+.q-diff__n { color: var(--text); font-weight: var(--weight-medium); text-decoration: none; }
+.q-changes { display: grid; margin: 0; padding: 0; list-style: none; }
+.q-changes__i { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-12); padding: var(--space-8) var(--space-16); border-top: var(--border-width) solid var(--border); }
+.q-changes__i:first-child { border-top: 0; }
+.q-changes__i .q-diff { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); }
+.q-changes__by { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* ================================================================ touch targets (S24)
+ * On a coarse pointer (a phone, a tablet) a control is at least 44px each way; with a mouse the
+ * denser sizes stand (24px is the floor there, WCAG 2.5.8). Everything drawn from the height
+ * tokens (inputs, selects, buttons of every size, icon buttons, menu rows) grows with them; the
+ * rest grows its own box. A link inside a table row keeps its size: rows sit closer than 44px, so
+ * a larger area would overlap the next row's, and its row height already spaces it (2.5.8). */
+@media (pointer: coarse) {
+  :root { --control-h-sm: var(--target-touch); --control-h: var(--target-touch); --control-h-lg: var(--target-touch); }
+  .q-tab { height: var(--target-touch); min-width: var(--target-touch); justify-content: center; }
+  .q-date__btn { width: var(--target-touch); }
+  /* The calendar's days: 44px each way, the popover as wide as seven of them where the screen allows. */
+  .q-date__pop { width: min(344px, calc(100vw - 2 * var(--gutter))); }
+  .q-cal__d { height: var(--target-touch); }
+  /* A toast stays a small chip; its close button's hit area reaches past it instead. */
+  .q-toast .q-ib::before { content: ""; position: absolute; inset: -10px; }
+  .seg__b { min-height: var(--target-touch); min-width: var(--target-touch); }
+  .q-pub__brand, .q-pub__nav > a, .q-docnav a { display: inline-flex; align-items: center; min-height: var(--target-touch); }
+  .q-docnav a { display: flex; }
+  /* A link on a line of its own: a taller box, with the margin taken back so nothing moves. */
+  .q-lnk { display: inline-block; padding-block: 14px; margin-block: -14px; }
+}

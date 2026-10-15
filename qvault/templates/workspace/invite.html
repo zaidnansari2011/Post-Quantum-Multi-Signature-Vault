@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "ui/forms.html" import field, select, radio_group %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/navigation.html" import page_header, breadcrumbs %}
+{% block title %}Invite people — Q-Vault{% endblock %}
+{% block crumbs %}{{ breadcrumbs([('Members', url_for('workspace.members')), ('Invite people', None)]) }}{% endblock %}
+
+{% block content %}
+{% set lead %}{% if delivery_ready('email') %}Q-Vault will email them a link, and shows it to you as well. {% else %}You'll get a link to send them. {% endif %}It works once and expires after {{ ttl_days }} days.{% endset %}
+{{ page_header('Invite someone to ' ~ workspace.name, description=lead) }}
+
+<div class="q-invite">
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="q-panel" aria-labelledby="inv-who">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-who">Who</h2></div>
+      <div class="q-panel__bd">
+        {{ field('email', 'Email', type='email', value=email, id='email', required=True, error=errors.get('email'),
+                 caption='Only an account with this address can accept the invitation.', attrs={'autocomplete': 'off'}) }}
+        {%- set role_options = [] %}{% for r in roles %}{% set _ = role_options.append((r, role_name(r), role_help[r])) %}{% endfor %}
+        {{ radio_group('role', 'Workspace role', role_options, selected=role, error=errors.get('role')) }}
+      </div>
+    </section>
+
+    <section class="q-panel" aria-labelledby="inv-vaults">
+      <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-vaults">Vaults (optional)</h2></div>
+      <div class="q-panel__bd">
+        {% if vaults %}
+        <p class="q-note q-gap">They join these vaults when they accept. You can only add people to vaults you own.</p>
+        {% for v in vaults %}
+        {{ select('vault_' ~ v.id, v.name, [('', 'Not added'), ('signer', 'Approver'), ('viewer', 'Viewer')],
+                  chosen.get(v.id) or '', id='vault_' ~ v.id) }}
+        {% endfor %}
+        <p class="q-note">
+          An approver counts towards the vault's threshold for decisions raised after they join.
+          Decisions already open keep the approvers they started with.
+        </p>
+        {% else %}
+        <p class="q-empty-line">
+          You don't own a vault yet. Vault owners add people from the vault's Members tab once they've joined.
+        </p>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="q-btnrow">
+      {{ button('Create invitation link', 'primary', type='submit') }}
+      {{ button('Cancel', 'ghost', href=url_for('workspace.members')) }}
+    </div>
+  </form>
+
+  <section class="q-panel" aria-labelledby="inv-how">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="inv-how">How it arrives</h2></div>
+    <div class="q-panel__bd">
+      {% if delivery_ready('email') %}
+      <p>
+        Q-Vault will email the link to the address you enter, usually within a minute; the Invited
+        list shows when it's sent, or if it couldn't be. The next page shows the link too, if you'd
+        rather send it yourself as well. Q-Vault emails one address at most 3 invitations a day.
+      </p>
+      {% else %}
+      <p>
+        Q-Vault doesn't send email here, so nothing is sent for you. Copy the link from the next page
+        and send it to them yourself, by email or chat.
+      </p>
+      {% endif %}
+      <p class="q-note">
+        The link is shown once. If it's lost, get a new one from the Invited tab; the old link then stops working.
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

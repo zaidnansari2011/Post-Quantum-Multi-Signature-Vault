@@ -1,9 +1,16 @@
 """APScheduler integration (Phase 7).
 
-Registers two cron jobs — automated key rotation and the proposal-expiry sweep — each running
-inside an application context. The job bodies live in ``rotation_service`` as plain functions, so
-they are equally callable from a test or an admin "run now" button; the scheduler only decides
-*when* they run.
+Registers the background jobs — automated key rotation, the proposal-expiry sweep, decision
+reminders (plan R4), the email and push outbox (R8), the witness sync and, when a relayer is
+configured, the chain work — each running inside an application context. The job bodies live
+in services as plain functions, so they are equally callable from a test or an admin "run now"
+button; the scheduler only decides *when* they run.
+
+The witness sync belongs here rather than in the request path. Offering a checkpoint means an
+HTTP round trip to another process, and putting that in ``after_request`` would make every write
+wait on a machine that might be down — turning a witness outage into a Q-Vault outage, which is
+precisely backwards. On a timer, an unreachable witness costs nothing but a growing lag, which is
+what the transparency page reports.
 """
 
 from __future__ import annotations
@@ -12,6 +19,7 @@ import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from .extensions import db
 
@@ -28,7 +36,18 @@ def init_scheduler(app):
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return None
 
-    from qvault.services import rotation_service
+    from qvault.services import (
+        checkpoint_service,
+        delivery_service,
+        device_service,
+        notification_service,
+        pairing_service,
+        payout_service,
+        reconfiguration_service,
+        recovery_service,
+        rotation_service,
+        treasury_jobs,
+    )
 
     def _in_context(job):
         def _run():
@@ -54,6 +73,69 @@ def init_scheduler(app):
         id="proposal_expiry",
         replace_existing=True,
     )
+    # Reminders at 1, 3 and 6 business days and "due within 24 hours". Idempotent by each
+    # notification's dedupe key, so a second scheduler (see the NOTE above) tells nobody twice.
+    scheduler.add_job(
+        _in_context(notification_service.send_reminders),
+        CronTrigger.from_crontab(app.config["NOTIFICATION_REMINDER_CRON"], timezone="UTC"),
+        id="notification_reminders",
+        replace_existing=True,
+    )
+    # Email and phone push (plan R8): the outbox, sent here and never in the request that queued
+    # it. Each row is claimed before it is sent, so a second scheduler sends nothing twice. Always
+    # scheduled, even with both channels off (R8 review, F9): rows queued before they were turned
+    # off then run out their tries, and an invitation's held link is erased once it can't be used.
+    scheduler.add_job(
+        _in_context(delivery_service.run),
+        IntervalTrigger(seconds=int(app.config.get("DELIVERY_TICK_SECONDS", 20))),
+        id="deliveries",
+        replace_existing=True,
+    )
+    # Account recovery (plan R9): a Recovery Kit request takes effect once its 72 hours are over.
+    # Each completion is a compare-and-set, so a second scheduler, or the status page completing it
+    # at the same moment, cannot complete it twice.
+    scheduler.add_job(
+        _in_context(recovery_service.tick),
+        IntervalTrigger(seconds=int(app.config.get("RECOVERY_TICK_SECONDS", 60))),
+        id="recovery",
+        replace_existing=True,
+    )
+
+    # Pairing by a code (A10): live codes past their deadline are marked expired (every reader
+    # already treats them so) and ended rows older than 30 days are deleted; the ledger keeps them.
+    def _pairing_and_owed_notices():
+        pairing_service.sweep()
+        # A removed device whose notice could not be written is told now (build review F4).
+        device_service.send_owed_removal_notices()
+
+    scheduler.add_job(
+        _in_context(_pairing_and_owed_notices),
+        IntervalTrigger(minutes=15),
+        id="pairing_sweep",
+        replace_existing=True,
+    )
+    if app.extensions.get("relayer") is not None:
+        # Treasury jobs (plan D36) and payouts (Phase 7): one chain action each per tick, and only
+        # while the feature is on. One job, run in order, so the shared relayer is never used from
+        # two threads at once; its one-pending-transaction rule (D21) makes the second wait.
+        def _chain_work():
+            treasury_jobs.tick_with_app_relayer()
+            reconfiguration_service.tick_with_app_relayer()
+            payout_service.tick_with_app_relayer()
+
+        scheduler.add_job(
+            _in_context(_chain_work),
+            IntervalTrigger(seconds=int(app.config.get("TREASURY_TICK_SECONDS", 60))),
+            id="treasury_jobs",
+            replace_existing=True,
+        )
+    if app.config.get("WITNESS_URL"):
+        scheduler.add_job(
+            _in_context(checkpoint_service.sync_witness),
+            IntervalTrigger(seconds=int(app.config.get("WITNESS_SYNC_SECONDS", 60))),
+            id="witness_sync",
+            replace_existing=True,
+        )
     scheduler.start()
     app.extensions["scheduler"] = scheduler
     return scheduler

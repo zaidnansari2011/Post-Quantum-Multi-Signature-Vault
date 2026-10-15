@@ -4,6 +4,9 @@ Before the first request the database must contain: the single ``algorithm_confi
 genesis ledger entry, the SYSTEM ledger-anchor key, and an anchor over the head. Without these,
 the first register/append (or ledger verification) would fail. Safe to run on every startup — it
 only creates what is missing.
+
+A database built by ``create_all`` before workspaces existed also has its users put into one
+workspace here, as the Alembic revision ``0002_workspaces`` does for a migrated one.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from flask import Flask, current_app
 
 from qvault.extensions import db
 from qvault.models.config_models import AlgorithmConfig
-from qvault.services import ledger_service
+from qvault.services import checkpoint_service, ledger_service, workspace_service
 
 
 def seed() -> None:
@@ -31,11 +34,20 @@ def seed() -> None:
 
     ledger_service.ensure_genesis(commit=False)
     ledger_service.ensure_system_key()  # SYSTEM ledger-anchor signing key
+    # Every user belongs to a workspace; only does anything while there is none (plan S10).
+    workspace_service.ensure_default_workspace(commit=False)
     db.session.commit()
 
     # Anchor the head so the ledger is SYSTEM-signed from the very first entry onward.
     if ledger_service.latest_anchor() is None:
         ledger_service.anchor_head()
+
+    # And checkpoint it, so the log has a signed Merkle root from entry zero. Seeding this at
+    # startup rather than on first export matters: the checkpoint sequence is only evidence of
+    # append-only growth if it starts at the beginning. A log whose first checkpoint appears at
+    # size 400 has said nothing about entries 0-399.
+    if checkpoint_service.latest_checkpoint() is None:
+        checkpoint_service.create_checkpoint()
 
 
 def init_database(app: Flask) -> None:
@@ -44,6 +56,9 @@ def init_database(app: Flask) -> None:
     from qvault import models  # noqa: F401
 
     with app.app_context():
+        # Off, startup leaves the database exactly as it found it: no tables, and no seeding either,
+        # which on an unseeded database would write a genesis entry, a SYSTEM key, an anchor and a
+        # checkpoint. An admin script opening a live database relies on that (plan D28).
         if app.config.get("AUTO_CREATE_DB", True):
             db.create_all()
-        seed()
+            seed()

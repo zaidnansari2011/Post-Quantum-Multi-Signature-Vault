@@ -1,0 +1,193 @@
+{
+  "about": "Recovery Kit vectors (plan R9, design section 5.1), shared by qvault/crypto/kit_code.py, qvault/services/recovery_kit.py and qvault/static/recover.js. Generated once from the design's text (long division for the CRC, hand-built byte strings, the library KDFs); the tests compare the code to them.",
+  "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+  "crc": {
+    "generator": "0x233",
+    "width": 10,
+    "init": 0,
+    "reflect": false,
+    "xorout": 0
+  },
+  "codes": [
+    {
+      "k_hex": "00000000000000000000000000000000000000",
+      "code": "00000000000000000000000000000000",
+      "grouped": "0000-0000-0000-0000-0000-0000-0000-0000",
+      "crc": 0,
+      "argon2_input": "000000000000000000000000000000"
+    },
+    {
+      "k_hex": "00000000000000000000000000000000000001",
+      "code": "000000000000000000000000000001HK",
+      "grouped": "0000-0000-0000-0000-0000-0000-0000-01HK",
+      "crc": 563,
+      "argon2_input": "000000000000000000000000000001"
+    },
+    {
+      "k_hex": "3fffffffffffffffffffffffffffffffffffff",
+      "code": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZN1",
+      "grouped": "ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZN1",
+      "crc": 673,
+      "argon2_input": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+    },
+    {
+      "k_hex": "20000000000000000000000000000000000000",
+      "code": "G00000000000000000000000000000Q8",
+      "grouped": "G000-0000-0000-0000-0000-0000-0000-00Q8",
+      "crc": 744,
+      "argon2_input": "G00000000000000000000000000000"
+    },
+    {
+      "k_hex": "00000000000000000000000123456789abcdef",
+      "code": "00000000000000000028T5CY4TQKFFEP",
+      "grouped": "0000-0000-0000-0000-0028-T5CY-4TQK-FFEP",
+      "crc": 470,
+      "argon2_input": "00000000000000000028T5CY4TQKFF"
+    },
+    {
+      "k_hex": "359b8c33218a5ec81d850bee668de6aac93a05",
+      "code": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5TZ",
+      "grouped": "TSQ3-1K46-55XJ-0XGM-5YWS-MDWT-NCJE-G5TZ",
+      "crc": 863,
+      "argon2_input": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5"
+    },
+    {
+      "k_hex": "0c55f81579daa95595d781239a56157610eccd",
+      "code": "65BY0NF7DAJNCNTY0J76JP2NV11V6DR6",
+      "grouped": "65BY-0NF7-DAJN-CNTY-0J76-JP2N-V11V-6DR6",
+      "crc": 774,
+      "argon2_input": "65BY0NF7DAJNCNTY0J76JP2NV11V6D"
+    },
+    {
+      "k_hex": "34c005760bd1208935c861a6129eabaa31ec92",
+      "code": "TC01BP1F8J129NS1GTC4MYNEN33V4JHQ",
+      "grouped": "TC01-BP1F-8J12-9NS1-GTC4-MYNE-N33V-4JHQ",
+      "crc": 567,
+      "argon2_input": "TC01BP1F8J129NS1GTC4MYNEN33V4J"
+    },
+    {
+      "k_hex": "0611923b23eb72f0bbfe48caa699c7dd04c9ce",
+      "code": "3134HV4FNQ5W5VZS4CN9MSRZEG9JEEZ0",
+      "grouped": "3134-HV4F-NQ5W-5VZS-4CN9-MSRZ-EG9J-EEZ0",
+      "crc": 992,
+      "argon2_input": "3134HV4FNQ5W5VZS4CN9MSRZEG9JEE"
+    },
+    {
+      "k_hex": "329463f8c0270dada8f311ee1c9fa876338150",
+      "code": "S98RZRR0KGVBD8YC8YW74ZN1V370AGYG",
+      "grouped": "S98R-ZRR0-KGVB-D8YC-8YW7-4ZN1-V370-AGYG",
+      "crc": 976,
+      "argon2_input": "S98RZRR0KGVBD8YC8YW74ZN1V370AG"
+    },
+    {
+      "k_hex": "13420d577cfe4f42b870534206a05caab61ca9",
+      "code": "9M43AQFKZ4YGNRE19M41N0BJNBC7599G",
+      "grouped": "9M43-AQFK-Z4YG-NRE1-9M41-N0BJ-NBC7-599G",
+      "crc": 304,
+      "argon2_input": "9M43AQFKZ4YGNRE19M41N0BJNBC759"
+    },
+    {
+      "k_hex": "18fb776327a968899dd9a5f8fd0516ec802bbf",
+      "code": "CFPXV34YMPH2CXV6JZHZ852VP80AXZWV",
+      "grouped": "CFPX-V34Y-MPH2-CXV6-JZHZ-852V-P80A-XZWV",
+      "crc": 923,
+      "argon2_input": "CFPXV34YMPH2CXV6JZHZ852VP80AXZ"
+    },
+    {
+      "k_hex": "3fafeee47f128da446ec54d66cae0978ff794b",
+      "code": "ZTZVQ4FW98V926XHADCV5E15WFYYABF0",
+      "grouped": "ZTZV-Q4FW-98V9-26XH-ADCV-5E15-WFYY-ABF0",
+      "crc": 480,
+      "argon2_input": "ZTZVQ4FW98V926XHADCV5E15WFYYAB"
+    }
+  ],
+  "typed": [
+    {
+      "typed": "tsq3-1k46-55xj-0xgm-5yws-mdwt-ncje-g5tz",
+      "normalised": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5TZ"
+    },
+    {
+      "typed": "TSQ3 1K46 55XJ 0XGM 5YWS MDWT NCJE G5TZ",
+      "normalised": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5TZ"
+    },
+    {
+      "typed": "\tTSQ31K4655XJ0XGM5YWSMDWTNCJEG5TZ\n",
+      "normalised": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5TZ"
+    },
+    {
+      "typed": "IL0O1K4655XJ0XGM5YWSMDWTNCJEG5TZ",
+      "normalised": null,
+      "reason": "check"
+    },
+    {
+      "typed": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5T",
+      "normalised": null,
+      "reason": "length"
+    },
+    {
+      "typed": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5TZ0",
+      "normalised": null,
+      "reason": "length"
+    },
+    {
+      "typed": "TSQ31K4655UJ0XGM5YWSMDWTNCJEG5TZ",
+      "normalised": null,
+      "reason": "character"
+    },
+    {
+      "typed": "TSQ31K4655*J0XGM5YWSMDWTNCJEG5TZ",
+      "normalised": null,
+      "reason": "character"
+    },
+    {
+      "typed": "TSQ13K4655XJ0XGM5YWSMDWTNCJEG5TZ",
+      "normalised": null,
+      "reason": "check"
+    },
+    {
+      "typed": "",
+      "normalised": null,
+      "reason": "length"
+    },
+    {
+      "typed": "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOlHK",
+      "normalised": "000000000000000000000000000001HK"
+    },
+    {
+      "typed": "00000000000000000000000000000IHK",
+      "normalised": "000000000000000000000000000001HK"
+    }
+  ],
+  "bytes": {
+    "master_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "kit_uuid": "6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80",
+    "user_id": 7,
+    "key_id": 42,
+    "kem_alg": "ML-KEM-768",
+    "created_at": "2026-10-09T12:00:00Z",
+    "public_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0102",
+    "public_key_sha256": "98d9bc9a97f89a4edad1e6d170eff04ce3f42d4bfc937a3e93470fc8add4d76c",
+    "pepper_input": "qvault:kit-pepper:v1|6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80",
+    "pepper_hex": "a3950024c7eeb359f42d577d172df584229c1f62c3026638f575561c2b2eb569",
+    "pk_mac_input_hex": "7b22637265617465645f6174223a22323032362d31302d30395431323a30303a30305a222c226b64665f706172616d73223a7b226d656d6f72795f636f7374223a36353533362c22706172616c6c656c69736d223a342c2274696d655f636f7374223a337d2c226b656d5f616c67223a224d4c2d4b454d2d373638222c226b69745f73616c74223a223030303130323033303430353036303730383039306130623063306430653066222c226b69745f75756964223a2236663163326137652d306238642d346431652d396135322d336334623564366537663830222c22757365725f6964223a377d7c000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0102",
+    "pk_mac_hex": "4d61f3048b0b7d5dc215d7514be0889842bbe22139e57fee2b346ca52a302e91",
+    "kek_info": "qvault:kit-kek:v1|6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80|7",
+    "kem_sk_aad": "qvault:kit-kem-sk:v1|6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80|7",
+    "wrap_info": "qvault:kit-sk-wrap:v1|6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80|42",
+    "wrap_aad": "qvault:kit-sk-wrap:v1|6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80|42|98d9bc9a97f89a4edad1e6d170eff04ce3f42d4bfc937a3e93470fc8add4d76c",
+    "selftest_message": "QVAULT-SIG-v1:KIT-SELFTEST|6f1c2a7e-0b8d-4d1e-9a52-3c4b5d6e7f80|42",
+    "argon2": {
+      "input": "TSQ31K4655XJ0XGM5YWSMDWTNCJEG5",
+      "salt_hex": "000102030405060708090a0b0c0d0e0f",
+      "params": {
+        "time_cost": 3,
+        "memory_cost": 65536,
+        "parallelism": 4
+      },
+      "output_hex": "fef90ab23bb55af666bbce0a8aabcc6930ed08311e146c92fd81da7c3b2d1f30"
+    },
+    "kit_kek_hex": "3b2e34d055190e77cfe51230c891a096debbeeeb716b4cf24038e9ce6addb8d2",
+    "kem_shared_secret_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "dek_hex": "888ed296c9cfa5165be52a30b921ddcc8729bb57a92379d99ba010dff3725702"
+  }
+}

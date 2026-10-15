@@ -1,0 +1,38 @@
+{
+  "about": "QVAULT-SIG-v1:RECOVERY vectors (plan R9 Phase 2, design section 6.4), shared by qvault/services/signing.py (recovery_signing_bytes) and mobile/src/crypto/signing.ts (recoverySigningBytes). Each 'message' was written by hand from the design's text: the tag, a bar, then the seven fields as JSON with sorted keys and no spaces. Neither implementation produced them; both are compared to them.",
+  "tag": "QVAULT-SIG-v1:RECOVERY",
+  "cases": [
+    {
+      "name": "web_reset",
+      "inputs": {
+        "purpose": "web_reset",
+        "request_uuid": "6f1d0c2e-7a3b-4c5d-8e9f-0a1b2c3d4e5f",
+        "user_id": 9,
+        "device_id": 4,
+        "key_id": 31,
+        "deployment": "abababababababababababababababababababababababababababababababab",
+        "expires_at": "2026-10-14T09:15:00Z"
+      },
+      "message": "QVAULT-SIG-v1:RECOVERY|{\"deployment\":\"abababababababababababababababababababababababababababababababab\",\"device_id\":4,\"expires_at\":\"2026-10-14T09:15:00Z\",\"key_id\":31,\"purpose\":\"web_reset\",\"request_uuid\":\"6f1d0c2e-7a3b-4c5d-8e9f-0a1b2c3d4e5f\",\"user_id\":9}"
+    },
+    {
+      "name": "kit_confirm",
+      "inputs": {
+        "purpose": "kit_confirm",
+        "request_uuid": "11111111-2222-3333-4444-555555555555",
+        "user_id": 12345,
+        "device_id": 7,
+        "key_id": 8,
+        "deployment": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "expires_at": "2027-01-01T00:00:00Z"
+      },
+      "message": "QVAULT-SIG-v1:RECOVERY|{\"deployment\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"device_id\":7,\"expires_at\":\"2027-01-01T00:00:00Z\",\"key_id\":8,\"purpose\":\"kit_confirm\",\"request_uuid\":\"11111111-2222-3333-4444-555555555555\",\"user_id\":12345}"
+    }
+  ],
+  "refused": [
+    {"why": "an unknown purpose", "change": {"purpose": "login"}},
+    {"why": "a time with fractions of a second", "change": {"expires_at": "2026-10-14T09:15:00.5Z"}},
+    {"why": "a time with an offset instead of Z", "change": {"expires_at": "2026-10-14T09:15:00+00:00"}},
+    {"why": "a time without its Z", "change": {"expires_at": "2026-10-14T09:15:00"}}
+  ]
+}

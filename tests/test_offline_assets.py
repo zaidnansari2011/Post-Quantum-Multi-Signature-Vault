@@ -17,8 +17,23 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 TEMPLATES = PROJECT_ROOT / "qvault" / "templates"
 STATIC = PROJECT_ROOT / "qvault" / "static"
 
-# Any href=/src= pointing off-box. Deliberately catches protocol-relative "//cdn..." too.
-EXTERNAL_ASSET = re.compile(r"""(?:href|src)\s*=\s*["'](https?:)?//""", re.IGNORECASE)
+# Anything the page would have to FETCH from off-box to render: a script, image, iframe or
+# stylesheet. Deliberately catches protocol-relative "//cdn..." too.
+#
+# A plain link a person may click (``<a href="https://sepolia.etherscan.io/...">``) is not an
+# asset: the page renders whole without the network, and following it is the reader's choice. Only
+# fetched assets collapse a page when the network is missing, and only those are barred here.
+EXTERNAL_SRC = re.compile(r"""src\s*=\s*["'](https?:)?//""", re.IGNORECASE)
+EXTERNAL_STYLESHEET = re.compile(r"""<link\b[^>]*href\s*=\s*["'](https?:)?//""", re.IGNORECASE)
+
+
+def external_assets(text: str) -> list[tuple[int, str]]:
+    """Line number and text of every off-box asset the page would fetch."""
+    return [
+        (number, line.strip())
+        for number, line in enumerate(text.splitlines(), 1)
+        if EXTERNAL_SRC.search(line) or EXTERNAL_STYLESHEET.search(line)
+    ]
 
 
 def _templates():
@@ -33,11 +48,36 @@ def test_there_are_templates_to_check():
 @pytest.mark.parametrize("template", _templates(), ids=lambda p: p.name)
 def test_no_template_loads_an_external_asset(template):
     offenders = [
-        f"{template.relative_to(PROJECT_ROOT)}:{i}: {line.strip()}"
-        for i, line in enumerate(template.read_text(encoding="utf-8").splitlines(), 1)
-        if EXTERNAL_ASSET.search(line)
+        f"{template.relative_to(PROJECT_ROOT)}:{number}: {line}"
+        for number, line in external_assets(template.read_text(encoding="utf-8"))
     ]
     assert not offenders, "Vendor it into qvault/static/vendor/ instead:\n" + "\n".join(offenders)
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<script src="https://cdn.example/x.js"></script>',
+        "<script src='//cdn.example/x.js'></script>",
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=X">',
+        '<link href="//cdn.example/x.css" rel="stylesheet">',
+        '<img src="http://example.com/logo.png">',
+    ],
+)
+def test_the_check_still_catches_an_asset_loaded_from_off_box(markup):
+    """The guard is narrower than it was (a clickable link is allowed); these must still fail."""
+    assert external_assets(markup)
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<a href="https://sepolia.etherscan.io/address/0x0">0x0</a>',
+        '<a class="mono" href="//example.com/page">page</a>',
+    ],
+)
+def test_a_link_a_person_can_click_is_not_an_asset(markup):
+    assert not external_assets(markup)
 
 
 def test_no_stylesheet_fetches_a_remote_font():
@@ -53,26 +93,94 @@ def test_no_stylesheet_fetches_a_remote_font():
 def test_the_vendored_assets_are_actually_present():
     """The templates now depend on these paths; a missing file is a broken page, not a fallback."""
     required = [
-        STATIC / "vendor" / "bootstrap.min.css",
-        STATIC / "vendor" / "bootstrap.bundle.min.js",
         STATIC / "vendor" / "fonts.css",
+        STATIC / "vendor" / "fonts" / "PublicSans-var.woff2",
+        STATIC / "vendor" / "fonts" / "SourceSerif4-400.woff2",
+        STATIC / "vendor" / "fonts" / "JetBrainsMono-var.woff2",
+        STATIC / "tokens.css",
+        STATIC / "components.css",
     ]
     missing = [str(p.relative_to(PROJECT_ROOT)) for p in required if not p.is_file()]
     assert not missing, f"vendored assets missing: {missing}"
 
     fonts = list((STATIC / "vendor" / "fonts").glob("*.woff2"))
-    assert len(fonts) >= 6, f"expected the Inter + JetBrains Mono weights, found {len(fonts)}"
+    assert (
+        len(fonts) >= 4
+    ), f"expected the Public Sans + Source Serif 4 + JetBrains Mono files, found {len(fonts)}"
+
+
+def test_no_bootstrap_class_survives_in_a_template():
+    """Bootstrap was dropped for the project's own design system. A stray `col-lg-6` or
+    `btn-primary`
+    left in a template is now dead markup that silently renders as an unstyled block — which looks
+    like a bug in the design rather than the leftover it is."""
+    # (?![-\w]) rather than \b: \b would match inside this design system's own `row-flex` and
+    # `card`-free names, because a hyphen is a word boundary.
+    dead = re.compile(
+        r'class="[^"]*\b(?:'
+        r"col-(?:sm|md|lg|xl)-\d+|row|btn-(?:primary|secondary|success|danger|outline-\w+)"
+        r"|card(?:-body|-header)?|d-flex|text-muted|form-control-sm|input-group"
+        r")(?![-\w])"
+    )
+    # Emails (R8) are styled inline for mail clients, never by our stylesheet, so their own class
+    # names (``qv-card``) are not leftovers.
+    offenders = [
+        f"{t.relative_to(PROJECT_ROOT)}:{i}: {line.strip()[:90]}"
+        for t in _templates()
+        if t.parent.name != "email"
+        for i, line in enumerate(t.read_text(encoding="utf-8").splitlines(), 1)
+        if dead.search(line)
+    ]
+    assert not offenders, "Bootstrap classes no longer do anything:\n" + "\n".join(offenders)
 
 
 def test_vendored_licences_are_recorded():
-    """Redistributing MIT/OFL assets obliges us to keep the notices."""
+    """Redistributing third-party code and fonts obliges us to keep the notices.
+
+    Everything is derived from what is actually on disk rather than hard-coded, so vendoring a new
+    asset without recording its licence fails here instead of shipping quietly. That is the whole
+    point — a licence table maintained by hand is a licence table that goes stale.
+    """
     readme = (STATIC / "vendor" / "README.md").read_text(encoding="utf-8")
-    assert "MIT" in readme and "SIL Open Font License" in readme
+    assert "SIL Open Font License" in readme
+
+    families = {p.stem.split("-")[0] for p in (STATIC / "vendor" / "fonts").glob("*.woff2")}
+    assert families, "no vendored fonts found — the glob is wrong or the fonts are missing"
+    unrecorded = sorted(f for f in families if f not in readme)
+    assert not unrecorded, f"vendored without a licence notice: {unrecorded}"
+
+    # Anything else in vendor/ — scripts, stylesheets — must be named too. Fonts are covered by
+    # family above; README.md documents itself.
+    others = sorted(
+        p.name
+        for p in (STATIC / "vendor").iterdir()
+        if p.is_file() and p.name != "README.md" and p.suffix != ".woff2"
+    )
+    missing = [name for name in others if name not in readme]
+    assert not missing, f"vendored without a licence notice: {missing}"
+
+
+def test_the_vendored_pqc_bundle_is_a_plain_script():
+    """The offline verifier inlines this into a single file opened from ``file://``.
+
+    An ES module or anything needing a loader would work when served over HTTP and fail silently
+    from a USB stick — which is the one environment the verifier exists for.
+    """
+    bundle = (STATIC / "vendor" / "pqc.js").read_text(encoding="utf-8")
+    assert "globalThis.PQC" in bundle or "global.PQC" in bundle
+    assert not re.search(r"^\s*(?:import|export)\s", bundle, re.MULTILINE)
+    assert "</script" not in bundle.lower(), "would terminate the inlining script tag early"
 
 
 def test_every_vendored_font_is_reachable_over_http(client):
     """The CSS references these by relative path; prove Flask actually serves them."""
-    for name in ("vendor/bootstrap.min.css", "vendor/fonts.css", "vendor/fonts/Inter-400.woff2"):
+    for name in (
+        "components.css",
+        "vendor/fonts.css",
+        "vendor/fonts/PublicSans-var.woff2",
+        "vendor/fonts/SourceSerif4-400.woff2",
+        "vendor/fonts/JetBrainsMono-var.woff2",
+    ):
         resp = client.get(f"/static/{name}")
         assert resp.status_code == 200, f"/static/{name} -> {resp.status_code}"
         assert len(resp.get_data()) > 1000

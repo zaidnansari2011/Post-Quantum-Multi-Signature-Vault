@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/menus.html" import menu, menu_item, menu_head %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/icons.html" import icon %}
+{% from "ui/avatars.html" import avatar %}
+{% from "ui/status.html" import status %}
+{% from "ui/data.html" import reltime %}
+{% from "ui/work.html" import work_list %}
+{% from "recover/_banners.html" import recovery_banners, kit_banner %}
+{% block title %}Home — Q-Vault{% endblock %}
+
+{#- Home, work first (rework R2, screens.md A): what needs you, what is due, what waits on others,
+    then what happened. The log's figures that led the old Home are on Audit. -#}
+{% block content %}
+{% set needs = work.needs_you %}
+{% set n = needs.total %}
+{% if n == 0 %}
+  {% set headline = 'Nothing needs your signature' %}
+{% elif n == 1 %}
+  {% set headline = 'One decision needs your signature' %}
+{% else %}
+  {% set headline = ui_count_word(n) ~ ' decisions need your signature' %}
+{% endif %}
+{% if n and work.due_today %}
+  {% set summary = ui_count_word(work.due_today) ~ (' is' if work.due_today == 1 else ' are') ~ ' due today.' %}
+{% elif n and needs.rows and needs.rows[0].proposal.expires_at %}
+  {% set next_due = ui_due(needs.rows[0].proposal.expires_at).text %}
+  {% if next_due.startswith('Tomorrow') %}{% set next_due = 't' ~ next_due[1:] %}{% endif %}
+  {% set summary = 'The next is due ' ~ next_due ~ ' UTC.' %}
+{% elif n %}
+  {% set summary = None %}
+{% elif not work.in_a_vault %}
+  {% set summary = 'You’re not in a vault yet.' %}
+{% elif not work.approves_anywhere %}
+  {% set summary = 'You can see your vaults’ decisions but approve in none of them.' %}
+{% elif work.stuck and work.stuck.total %}
+  {#- Staging QA F2: a decision the reader raised that can't pass waits on them, not on others. -#}
+  {% set summary = ('A decision you raised can’t pass. Only you can end it now, by withdrawing it.' if work.stuck.total == 1 else ui_count_word(work.stuck.total) ~ ' decisions you raised can’t pass. Only you can end them now, by withdrawing them.') %}
+{% elif work.open_total %}
+  {% set summary = ui_count_word(work.open_total) ~ (' decision is' if work.open_total == 1 else ' decisions are') ~ ' open in your vaults, none of them waiting on you.' %}
+{% else %}
+  {% set summary = 'Nothing is open in your vaults.' %}
+{% endif %}
+
+<div class="q-home">
+{% call page_header(headline, summary) %}
+  {%- if proposable|length == 1 %}
+  {{ button('New decision', 'primary', href=url_for('vaults.new_proposal', vid=proposable[0].id), icon='plus') }}
+  {%- elif proposable %}
+  {% call menu('New decision', 'plus', trigger='primary') %}
+    {{ menu_head('Raise a decision in') }}
+    {%- for v in proposable %}
+    {{ menu_item(v.name, url_for('vaults.new_proposal', vid=v.id), caption=ui_rule(v.policy.threshold_m, v.signer_ids()|length)) }}
+    {%- endfor %}
+  {% endcall %}
+  {%- endif %}
+{% endcall %}
+
+{#- Account recovery (plan R9): an open recovery first, with Cancel; then a missing kit. -#}
+{{ recovery_banners(open_recoveries) }}
+{%- if not kit_reminder_hidden %}{{ kit_banner(kit_state) }}{% endif %}
+
+{% if checklist %}
+{% set ws_items = checklist[1] %}
+{% set ws_done = ws_items | selectattr('done') | list | length %}
+{% set ws_links = {
+    'vault': url_for('vaults.new_vault'),
+    'invite': url_for('workspace.invite'),
+    'key': url_for('workspace.members', tab='invited'),
+    'decision': url_for('vaults.list_vaults'),
+    'approve': url_for('approvals.index'),
+} %}
+<section class="q-panel q-start" aria-labelledby="getting-started">
+  <div class="q-panel__hd">
+    <h2 class="q-panel__t" id="getting-started">Get {{ checklist[0].name }} started</h2>
+    <span class="q-start__n">{{ ws_done }} of {{ ws_items | length }} done</span>
+    <form class="q-start__hide" method="post" action="{{ url_for('workspace.dismiss_checklist') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ button('Hide', 'ghost', type='submit', size='sm') }}
+    </form>
+  </div>
+  <ol class="q-start__list">
+    {% for item in ws_items %}
+    <li class="q-start__i{% if item.done %} is-done{% endif %}">
+      <span class="q-start__mark" aria-hidden="true">{% if item.done %}{{ icon('check') }}{% endif %}</span>
+      {% if item.done %}<span>{{ item.label }}<span class="visually-hidden">, done</span></span>
+      {% else %}<a href="{{ ws_links[item.key] }}">{{ item.label }}</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="q-start__cap">Each step ticks itself when it happens. Hiding this hides it for everyone who manages the workspace.</p>
+</section>
+{% endif %}
+
+<div class="q-home__cols">
+  <div class="q-home__work">
+    {%- if work.approves_anywhere %}
+    {{ work_list('home-needs', 'Yours to sign', needs.rows, needs.total, 'mine',
+                 empty='None right now. Everything you can approve has been signed.',
+                 more={'label': 'Open Approvals', 'href': url_for('approvals.index')}) }}
+    {%- endif %}
+    {{ work_list('home-due', 'Due soon', work.due_soon.rows, work.due_soon.total, 'others',
+                 caption='Next 48 hours',
+                 empty='Nothing else is due in the next 48 hours.',
+                 near_empty='Nothing else is due in the next 48 hours.',
+                 more={'label': 'Open Expiring soon', 'href': url_for('approvals.index', tab='expiring')}) }}
+    {%- if work.stuck and work.stuck.total %}
+    {{ work_list('home-stuck', 'Can’t pass', work.stuck.rows, work.stuck.total, 'others',
+                 caption='Raised by you. Withdraw to end it.',
+                 empty='') }}
+    {%- endif %}
+    {%- if work.approves_anywhere %}
+    {{ work_list('home-waiting', 'Waiting on others', work.waiting.rows, work.waiting.total, 'others',
+                 empty='Nothing you raised or signed is waiting on anyone.',
+                 more={'label': 'See all in Approvals', 'href': url_for('approvals.index', tab='waiting')}) }}
+    {%- endif %}
+  </div>
+
+  <section class="q-act" aria-labelledby="home-activity">
+    <h2 class="q-wsec__t" id="home-activity">Recent activity</h2>
+    {% if activity %}
+    <ol class="q-act__list">
+      {% for a in activity %}
+      {% set p = a.proposal %}
+      <li class="q-act__i">
+        {{ avatar(a.avatar, 24, decorative=True, entity=a.entity) }}
+        <div class="q-act__b">
+          <p class="q-act__s">{{ a.lead }}<a class="q-act__t" href="{{ url_for('vaults.proposal_detail', vid=p.vault_id, pid=p.proposal_uuid) }}">{{ a.title }}</a>{{ a.tail }}</p>
+          <p class="q-act__meta">{% if a.when %}{{ reltime(a.when) }}{% endif %}{% if a.status %}{{ status(a.status) }}{% endif %}</p>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="q-act__none">Nothing has happened in your vaults yet.</p>
+    {% endif %}
+    <p class="q-act__ft"><a class="q-lnk" href="{{ url_for('ledger.view') }}">Open the audit log</a></p>
+  </section>
+</div>
+</div>
+{% endblock %}

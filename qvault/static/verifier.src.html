@@ -1,0 +1,1110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q-Vault offline verifier</title>
+<!--
+  A single file that checks a Q-Vault decision with no server, no network and no install.
+  Save it, open it, drop a bundle on it. It works from file:// and from a USB stick in ten years.
+
+  This is a SECOND, INDEPENDENT implementation of the checks in qvault/verify/core.py. Nothing is
+  shared between them: different language, different JSON canonicaliser, different SHA-256,
+  different post-quantum library (@noble/post-quantum rather than PQClean via quantcrypt). Two
+  implementations agreeing is evidence; one implementation agreeing with itself is not, which is
+  why tests/test_offline_verifier.py runs this file in a real browser against bundles produced by
+  the Python side and requires the same verdict.
+-->
+<style>
+  :root {
+    --paper:#FBFBF9; --surface:#FFFFFF; --sunk:#F5F5F2; --rule:#E2E2DC;
+    --ink:#16181C; --ink-2:#4A4E56; --ink-3:#6A6F78;
+    --sealed:#1B6B4F; --waiting:#8A5A12; --broken:#A82D20;
+    --sealed-tint:#EDF5F1; --waiting-tint:#FBF3E4; --broken-tint:#FBEEEC;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2.5rem 1.25rem 4rem; background:var(--paper); color:var(--ink);
+         font:.875rem/1.55 var(--sans); }
+  main { max-width:44rem; margin:0 auto; }
+  h1 { font-size:1.3rem; font-weight:700; letter-spacing:-.01em; margin:0 0 .2rem; }
+  .lead { color:var(--ink-3); font-size:.82rem; margin:0 0 1.5rem; }
+  .panel { background:var(--surface); border:1px solid var(--rule); border-radius:6px;
+           margin-bottom:1rem; overflow:hidden; }
+  .panel__head { display:flex; align-items:center; gap:.5rem; padding:.55rem .9rem;
+                 border-bottom:1px solid var(--rule); background:var(--sunk); }
+  .label { font-size:.68rem; text-transform:uppercase; letter-spacing:.09em; font-weight:600;
+           color:var(--ink-3); }
+  .panel__body { padding:.9rem; }
+  .drop { border:1.5px dashed var(--rule); border-radius:6px; padding:2.25rem 1rem;
+          text-align:center; color:var(--ink-3); background:var(--surface); cursor:pointer;
+          transition:border-color .12s, background .12s; }
+  .drop:hover, .drop.over { border-color:var(--ink-3); background:var(--sunk); color:var(--ink); }
+  .drop strong { color:var(--ink); font-weight:600; display:block; margin-bottom:.2rem; }
+  .banner { display:flex; gap:.75rem; padding:.8rem .95rem; border:1px solid var(--rule);
+            border-left-width:3px; border-radius:6px; margin-bottom:1rem; }
+  .banner__title { font-weight:700; font-size:.95rem; }
+  .banner__body { font-size:.8rem; color:var(--ink-2); margin-top:.1rem; }
+  .banner.ok  { border-color:var(--sealed); background:var(--sealed-tint); }
+  .banner.bad { border-color:var(--broken); background:var(--broken-tint); }
+  .banner.ok  .banner__title { color:var(--sealed); }
+  .banner.bad .banner__title { color:var(--broken); }
+  ol.checks { list-style:none; margin:0; padding:0; }
+  .checks li { display:flex; gap:.7rem; align-items:baseline; padding:.55rem .9rem;
+               border-top:1px solid var(--rule); }
+  .checks li:first-child { border-top:0; }
+  .mark { flex:0 0 1rem; text-align:center; font-weight:700; }
+  .is-ok .mark { color:var(--sealed); } .is-bad .mark { color:var(--broken); }
+  .is-skip .mark { color:var(--ink-3); }
+  .ctitle { display:block; font-size:.84rem; }
+  .is-bad .ctitle { color:var(--broken); font-weight:600; }
+  .cdetail { display:block; font-family:var(--mono); font-size:.72rem; color:var(--ink-3);
+             margin-top:.12rem; word-break:break-word; }
+  dl.meta { display:grid; grid-template-columns:auto 1fr; gap:.3rem .9rem; margin:0;
+            font-size:.8rem; }
+  dl.meta dt { color:var(--ink-3); } dl.meta dd { margin:0; font-family:var(--mono); font-size:.76rem; }
+  .action { white-space:pre-wrap; margin:0 0 .75rem; font-size:.85rem; }
+  input[type=text] { font-family:var(--mono); font-size:.78rem; padding:.35rem .5rem;
+                     border:1px solid var(--rule); border-radius:4px; width:100%; background:var(--surface); }
+  .pins { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+  .pins label { display:block; font-size:.7rem; color:var(--ink-3); margin-bottom:.2rem; }
+  .foot { color:var(--ink-3); font-size:.72rem; text-align:center; margin-top:1.5rem; }
+  code { font-family:var(--mono); }
+  @media (max-width:34rem) { .pins { grid-template-columns:1fr; } }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#141519; --surface:#1B1D22; --sunk:#212429; --rule:#2E323A;
+            --ink:#E6E6E1; --ink-2:#B4B7BE; --ink-3:#868A92;
+            --sealed:#5FB58C; --waiting:#D4A045; --broken:#E0776A;
+            --sealed-tint:#16241E; --waiting-tint:#2A2113; --broken-tint:#2A1815; }
+  }
+
+  /* ---- decision-record mode ------------------------------------------------------------
+     Used only when a bundle is embedded in this file. The page is then a document about one
+     decision that happens to check itself, rather than a tool waiting for a file. */
+  .eyebrow { font-family:var(--mono); font-size:.64rem; letter-spacing:.14em;
+             text-transform:uppercase; color:var(--ink-3); margin-bottom:.45rem; }
+  .doc-title { font-size:1.45rem; font-weight:700; letter-spacing:-.015em; line-height:1.22;
+               margin:0 0 .3rem; }
+  .doc-sub { color:var(--ink-3); font-size:.8rem; margin:0 0 1.4rem; word-break:break-word; }
+  table.sigs { width:100%; border-collapse:collapse; font-size:.78rem; }
+  table.sigs th { text-align:left; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase;
+                  color:var(--ink-3); font-weight:600; padding:0 .7rem .4rem 0;
+                  border-bottom:1px solid var(--rule); white-space:nowrap; }
+  table.sigs td { padding:.5rem .7rem .5rem 0; border-bottom:1px solid var(--rule);
+                  vertical-align:top; }
+  table.sigs tr:last-child td { border-bottom:0; }
+  table.sigs td.n { font-family:var(--mono); text-align:right; white-space:nowrap; }
+  .scroll { overflow-x:auto; }
+  .chip { display:inline-block; font-size:.6rem; letter-spacing:.05em; text-transform:uppercase;
+          font-weight:600; padding:.1rem .4rem; border-radius:3px; border:1px solid;
+          white-space:nowrap; }
+  .chip.ok { color:var(--sealed); background:var(--sealed-tint); border-color:var(--sealed); }
+  .chip.no { color:var(--broken); background:var(--broken-tint); border-color:var(--broken); }
+  .chip.pl { color:var(--ink-2); background:var(--sunk); border-color:var(--rule); }
+  .note { border-left:2px solid var(--rule); padding:.1rem 0 .1rem .7rem; color:var(--ink-2);
+          font-size:.76rem; margin:.75rem 0 0; }
+  .note strong { color:var(--ink); }
+  .tiny { font-size:.7rem; color:var(--ink-3); }
+  details.more { margin-top:1rem; }
+  details.more > summary { cursor:pointer; font-size:.75rem; color:var(--ink-3); }
+  .hidden { display:none !important; }
+
+  /* Printing is the point of the certificate half: this file replaces a PDF, so it has to
+     survive Ctrl+P. Interactive furniture goes, colour is flattened, nothing is clipped. */
+  @media print {
+    :root { --paper:#fff; --surface:#fff; --sunk:#fff; --rule:#bbb;
+            --ink:#000; --ink-2:#333; --ink-3:#555; }
+    body { padding:0; font-size:10.5pt; }
+    main { max-width:none; }
+    .no-print, details.more, .drop, .pins { display:none !important; }
+    .panel { break-inside:avoid; border-color:#bbb; }
+    .banner { border-width:1px; border-left-width:3px; }
+    .scroll { overflow:visible; }
+    a[href]:after { content:""; }
+  }
+</style>
+</head>
+<body>
+
+<!--
+  THE EVIDENCE.
+
+  When this file is exported for a particular decision, the bundle is substituted into the script
+  tag below and the page becomes a self-verifying decision record: it renders the decision AND
+  re-checks every signature against it, on open, offline.
+
+  Left empty, the same file is the generic verifier and waits for you to drop a bundle on it. One
+  artefact, two modes, so there is only ever one implementation of the checks to keep honest.
+
+  Edit any character between the tags and reload: the document will show your edit and the
+  signatures will stop matching. That is the property this whole system exists to demonstrate.
+-->
+<script id="qvault-decision" type="application/json"></script>
+
+<main>
+  <div id="dochead"></div>
+
+  <h1 id="pagetitle">Q-Vault offline verifier</h1>
+  <p class="lead" id="pagelead">Runs entirely in this page. Nothing is uploaded.</p>
+
+  <div id="result"></div>
+
+  <div class="panel" id="loader">
+    <div class="panel__head"><span class="label">Decision bundle</span></div>
+    <div class="panel__body">
+      <div class="drop" id="drop">
+        <strong>Drop a .qvault.json file here</strong>
+        or click to choose one
+      </div>
+      <input type="file" id="file" accept=".html,.json,text/html,application/json" hidden>
+      <div class="pins" style="margin-top:.8rem">
+        <div>
+          <label for="pinlog">Expected log key fingerprint</label>
+          <input type="text" id="pinlog" placeholder="optional" autocomplete="off" spellcheck="false">
+        </div>
+        <div>
+          <label for="pinwit">Expected witness key fingerprint</label>
+          <input type="text" id="pinwit" placeholder="optional" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    Post-quantum signatures verified with @noble/post-quantum (MIT), bundled into this file.
+  </p>
+</main>
+
+<script>/*__PQC_BUNDLE__*/</script>
+
+<script>
+'use strict';
+(function () {
+  const { ml_dsa65, ml_dsa87, sha256, keccak_256 } = globalThis.PQC;
+
+  // Only algorithms this page can actually check. SLH-DSA is deliberately absent: the backend's
+  // "SLH-DSA-SHAKE-256f" is PQClean's SPHINCS+ round-3, which is NOT byte-compatible with the
+  // FIPS 205 SLH-DSA that @noble implements. Shipping it would report genuine signatures as
+  // forged, which is far worse than admitting we cannot check them.
+  const ALGS = { 'ML-DSA-65': ml_dsa65, 'ML-DSA-87': ml_dsa87 };
+
+  // --- encoding -----------------------------------------------------------------------------
+  const enc = new TextEncoder();
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const hex = u8 => Array.from(u8, b => b.toString(16).padStart(2, '0')).join('');
+  const unhex = s => {
+    if (typeof s !== 'string' || s.length % 2) throw new Error('bad hex');
+    const out = new Uint8Array(s.length / 2);
+    for (let i = 0; i < out.length; i++) {
+      const byte = parseInt(s.substr(i * 2, 2), 16);
+      if (Number.isNaN(byte)) throw new Error('bad hex');
+      out[i] = byte;
+    }
+    return out;
+  };
+  const cat = (...parts) => {
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const p of parts) { out.set(p, at); at += p.length; }
+    return out;
+  };
+  const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  // A count and its noun, singular or plural (1 check, 2 checks), as qvault/verify/core.py writes it.
+  const count = (n, noun, plural) => n + ' ' + (n === 1 ? noun : (plural || noun + 's'));
+
+  // Must reproduce Python's json.dumps(sort_keys=True, separators=(',',':'), ensure_ascii=False)
+  // byte for byte. Only integers, strings, booleans, nulls, lists and objects occur in these
+  // structures — no floats, where the two languages' formatting would genuinely diverge.
+  function canonical(value) {
+    if (value === null) return 'null';
+    const t = typeof value;
+    if (t === 'number') {
+      if (!Number.isInteger(value)) throw new Error('non-integer number in canonical JSON');
+      return String(value);
+    }
+    if (t === 'boolean') return value ? 'true' : 'false';
+    if (t === 'string') return JSON.stringify(value);
+    if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
+    if (t === 'object') {
+      return '{' + Object.keys(value).sort()
+        .map(k => JSON.stringify(k) + ':' + canonical(value[k])).join(',') + '}';
+    }
+    throw new Error('cannot canonicalise ' + t);
+  }
+  const cbytes = value => enc.encode(canonical(value));
+
+  // --- the domain-separated statements (mirrors qvault/transparency/statement.py) -----------
+  const DS_ENTRY      = enc.encode('QVAULT-LEDGER-v1|');
+  const DS_CHECKPOINT = enc.encode('QVAULT-CHECKPOINT-v1|');
+  const DS_WITNESS    = enc.encode('QVAULT-WITNESS-v1|');
+  const DS_PROPOSAL   = enc.encode('QVAULT-SIG-v1:PROPOSAL|');
+  const DS_VOTE       = enc.encode('QVAULT-SIG-v1:VOTE|');
+
+  const requesterExcluded = (log, uuid, authorised, verified) => {
+    let flagged = false;
+    let creator = null;
+    for (const e of (log && Array.isArray(log.entries)) ? log.entries : []) {
+      if (!e || e.ref_id !== uuid) continue;
+      if (e.event_type === 'proposal_created') creator = e.actor_id;
+      else if (e.event_type === 'proposal_rejected') {
+        let p = null;
+        try { p = JSON.parse(e.payload_json); } catch (_) { continue; }
+        flagged = !!p && typeof p === 'object' && p.requester_excluded === true;
+      }
+    }
+    if (!flagged || creator === null || creator === undefined || !authorised.has(creator)) return false;
+    return verified.every(s => s.signer_id !== creator);
+  };
+  const entryHash = e => hex(sha256(cat(DS_ENTRY, cbytes({
+    seq: e.seq, timestamp: e.timestamp, actor: e.actor,
+    actor_id: e.actor_id ?? null, event_type: e.event_type, vault_id: e.vault_id ?? null,
+    ref_type: e.ref_type ?? null, ref_id: e.ref_id ?? null,
+    payload_hash: e.payload_hash, prev_hash: e.prev_hash,
+  }))));
+
+  const proposalBytes = d => {
+    const body = {
+      vault_id: d.vault_id, proposal_id: d.proposal_uuid, action_text: d.action_text,
+      file_sha256: d.file_sha256 ?? null,
+      policy: { M: d.required_m, N: d.required_n, signers: [...d.authorized_signers].sort((a, b) => a - b) },
+      nonce: d.nonce_hex, created_at: d.created_at_iso,
+    };
+    // A payment decision's signed payload carries the payment (qvault.decision/2). Added only
+    // when present, so every other decision hashes exactly as before.
+    if (d.action !== undefined) body.action = d.action;
+    return cat(DS_PROPOSAL, cbytes(body));
+  };
+
+  // A payment decision's text must be exactly the text generated from its payment (plan D24);
+  // this is qvault.services.signing.payment_text, and must stay byte-identical to it. Amounts are
+  // computed from the wei string with BigInt, never a float.
+  const NETWORKS = { 11155111: 'Sepolia' };
+  const isPayment = a => a !== null && typeof a === 'object' && !Array.isArray(a);
+  const formatWei = w => {
+    if (typeof w !== 'string' || w.length > 78 || !/^(0|[1-9][0-9]*)$/.test(w)) return null;
+    const v = BigInt(w), unit = 10n ** 18n;
+    const frac = (v % unit).toString().padStart(18, '0').replace(/0+$/, '');
+    return (v / unit).toString() + (frac ? '.' + frac : '') + ' ETH';
+  };
+  const paymentText = a => {
+    if (!isPayment(a)) return null;
+    const eth = formatWei(a.value_wei);
+    const network = Number.isInteger(a.chain_id)
+      && Object.prototype.hasOwnProperty.call(NETWORKS, a.chain_id) ? NETWORKS[a.chain_id] : null;
+    if (eth === null || network === null || typeof a.treasury !== 'string'
+        || typeof a.to !== 'string') return null;
+    return 'Pay ' + eth + " from this vault's treasury " + a.treasury + ' to ' + a.to
+      + ' on ' + network + '.';
+  };
+
+  // The treasury's execution digest (mirrors qvault/verify/execution.py and
+  // QVaultTreasury.executionDigest): ten static ABI words, keccak-256. Derived here from the signed
+  // payment and the recomputed payload hash; never read from the file.
+  const EXECUTE_TAG = keccak_256(enc.encode('QVAULT-TREASURY-v1:EXECUTE'));
+  const UINT64 = 2n ** 64n - 1n, UINT256 = 2n ** 256n - 1n;
+  const word = (v, max, what) => {
+    if (v < 0n || v > max) throw new Error(what + ' is not a valid number');
+    return unhex(v.toString(16).padStart(64, '0'));
+  };
+  const int = (v, max, what) => {
+    if (typeof v !== 'number' || !Number.isSafeInteger(v)) throw new Error(what + ' is not a valid number');
+    return word(BigInt(v), max, what);
+  };
+  const address = (v, what) => {
+    if (typeof v !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(v)) throw new Error(what + ' is not an address');
+    return cat(new Uint8Array(12), unhex(v.slice(2)));
+  };
+  const executionDigest = (a, payloadHash) => {
+    if (!isPayment(a) || a.kind !== 'eth_transfer') throw new Error('not an ETH transfer');
+    if (a.data !== '0x') throw new Error('an ETH transfer carries no call data');
+    if (typeof a.value_wei !== 'string' || !/^(0|[1-9][0-9]*)$/.test(a.value_wei)) {
+      throw new Error('value_wei is not a decimal amount');
+    }
+    if (typeof payloadHash !== 'string' || !/^[0-9a-f]{64}$/.test(payloadHash)) {
+      throw new Error('the payload hash is not 32 bytes of hex');
+    }
+    return keccak_256(cat(
+      EXECUTE_TAG,
+      int(a.chain_id, UINT256, 'chain_id'),
+      address(a.treasury, 'treasury'),
+      int(a.config_nonce, UINT256, 'config_nonce'),
+      unhex(payloadHash), // the on-chain proposal id is the payload hash (plan D7)
+      address(a.to, 'to'),
+      word(BigInt(a.value_wei), UINT256, 'value_wei'),
+      keccak_256(new Uint8Array(0)),
+      int(a.call_gas, UINT64, 'call_gas'),
+      int(a.valid_until, UINT64, 'valid_until'),
+    ));
+  };
+
+  const voteBytes = (payloadHash, decision, signerId) => cat(DS_VOTE, cbytes({
+    proposal_payload_hash: payloadHash, decision, signer_id: signerId,
+  }));
+
+  const checkpointBytes = c => cat(DS_CHECKPOINT, cbytes({
+    origin: c.origin, tree_size: c.tree_size, root_hash: c.root_hash,
+    head_seq: c.head_seq, head_hash: c.head_hash, timestamp: c.timestamp,
+  }));
+
+  const witnessBytes = (name, c) => cat(DS_WITNESS, cbytes({
+    witness: name,
+    checkpoint: { origin: c.origin, tree_size: c.tree_size, root_hash: c.root_hash,
+                  head_seq: c.head_seq, head_hash: c.head_hash, timestamp: c.timestamp },
+  }));
+
+  // --- RFC 6962 inclusion (mirrors qvault/transparency/merkle.py) ---------------------------
+  const leafHash  = data => sha256(cat(new Uint8Array([0x00]), data));
+  const nodeHash  = (l, r) => sha256(cat(new Uint8Array([0x01]), l, r));
+
+  function verifyInclusion(leaf, index, treeSize, proof, root) {
+    if (index < 0 || treeSize < 0 || index >= treeSize) return false;
+    let fn = index, sn = treeSize - 1, computed = leaf;
+    for (const sibling of proof) {
+      if (sn === 0) return false;
+      if ((fn & 1) || fn === sn) {
+        computed = nodeHash(sibling, computed);
+        while (fn !== 0 && (fn & 1) === 0) { fn >>= 1; sn >>= 1; }
+      } else {
+        computed = nodeHash(computed, sibling);
+      }
+      fn >>= 1; sn >>= 1;
+    }
+    return sn === 0 && eq(computed, root);
+  }
+
+  // Key lineage (plan R9, design section 9): how a recovery route is named in a lineage line.
+  const LINEAGE_ROUTES = { kit: 'Recovery Kit', phone: 'paired phone', quorum: 'approvers' };
+  const LINEAGE_UNPROVEN = ' (This log entry is not proven to be in the published log.)';
+  function lineageLines(verified, payloads, registrations, included) {
+    const lines = [];
+    for (const s of verified) {
+      const keySha = hex(sha256(b64(s.public_key_b64)));
+      const who = registrations.get(s.signer_id) || 'signer ' + s.signer_id;
+      for (const [e, p] of payloads) {
+        if (e.event_type !== 'recovery_completed' || p.user_id !== s.signer_id) continue;
+        if (p.new_public_key_sha256 !== keySha) continue;
+        const route = LINEAGE_ROUTES[p.route] || String(p.route);
+        const day = String(e.timestamp || '').slice(0, 10);
+        const proven = included.has(e.seq) ? '' : LINEAGE_UNPROVEN;
+        if (p.old_public_key_sha256 === keySha) {
+          lines.push(who + "'s vote used a key restored by recovery (" + route + ') on ' + day
+                     + ': the same key, under a new password.' + proven);
+        } else {
+          lines.push(who + "'s vote used a key introduced by recovery (" + route + ') on ' + day
+                     + ', replacing key ' + String(p.old_public_key_sha256).slice(0, 16) + '.'
+                     + proven);
+        }
+      }
+    }
+    return lines;
+  }
+
+  // --- the checks ---------------------------------------------------------------------------
+  function verifyBundle(bundle, pins) {
+    const checks = [];
+    const add = (key, title, ok, detail, skipped) =>
+      checks.push({ key, title, ok, detail, skipped: !!skipped });
+    const fingerprints = { log: null, witnesses: [] };
+    let facts = {};
+
+    try {
+      if (!bundle || typeof bundle !== 'object') throw new Error('bundle must be a JSON object');
+      const fmt = bundle.format;
+      if (fmt !== 'qvault.decision/1' && fmt !== 'qvault.decision/2') {
+        throw new Error('this verifier understands qvault.decision/1 and qvault.decision/2, '
+          + 'the bundle claims ' + fmt);
+      }
+      add('format', 'The file is a Q-Vault decision bundle', true, fmt);
+
+      const d = bundle.decision, log = bundle.log;
+      const sigs = bundle.signatures || [];
+      const payment = d && isPayment(d.action) ? d.action : null;
+      if (fmt === 'qvault.decision/2' && !payment) {
+        throw new Error('a qvault.decision/2 bundle must carry the payment it authorised');
+      }
+      if (fmt === 'qvault.decision/1' && d && 'action' in d) {
+        throw new Error('a qvault.decision/1 bundle cannot carry a payment');
+      }
+
+      // 1. content
+      const recomputed = hex(sha256(proposalBytes(d)));
+      const hashOk = recomputed === d.payload_hash;
+      // Without this a server could sign "5 ETH to an attacker" under text reading "0.0001 ETH to
+      // you": the hash covers both, so it would match.
+      const textOk = !payment || d.action_text === paymentText(payment);
+      const contentOk = hashOk && textOk;
+      add('content', payment ? 'The decision text and payment are what was signed'
+                             : 'The decision text is the text that was signed', contentOk,
+          !hashOk ? 'recomputed ' + recomputed.slice(0, 16) + '…, bundle claims '
+                    + String(d.payload_hash).slice(0, 16) + '…'
+                  : !textOk ? "the decision's text does not describe the payment that was signed"
+                            : 'recomputed ' + recomputed.slice(0, 16) + '…');
+
+      facts = { title: d.title, vault: d.vault_name, action: d.action_text, status: d.status,
+                m: d.required_m, n: d.required_n, hash: recomputed, created: d.created_at_iso,
+                payment };
+
+      // 2. signatures
+      const verified = [];
+      const problems = [];
+      const unsupported = [];
+      const algsUsed = new Set();
+      for (const s of sigs) {
+        algsUsed.add(s.alg_id);
+        const alg = ALGS[s.alg_id];
+        const who = s.signer_email || s.signer_id;
+        if (!alg) { unsupported.push(who + ': ' + s.alg_id); continue; }
+        const msg = voteBytes(recomputed, s.decision, s.signer_id);
+        if (alg.verify(b64(s.signature_b64), msg, b64(s.public_key_b64))) {
+          verified.push(s);
+        } else {
+          problems.push(who + ': signature did not verify');
+        }
+      }
+      if (unsupported.length) {
+        add('signatures', 'Each signature is a valid post-quantum signature over it', false,
+            'cannot check in a browser: ' + unsupported.join('; ')
+            + ' — run `python -m qvault.verify` instead', true);
+      } else {
+        add('signatures', 'Each signature is a valid post-quantum signature over it',
+            !problems.length && sigs.length > 0,
+            problems.length ? problems.join('; ')
+              : sigs.length ? verified.length + ' of ' + sigs.length + ' verified using '
+                              + [...algsUsed].sort().join(', ')
+                            : 'the bundle carries no signatures');
+      }
+
+      // 3. authorisation
+      const authorised = new Set(d.authorized_signers || []);
+      const seen = new Set();
+      const authProblems = [];
+      for (const s of verified) {
+        if (!authorised.has(s.signer_id)) {
+          authProblems.push((s.signer_email || s.signer_id) + ' was not an authorised signer');
+        }
+        if (seen.has(s.signer_id)) {
+          authProblems.push((s.signer_email || s.signer_id) + ' signed more than once');
+        }
+        seen.add(s.signer_id);
+      }
+      add('authorisation', 'Every signer was authorised when the decision opened',
+          !authProblems.length,
+          authProblems.join('; ') || count(authorised.size, 'authorised signer'));
+
+      // 4. threshold
+      const approvals = verified.filter(s => s.decision === 'approve' && authorised.has(s.signer_id));
+      const rejections = verified.filter(s => s.decision === 'reject' && authorised.has(s.signer_id));
+      let met, detail;
+      if (d.status === 'approved') {
+        met = approvals.length >= d.required_m;
+        detail = approvals.length + ' of ' + d.required_m + ' required approvals';
+      } else if (d.status === 'rejected') {
+        // Under separation of duties the person who raised it is in N but couldn't vote: the
+        // log's proposal_rejected entry says requester_excluded, believed only when that person
+        // opened it, is a signer and cast no vote (staging QA 2026-10-14, F2; as core.py).
+        const excluded = requesterExcluded(log, d.proposal_uuid, authorised, verified);
+        const voters = d.required_n - (excluded ? 1 : 0);
+        met = rejections.length > voters - d.required_m;
+        detail = count(rejections.length, 'rejection') + (rejections.length === 1 ? ' makes ' : ' make ')
+          + count(d.required_m, 'approval') + ' unreachable'
+          + (excluded ? ' from the ' + voters + " who could vote: the person who raised it couldn't approve it" : '');
+      } else {
+        met = approvals.length < d.required_m;
+        detail = d.status + ': ' + approvals.length + ' of ' + d.required_m + ' approvals so far';
+      }
+      add('threshold', 'The approval rule was satisfied', met, detail);
+
+      // 5. log entries recompute
+      const entries = log.entries || [];
+      const bad = [];
+      const good = [];
+      for (const e of entries) {
+        if (hex(sha256(enc.encode(e.payload_json))) !== e.payload_hash) {
+          bad.push('entry ' + e.seq + ': stored payload does not match its hash'); continue;
+        }
+        if (entryHash(e) !== e.entry_hash) {
+          bad.push('entry ' + e.seq + ': fields do not hash to its recorded hash'); continue;
+        }
+        good.push(e);
+      }
+      add('log_entries', "The audit log's records of these events recompute", !bad.length,
+          bad.join('; ') || count(good.length, 'entry', 'entries'));
+
+      // 6. binding
+      const payloads = good.map(e => [e, JSON.parse(e.payload_json)]);
+      const binding = [];
+      const created = payloads.filter(([e]) => e.event_type === 'proposal_created').map(([, p]) => p);
+      if (!created.length) {
+        binding.push('the log entry that opened this decision is not in the bundle');
+      } else if (created[0].payload_hash !== recomputed) {
+        binding.push('the log recorded a different payload hash for this decision');
+      }
+      const signedEvents = new Set(
+        payloads.filter(([e]) => e.event_type === 'proposal_signed' && e.ref_id === d.proposal_uuid)
+                .map(([, p]) => p.signer_id + '|' + p.decision + '|' + p.signature_sha256));
+      for (const s of verified) {
+        const want = s.signer_id + '|' + s.decision + '|' + hex(sha256(b64(s.signature_b64)));
+        if (!signedEvents.has(want)) {
+          binding.push('the log has no record of ' + (s.signer_email || s.signer_id)
+                       + ' casting this exact signature');
+        }
+      }
+      if (signedEvents.size > verified.length && !unsupported.length) {
+        binding.push('the log records ' + count(signedEvents.size, 'signature') + ' but the bundle carries '
+                     + verified.length + ' — the export is incomplete');
+      }
+      add('binding', 'The log records these exact signatures, and no others', !binding.length,
+          binding.join('; ') || count(signedEvents.size, 'signing event') + ' matched');
+
+      // 6b. identity
+      const registrations = new Map(
+        payloads.filter(([e]) => e.event_type === 'user_registered')
+                .map(([, p]) => [p.user_id, p.email]));
+      const identity = [];
+      for (const s of verified) {
+        const recorded = registrations.get(s.signer_id);
+        if (recorded === undefined) {
+          identity.push('the log has no registration record for signer ' + s.signer_id);
+        } else if (s.signer_email && s.signer_email !== recorded) {
+          identity.push('the bundle calls signer ' + s.signer_id + ' ' + s.signer_email
+                        + ', the log recorded ' + recorded);
+        }
+      }
+      add('identity', 'The signers are the accounts the log recorded', !identity.length,
+          identity.join('; ') || [...registrations.values()].sort().join(', '));
+
+      // 6b'. key lineage: worked out after step 7, which says which entries are in the log.
+
+      // 6c. payment authorisations (mirrors _check_execution in qvault/verify/core.py, step for
+      // step, so the two reach the same verdict on every file)
+      if (payment) {
+        const title = 'The payment authorisations are genuine and recorded';
+        const uuid = d.proposal_uuid;
+        // This decision's payout only: another decision's genuine entry must not make it "paid".
+        const executed = payloads.filter(([e, p]) => e.event_type === 'proposal_executed'
+                                                     && e.ref_id === uuid && p.proposal_uuid === uuid)
+                                 .map(([, p]) => p);
+        facts.payout = executed.length === 1 ? { tx: executed[0].tx_hash, block: executed[0].block } : null;
+        const recordedExec = new Map(
+          payloads.filter(([e, p]) => e.event_type === 'proposal_signed' && e.ref_id === uuid
+                                      && p.decision === 'approve'
+                                      && typeof p.execution_signature_sha256 === 'string')
+                  .map(([, p]) => [p.signer_id, p.execution_signature_sha256]));
+        const section = bundle.execution;
+        if (section === undefined || section === null) {
+          if (recordedExec.size || executed.length) {
+            add('execution', title, false, 'the export leaves out the payment authorisations the log records');
+          } else {
+            add('execution', title, false, 'this export predates payment authorisations in the record', true);
+          }
+        } else {
+          if (!section || typeof section !== 'object' || Array.isArray(section)
+              || !Array.isArray(section.signatures)) {
+            throw new Error('execution.signatures must be a list');
+          }
+          let digest = null;
+          try { digest = executionDigest(payment, recomputed); } catch (err) {
+            add('execution', title, false, 'the signed payment is malformed: ' + err.message);
+          }
+          if (digest) {
+            const strictB64 = v => (typeof v === 'string' && v.length % 4 === 0
+                                    && /^[A-Za-z0-9+/]*={0,2}$/.test(v)) ? b64(v) : null;
+            const voteKeys = new Map(verified.filter(v => v.decision === 'approve')
+                                             .map(v => [v.signer_id, v.public_key_b64]));
+            const eProblems = [];
+            const goodSigners = new Set();
+            const carried = new Set();
+            for (const x of section.signatures) {
+              const id = x && typeof x === 'object' ? x.signer_id : undefined;
+              if (typeof id !== 'number' || !Number.isInteger(id)) {
+                eProblems.push('an authorisation does not name its signer'); continue;
+              }
+              carried.add(id);
+              const key = strictB64(x.public_key_b64), sig = strictB64(x.signature_b64);
+              if (x.alg_id !== 'ML-DSA-65') {
+                eProblems.push('signer ' + id + ': the treasury checks ML-DSA-65 only');
+              } else if (!key || !sig) {
+                eProblems.push('signer ' + id + ': the key or signature is not valid base64');
+              } else if (typeof x.identity_hex !== 'string' || !/^0x[0-9a-fA-F]{248}$/.test(x.identity_hex)) {
+                eProblems.push('signer ' + id + ': the on-chain identity is malformed');
+              } else if (!ml_dsa65.verify(sig, digest, key)) {
+                eProblems.push('signer ' + id + ': the authorisation is not over this payment, or is forged');
+              } else if (recordedExec.get(id) !== hex(sha256(sig))) {
+                eProblems.push('the log has no record of signer ' + id + ' authorising these bytes');
+              } else if (!voteKeys.has(id) || !eq(b64(voteKeys.get(id)), key)) {
+                eProblems.push('signer ' + id + ': not made with the key of their approving vote');
+              } else if (goodSigners.has(id)) {
+                eProblems.push('signer ' + id + ' authorised more than once');
+              } else {
+                goodSigners.add(id);
+              }
+            }
+            if ([...recordedExec.keys()].some(id => !carried.has(id))) {
+              eProblems.push('the log records ' + count(recordedExec.size, 'authorisation') + ' but the bundle carries '
+                             + section.signatures.length + ': the export is incomplete');
+            }
+            if (executed.length > 1) {
+              eProblems.push('the log records this payment as made more than once');
+            } else if (executed.length && goodSigners.size < d.required_m) {
+              eProblems.push('the log records the payment as made, but only ' + goodSigners.size + ' of '
+                             + d.required_m + ' authorisations are genuine');
+            }
+            add('execution', title, !eProblems.length, eProblems.join('; ')
+                || count(goodSigners.size, 'authorisation') + ' over this payment, each recorded'
+                   + (executed.length ? '; paid in ' + (executed[0].tx_hash
+                      || 'a transaction by another submitter') : ''));
+          }
+        }
+      }
+
+      // 7. inclusion
+      const cp = log.checkpoint;
+      const root = unhex(cp.root_hash);
+      const missing = [];
+      const included = new Set();
+      for (const e of good) {
+        const proof = (e.inclusion_proof || []).map(unhex);
+        if (!verifyInclusion(leafHash(unhex(e.entry_hash)), e.seq, cp.tree_size, proof, root)) {
+          missing.push('entry ' + e.seq + ': not in the published log');
+        } else {
+          included.add(e.seq);
+        }
+      }
+      // 6b'. key lineage (mirrors lineage_lines in qvault/verify/core.py, word for word): a vote
+      // under a key a recovery introduced or restored says so. Informational, never a check; a
+      // line from an entry not proven to be in the log says that too.
+      facts.lineage = lineageLines(verified, payloads, registrations, included);
+      add('inclusion', 'Those records are inside the published transparency log', !missing.length,
+          missing.join('; ') || 'proved against a log of ' + count(cp.tree_size, 'entry', 'entries') + ', root '
+                                + cp.root_hash.slice(0, 16) + '…');
+
+      // 8. checkpoint
+      let logSha = null;
+      if (cp.tree_size !== cp.head_seq + 1) {
+        add('checkpoint', 'The log signed that tree', false,
+            'tree_size ' + cp.tree_size + ' does not match head_seq ' + cp.head_seq
+            + ' + 1 — entries are missing from the middle');
+      } else {
+        const cs = log.checkpoint_signature;
+        const alg = ALGS[cs.alg_id];
+        logSha = hex(sha256(b64(cs.public_key_b64)));
+        fingerprints.log = logSha.slice(0, 16);
+        if (!alg) {
+          add('checkpoint', 'The log signed that tree', false,
+              'cannot check ' + cs.alg_id + ' in a browser', true);
+        } else {
+          const valid = alg.verify(b64(cs.signature_b64), checkpointBytes(cp), b64(cs.public_key_b64));
+          add('checkpoint', 'The log signed that tree', valid,
+              valid ? cs.alg_id + ', log key ' + fingerprints.log
+                    : 'the checkpoint signature did not verify');
+        }
+      }
+
+      // 9. witness
+      const witnesses = log.witnesses || [];
+      const wProblems = [];
+      const wUnsupported = [];
+      const wSha = [];
+      for (const w of witnesses) {
+        const alg = ALGS[w.alg_id];
+        const full = hex(sha256(b64(w.public_key_b64)));
+        const fp = full.slice(0, 16);
+        if (!alg) { wUnsupported.push(w.witness + ': ' + w.alg_id); continue; }
+        if (alg.verify(b64(w.signature_b64), witnessBytes(w.witness, cp), b64(w.public_key_b64))) {
+          fingerprints.witnesses.push({ name: w.witness, fingerprint: fp });
+          wSha.push(full);
+        } else {
+          wProblems.push(w.witness + ': co-signature did not verify');
+        }
+      }
+      if (!witnesses.length) {
+        add('witness', 'An independent witness countersigned it', false,
+            'no witness co-signature — nothing outside this log vouches that it only ever grew',
+            true);
+      } else if (wUnsupported.length && !fingerprints.witnesses.length) {
+        add('witness', 'An independent witness countersigned it', false,
+            'cannot check in a browser: ' + wUnsupported.join('; ')
+            + ' — run `python -m qvault.verify` instead', true);
+      } else {
+        add('witness', 'An independent witness countersigned it',
+            !wProblems.length && fingerprints.witnesses.length > 0,
+            wProblems.join('; ')
+            || fingerprints.witnesses.map(w => w.name + ' (' + w.fingerprint + ')').join(', '));
+      }
+
+      // 10. pins: 16 to 64 hex characters of the key's SHA-256, compared exactly. A shorter pin
+      // fails rather than matching as a prefix (qvault/verify/core.py, pin_check).
+      const pinCheck = (key, title, pin, hashes) => {
+        const clean = String(pin).trim().toLowerCase();
+        if (!/^[0-9a-f]{16,64}$/.test(clean)) {
+          add(key, title, false, 'a key pin is 16 to 64 hex characters (the 16 printed, or the '
+              + 'whole SHA-256); got ' + JSON.stringify(pin));
+          return;
+        }
+        add(key, title, hashes.some(h => h.slice(0, clean.length) === clean),
+            'expected ' + clean + ', found ' + (hashes.map(h => h.slice(0, 16)).join(', ') || 'none'));
+      };
+      if (pins.log) {
+        pinCheck('pinned_log', 'The log key is the one you expected', pins.log,
+                 logSha ? [logSha] : []);
+      }
+      if (pins.witness) {
+        pinCheck('pinned_witness', 'The witness key is the one you expected', pins.witness, wSha);
+      }
+    } catch (err) {
+      add('format', 'The file is a Q-Vault decision bundle', false, String(err && err.message || err));
+    }
+
+    const graded = checks.filter(c => !c.skipped);
+    const ok = graded.length > 0 && graded.every(c => c.ok);
+    const firstBad = checks.find(c => !c.ok && !c.skipped);
+    const skipped = checks.filter(c => c.skipped).length;
+    return {
+      ok, checks, facts, fingerprints,
+      summary: ok
+        ? 'Verified' + (skipped ? ' (' + count(skipped, 'check') + ' not applicable)' : '')
+        : 'NOT verified' + (firstBad ? ' — ' + firstBad.detail : ''),
+    };
+  }
+
+  // --- rendering ----------------------------------------------------------------------------
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // The payment exactly as signed, shown beside the ETH figure rather than instead of it.
+  const paymentRows = p => {
+    if (!p) return '';
+    const eth = formatWei(p.value_wei);
+    // Date holds +-8.64e15 ms; past that toISOString throws, and a throw while drawing would
+    // leave the previous file's verdict on screen.
+    const until = Number.isSafeInteger(p.valid_until) && Math.abs(p.valid_until) <= 8640000000000
+      ? new Date(p.valid_until * 1000).toISOString() : String(p.valid_until);
+    return '<dt>Pays</dt><dd>' + esc(eth || '?') + ' (' + esc(p.value_wei) + ' wei)</dd>'
+      + '<dt>To</dt><dd>' + esc(p.to) + '</dd>'
+      + '<dt>From treasury</dt><dd>' + esc(p.treasury) + '</dd>'
+      + '<dt>Network</dt><dd>' + esc(NETWORKS[p.chain_id] || ('chain ' + p.chain_id)) + '</dd>'
+      + '<dt>Executable until</dt><dd>' + esc(until) + '</dd>';
+  };
+
+  function render(report) {
+    const f = report.facts;
+    let html = '<div class="banner ' + (report.ok ? 'ok' : 'bad') + '"><div>'
+      + '<div class="banner__title">' + esc(report.summary) + '</div>'
+      + (f.title ? '<div class="banner__body">' + esc(f.title)
+                   + (f.vault ? ' · ' + esc(f.vault) : '') + '</div>' : '')
+      + '</div></div>';
+
+    if (f.action) {
+      html += '<div class="panel"><div class="panel__head"><span class="label">Decision</span></div>'
+        + '<div class="panel__body"><p class="action">' + esc(f.action) + '</p><dl class="meta">'
+        + '<dt>Status</dt><dd>' + esc(f.status) + '</dd>'
+        + '<dt>Approvals required</dt><dd>' + esc(f.m) + ' of ' + esc(f.n) + '</dd>'
+        + '<dt>Opened</dt><dd>' + esc(f.created) + '</dd>'
+        + '<dt>Payload hash</dt><dd>' + esc(f.hash) + '</dd>'
+        + paymentRows(f.payment)
+        // As the log recorded it; the checks above say whether the authorisations stand behind it.
+        + (f.payout ? '<dt>Paid in</dt><dd>' + esc(f.payout.tx || 'a transaction by another submitter')
+                      + (f.payout.block ? ' (block ' + esc(f.payout.block) + ')' : '') + '</dd>' : '')
+        + '</dl></div></div>';
+    }
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">Checks</span></div>'
+      + '<ol class="checks">';
+    for (const c of report.checks) {
+      const cls = c.skipped ? 'is-skip' : (c.ok ? 'is-ok' : 'is-bad');
+      const mark = c.skipped ? '—' : (c.ok ? '✓' : '×');
+      html += '<li class="' + cls + '"><span class="mark">' + mark + '</span><span>'
+        + '<span class="ctitle">' + esc(c.title) + '</span>'
+        + '<span class="cdetail">' + esc(c.detail) + '</span></span></li>';
+    }
+    html += '</ol></div>';
+
+    if (f.lineage && f.lineage.length) {
+      html += '<div class="panel"><div class="panel__head"><span class="label">Key history'
+        + '</span></div><div class="panel__body"><ul class="lineage">';
+      for (const line of f.lineage) html += '<li>' + esc(line) + '</li>';
+      html += '</ul></div></div>';
+    }
+
+    if (report.fingerprints.log || report.fingerprints.witnesses.length) {
+      html += '<div class="panel"><div class="panel__head"><span class="label">Keys in this bundle'
+        + '</span></div><div class="panel__body"><dl class="meta">';
+      if (report.fingerprints.log) {
+        html += '<dt>Log</dt><dd>' + esc(report.fingerprints.log) + '</dd>';
+      }
+      for (const w of report.fingerprints.witnesses) {
+        html += '<dt>' + esc(w.name) + '</dt><dd>' + esc(w.fingerprint) + '</dd>';
+      }
+      html += '</dl></div></div>';
+    }
+
+    document.getElementById('result').innerHTML = html;
+  }
+
+  // --- the decision-record view -------------------------------------------------------------
+  //
+  // Rendered FROM the embedded bundle rather than baked in as static HTML by the server, and that
+  // is the whole design. If the readable half were pre-rendered, editing the JSON would break the
+  // signatures while the page went on displaying the original wording — which invites exactly the
+  // wrong conclusion ("the document still says the right thing, so it must be fine"). Deriving
+  // both halves from the same bytes means a tampered file shows you the tampering AND tells you
+  // the signatures no longer cover it.
+
+  const checksHtml = report => {
+    let h = '<div class="panel"><div class="panel__head"><span class="label">'
+          + 'What was checked</span></div><ol class="checks">';
+    for (const c of report.checks) {
+      const cls = c.skipped ? 'is-skip' : (c.ok ? 'is-ok' : 'is-bad');
+      const mark = c.skipped ? '—' : (c.ok ? '✓' : '×');
+      h += '<li class="' + cls + '"><span class="mark">' + mark + '</span><span>'
+         + '<span class="ctitle">' + esc(c.title) + '</span>'
+         + '<span class="cdetail">' + esc(c.detail) + '</span></span></li>';
+    }
+    return h + '</ol></div>';
+  };
+
+  const keysHtml = report => {
+    const fp = report.fingerprints;
+    if (!fp.log && !fp.witnesses.length) return '';
+    let h = '<div class="panel"><div class="panel__head"><span class="label">Keys in this file'
+          + '</span></div><div class="panel__body"><dl class="meta">';
+    if (fp.log) h += '<dt>Log</dt><dd>' + esc(fp.log) + '</dd>';
+    for (const w of fp.witnesses) h += '<dt>' + esc(w.name) + '</dt><dd>' + esc(w.fingerprint) + '</dd>';
+    return h + '</dl><p class="note">Compare these against fingerprints the operator published '
+             + 'somewhere other than this file, then enter them below and reload. A fingerprint '
+             + 'that only ever came from the file it is vouching for proves nothing.</p>'
+             + '</div></div>';
+  };
+
+  const shortDate = v => String(v || '').slice(0, 16).replace('T', ' ');
+
+  function fingerprintOf(b64Key) {
+    try { return hex(sha256(b64(b64Key))).slice(0, 16); } catch (e) { return '—'; }
+  }
+  function sigBytes(b64Sig) {
+    try { return b64(b64Sig).length; } catch (e) { return 0; }
+  }
+
+  function renderDocument(bundle, report) {
+    const d = bundle.decision || {};
+    const sigs = bundle.signatures || [];
+    const log = bundle.log || {};
+    const cp = log.checkpoint || {};
+    const approvals = sigs.filter(s => s.decision === 'approve').length;
+    const deviceHeld = sigs.filter(s => s.custody === 'device').length;
+
+    document.getElementById('pagetitle').classList.add('hidden');
+    document.getElementById('pagelead').classList.add('hidden');
+
+    document.getElementById('dochead').innerHTML =
+        '<div class="eyebrow">Q-Vault &middot; Decision record</div>'
+      + '<h1 class="doc-title">' + esc(d.title || 'Untitled decision') + '</h1>'
+      + '<p class="doc-sub">' + esc(d.vault_name || ('Vault ' + d.vault_id)) + ' &middot; '
+      + esc(d.proposal_uuid || '') + '</p>';
+
+    let html = '<div class="banner ' + (report.ok ? 'ok' : 'bad') + '"><div>'
+      + '<div class="banner__title">' + esc(report.summary) + '</div>'
+      + '<div class="banner__body">Checked in this page just now, offline, against the evidence '
+      + 'embedded in this file. Nothing was contacted.</div></div></div>';
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">The action</span>'
+      + '</div><div class="panel__body"><p class="action">' + esc(d.action_text || '') + '</p>'
+      + '<dl class="meta">'
+      + '<dt>Status</dt><dd>' + esc(d.status || '') + '</dd>'
+      + '<dt>Approvals</dt><dd>' + approvals + ' of ' + esc(d.required_m)
+      + (deviceHeld ? ' &middot; ' + deviceHeld + ' device-held' : '') + '</dd>'
+      + '<dt>Rule</dt><dd>' + esc(d.required_m) + '-of-' + esc(d.required_n) + '</dd>'
+      + '<dt>Payload hash</dt><dd>' + esc(d.payload_hash || '') + '</dd>'
+      + '<dt>Attached file</dt><dd>' + esc(d.file_sha256 || 'none') + '</dd>'
+      + '<dt>Nonce</dt><dd>' + esc(d.nonce_hex || '') + '</dd>'
+      + '<dt>Opened</dt><dd>' + esc(d.created_at_iso || '') + '</dd>'
+      + '<dt>Exported</dt><dd>' + esc(bundle.exported_at || '') + '</dd>'
+      + paymentRows(d.action && typeof d.action === 'object' ? d.action : null)
+      + '</dl>'
+      + '<p class="note">The payload hash covers the vault, the wording above, '
+      + (d.action ? 'the payment (recipient, amount, treasury, network and deadline), ' : '')
+      + 'the attached file, '
+      + 'the ' + esc(d.required_m) + '-of-' + esc(d.required_n) + ' rule, who was permitted to '
+      + 'sign, the nonce and the timestamp &mdash; <strong>all at once</strong>. Alter any one of '
+      + 'them and every signature below stops matching.</p></div></div>';
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">Signatures ('
+      + sigs.length + ')</span></div><div class="panel__body"><div class="scroll"><table class="sigs">'
+      + '<thead><tr><th>Signer</th><th>Decision</th><th>Custody</th><th>Algorithm</th>'
+      + '<th class="n">Bytes</th><th>Key</th><th>Signed</th></tr></thead><tbody>';
+    for (const s of sigs) {
+      html += '<tr><td>' + esc(s.signer_name || s.signer_email || ('Signer ' + s.signer_id))
+        + (s.reason ? '<div class="tiny">' + esc(s.reason) + '</div>' : '') + '</td>'
+        + '<td><span class="chip ' + (s.decision === 'approve' ? 'ok' : 'no') + '">'
+        + esc(s.decision) + '</span></td>'
+        + '<td><span class="chip ' + (s.custody === 'device' ? 'ok' : 'pl') + '">'
+        + esc(s.custody || 'server') + '</span></td>'
+        + '<td class="n">' + esc(s.alg_id) + '</td>'
+        + '<td class="n">' + sigBytes(s.signature_b64).toLocaleString() + '</td>'
+        + '<td class="n">' + esc(fingerprintOf(s.public_key_b64)) + '</td>'
+        + '<td class="n">' + esc(shortDate(s.signed_at)) + '</td></tr>';
+    }
+    html += '</tbody></table></div>'
+      + '<p class="note"><strong>Custody</strong> is the difference between evidence and record. A '
+      + '<strong>device</strong> signature was made by a key generated on the signer\'s own '
+      + 'hardware that the Q-Vault server has never held, so not even a compromised server could '
+      + 'have produced it. A <strong>server</strong> signature was made by a key that server '
+      + 'unwrapped with the signer\'s password: genuine and attributable, but the server had the '
+      + 'means.</p></div></div>';
+
+    html += '<div class="panel"><div class="panel__head"><span class="label">'
+      + 'Position in the transparency log</span></div><div class="panel__body"><dl class="meta">'
+      + '<dt>Log origin</dt><dd>' + esc(log.origin || '') + '</dd>'
+      + '<dt>Tree size</dt><dd>' + esc(cp.tree_size) + '</dd>'
+      + '<dt>Root hash</dt><dd>' + esc(cp.root_hash || '') + '</dd>'
+      + '<dt>Witnesses</dt><dd>' + esc((log.witnesses || []).map(w => w.witness).join(', ')
+      || 'none — this export carries one fewer independent signature') + '</dd>'
+      + '</dl><p class="note">A chained log stops entries being edited. It does not by itself stop '
+      + 'the whole log being replaced with a different, internally consistent one &mdash; which is '
+      + 'what an independent <strong>witness</strong> co-signature rules out, because the witness '
+      + 'saw an earlier state and will not vouch for a substitute.</p></div></div>';
+
+    html += checksHtml(report) + keysHtml(report);
+    document.getElementById('result').innerHTML = html;
+  }
+
+  // --- wiring -------------------------------------------------------------------------------
+  const drop = document.getElementById('drop');
+  const file = document.getElementById('file');
+
+  // A dropped file may be a self-verifying decision record rather than a bare bundle -- that is
+  // what the export hands people by default, so refusing it here would make this page reject the
+  // product's own artefact. Mirrors qvault/verify/reader.py, and like it, detects by content
+  // rather than by filename.
+  const SLOT = /<script[^>]*id=["']qvault-decision["'][^>]*>([\s\S]*?)<\/script\s*>/i;
+
+  function unwrap(text) {
+    const match = SLOT.exec(text);
+    if (!match) return text;
+    const payload = match[1].trim();
+    if (!payload) {
+      throw new Error('that file is a blank Q-Vault verifier — it carries no decision of its own');
+    }
+    return payload;
+  }
+
+  // If drawing a report fails for any reason, say so as a failure. Leaving the page as it was
+  // would show the previous file's verdict beside a file that was never displayed.
+  const showUnreadable = err => {
+    document.getElementById('result').innerHTML = '<div class="banner bad"><div>'
+      + '<div class="banner__title">NOT verified: this file could not be displayed</div>'
+      + '<div class="banner__body">' + esc(err && err.message ? err.message : err) + '</div>'
+      + '</div></div>';
+  };
+  const safely = draw => { try { draw(); } catch (err) { showUnreadable(err); } };
+
+  function handle(text) {
+    document.getElementById('result').innerHTML = '';
+    let bundle;
+    try {
+      bundle = JSON.parse(unwrap(text));
+    } catch (err) {
+      // unwrap() raises its own already-explained error; only a parse failure needs the prefix.
+      const why = err instanceof SyntaxError
+        ? 'That is not valid JSON: ' + err.message
+        : err.message;
+      safely(() => render({ ok: false, summary: why,
+               checks: [], facts: {}, fingerprints: { log: null, witnesses: [] } }));
+      return;
+    }
+    safely(() => render(verifyBundle(bundle, {
+      log: document.getElementById('pinlog').value.trim(),
+      witness: document.getElementById('pinwit').value.trim(),
+    })));
+  }
+
+  drop.addEventListener('click', () => file.click());
+  file.addEventListener('change', e => {
+    if (e.target.files[0]) e.target.files[0].text().then(handle);
+  });
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove('over');
+  }));
+  drop.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) f.text().then(handle);
+  });
+
+  // The browser test drives this directly, and so can anyone scripting the page.
+  globalThis.qvaultVerify = (bundle, pins) => verifyBundle(bundle, pins || {});
+
+  // --- self-verifying mode ---------------------------------------------------------------
+  //
+  // An embedded bundle turns this file from a tool into a document. Everything below must be
+  // inert when the slot is empty, because that is how the generic verifier ships and how the
+  // browser test suite loads it.
+
+  const slot = document.getElementById('qvault-decision');
+  const embedded = slot ? slot.textContent.trim() : '';
+  if (embedded) {
+    let bundle = null;
+    try {
+      bundle = JSON.parse(embedded);
+    } catch (err) {
+      // A bundle that will not parse is still a finding, not a blank page: somebody edited this
+      // file. Say so in the same place a verdict would have appeared.
+      document.getElementById('result').innerHTML =
+          '<div class="banner bad"><div><div class="banner__title">NOT verified</div>'
+        + '<div class="banner__body">The evidence embedded in this file is not valid JSON: '
+        + esc(err.message) + '. It has been edited since it was exported.</div></div></div>';
+    }
+
+    if (bundle) {
+      globalThis.qvaultEmbedded = bundle;
+
+      // The pins are promoted, not buried. Entering a fingerprint you obtained from somewhere
+      // other than this file is the strongest check available here — it is what separates "signed
+      // by a log" from "signed by the log you meant" — so it belongs on the page, not folded
+      // inside a disclosure about loading some other file.
+      const pins = document.querySelector('#loader .pins');
+      const result = document.getElementById('result');
+      if (pins && result && result.parentNode) {
+        const panel = document.createElement('div');
+        panel.className = 'panel no-print';
+        panel.innerHTML = '<div class="panel__head"><span class="label">'
+          + 'Pin the keys you were told to expect</span></div>';
+        const body = document.createElement('div');
+        body.className = 'panel__body';
+        body.appendChild(pins);
+        panel.appendChild(body);
+        result.parentNode.insertBefore(panel, result.nextSibling);
+      }
+
+      // The loader stays reachable — this file is still a working verifier — but stops being the
+      // first thing you see, and never prints.
+      const loader = document.getElementById('loader');
+      if (loader && loader.parentNode) {
+        const det = document.createElement('details');
+        det.className = 'more no-print';
+        det.innerHTML = '<summary>Check a different decision file with this page</summary>';
+        loader.parentNode.insertBefore(det, loader);
+        det.appendChild(loader);
+      }
+
+      const runEmbedded = () => safely(() => renderDocument(bundle, verifyBundle(bundle, {
+        log: document.getElementById('pinlog').value.trim(),
+        witness: document.getElementById('pinwit').value.trim(),
+      })));
+
+      // Pinning a fingerprint should take effect immediately; in document mode there is no
+      // "load the file" step to re-trigger the check.
+      for (const id of ['pinlog', 'pinwit']) {
+        document.getElementById(id).addEventListener('change', runEmbedded);
+      }
+      runEmbedded();
+    }
+  }
+})();
+</script>
+</body>
+</html>

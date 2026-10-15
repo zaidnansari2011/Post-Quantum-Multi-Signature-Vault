@@ -1,0 +1,11 @@
+{# Security is one section with several screens, so it carries its own tab strip rather than
+   appearing as three unrelated items in the main navigation. #}
+{% from "ui/navigation.html" import tabs %}
+{% set admin_tabs = [
+  {'key': 'admin.crypto', 'label': 'Algorithms', 'href': url_for('admin.crypto')},
+  {'key': 'admin.rotation', 'label': 'Keys', 'href': url_for('admin.rotation')},
+  {'key': 'admin.benchmark', 'label': 'Performance', 'href': url_for('admin.benchmark')},
+] %}
+{% if config.ONCHAIN_EXECUTION_ENABLED %}{% set _ = admin_tabs.append({'key': 'admin.chain', 'label': 'Chain', 'href': url_for('admin.chain')}) %}{% endif %}
+{#- The adversary lab is a Developer tool, not a Security screen: _developer_nav.html. -#}
+{{ tabs(admin_tabs, request.endpoint, 'Security sections') }}

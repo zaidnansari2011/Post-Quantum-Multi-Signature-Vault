@@ -1,39 +1,44 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Vaults{% endblock %}
-{% block content %}
-<div class="d-flex align-items-end justify-content-between flex-wrap gap-2 mb-3">
-  <div>
-    <div class="eyebrow mb-1">Vaults</div>
-    <h1 class="h2 mb-0">Your vaults</h1>
-  </div>
-  <a class="btn btn-primary btn-sm" href="{{ url_for('vaults.new_vault') }}">+ New vault</a>
-</div>
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/data.html" import data_table %}
+{% from "ui/avatars.html" import avatar_stack %}
+{% from "ui/work.html" import rule %}
+{% block title %}Vaults — Q-Vault{% endblock %}
 
-{% if vaults %}
-<div class="row g-3">
-  {% for v in vaults %}
-  <div class="col-md-6 col-lg-4">
-    <div class="panel h-100 d-flex flex-column">
-      <h2 class="h5 mb-1">
-        <a href="{{ url_for('vaults.vault_detail', vid=v.id) }}">{{ v.name }}</a>
-      </h2>
-      <p class="text-muted small mb-2">{{ v.description or "No description" }}</p>
-      <div class="d-flex gap-2 flex-wrap mb-2">
-        <span class="chip">{{ v.policy.threshold_m }} of {{ v.signer_ids()|length }} to approve</span>
-        <span class="algo-chip">{{ v.kem_alg_id }}</span>
-      </div>
-      <div class="mt-auto pt-2 small text-muted" style="border-top:1px solid var(--line-2);">
-        {{ v.members|length }} member{{ '' if v.members|length == 1 else 's' }} ·
-        {{ v.proposals|length }} proposal{{ '' if v.proposals|length == 1 else 's' }}
-      </div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% else %}
-<div class="panel text-center text-muted py-5">
-  You are not a member of any vault yet.
-  <a href="{{ url_for('vaults.new_vault') }}">Create one</a> to get started.
-</div>
-{% endif %}
+{#- Vaults (rework R2, plan section 5): each vault's rule, who approves, and what in it is open or
+    waits on you. A treasury's balance is read from the chain, one call per vault, so it stays on
+    the vault's own Treasury tab rather than slowing this list. -#}
+{% block content %}
+{% call page_header('Vaults') %}
+  {%- if can_create_vaults %}{{ button('New vault', 'primary', href=url_for('vaults.new_vault'), icon='plus') }}{% endif -%}
+{% endcall %}
+
+{% call data_table([
+    {'key': 'vault', 'label': 'Vault'},
+    {'key': 'rule', 'label': 'Rule'},
+    {'key': 'approvers', 'label': 'Approvers'},
+    {'key': 'open', 'label': 'Open', 'numeric': True},
+    {'key': 'you', 'label': 'Waiting on you', 'numeric': True}],
+    rows|length > 0, label='Your vaults', stack=True,
+    empty_title='No vaults yet',
+    empty_caption='A vault holds a group of people and the number of them who must agree.',
+    empty_action={'label': 'Create a vault', 'href': url_for('vaults.new_vault')} if can_create_vaults else None) %}
+  {%- for r in rows %}
+  {%- set v = r.vault %}
+  {%- set people = v.signer_members() | map(attribute='user') | list %}
+  <tr class="q-drow">
+    <td class="q-c-main">
+      <span class="q-dec">
+        <a class="q-dec__link" href="{{ url_for('vaults.vault_detail', vid=v.id) }}">{{ v.name }}</a>
+        {%- if v.description %}<span class="q-dec__d">{{ v.description }}</span>{% endif %}
+      </span>
+    </td>
+    <td class="q-c-meta">{{ rule(v.policy.threshold_m, r.signers) }}</td>
+    <td class="q-c-wide-only">{%- set people_names = [] %}{% for u in people %}{% set _ = people_names.append(u.display_name or u.email) %}{% endfor %}{{ avatar_stack(people_names, 4, 20) }}</td>
+    <td class="is-num q-c-status"><span class="q-c-label">Open </span>{{ r.open }}</td>
+    <td class="is-num q-c-end">{% if r.needs_me %}<span class="q-badge q-badge--warning">{{ r.needs_me }} need{{ 's' if r.needs_me == 1 }} you</span>{% else %}<span class="q-muted">None</span>{% endif %}</td>
+  </tr>
+  {%- endfor %}
+{% endcall %}
 {% endblock %}

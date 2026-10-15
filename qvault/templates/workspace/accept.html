@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/feedback.html" import banner %}
+{% from "_password_step.html" import password_step %}
+{% block title %}{{ {'unknown': 'Invalid invitation link', 'accepted': 'Invitation used', 'revoked': 'Invitation withdrawn',
+  'expired': 'Invitation expired', 'void': 'Invitation no longer valid'}.get(state) or 'Join ' ~ invitation.workspace.name }} — Invitation — Q-Vault{% endblock %}
+
+{# One page for every state of an invitation link, signed in or out. ``state`` is one of:
+   unknown, accepted, revoked, expired, void (the inviter can no longer invite), wrong_account,
+   already_member, has_workspace (one workspace per person, for now), ready, sign_in, sign_up. #}
+{#- Who sent it, by name, on every page an invitation has (staging smoke test 2026-10-09). -#}
+{% macro inviter() %}{{ invitation.inviter.display_name if invitation.inviter and invitation.inviter.display_name else 'the person who invited you' }}{% endmacro %}
+{% macro invited_by() %}{% if invitation.inviter and invitation.inviter.display_name %}<p class="q-auth__p">Invited by {{ invitation.inviter.display_name }} to {{ invitation.workspace.name }}.</p>{% endif %}{% endmacro %}
+
+{% macro details() %}
+<section class="q-panel" aria-label="The invitation">
+  <dl class="q-kv">
+    <div><dt>Workspace</dt><dd>{{ invitation.workspace.name }}</dd></div>
+    <div><dt>Invited by</dt><dd>{{ inviter() }}</dd></div>
+    <div><dt>For</dt><dd>{{ invitation.email }}</dd></div>
+    <div><dt>Role</dt><dd>{{ role_name(invitation.role) }}<span class="q-cap">{{ role_help[invitation.role] }}</span></dd></div>
+    <div><dt>Vaults</dt>
+    <dd>{% for g in grants %}{{ g.name }} ({{ g.role }}){% if not loop.last %}, {% endif %}{% else %}None{% endfor %}</dd></div>
+    <div><dt>Expires</dt><dd>{{ invitation.expires_at | ws_when }}</dd></div>
+  </dl>
+</section>
+{% endmacro %}
+
+{% macro body() %}
+<div class="q-auth q-auth--wide">
+
+  {% if state == 'unknown' %}
+    <h1 class="q-auth__t">This link isn't valid</h1>
+    <p class="q-auth__p">Check that you copied all of it. If it still doesn't work, ask the person who invited you for a new link.</p>
+    {% if current_user.is_authenticated %}
+      {{ button('Go to Home', 'secondary', href=url_for('core.index'), block=True) }}
+    {% else %}
+      {{ button('Sign in', 'secondary', href=url_for('auth.login'), block=True) }}
+    {% endif %}
+
+  {% elif state == 'accepted' %}
+    <h1 class="q-auth__t">This invitation has been used</h1>
+    {{ invited_by() }}
+    {% if current_user.is_authenticated and invitation.accepted_by_id == current_user.id %}
+      <p class="q-auth__p">You joined {{ invitation.workspace.name }} on {{ invitation.accepted_at | ws_when }}.</p>
+      {{ button('Go to Home', 'primary', href=url_for('core.index'), block=True) }}
+    {% else %}
+      <p class="q-auth__p">Each link works once. If you need access, ask {{ inviter() }} to invite you again.</p>
+    {% endif %}
+
+  {% elif state == 'revoked' %}
+    <h1 class="q-auth__t">This invitation was withdrawn</h1>
+    {{ invited_by() }}
+    <p class="q-auth__p">{{ inviter() }} or another admin of {{ invitation.workspace.name }} withdrew it, so the link no longer works. Ask them to invite you again.</p>
+
+  {% elif state == 'expired' %}
+    <h1 class="q-auth__t">This invitation has expired</h1>
+    {{ invited_by() }}
+    <p class="q-auth__p">It expired on {{ invitation.expires_at | ws_when }}. Ask {{ inviter() }} to send you a new link.</p>
+
+  {% elif state == 'void' %}
+    <h1 class="q-auth__t">This invitation is no longer valid</h1>
+    {{ invited_by() }}
+    <p class="q-auth__p">The person who sent it can no longer invite people to {{ invitation.workspace.name }}. Ask a workspace admin to invite you again.</p>
+
+  {% else %}
+    <h1 class="q-auth__t">Join {{ invitation.workspace.name }}</h1>
+    <p class="q-auth__p">{{ inviter() }} invited you to work with them in Q-Vault.</p>
+    {{ details() }}
+
+    {% if state == 'ready' %}
+      {% if leaving %}
+      <p class="q-auth__p">Joining takes you out of {{ leaving.name }}, which has nothing in it yet. Q-Vault shows one workspace per person for now.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('workspace.accept', token=token) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ button('Accept and join', 'primary', type='submit', block=True) }}
+      </form>
+
+    {% elif state == 'has_workspace' %}
+      {% set has_title %}You already belong to {{ leaving.name }}, which has vaults, other members or pending invitations.{% endset %}
+      {% set has_body %}Q-Vault doesn't support belonging to two workspaces yet, so this account can't join {{ invitation.workspace.name }}. Ask {{ inviter() }} to invite another address of yours for now. This invitation stays open.{% endset %}
+      {{ banner('warning', has_title, has_body) }}
+
+    {% elif state == 'already_member' %}
+      <p class="q-auth__p">You're already a member of {{ invitation.workspace.name }}.</p>
+      {{ button('Go to Home', 'primary', href=url_for('core.index'), block=True) }}
+
+    {% elif state == 'wrong_account' %}
+      {% set wrong_title %}This invitation is for {{ invitation.email }}, and you're signed in as {{ current_user.email }}.{% endset %}
+      {% set wrong_body %}Sign out, then sign in or create an account with {{ invitation.email }}.{% endset %}
+      {{ banner('warning', wrong_title, wrong_body) }}
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ here }}">
+        {{ button('Sign out and continue', 'primary', type='submit', block=True) }}
+      </form>
+
+    {% elif state == 'sign_in' %}
+      <p class="q-auth__p">There's already an account for {{ invitation.email }}. Sign in with it to accept.</p>
+      {{ button('Sign in to accept', 'primary', href=url_for('auth.login', next=here), block=True) }}
+
+    {% elif state == 'sign_up' %}
+      <p class="q-auth__p">Create your account to accept. It uses {{ invitation.email }}, the address the invitation was sent to.</p>
+      <form method="post" action="{{ url_for('workspace.register', token=token) }}" novalidate>
+        {{ form.hidden_tag() }}
+        {{ wtf_field(form.display_name, attrs={'autocomplete': 'name'}) }}
+        {{ password_step(form) }}
+        {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
+      </form>
+      <p class="q-auth__foot">
+        Have an account under another address? It can't accept this invitation; ask for one sent to that address.
+      </p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}{{ body() }}{% endblock %}
+{% block anon_content %}{{ body() }}{% endblock %}

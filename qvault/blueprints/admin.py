@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import json
 import pathlib
+import secrets
+import threading
+from collections import OrderedDict
 from datetime import UTC, datetime
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from qvault.extensions import db
 from qvault.forms import (
     ExpireKeysForm,
+    RunAttackLabForm,
     RunBenchmarkForm,
     RunMaintenanceForm,
     SwitchAlgorithmForm,
@@ -24,18 +28,65 @@ from qvault.models.config_models import AlgorithmConfig
 from qvault.models.key import Key
 from qvault.security.decorators import admin_required
 from qvault.security.demo_gate import demo_enabled
-from qvault.services import benchmark_service, config_service, rotation_service
+from qvault.services import (
+    benchmark_service,
+    chain_admin_service,
+    config_service,
+    rotation_service,
+)
 from qvault.services.config_service import ConfigError, DowngradeRefused
+from qvault.ui import count_noun, standard_note
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
+# --- live runs, shown after a redirect -----------------------------------------------------------
+#
+# The benchmark and the adversary lab can each be run from their page. The run used to be the
+# POST's own response, so refreshing the page sent the POST again and ran it a second time. Now
+# the POST redirects to the page with ``?run=<id>`` and the page shows the run it names, as
+# ``?receipt=`` does for a signature: a refresh reads the result again instead of producing
+# another.
+#
+# A run is not persisted; it is held in this process until newer runs push it out. That is as
+# durable as the rendered response it replaces, and enough because the app runs as one worker
+# (see the Dockerfile), so the GET after the redirect reaches the process holding the run. An id
+# no longer held shows the page without a live run, never an error.
+
+_LIVE_RUNS_KEPT = 8
+_live_runs: OrderedDict[str, tuple[str, dict]] = OrderedDict()
+_live_runs_lock = threading.Lock()
+
+
+def _hold_live_run(kind: str, result: dict) -> str:
+    run_id = secrets.token_urlsafe(9)
+    with _live_runs_lock:
+        _live_runs[run_id] = (kind, result)
+        while len(_live_runs) > _LIVE_RUNS_KEPT:
+            _live_runs.popitem(last=False)
+    return run_id
+
+
+def _live_run(kind: str) -> dict | None:
+    """The run of ``kind`` this request names with ``?run=``, if it is still held.
+
+    The kind is checked because both pages read ``?run=``: a benchmark's result handed to the
+    attack template would fail to render rather than show nothing.
+    """
+    with _live_runs_lock:
+        held = _live_runs.get(request.args.get("run", ""))
+    return held[1] if held is not None and held[0] == kind else None
+
+
 def _algorithm_choices():
     registry = current_app.extensions["crypto"]
-    return [
-        (m.alg_id, f"{m.alg_id} — {m.human_name} · {m.nist_standard} (cat {m.security_category})")
-        for m in registry.signature_metas()
-    ]
+    choices = []
+    for m in registry.signature_metas():
+        standard, note = standard_note(m.nist_standard)
+        remark = f", {note[:1].lower()}{note[1:]}" if note else ""
+        label = f"{m.alg_id}: {m.human_name}, {standard}{remark} (category {m.security_category})"
+        choices.append((m.alg_id, label))
+    return choices
 
 
 @bp.get("/crypto")
@@ -53,7 +104,10 @@ def crypto():
         kem_metas=registry.kem_metas(),
         backend=registry.backend,
         keys_by_alg=config_service.signing_keys_by_algorithm(),
-        verify=config_service.verify_all_artefacts(),
+        # detail=True so the page can list the actual artefact inventory. After a switch the
+        # algorithm column visibly changes partway down it, which is the whole claim made
+        # concrete: a mixed set that still verifies, each item under its own algorithm.
+        verify=config_service.verify_all_artefacts(detail=True),
     )
 
 
@@ -149,7 +203,7 @@ def benchmark():
     return render_template(
         "admin/benchmark.html",
         report=_stored_report(),
-        live=None,
+        live=_live_run("benchmark"),
         form=RunBenchmarkForm(),
         max_iterations=current_app.config["BENCHMARK_LIVE_MAX_ITERATIONS"],
     )
@@ -180,15 +234,21 @@ def run_benchmark():
             total_budget_s=current_app.config["BENCHMARK_LIVE_BUDGET_S"],
         )
     except benchmark_service.BenchmarkError as exc:
-        flash(f"Benchmark aborted — a correctness check failed: {exc}", "danger")
+        flash(f"Benchmark aborted. A correctness check failed: {exc}", "danger")
         return redirect(url_for("admin.benchmark"))
 
+    return redirect(url_for("admin.benchmark", run=_hold_live_run("benchmark", live)))
+
+
+@bp.get("/chain")
+@admin_required
+def chain():
+    """The relayer against its reserve, chain work in flight, and what recently failed (D38)."""
+    if not current_app.config.get("ONCHAIN_EXECUTION_ENABLED"):
+        abort(404)
     return render_template(
-        "admin/benchmark.html",
-        report=_stored_report(),
-        live=live,
-        form=form,
-        max_iterations=cap,
+        "admin/chain.html",
+        chain=chain_admin_service.overview(current_app.extensions.get("relayer")),
     )
 
 
@@ -235,12 +295,13 @@ def demo_expire_keys():
         )
     except Exception:  # noqa: BLE001 - same ledger-seq race the "run now" button handles
         db.session.rollback()
-        flash("Could not age the keys just now — please try again shortly.", "warning")
+        flash("Could not age the keys just now. Try again in a moment.", "warning")
         return redirect(url_for("admin.rotation"))
 
     flash(
-        f"{affected} key(s) aged past their rotation deadline, and the ledger records that the "
-        "clock was moved. Run maintenance now to watch the server-custodied keys rotate.",
+        f"{count_noun(affected, 'key')} aged past their rotation deadline, and the ledger "
+        "records that the clock was moved. Run maintenance now to watch the server-custodied "
+        "keys rotate.",
         "warning",
     )
     return redirect(url_for("admin.rotation"))
@@ -260,15 +321,257 @@ def run_maintenance():
     except Exception:  # noqa: BLE001 - e.g. a ledger-seq race with the scheduled job
         db.session.rollback()
         flash(
-            "Maintenance is already running (scheduled job) — please try again shortly.", "warning"
+            "Maintenance is already running as a scheduled job. Try again in a moment.", "warning"
         )
         return redirect(url_for("admin.rotation"))
+    # "persist": the counts are the result, and the user keys due need someone to act, so this
+    # stays on the page instead of fading as a toast.
     flash(
         "Maintenance complete — "
         f"system key rotated: {summary['system_rotated']}, "
         f"vault keys rotated: {len(summary['vaults_rotated'])}, "
         f"user keys due (need interactive re-key): {len(summary['user_keys_due'])}, "
         f"proposals expired: {expired}.",
-        "success",
+        "persist",
     )
     return redirect(url_for("admin.rotation"))
+
+
+# --- the adversary lab (ADR-0021) ----------------------------------------------------------------
+
+
+def _stored_attack_report() -> dict | None:
+    """Load the committed adversary-lab report, or None if it is missing or malformed.
+
+    Same discipline as ``_stored_report``: the file is ordinary user-writable data, so a truncated
+    or hand-edited one must produce the empty state rather than a 500.
+    """
+    from qvault.attack import report as attack_report
+
+    path = pathlib.Path(current_app.config["ATTACK_REPORT_PATH"])
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if attack_report.is_renderable(data) else None
+
+
+def _require_attack_lab() -> None:
+    """404 when the lab is disabled, matching the glassbox route's posture.
+
+    404 rather than 403: whether this instance exposes an attack lab is not information a visitor
+    needs, and a 403 confirms the route exists.
+    """
+    if not current_app.config.get("ATTACK_LAB_ENABLED"):
+        abort(404)
+
+
+@bp.get("/attack")
+@admin_required
+def attack_lab():
+    _require_attack_lab()
+    return render_template(
+        "admin/attack.html",
+        stored=_stored_attack_report(),
+        live=_live_run("attack"),
+        form=RunAttackLabForm(),
+    )
+
+
+@bp.post("/attack/run")
+@admin_required
+def run_attack_lab():
+    """Re-run the algorithm-level attacks inside the request.
+
+    **Only** the algorithm-level ones. The database-backed attacks forge signature rows and edit
+    ledger entries; running them here would corrupt the live database to prove a point about not
+    corrupting the live database. They come from the committed report instead, and the template
+    labels which is which — a run that quietly attacked real data would be exactly the kind of
+    demonstration aid ADR-0011 forbids.
+    """
+    from qvault.attack import lab as attack_lab_module
+
+    _require_attack_lab()
+    if not RunAttackLabForm().validate_on_submit():
+        flash("Could not start the attack lab.", "danger")
+        return redirect(url_for("admin.attack_lab"))
+
+    live = attack_lab_module.run(
+        include_system=False, backend=current_app.extensions["crypto"].backend
+    )
+    breached = live["summary"]["breached"] + live["summary"]["vacuous"] + live["summary"]["error"]
+    if breached:
+        flash(
+            f"{count_noun(breached, 'attack')} did not behave as expected. The detail is below. "
+            "This is a finding, not a display problem.",
+            "danger",
+        )
+    else:
+        # "persist": this is the run's verdict, read against the detail below; it must not fade.
+        flash(
+            f"{live['summary']['as_expected']} of {live['summary']['total']} attacks behaved as "
+            "expected, each confirmed by its control.",
+            "persist",
+        )
+    return redirect(url_for("admin.attack_lab", run=_hold_live_run("attack", live)))
+
+
+# --- Shor side by side (plan: docs/plans/shor-side-by-side.md) -----------------------------------
+#
+# The step-through behind /admin/attack/shor. The page is rendered with the ML-DSA column, the toy
+# LWE instance and the scaling chart; the RSA column is driven from the browser, one JSON POST per
+# button, each computed here by qvault.attack.shor_walkthrough. Runs are held between presses in a
+# small in-process store per kind (one worker, as for the live runs above), so page loads cannot
+# push out a judge's RSA run. Every POST carries the CSRF token in X-CSRFToken and counts against a
+# rate-limit bucket: "attack_shor_sim" for the two that build a state vector, "attack_shor" for
+# the rest. A state vector already being built in this process answers 503 (SimulatorBusy).
+
+_shor_runs: dict = {}
+_shor_runs_lock = threading.Lock()
+
+
+def _shor_store(kind: str):
+    from qvault.attack import shor_walkthrough as walk
+
+    with _shor_runs_lock:
+        if kind not in _shor_runs:
+            keep = walk.RSA_RUNS_KEPT if kind == "rsa" else walk.LWE_RUNS_KEPT
+            _shor_runs[kind] = walk.RunStore(keep=keep)
+        return _shor_runs[kind]
+
+
+def _shor_busy(exc: Exception):
+    response = _shor_error(str(exc), 503)
+    response.headers["Retry-After"] = "1"
+    return response
+
+
+def _shor_json() -> dict:
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _shor_error(message: str, status: int = 400):
+    from flask import jsonify
+
+    response = jsonify(ok=False, error=message)
+    response.status_code = status
+    return response
+
+
+_SHOR_EXPIRED = "This run is no longer held on the server. Start a new key."
+
+
+@bp.get("/attack/shor")
+@admin_required
+def shor_side_by_side():
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    provider = current_app.extensions["crypto"].signature("ML-DSA-65")
+    lwe_run = walk.new_lwe_run()
+    lwe_id = _shor_store("lwe").put(lwe_run)
+    # The printed instance is the n = 4 one the brute force searches, not a second draw.
+    lwe = walk.lwe_demo(instance=lwe_run.instances[4])
+    return render_template(
+        "admin/shor.html",
+        mldsa=walk.mldsa_panel(provider),
+        hardness=walk.mldsa_hardness("ML-DSA-65"),
+        lwe=lwe,
+        lwe_id=lwe_id,
+        lwe_sizes=walk.LWE_SIZES,
+        brute_cap=walk.BRUTE_CAP_S,
+        scaling=walk.scaling_series(),
+        shor_2048=walk.cost.shor_resources(2048),
+        message_max=walk.MESSAGE_MAX,
+        max_n=walk.shor.MAX_N_STATEVECTOR,
+    )
+
+
+@bp.post("/attack/shor/rsa/new")
+@admin_required
+def shor_rsa_new():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    try:
+        run, started = walk.start_run(_shor_json().get("message"))
+    except walk.SimulatorBusy as exc:
+        return _shor_busy(exc)
+    except ValueError as exc:
+        return _shor_error(str(exc))
+    return jsonify(ok=True, run=_shor_store("rsa").put(run), **started)
+
+
+@bp.post("/attack/shor/rsa/base")
+@admin_required
+def shor_rsa_base():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    run = _shor_store("rsa").get(_shor_json().get("run"), walk.RSARun)
+    if run is None:
+        return _shor_error(_SHOR_EXPIRED, 404)
+    if len(run.bases_tried) >= walk.MAX_BASE_DRAWS:
+        return _shor_error("This key has had its share of bases. Start a new key.")
+    try:
+        return jsonify(ok=True, **walk.new_base(run))
+    except walk.SimulatorBusy as exc:
+        return _shor_busy(exc)
+
+
+@bp.post("/attack/shor/rsa/measure")
+@admin_required
+def shor_rsa_measure():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    run = _shor_store("rsa").get(_shor_json().get("run"), walk.RSARun)
+    if run is None:
+        return _shor_error(_SHOR_EXPIRED, 404)
+    try:
+        return jsonify(ok=True, **walk.measure(run))
+    except ValueError as exc:
+        return _shor_error(str(exc))
+
+
+@bp.post("/attack/shor/rsa/forge")
+@admin_required
+def shor_rsa_forge():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    data = _shor_json()
+    run = _shor_store("rsa").get(data.get("run"), walk.RSARun)
+    if run is None:
+        return _shor_error(_SHOR_EXPIRED, 404)
+    try:
+        return jsonify(ok=True, **walk.forge_for(run, data.get("message")))
+    except ValueError as exc:
+        return _shor_error(str(exc))
+
+
+@bp.post("/attack/shor/lwe/brute")
+@admin_required
+def shor_lwe_brute():
+    from flask import jsonify
+
+    from qvault.attack import shor_walkthrough as walk
+
+    _require_attack_lab()
+    data = _shor_json()
+    run = _shor_store("lwe").get(data.get("run"), walk.LWERun)
+    if run is None:
+        return _shor_error("This instance is no longer held on the server. Reload the page.", 404)
+    n = data.get("n")
+    if not isinstance(n, int) or isinstance(n, bool) or n not in walk.LWE_SIZES:
+        return _shor_error("Unknown size.")
+    return jsonify(ok=True, **walk.brute_force_step(run, n))

@@ -1,0 +1,619 @@
+/* Q-Vault screens (rework R1, the conversion): the pages that wore the compatibility layer until
+ * now. Sign-in and the public pages, workspace and members, notifications, Security (algorithms,
+ * keys, performance, chain, the adversary lab), the documentation, the trace and the public record.
+ *
+ * Built only from tokens.css and the components in components.css and evidence.css, under the same
+ * rules: colour from tokens, font sizes from the type scale, radius by role, shadows on overlays
+ * only, and the q- prefix. Loaded after evidence.css.
+ */
+
+/* ================================================================ the page region (base.html) */
+
+.q-body { flex: 1; padding: var(--space-24) var(--gutter) var(--space-48); min-width: 0; }
+/* Signed out: no sidebar, so a sign-in form stands in the middle of what the header leaves. */
+.q-body--anon { display: grid; place-items: center; }
+.q-body--anon > div { min-width: 0; }
+
+/* A flashed message that stays until it is dismissed (_flash.html): a banner with a close button. */
+.q-flash { align-items: flex-start; padding: var(--space-6) var(--space-6) var(--space-6) var(--space-16); }
+.q-flash > .q-icon { margin-top: 8px; }
+.q-flash__m { flex: 1; min-width: 0; padding-block: var(--space-6); overflow-wrap: anywhere; }
+.q-flash__x { color: var(--text-muted); }
+.q-flash__x:hover { background: var(--fill-hover); }
+
+/* ================================================================ shared pieces */
+
+.q-stack { display: grid; gap: var(--space-16); min-width: 0; align-content: start; }
+.q-stack--lg { gap: var(--space-24); }
+.q-measure { max-width: 720px; }
+/* Secondary text set inline in a sentence or a cell ("classical", "12 ms"). */
+.q-small { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-strong { font-weight: var(--text-body-strong-weight); color: var(--text); }
+.q-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.q-panel__bd > :first-child { margin-top: 0; }
+.q-panel__bd > :last-child { margin-bottom: 0; }
+.q-panel__hd > .q-small { margin-left: auto; text-align: right; }
+p.q-panel__bd { margin: 0; }
+.q-kv + .q-panel__ft { padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
+.q-panel__hd > .q-badge, .q-panel__hd > .q-tag { flex: none; }
+/* A body that stacks its paragraphs and forms spaces them by the gap alone. */
+.q-panel__bd.q-stack > *, .q-panel__bd form.q-stack, .q-panel__bd form.q-stack > * { margin: 0; }
+/* A panel whose body is a table: the table takes the panel's edge instead of drawing its own. */
+.q-panel--table { overflow: hidden; }
+.q-panel--table > .q-table-wrap { border: 0; border-radius: 0; }
+.q-panel > .q-panel__bd + .q-table-wrap { border-top: var(--border-width) solid var(--border); }
+.q-table td .q-tag + .q-badge, .q-table td .q-badge + .q-tag { margin-left: var(--space-4); }
+.q-table td.is-num { font-variant-numeric: tabular-nums; }
+.q-table .q-hash { vertical-align: middle; }
+
+/* A danger section: the destructive actions, kept apart from the settings above them. */
+.q-danger { display: grid; gap: var(--space-4); }
+.q-danger + .q-danger { margin-top: var(--space-16); padding-top: var(--space-16); border-top: var(--border-width) solid var(--border); }
+.q-danger__t { margin: 0; font-weight: var(--text-body-strong-weight); }
+.q-danger p { margin: 0; color: var(--text-muted); }
+.q-danger form { margin: var(--space-8) 0 0; }
+
+/* A row of buttons under a form or a panel. */
+.q-btnrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin: 0; }
+.q-btnrow form { margin: 0; }
+
+/* Figures: where a number is the content (keys due, payouts in progress). The separators are the
+ * grid gap, so a wrapped last row never keeps a stray rule. */
+.q-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--border-width); margin: 0 0 var(--space-24); padding: 0;
+  background: var(--border); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden;
+}
+.q-stat { display: grid; gap: var(--space-2); align-content: start; padding: var(--space-12) var(--space-16); background: var(--surface); min-width: 0; margin: 0; }
+.q-stat > p { margin: 0; }
+.q-stat__v {
+  margin: 0; font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight);
+  letter-spacing: var(--text-title-tracking); font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere;
+}
+.q-stat__v.is-warning { color: var(--status-warning-fg); }
+.q-stat__v code { font-family: var(--font-mono); font-size: var(--text-title-sm-size); font-weight: var(--weight-medium); letter-spacing: 0; }
+.q-stat__l { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-stat__s { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* A size or a time beside its value, relative to the largest in the table. A neutral bar: it
+ * compares, it does not judge. */
+.q-bar { display: block; height: 4px; margin-top: var(--space-4); min-width: 48px; border-radius: var(--radius-full); background: var(--fill-hover); overflow: hidden; }
+.q-bar__fill { display: block; height: 100%; border-radius: var(--radius-full); background: var(--text-muted); }
+.q-bar__fill--alt { background: var(--border-strong); }
+
+/* ================================================================ sign-in and the public pages */
+
+.q-auth { width: 100%; max-width: 360px; margin: 0 auto; padding: var(--space-32) 0; }
+.q-auth--wide { max-width: 480px; }
+.q-auth__t { margin: 0 0 var(--space-16); font-size: var(--text-title-size); line-height: var(--text-title-line); font-weight: var(--text-title-weight); letter-spacing: var(--text-title-tracking); }
+.q-auth__p { margin: 0 0 var(--space-16); color: var(--text-muted); }
+.q-auth form { margin: 0; }
+.q-auth .q-input { height: var(--control-h-lg); }
+.q-auth .q-btn { --btn-h: var(--control-h-lg); }
+.q-auth .q-dev .q-btn { --btn-h: var(--control-h); }
+.q-auth__foot { margin: var(--space-16) 0 0; color: var(--text-muted); }
+.q-auth .q-dev { margin-top: var(--space-16); }
+.q-auth .q-dev p { margin: 0; }
+.q-auth .q-panel { margin-bottom: var(--space-16); }
+.q-auth .q-kv { --kv-label: 112px; }
+.q-auth .q-banner { margin: var(--space-16) 0; }
+.q-auth__foot + .q-auth__foot { margin-top: var(--space-8); }
+
+/* The honest password step (_password_step.html): the truth about the password, the password,
+   and the box that says it was read. */
+.q-pwstep { border: 0; margin: var(--space-8) 0 var(--space-16); padding: 0; min-width: 0; }
+.q-pwstep__t { padding: 0; margin-bottom: var(--space-8); font-weight: var(--weight-strong); }
+.q-auth .q-pwstep .q-banner { margin: 0 0 var(--space-16); }
+.q-pwstep__ack { margin-bottom: var(--space-6); }
+.q-pwstep__err { margin-bottom: var(--space-8); }
+
+/* Forgot password: what cannot be done, what can, and what is coming. */
+.q-recover { margin: 0 0 var(--space-24); padding: 0; list-style: none; display: grid; gap: var(--space-16); }
+.q-recover__t { margin: 0 0 var(--space-8); font-size: var(--text-body-size); font-weight: var(--weight-strong); }
+.q-recover h3 { margin: 0 0 var(--space-4); font-size: var(--text-body-size); font-weight: var(--weight-medium); }
+.q-recover p { margin: 0; color: var(--text-muted); }
+.q-recover .q-btn { margin-top: var(--space-12); }
+
+/* The Recovery Kit (plan R9): the kit shown once, as a card that prints and reads like a document;
+   its code in large mono groups that wrap two to a line on a phone. */
+.q-kitpage { width: 100%; max-width: 560px; margin: 0 auto; padding: var(--space-32) 0; }
+.q-kitpage .q-banner { margin: 0 0 var(--space-16); }
+.q-kit { margin: 0 0 var(--space-16); padding: var(--space-20); border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card); background: var(--surface-raised); box-shadow: var(--shadow-e1); }
+.q-kit__hd { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-8); margin: 0 0 var(--space-12); }
+.q-kit__t { margin: 0; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-kit__id { font-family: var(--font-mono); color: var(--text-muted); }
+.q-kit .q-kv { --kv-label: 136px; margin: 0 0 var(--space-16); }
+.q-kit__code { display: grid; grid-template-columns: repeat(4, max-content); justify-content: start; gap: var(--space-8) var(--space-32); margin: 0 0 var(--space-16); padding: var(--space-16) var(--space-20); border-radius: var(--radius-control); background: var(--bg-subtle); font-family: var(--font-mono); font-size: var(--text-title-size); line-height: var(--text-title-line); letter-spacing: 0.08em; }
+@media (max-width: 560px) { .q-kit__code { grid-template-columns: repeat(2, max-content); justify-content: space-around; } }
+.q-kit__g { white-space: nowrap; }
+.q-kit__sep { display: none; }
+.q-kit__note { margin: 0; color: var(--text-muted); }
+.q-kit__acts { margin: 0 0 var(--space-24); }
+.q-kit__confirm { margin: 0 0 var(--space-12); }
+.q-kit__later .q-cap { margin: var(--space-8) 0 0; }
+.q-recovery-banner .q-banner { margin: 0 0 var(--space-16); }
+/* On a phone the banner's action goes under its words, which then keep the whole width. */
+@media (max-width: 560px) {
+  .q-recovery-banner .q-banner { flex-wrap: wrap; }
+  .q-recovery-banner .q-banner__act { flex-basis: 100%; flex-wrap: wrap; padding-left: var(--space-24); }
+}
+@media print {
+  .q-kitpage > :not(.q-kit) { display: none; }
+  .q-kit { box-shadow: none; }
+}
+
+/* ================================================================ the public pages (rework R6)
+ * The landing, Security, Pricing, Changelog and Status, and the footer under every signed-out page
+ * (base.html). Signed out they sit in one centred column, wider than the sign-in forms. */
+
+.q-body--public { display: block; }
+.q-body--public > div { max-width: 1080px; margin-inline: auto; }
+.q-section__t { margin: 0 0 var(--space-12); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); font-weight: var(--text-title-sm-weight); }
+.q-muted { color: var(--text-muted); }
+
+/* The landing: the job, the actions, the live log strip, then the product. */
+.q-landing { display: grid; gap: var(--space-48); padding-block: var(--space-24) var(--space-16); }
+.q-hero { display: grid; justify-items: center; text-align: center; gap: var(--space-16); }
+.q-hero__t {
+  margin: 0; font-size: var(--text-figure-size); line-height: var(--text-figure-line);
+  font-weight: var(--text-figure-weight); letter-spacing: var(--text-figure-tracking); text-wrap: balance;
+}
+.q-hero__lead { margin: 0; max-width: 40rem; font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); color: var(--text-muted); text-wrap: pretty; }
+.q-hero__act { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); }
+
+/* The live log strip: one line of facts from the log, a dot for the witness's state. */
+.q-logstrip {
+  display: inline-flex; align-items: flex-start; gap: var(--space-8); max-width: 100%; margin-top: var(--space-8);
+  padding: var(--space-6) var(--space-12); border: var(--border-width) solid var(--border); border-radius: var(--radius-full);
+  background: var(--surface); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted);
+}
+.q-logstrip__dot { flex: none; width: 8px; height: 8px; margin-top: 4px; border-radius: var(--radius-full); background: var(--status-success-fg); }
+.q-logstrip--warn .q-logstrip__dot { background: var(--status-warning-fg); }
+.q-logstrip--bad .q-logstrip__dot { background: var(--status-critical-fg); }
+.q-logstrip__l { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-2) var(--space-8); margin: 0; padding: 0; list-style: none; text-align: left; }
+.q-logstrip__l > li + li::before { content: ""; display: inline-block; width: 3px; height: 3px; margin-right: var(--space-8); vertical-align: middle; border-radius: var(--radius-full); background: var(--text-subtle); }
+.q-logstrip a strong { color: inherit; }
+.q-logstrip strong { color: var(--text); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.q-logstrip time { font-variant-numeric: tabular-nums; }
+.q-logstrip__fp { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+/* On a phone the facts would wrap mid-line, so the pill becomes a card with one fact per line. */
+@media (max-width: 560px) {
+  .q-logstrip { border-radius: var(--radius-card); }
+  .q-logstrip__l { flex-direction: column; align-items: flex-start; }
+  .q-logstrip__l > li + li::before { content: none; }
+}
+
+/* The product, as it is: a real screenshot in the reader's theme. */
+.q-shot { margin: 0 auto; max-width: 768px; display: grid; gap: var(--space-8); justify-items: center; }
+.q-shot img { display: block; width: 100%; height: auto; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.q-shot figcaption { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+.q-steps__l { display: grid; gap: var(--space-24); margin: 0; padding: 0; list-style: none; counter-reset: step; }
+@media (min-width: 768px) { .q-steps__l { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.q-steps__l > li { counter-increment: step; }
+.q-steps__l > li::before {
+  content: counter(step); display: inline-grid; place-items: center; width: 24px; height: 24px; margin-bottom: var(--space-8);
+  border-radius: var(--radius-full); background: var(--accent-subtle); color: var(--accent-fg); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums;
+}
+.q-steps h3 { margin: 0 0 var(--space-4); font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-strong); }
+.q-steps p { margin: 0; color: var(--text-muted); }
+
+.q-split { display: grid; gap: var(--space-24); padding-top: var(--space-24); border-top: var(--border-width) solid var(--border); }
+@media (min-width: 768px) { .q-split { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-48); } }
+.q-split p { margin: 0 0 var(--space-12); }
+
+/* Security: the levels ladder, Q-Vault's rung marked. */
+.q-public { min-width: 0; }
+.q-sec .q-table-wrap { margin-bottom: var(--space-16); }
+.q-prose .q-ladder { display: grid; gap: var(--space-8); margin: 0 0 var(--space-16); padding: 0; list-style: none; }
+.q-prose .q-ladder > li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-12); margin: 0; padding: var(--space-12) var(--space-16); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.q-ladder > li.is-here { border-color: var(--accent-border); background: var(--accent-subtle); }
+.q-ladder__n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-full); background: var(--fill); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+.q-ladder > li.is-here .q-ladder__n { background: var(--accent); color: var(--accent-text); }
+.q-prose .q-ladder h3 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin: 0 0 var(--space-4); font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-strong); }
+.q-prose .q-ladder p { margin: 0; color: var(--text-muted); }
+
+/* Status: the overall line, one row per check, and what the colours mean. */
+.q-status { max-width: 720px; display: grid; gap: var(--space-16); }
+.q-status__all { display: flex; align-items: center; gap: var(--space-8); margin: 0; padding: var(--space-12) var(--space-16); border-radius: var(--radius-card); border: var(--border-width) solid var(--status-success-border); background: var(--status-success-bg); color: var(--status-success-fg); font-weight: var(--weight-strong); }
+.q-status__all--degraded { border-color: var(--status-warning-border); background: var(--status-warning-bg); color: var(--status-warning-fg); }
+.q-status__all--down { border-color: var(--status-critical-border); background: var(--status-critical-bg); color: var(--status-critical-fg); }
+.q-status__dot { width: 10px; height: 10px; flex: none; border-radius: var(--radius-full); background: currentColor; }
+.q-status__rows { display: grid; margin: 0 0 var(--space-16); padding: 0; list-style: none; border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+.q-status__row { padding: var(--space-12) var(--space-16); }
+.q-status__row + .q-status__row { border-top: var(--border-width) solid var(--border); }
+.q-status__h { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); }
+.q-status__n { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-strong); }
+.q-status__s { margin: var(--space-4) 0 0; }
+.q-status__d { margin: var(--space-2) 0 0; color: var(--text-muted); }
+.q-status__key { display: grid; gap: var(--space-8); margin: 0; }
+.q-status__key > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--space-12); align-items: baseline; }
+.q-status__key dt, .q-status__key dd { margin: 0; }
+.q-status__key dd { color: var(--text-muted); }
+
+/* Changelog: one section per release. */
+.q-changes section + section { margin-top: var(--space-32); }
+.q-changes h2 { margin-top: 0; }
+
+/* The footer under every signed-out page. */
+.q-foot { border-top: var(--border-width) solid var(--border); background: var(--bg-subtle); padding: var(--space-32) var(--gutter) var(--space-40); }
+.q-foot__in { max-width: 1080px; margin-inline: auto; display: grid; gap: var(--space-24); }
+.q-foot__cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-24); }
+.q-foot__h { margin: 0 0 var(--space-8); font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-strong); color: var(--text); }
+.q-foot ul { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.q-foot a { color: var(--text-muted); text-decoration: none; }
+.q-foot a:hover { color: var(--text); text-decoration: underline; }
+.q-foot__note { margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+
+/* ================================================================ workspace and members */
+
+.q-members .q-tabs { margin-bottom: var(--space-24); }
+.q-members__note { margin: var(--space-12) 0 0; max-width: 76ch; }
+/* A member's role is a select with Save beside it, on one row in the table; on a phone the select
+ * keeps its own width rather than stretching away from its chevron. The same on a vault's Members
+ * tab. */
+:is(.q-members, .q-vault) .q-inline-form .q-field--inline { flex: 0 0 auto; }
+:is(.q-members, .q-vault) .q-inline-form .q-field--inline .q-select { width: auto; max-width: 160px; }
+.q-invite { display: grid; gap: var(--space-24); align-items: start; }
+@media (min-width: 1100px) { .q-invite { grid-template-columns: minmax(0, 640px) 320px; } }
+.q-invite form { display: grid; gap: var(--space-16); margin: 0; }
+.q-invite .q-choices { margin-bottom: 0; }
+.q-link { display: flex; align-items: center; gap: var(--space-8); }
+.q-link .q-input { flex: 1; min-width: 0; }
+.q-link + p { margin: var(--space-12) 0 0; }
+
+/* ================================================================ the vault page (vaults/detail.html) */
+
+/* Facts and a body in one Treasury panel, in either order, are parted by a hairline. */
+.q-vault .q-kv + .q-panel__bd, .q-vault .q-panel__bd + .q-kv, .q-vault .q-panel__bd + .q-panel__bd { border-top: var(--border-width) solid var(--border); }
+/* Approvers on chain sits in the narrow column: a name needs less room than a fact's label. */
+.q-onchain { --kv-label: 120px; }
+/* Settings: the rule's checkbox keeps a field's spacing above the one Save. */
+.q-vault .q-panel__bd > .q-choice { margin-bottom: var(--space-16); }
+/* On a phone the five tabs fit the width (down to 360px) without their counts, which the list
+ * under them gives anyway, rather than scroll with the last one cut off mid-word. */
+@media (max-width: 767px) {
+  .q-vault .q-tabs { gap: 0; }
+  .q-vault .q-tab__l { padding-inline: var(--space-6); }
+  .q-vault .q-tab[aria-current="page"]::after { left: var(--space-6); right: var(--space-6); }
+  .q-vault .q-tab .q-count { display: none; }
+}
+/* A decision's type is a short name, kept on one line ("Production access"). */
+.q-vault .q-table td.q-c-type { white-space: nowrap; }
+
+/* ================================================================ notifications (inbox) */
+
+.q-inbox .q-tabs { margin-bottom: var(--space-16); }
+.q-inbox .nlist { border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.q-inbox .q-empty { border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
+
+/* ================================================================ Security (admin) */
+
+.q-admin .q-ph { margin-bottom: var(--space-16); }
+.q-admin .q-tabs { margin-bottom: var(--space-24); }
+.q-admin__run { display: flex; align-items: center; gap: var(--space-8); margin: 0; }
+.q-admin__run .q-field { margin: 0; }
+.q-admin .q-split { gap: var(--space-24); }
+.q-downgrade {
+  margin: 0 0 var(--space-16); padding: var(--space-12) var(--space-16);
+  border: var(--border-width) solid var(--status-critical-border); border-radius: var(--radius-card); background: var(--status-critical-bg);
+}
+.q-downgrade .q-input { margin-top: var(--space-8); }
+.q-cmdline { display: inline-block; margin-top: var(--space-12); padding: var(--space-4) var(--space-8); border-radius: var(--radius-badge); background: var(--fill); color: var(--text-muted); }
+
+/* --- the adversary lab (ADR-0021) --------------------------------------------------------------
+ * One card per attack, and inside it two columns: what happened against the real system, and what
+ * happened against the control. The side-by-side layout IS the argument, so the two runs are never
+ * collapsed while there is room to set them next to each other. Colour tracks the CLAIM: green
+ * where it held, red where it did not. */
+
+.q-atk { margin-bottom: var(--space-16); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.q-atk--failed { border-color: var(--status-critical-border); }
+.q-atk__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border); background: var(--bg-subtle); }
+.q-atk__n { min-width: var(--space-24); font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-atk__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-atk__status { margin-left: auto; display: flex; align-items: center; gap: var(--space-8); }
+.q-atk__q { margin: 0; padding: var(--space-8) var(--space-16); color: var(--text-muted); font-style: italic; border-bottom: var(--border-width) solid var(--border); }
+.q-atk__model { display: grid; gap: var(--space-8) var(--space-16); margin: 0; padding: var(--space-12) var(--space-16); border-bottom: var(--border-width) solid var(--border); }
+@media (min-width: 56rem) { .q-atk__model { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.q-atk__model > div { min-width: 0; }
+.q-atk__model dt { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
+.q-atk__model dd { margin: 0; color: var(--text); }
+.q-atk__runs { display: grid; }
+@media (min-width: 62rem) { .q-atk__runs { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.q-atk__run { min-width: 0; padding: var(--space-12) var(--space-16) var(--space-16); }
+.q-atk__run + .q-atk__run { border-top: var(--border-width) solid var(--border); }
+@media (min-width: 62rem) { .q-atk__run + .q-atk__run { border-top: 0; border-left: var(--border-width) solid var(--border); } }
+.q-atk__runhd { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-8); margin-bottom: var(--space-8); }
+.q-atk__runt { margin: 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
+.q-atk__steps { margin: 0; padding: 0; list-style: none; }
+.q-atk__step { padding: var(--space-6) 0; border-top: var(--border-width) solid var(--border); }
+.q-atk__step:first-child { padding-top: 0; border-top: 0; }
+.q-atk__label { font-weight: var(--weight-medium); color: var(--text); }
+.q-atk__detail { margin: var(--space-2) 0 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+/* The value is the evidence: never truncated, because a shortened digest cannot be checked.
+ * `anywhere`, not `break-all`, so a line mixing prose and numbers is not split mid-word. */
+.q-atk__val {
+  margin-top: var(--space-4); padding: var(--space-4) var(--space-6);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+  background: var(--fill); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge);
+  white-space: pre-wrap; color: var(--text); overflow-wrap: anywhere;
+}
+.q-atk__note { margin: var(--space-8) 0 0; padding-left: var(--space-8); border-left: 2px solid var(--border-hover); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-atk-run { margin-bottom: var(--space-16); }
+.q-atk-run .q-stats { margin-bottom: 0; }
+.q-atk-run .q-stats + .q-note { margin-top: var(--space-16); }
+.q-admin > .q-tech__t { margin-top: var(--space-24); }
+
+/* ================================================================ Shor side by side
+ * Two columns of numbered steps on a laptop, stacked on a phone. Every number is a figure a judge
+ * may check by hand, so all of them are tabular and none is truncated: long rows scroll inside
+ * their own box rather than widening the page. Charts are SVG drawn from tokens (shor.js and the
+ * scaling chart in admin/shor.html), so they follow the theme; data marks use the ink ramp, never
+ * the accent (S3), and status colour only where the badge's meaning applies. */
+.q-shor .q-panel { margin-bottom: var(--space-16); }
+.q-shor__list { margin: 0; padding: var(--space-16) var(--space-16) var(--space-16) var(--space-32); display: grid; gap: var(--space-6); color: var(--text-muted); }
+.q-shor__cols { display: grid; gap: 0 var(--space-16); align-items: start; }
+@media (min-width: 62rem) { .q-shor__cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.q-shor__col { min-width: 0; font-variant-numeric: tabular-nums; }
+.q-shor__start { border-bottom: var(--border-width) solid var(--border); }
+.q-shor__form { margin: 0; }
+.q-shor__form .q-field { margin-bottom: var(--space-12); }
+.q-shor__start .q-note:empty { display: none; }
+.q-shor__steps { margin: 0; padding: 0; list-style: none; }
+.q-shor__step { padding: var(--space-12) var(--space-16) var(--space-16); border-top: var(--border-width) solid var(--border); min-width: 0; }
+.q-shor__steps > .q-shor__step:first-child { border-top: 0; }
+.q-shor__sh { display: flex; align-items: baseline; gap: var(--space-8); margin-bottom: var(--space-8); }
+.q-shor__n {
+  flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--radius-full);
+  background: var(--fill); color: var(--text-muted); font-size: var(--text-caption-size); line-height: 1; font-weight: var(--weight-strong);
+}
+.q-shor__t { margin: 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--text-body-strong-weight); }
+.q-shor__bd { display: grid; gap: var(--space-8); min-width: 0; padding-left: calc(20px + var(--space-8)); }
+@media (max-width: 40rem) { .q-shor__bd { padding-left: 0; } }
+.q-shor__bd > p { margin: 0; color: var(--text-muted); }
+.q-shor__bd > .q-note { margin: 0; }
+.q-shor__bd > .q-note:empty { display: none; }
+.q-shor__h { margin: var(--space-8) 0 0; font-size: var(--text-body-size); line-height: var(--text-body-line); font-weight: var(--weight-medium); }
+.q-shor__eq { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-4) var(--space-16); margin: 0; }
+.q-shor__eq > div { display: contents; }
+.q-shor__eq dt { color: var(--text-subtle); }
+.q-shor__eq dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.q-shor__hex { display: inline-block; font-size: var(--text-caption-size); line-height: var(--text-caption-line); overflow-wrap: anywhere; word-break: break-all; color: var(--text-muted); }
+.q-shor__vec { white-space: normal; }
+.q-table .q-shor__vec { white-space: nowrap; }
+/* On a phone the two comparison tables become stacked rows, so no column hides off the edge:
+ * the checks table puts each answer under its own label, and the brute-force table puts the
+ * result on its own line under the four figures. */
+@media (max-width: 40rem) {
+  .q-shor__checks thead { display: none; }
+  .q-shor__checks tr, .q-shor__checks td { display: block; }
+  .q-shor__checks td { height: auto; min-width: 0; }
+  .q-shor__checks td:first-child { font-weight: var(--weight-medium); padding-bottom: 0; }
+  .q-shor__checks td[data-label]::before { content: attr(data-label); display: block; margin-bottom: var(--space-4); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+  .q-shor__brute tr { display: grid; grid-template-columns: 2.5rem repeat(3, minmax(0, 1fr)); }
+  .q-shor__brute th:last-child { display: none; }
+  .q-shor__brute td[data-b="result"] { grid-column: 1 / -1; height: auto; padding-top: 0; }
+  .q-shor__brute td, .q-shor__brute th { padding-inline: var(--space-8); }
+}
+.q-shor__key { color: var(--text) !important; font-weight: var(--weight-medium); }
+.q-shor__tw { max-width: 100%; }
+.q-shor__tw .q-table th, .q-shor__tw .q-table td { padding-inline: var(--space-12); }
+.q-shor__cap { caption-side: top; text-align: left; padding: var(--space-8) var(--space-12) 0; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-shor__checks td { vertical-align: top; min-width: 9rem; }
+.q-shor__checks td .q-cap { display: block; margin-top: var(--space-4); }
+.q-shor__how { font-weight: var(--weight-medium); color: var(--text-muted); }
+.q-shor__band { fill: var(--fill); }
+.q-shor__cell { fill: var(--text); }
+.q-shor__lwe tr.q-shor__used td:first-child { font-weight: var(--weight-strong); }
+.q-shor tr.q-shor__pick > td { font-weight: var(--weight-strong); color: var(--text); }
+.q-shor__legend { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-16); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-shor__key-i { display: inline-flex; align-items: center; gap: var(--space-6); }
+.q-shor__key-i svg { flex: none; overflow: visible; }
+.q-shor__refusal { padding: var(--space-8) var(--space-12); border-radius: var(--radius-badge); background: var(--fill); border: var(--border-width) solid var(--border); }
+.q-shor__refusal p { margin: 0; overflow-wrap: anywhere; }
+.q-shor__rl { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-shor__seq {
+  display: flex; gap: var(--space-4) var(--space-8); overflow-x: auto; padding: var(--space-6) var(--space-8);
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-badge); background: var(--bg-subtle);
+  font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); white-space: nowrap;
+}
+.q-shor__seq:empty { display: none; }
+.q-shor__seq b { color: var(--text); font-weight: var(--weight-strong); }
+.q-shor__seq span { display: inline-grid; justify-items: center; }
+.q-shor__seq i { font-style: normal; color: var(--text-subtle); }
+.q-shor__ok { color: var(--status-critical-fg); font-weight: var(--weight-medium); }
+.q-shor__ft { display: flex; flex-wrap: wrap; gap: var(--space-8); padding-top: var(--space-12); border-top: var(--border-width) solid var(--border); }
+.q-shor__again { margin-top: var(--space-8); }
+.q-shor__calc { margin: 0; padding: var(--space-8) var(--space-12); border-left: 2px solid var(--border-hover); color: var(--text); }
+.q-shor__calc p { margin: 0; }
+.q-shor__calc p + p { margin-top: var(--space-4); }
+
+/* Charts. Text inside the SVG is set from the caption scale; lines and marks from the ink ramp. */
+.q-shor__chart svg, .q-shor__svg { display: block; width: 100%; height: auto; overflow: visible; }
+.q-shor__chart--zoom { margin-top: calc(-1 * var(--space-4)); }
+.q-shor__grid { stroke: var(--border); stroke-width: 1; }
+.q-shor__tick, .q-shor__base { stroke: var(--border-strong); stroke-width: 1; }
+.q-shor__axis { fill: var(--text-subtle); font-size: var(--text-caption-size); font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+.q-shor__lbl { fill: var(--text-muted); font-size: var(--text-caption-size); font-family: var(--font-sans); }
+.q-shor__data { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-shor__data summary { cursor: pointer; width: max-content; }
+.q-shor__data .q-table-wrap { margin-top: var(--space-8); }
+.q-shor__lbl--strong { fill: var(--text); font-weight: var(--weight-strong); }
+.q-shor__line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.q-shor__line--rsa-classical { stroke: var(--text-subtle); stroke-dasharray: 5 4; }
+.q-shor__line--rsa-shor { stroke: var(--text); stroke-width: 2.5; }
+.q-shor__line--mldsa-classical { stroke: var(--text-subtle); stroke-dasharray: 2 3; }
+.q-shor__line--mldsa-quantum { stroke: var(--text-muted); }
+.q-shor__pt { stroke: var(--surface); stroke-width: 1.5; fill: var(--text-subtle); }
+.q-shor__pt--rsa-shor, .q-shor__pt--mldsa-quantum { fill: var(--text); }
+.q-shor__seqline { fill: none; stroke: var(--border-strong); stroke-width: 1; }
+.q-shor__dot { fill: var(--text-muted); }
+.q-shor__dot--one { fill: var(--text); }
+.q-shor__period { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3; }
+.q-shor__bar { stroke: var(--text-subtle); stroke-width: 1; shape-rendering: crispEdges; }
+.q-shor__hit { fill: var(--text); }
+.q-shor__hitline { stroke: var(--text); stroke-width: 1; opacity: 0.55; }
+.q-shor__fig { margin: 0; display: grid; gap: var(--space-12); }
+.q-shor__figcap { display: grid; gap: var(--space-4); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); max-width: 72ch; }
+
+/* ================================================================ the audit log's developer row
+ * The tamper demonstration: an entry number and two buttons, on one baseline. The field has a label
+ * above it and the buttons do not, so the row aligns their bottom edges and gives the buttons the
+ * input's height (a touch target on a phone, where the stepper grows to one). */
+
+.q-tamper { align-items: flex-end; }
+.q-tamper .q-field { margin: 0; }
+.q-tamper .q-btn { --btn-h: var(--control-h); }
+@media (max-width: 767px) { .q-tamper .q-btn { --btn-h: var(--target-touch); } }
+
+/* ================================================================ the documentation */
+
+.q-docs { display: grid; gap: var(--space-24); align-items: start; }
+@media (min-width: 1100px) { .q-docs { grid-template-columns: minmax(0, 1fr) 280px; gap: var(--space-40); } }
+.q-docs .q-ph { margin-bottom: var(--space-24); }
+.q-docnav { display: grid; gap: var(--space-2); padding: var(--space-8); }
+.q-docnav a { padding: var(--space-6) var(--space-8); border-radius: var(--radius-control); color: var(--text-muted); text-decoration: none; }
+.q-docnav a:hover { background: var(--fill); color: var(--text); }
+.q-docnav a[aria-current="page"] { background: var(--accent-subtle); color: var(--accent-fg); font-weight: var(--weight-medium); }
+@media (min-width: 1100px) { .q-docs > nav { position: sticky; top: calc(var(--topbar-h) + var(--space-24)); } }
+
+/* Prose: the one place with a reading measure. */
+.q-prose { max-width: 68ch; min-width: 0; line-height: var(--text-title-sm-line); }
+/* A page's sections are h2 under its h1 (no level skipped, S24), drawn at the small title size. */
+.q-prose h2 { margin: var(--space-32) 0 var(--space-8); font-size: var(--text-title-sm-size); line-height: var(--text-title-sm-line); }
+.q-prose p, .q-prose ul, .q-prose ol { margin: 0 0 var(--space-16); }
+.q-prose ul, .q-prose ol { padding-left: var(--space-20); }
+.q-prose li { margin-bottom: var(--space-4); }
+.q-prose code { padding: 0 var(--space-4); border-radius: var(--radius-badge); background: var(--fill); }
+.q-prose pre {
+  margin: 0 0 var(--space-16); padding: var(--space-12) var(--space-16); overflow-x: auto;
+  border-radius: var(--radius-control); background: var(--fill); line-height: var(--text-code-line);
+}
+.q-prose pre code { padding: 0; background: none; }
+.q-prose .q-table-wrap { margin: 0 0 var(--space-16); }
+.q-prose .q-table { line-height: var(--text-body-line); }
+.q-prose .q-table td { vertical-align: top; }
+.q-doclist { max-width: 720px; }
+.q-doclist__l {
+  margin: 0; padding: 0; list-style: none; overflow: hidden;
+  border: var(--border-width) solid var(--border); border-radius: var(--radius-card); background: var(--surface);
+}
+.q-doclist__l > li { padding: var(--space-8) var(--space-16); }
+.q-doclist__l > li + li { border-top: var(--border-width) solid var(--border); }
+.q-doclist__l > li:hover { background: var(--fill); }
+.q-doclist a { color: var(--text); font-weight: var(--text-body-strong-weight); text-decoration: none; }
+.q-doclist a:hover { text-decoration: underline; }
+
+/* ================================================================ the glass box (/trace), ADR-0020
+ * The one screen where explanation IS the artefact. The dark surface is the machine's side: source
+ * code sits on the chrome colour, and the values it operated on sit on the light surface beside it. */
+
+.q-trace { display: flex; flex-direction: column; gap: var(--space-16); }
+/* The live indicator reports an actual live connection, so it is the one pulsing element. */
+.q-live { display: inline-flex; align-items: center; gap: var(--space-6); color: var(--text-subtle); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+.q-live__dot { width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--status-success-fg); animation: q-live-pulse 1.6s ease-in-out infinite; }
+.q-live[data-paused="1"] .q-live__dot { background: var(--border-strong); animation: none; }
+@keyframes q-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .q-live__dot { animation: none; } }
+
+/* One operation: a request that did cryptographic work. */
+.q-op { background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-card); overflow: hidden; }
+.q-op--running { border-color: var(--status-warning-border); }
+.q-op--failed { border-color: var(--status-critical-border); }
+.q-op__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-8) var(--space-16); border-bottom: var(--border-width) solid var(--border); background: var(--bg-subtle); }
+.q-op__seq, .q-op__ms, .q-step__n, .q-step__ms { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); white-space: nowrap; }
+.q-op__t { font-weight: var(--text-body-strong-weight); }
+.q-op__sub { font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-op__ms { margin-left: auto; color: var(--text-muted); }
+
+/* A step, numbered down the left so the sequence is countable. */
+.q-step { border-top: var(--border-width) solid var(--border); }
+.q-step:first-child { border-top: 0; }
+.q-step__hd { display: flex; align-items: baseline; gap: var(--space-8); padding: var(--space-8) var(--space-16); cursor: pointer; user-select: none; }
+.q-step__hd:hover { background: var(--fill); }
+.q-step__n { min-width: var(--space-20); }
+.q-step__label { font-weight: var(--weight-medium); }
+.q-step__ms { margin-left: auto; }
+.q-step__bd { display: grid; gap: var(--space-12); padding: 0 var(--space-16) var(--space-16) var(--space-40); }
+@media (min-width: 68rem) {
+  /* Code and values side by side once there is room for about 80 columns of mono. */
+  .q-step__bd { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: start; }
+}
+@media (max-width: 767px) { .q-step__bd { padding-left: var(--space-16); } }
+/* The note says WHY a step exists rather than what it does. */
+.q-step__note { grid-column: 1 / -1; margin: 0; padding-left: var(--space-8); border-left: 2px solid var(--border-hover); color: var(--text-muted); font-size: var(--text-caption-size); line-height: var(--text-caption-line); }
+
+/* --- the machine's side */
+.q-src { min-width: 0; background: var(--chrome-bg); border: var(--border-width) solid var(--chrome-border); border-radius: var(--radius-card); overflow: hidden; }
+.q-src__hd {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); padding: var(--space-6) var(--space-12);
+  border-bottom: var(--border-width) solid var(--chrome-border);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--chrome-text-muted);
+}
+.q-src__hd b { color: var(--chrome-text); font-weight: var(--weight-medium); }
+/* Capped and scrollable inside itself, so one long function does not swallow the sequence. */
+.q-src pre { margin: 0; padding: var(--space-12); overflow: auto; max-height: 24rem; }
+.q-src code { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-code-line); color: var(--chrome-text); white-space: pre; }
+/* Muted rather than colourful: code is data here, so the highlighting is lightness steps on the
+ * chrome text plus one tint for literals, mixed from tokens so it follows the theme. */
+.q-src .c { color: var(--chrome-text-muted); font-style: italic; }
+.q-src .s { color: color-mix(in oklab, var(--chrome-text) 72%, var(--status-success-fg)); }
+.q-src .k { color: var(--chrome-text); font-weight: var(--weight-strong); }
+.q-src .n { color: color-mix(in oklab, var(--chrome-text) 80%, var(--chrome-text-muted)); }
+.q-src__more { padding: var(--space-6) var(--space-12); border-top: var(--border-width) solid var(--chrome-border); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--chrome-text-muted); }
+
+/* --- the evidence side */
+.q-vals { display: flex; flex-direction: column; gap: var(--space-8); min-width: 0; }
+.q-vals__group { font-size: var(--text-caption-size); line-height: var(--text-caption-line); font-weight: var(--weight-medium); color: var(--text-subtle); }
+.q-val { min-width: 0; }
+.q-val__name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-6); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-muted); }
+.q-val__size { font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-val__body {
+  margin-top: var(--space-4); padding: var(--space-6) var(--space-8);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+  background: var(--fill); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge);
+  word-break: break-all; white-space: pre-wrap;
+}
+.q-val__body--digest { color: var(--text); background: var(--fill-hover); }
+.q-val__body--withheld, .q-val__body--opaque { color: var(--text-subtle); font-style: italic; word-break: normal; }
+.q-val__note { margin-top: var(--space-2); font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+/* "Check it yourself": run one command outside the application and get the same digest. */
+.q-val__check { margin-top: var(--space-4); }
+.q-val__check summary { cursor: pointer; font-size: var(--text-caption-size); line-height: var(--text-caption-line); color: var(--text-subtle); }
+.q-val__check summary:hover { color: var(--text); }
+@media (pointer: coarse) { .q-val__check summary { padding-block: 14px; } }
+.q-val__check pre {
+  margin: var(--space-4) 0 0; padding: var(--space-6) var(--space-8); overflow-x: auto;
+  border-radius: var(--radius-badge); background: var(--chrome-bg); color: var(--chrome-text);
+  font-family: var(--font-mono); font-size: var(--text-caption-size); line-height: var(--text-caption-line);
+}
+
+/* ================================================================ the public record (/d/<id>) */
+
+.q-record .q-banner { margin-bottom: 0; }
+.q-record .q-dtext { font-size: var(--text-decision-size); line-height: var(--text-decision-line); }
+
+/* ================================================================ phone width */
+
+@media (max-width: 767px) {
+  .q-auth { padding-top: var(--space-16); }
+  .q-landing { padding-top: var(--space-16); }
+  .q-admin__run .q-num__in { width: 4.5rem; }
+  .q-admin .q-ph__act { width: 100%; }
+  .q-members .q-ph__act { width: 100%; }
+  .q-link { flex-wrap: wrap; }
+  .q-link .q-btn { --btn-h: var(--target-touch); }
+  .q-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* A panel's meta line goes under its title rather than squeezing it into a column. */
+  .q-panel__hd:has(> .q-small) { flex-wrap: wrap; row-gap: var(--space-2); }
+  .q-panel__hd > .q-small { flex-basis: 100%; margin-left: 0; text-align: left; }
+}
+
+/* Security → Chain: a failure's reason is a sentence, so it keeps a readable measure on a desktop
+ * (at phone width the row is a stacked card, components.css). */
+@media (min-width: 768px) { .q-chain__why { min-width: 22ch; } .q-chain__when { min-width: 12ch; text-align: right; } }
+.q-table td.q-c-main.q-chain__vault { min-width: 0; }
+/* A time in a table's last column, written in full (ui.absolute_time): it may wrap, aligned with
+ * its right-aligned header, rather than push the table into a sideways scroll. */
+.q-table td.q-when { text-align: right; min-width: 13ch; }

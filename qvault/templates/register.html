@@ -1,45 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Q-Vault — Register{% endblock %}
-{% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-6 col-lg-5">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h1 class="h4 mb-1">Create your account</h1>
-        <p class="text-muted small mb-4">
-          A post-quantum <strong>ML-DSA</strong> signing keypair is generated for you on
-          registration. Your private key is encrypted at rest under a key derived from your
-          password (Argon2id → AES-256-GCM) — the server never stores it in the clear.
-        </p>
-        <form method="post" novalidate>
-          {{ form.hidden_tag() }}
-          <div class="mb-3">
-            {{ form.display_name.label(class="form-label") }}
-            {{ form.display_name(class="form-control") }}
-            {% for e in form.display_name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.email.label(class="form-label") }}
-            {{ form.email(class="form-control") }}
-            {% for e in form.email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.password.label(class="form-label") }}
-            {{ form.password(class="form-control") }}
-            {% for e in form.password.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          <div class="mb-3">
-            {{ form.confirm.label(class="form-label") }}
-            {{ form.confirm(class="form-control") }}
-            {% for e in form.confirm.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
-          </div>
-          {{ form.submit(class="btn btn-primary w-100") }}
-        </form>
-      </div>
-    </div>
-    <p class="text-center text-muted small mt-3">
-      Already registered? <a href="{{ url_for('auth.login') }}">Log in</a>.
-    </p>
-  </div>
+{% from "ui/forms.html" import wtf_field %}
+{% from "ui/buttons.html" import button %}
+{% from "_password_step.html" import password_step %}
+{% block title %}Create your workspace — Q-Vault{% endblock %}
+{% block anon_content %}
+<div class="q-auth">
+  <h1 class="q-auth__t">Create your workspace</h1>
+  <p class="q-auth__p">A new, empty workspace for your team's vaults and decisions. You'll be its owner and can invite people from it.</p>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    {{ wtf_field(form.display_name, attrs={'autocomplete': 'name'}) }}
+    {{ wtf_field(form.email, attrs={'autocomplete': 'username'}) }}
+    {{ wtf_field(form.workspace_name, caption='Usually your team or company. You can rename it later.', attrs={'autocomplete': 'organization'}) }}
+    {{ password_step(form) }}
+    {{ button(form.submit.label.text, 'primary', type='submit', block=True, name='submit', value=form.submit.label.text) }}
+  </form>
+  <p class="q-auth__foot">
+    Joining a team? Open the invitation link they sent you instead. This page doesn't join an existing workspace.
+  </p>
+  <p class="q-auth__foot">
+    Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
+  </p>
 </div>
 {% endblock %}

@@ -161,15 +161,10 @@ def test_an_unregistered_algorithm_is_still_rejected(app):
 
 
 def _login_admin(client):
+    # Administration is an operator's grant, never a sign-up's (R6): the operator's first account.
+    auth_service.register_user("admin@e.com", "A", PASSWORD)
     client.post(
-        "/register",
-        data={
-            "display_name": "A",
-            "email": "admin@e.com",
-            "password": PASSWORD,
-            "confirm": PASSWORD,
-        },
-        follow_redirects=True,
+        "/login", data={"email": "admin@e.com", "password": PASSWORD}, follow_redirects=True
     )
 
 

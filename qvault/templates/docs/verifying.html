@@ -1,0 +1,104 @@
+{% extends "docs/_layout.html" %}
+{% block doc %}
+
+<p>
+  Any decision can be exported as a single file that someone outside this organisation can check
+  without an account, without a network connection, and without taking our word for anything. On a
+  decision page, use <strong>Export for verification</strong>.
+</p>
+
+<h2>Three ways to check one</h2>
+<div class="q-table-wrap"><table class="q-table">
+  <caption class="visually-hidden">Three ways to check a decision</caption>
+  <thead><tr><th scope="col" style="width:12rem">Method</th><th scope="col">Trusts</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><a href="{{ url_for('verify.index') }}">The verify page</a>
+          <span class="q-cap">Drop the file in. No account needed.</span></td>
+      <td>This server. Convenient, but it is the same server that produced the file, so it is a
+          convenience rather than evidence.</td>
+    </tr>
+    <tr>
+      <td><code>python -m qvault.verify</code>
+          <span class="q-cap">Exit code 0 verified, 1 not verified, 2 unreadable.</span></td>
+      <td>Nothing of ours at run time. Suitable as a gate in a pipeline.</td>
+    </tr>
+    <tr>
+      <td><a href="{{ url_for('static', filename='verifier.html') }}" download>The offline verifier</a>
+          <span class="q-cap">One HTML file. Save it, open it anywhere.</span></td>
+      <td>Nothing. It runs in the browser from a local file, with the post-quantum library bundled
+          inside it.</td>
+    </tr>
+  </tbody>
+</table></div>
+
+<h2>What gets checked</h2>
+<p>
+  Each step closes a gap the one before it leaves open, so the order is the argument:
+</p>
+<ol>
+  <li>the decision text is the text that was hashed;</li>
+  <li>every signature is a valid post-quantum signature over exactly that;</li>
+  <li>each signer was authorised when the decision opened, not merely a member today;</li>
+  <li>the approval rule frozen at that same moment was satisfied;</li>
+  <li>for a payment, each approver's authorisation to pay is over exactly that payment, and is the
+      one the record logged; a payment the record says was made is backed by enough of them;</li>
+  <li>the audit record's own entries for these events recompute;</li>
+  <li>those entries name these exact signature bytes, and no others;</li>
+  <li>the signers are the accounts the record registered;</li>
+  <li>those entries are provably inside a published Merkle tree;</li>
+  <li>that tree's root is signed by the log;</li>
+  <li>and countersigned by an independent witness.</li>
+</ol>
+
+<p>
+  Steps 1 to 4 are what an ordinary "export the signatures" format gives you, and they are worth
+  less than they look: whoever builds the file chooses what goes in it, so they could omit an
+  inconvenient rejection, or export a decision that never happened. Steps 6 to 11 are what stop
+  that. The last one is the only step that still holds if the operator of this system is the one
+  you are checking up on.
+</p>
+
+<h2>Pinning the keys</h2>
+<p>
+  A bundle names its own keys, so on its own it proves only that <em>some</em> log signed it. To
+  make it prove that <em>this</em> log signed it, get the fingerprints from somewhere other than
+  the file (they are on <strong>Audit → Transparency</strong>, and the witness prints its own on
+  startup) and require them:
+</p>
+<pre><code>python -m qvault.verify decision.qvault.json \
+    --expect-log 4f2a9c1e77b30d85 \
+    --expect-witness 8c1d05fa2b6e4470</code></pre>
+
+<h2>The log's public signed head</h2>
+<p>
+  Anyone can fetch <a href="{{ url_for('public.checkpoint') }}">the log's signed head</a> without
+  an account. It holds the newest head the log signed and the newest one a witness co-signed, each
+  with its signatures and key fingerprints, and nothing about any person, vault or decision. The
+  two differ while the witness hasn't yet seen the newest entries.
+</p>
+<pre><code>python -m qvault.verify --checkpoint checkpoint.json --expect-log 4f2a9c1e77b30d85</code></pre>
+<p>
+  This checks the log's signature on each head, every witness co-signature in the file, that both
+  heads name the same log, and that the keys are post-quantum (an RSA or ECDSA key fails unless
+  you add <code>--allow-classical</code>). It can't prove the newer head extends the witnessed
+  one; the witness checks that before it co-signs. Without <code>--checkpoint</code> the command
+  refuses this file, so exit code 0 always means a decision verified.
+</p>
+<p>
+  Its main use is the fingerprints, the values to pass as <code>--expect-log</code> and
+  <code>--expect-witness</code> when you check a decision. Be clear about what they prove: they
+  come from this server, so they protect you against a file someone hands you, not against us.
+  The witness prints its own fingerprint when it starts; that one comes from the witness. A pin is
+  the 16 hex characters shown, or more of the key's SHA-256; a shorter one is refused.
+</p>
+
+<h2>Algorithms the browser cannot check</h2>
+<p>
+  The offline verifier checks ML-DSA-65 and ML-DSA-87. It does not check SLH-DSA, because the
+  implementation here is the SPHINCS+ round-3 submission and the browser library implements FIPS
+  205, which is derived from it but not byte-compatible. Rather than report genuine signatures as
+  forged, the page marks those as un-checkable and points at the command line, which uses the same
+  implementation that produced them.
+</p>
+{% endblock %}

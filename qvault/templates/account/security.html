@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{#- Account: Security (rework R2; plan section 5: keys, devices, sessions, recovery status). Only
+    what the product does today is shown: there is no session list, so there is no session list
+    here. Recovery is the Recovery Kit (plan R9 Phase 1): what there is, and making or replacing
+    one with the password. -#}
+{% from "ui/navigation.html" import page_header %}
+{% from "ui/forms.html" import field, radio_group %}
+{% from "ui/buttons.html" import button %}
+{% from "ui/data.html" import hash %}
+{% from "ui/status.html" import badge %}
+{% from "recover/_banners.html" import recovery_banners %}
+{% block title %}Security — Account — Q-Vault{% endblock %}
+{% block crumbs %}{% from "ui/navigation.html" import breadcrumbs %}{{ breadcrumbs([('Account', url_for('account.index')), ('Security', None)]) }}{% endblock %}
+
+{% block content %}
+{{ page_header('Account', facts=[('Signed in as', current_user.email)]) }}
+{% set account_tab = 'security' %}{% include "account/_tabs.html" %}
+
+{{ recovery_banners(open_recoveries | selectattr('viewer_as', 'equalto', 'self') | list) }}
+
+<div class="q-acct">
+  <section class="q-panel" aria-labelledby="key-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="key-t">Signing key</h2>{% if key %}{{ badge('Active', 'success') if key.status == 'active' else badge('Retired') }}{% endif %}</div>
+    {% if key %}
+    <dl class="q-kv">
+      <div><dt>Algorithm</dt><dd>{{ key.alg_id }}{% if key.alg_id != active_alg %}<span class="q-cap">New keys use {{ active_alg }}. Replace this key to move to it.</span>{% endif %}</dd></div>
+      <div><dt>Fingerprint</dt><dd>{{ hash(key.public_fingerprint(), 'key fingerprint', 16, 0) }}</dd></div>
+      <div><dt>Public key</dt><dd>{{ '{:,}'.format(key.public_key|length) }} bytes</dd></div>
+      {% if key.secret_key_wrapped %}<div><dt>Private key</dt><dd>{{ '{:,}'.format(key.secret_key_wrapped|length) }} bytes, encrypted with AES-256-GCM under your password</dd></div>{% endif %}
+      <div><dt>Created</dt><dd>{{ ui_absolute(key.created_at) if key.created_at else 'Unknown' }}</dd></div>
+      {% if key.rotate_after %}<div><dt>Replace by</dt><dd>{{ ui_absolute(key.rotate_after) }}</dd></div>{% endif %}
+    </dl>
+    <div class="q-panel__bd q-acct__foot">
+      <form method="post" action="{{ url_for('auth.reissue_key') }}" class="q-acct__inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ field('password', 'Password to replace this key', type='password', id='f-reissue-password', required=True, caption='Issues a new key. The old one is retired and still verifies every signature it made.', attrs={'autocomplete': 'current-password'}) }}
+        {{ button('Replace key', 'secondary', type='submit') }}
+      </form>
+    </div>
+    {% else %}
+    <div class="q-panel__bd"><p>No signing key on this account.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="q-panel" aria-labelledby="dev-t" id="phones">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="dev-t">Phones</h2></div>
+    {% if devices %}
+    <dl class="q-kv">
+      {% for d in devices %}
+      <div><dt>{{ d.name }}</dt><dd>{% if d.is_usable() %}Paired{% elif d.revoked_at %}Removed {{ ui_absolute(d.revoked_at) }}{% else %}Sign-in expired{% endif %}<span class="q-cap">Added {{ ui_absolute(d.created_at) }}{% if d.last_seen_at %}. Last seen {{ ui_absolute(d.last_seen_at) }}{% endif %}.</span>{% if d.key %}<span class="q-line">{{ hash(d.key.public_fingerprint(), 'phone key fingerprint', 16, 0) }}</span>{% endif %}
+        {%- if d.is_usable() %}
+        <details class="q-acct__remove" id="remove-{{ d.id }}"{% if open_remove == d.id %} open{% endif %}>
+          <summary>Remove {{ d.name }}</summary>
+          {%- if device_seats.get(d.id) %}
+          <p class="q-cap">This phone holds your seat on the treasury of {{ device_seats[d.id] | join(', ') }}. Removing it here stops Q-Vault counting its approvals, but the treasury keeps the key until the vault's owner changes its signers.</p>
+          {%- endif %}
+          <form method="post" action="{{ url_for('account.remove_device', device_id=d.id) }}" class="q-acct__inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {{ field('password', 'Password to remove this phone', type='password', id='f-remove-' ~ d.id, required=True, caption='It stops approving for you at once. Its past approvals still count.', attrs={'autocomplete': 'current-password'}) }}
+            {{ button('Remove phone', 'danger', type='submit') }}
+          </form>
+        </details>
+        {%- endif %}</dd></div>
+      {% endfor %}
+    </dl>
+    <p class="q-sigrec__note">A phone signs with its own key, which never leaves it. Q-Vault can’t sign for you with it.</p>
+    {% else %}
+    <div class="q-panel__bd"><p>No phone is paired. Pair the Q-Vault app to approve with a key that never leaves your phone.</p></div>
+    {% endif %}
+    {%- if pairing_available %}
+    <div class="q-panel__bd q-acct__foot">
+      {%- if nobody_else_told %}
+      <p class="q-cap">Nobody else will be told when a phone is added: email isn't set up on this server and you have no other phone.</p>
+      {%- endif %}
+      <form method="post" action="{{ url_for('account.pair_start') }}" class="q-gap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="q-cap">Shows a code to scan with the Q-Vault app on a phone that isn't set up yet. You'll confirm with a code from the phone and your password.</p>
+        {{ button('Pair a phone', 'secondary', type='submit') }}
+      </form>
+    </div>
+    {%- endif %}
+  </section>
+
+  {% if treasuries_on %}
+  <section class="q-panel" aria-labelledby="tr-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="tr-t">Treasury approvals</h2>{{ badge('Phone key' if key_choice.custody == 'device' else 'Password key') }}</div>
+    <div class="q-panel__bd">
+      <form method="post" action="{{ url_for('account.set_signing_choice') }}">
+        {{ choice_form.hidden_tag() }}
+        {%- set key_options = [('password', 'Password key on this account', key.public_fingerprint()[:16] if key else None)] %}
+        {%- for phone, phone_key in phones %}{% set _ = key_options.append(('device:' ~ phone_key.id, 'Phone key on ' ~ phone.name, phone_key.public_fingerprint()[:16])) %}{% endfor %}
+        {{ radio_group('choice', 'The key a treasury registers for you', key_options,
+                       selected=('device:' ~ key_choice.key_id) if key_choice.custody == 'device' else 'password') }}
+        <p class="q-cap q-gap">A treasury only counts approvals made with the key it holds for you. A change applies the next time a treasury is created or changed; what is on chain stays until its signers approve a change.</p>
+        {{ field('password', 'Password to save this choice', type='password', id='f-choice-password', required=True, attrs={'autocomplete': 'current-password'}) }}
+        {{ button('Save', 'secondary', type='submit') }}
+      </form>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="q-panel" aria-labelledby="pw-t">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="pw-t">Password</h2></div>
+    <div class="q-panel__bd">
+      <form method="post" action="{{ url_for('account.change_password') }}">
+        {{ password_form.hidden_tag() }}
+        {{ field('current_password', 'Current password', type='password', required=True, error=password_form.current_password.errors, attrs={'autocomplete': 'current-password'}) }}
+        {{ field('new_password', 'New password', type='password', required=True, caption=password_rule, error=password_form.new_password.errors, attrs={'autocomplete': 'new-password'}) }}
+        {{ field('confirm', 'Confirm new password', type='password', required=True, error=password_form.confirm.errors, attrs={'autocomplete': 'new-password'}) }}
+        <p class="q-cap q-gap">Your password also unlocks your signing key, so changing it re-encrypts your keys. You’ll be signed out.</p>
+        {{ button('Change password', 'secondary', type='submit', name='submit', value='Change password') }}
+      </form>
+    </div>
+  </section>
+
+  {%- set ks = kit_state %}
+  <section class="q-panel" aria-labelledby="rc-t" id="recovery">
+    <div class="q-panel__hd"><h2 class="q-panel__t" id="rc-t">Recovery Kit</h2>
+      {%- if ks.problem is none %}{{ badge('Saved', 'success') }}
+      {%- elif ks.problem == 'unconfirmed' %}{{ badge('Not confirmed', 'warning') }}
+      {%- elif ks.problem in ('stale', 'burned') %}{{ badge('Stopped working', 'critical') }}
+      {%- else %}{{ badge('None', 'warning') }}{% endif %}</div>
+    {%- if ks.kit and ks.problem != 'stale' %}
+    <dl class="q-kv">
+      <div><dt>Kit id</dt><dd><code class="q-mono">{{ kit_short_id(ks.kit) }}</code><span class="q-cap">Printed on your kit, so you can tell which one is current.</span></dd></div>
+      <div><dt>Made</dt><dd>{{ ui_absolute(ks.kit.created_at) }}</dd></div>
+      <div><dt>Saved</dt><dd>{{ ui_absolute(ks.kit.confirmed_at) if ks.kit.confirmed_at else 'Not confirmed: the last group was never typed back' }}</dd></div>
+    </dl>
+    {%- endif %}
+    <div class="q-panel__bd">
+      {%- if ks.problem == 'stale' %}
+      <p>Your kit stopped working: Q-Vault can no longer check it, so it can’t be used. Make a new one.</p>
+      {%- elif ks.problem == 'burned' %}
+      <p>Your kit stopped working: you cancelled a recovery that used it, so someone else may have it. Make a new one, and keep it somewhere only you can reach.</p>
+      {%- elif ks.kit %}
+      <p>If you forget your password, type this kit’s code at the address printed on it to choose a new one and keep your signing key{% if ks.treasury_signer %}, including your place on a treasury{% endif %}. It takes 72 hours, and you, your workspace’s admins and your fellow approvers are told and can cancel it.</p>
+      {%- else %}
+      <p>There is no password reset. If you forget your password without a kit, your password key can’t be unlocked, and Q-Vault can’t unlock it for you. A Recovery Kit is a code you keep offline that opens a second copy of your signing key.</p>
+      {%- endif %}
+      <form method="post" action="{{ url_for('recover.issue') }}" class="q-acct__inline q-gap">
+        {{ kit_form.hidden_tag() }}
+        {{ field('password', 'Password to ' ~ ('replace your kit' if ks.kit else 'make a kit'), type='password', id='f-kit-password', required=True,
+                 caption=('Makes a new kit and stops the old one working.' if ks.kit else 'Shows a code once, to print or download and keep offline.'),
+                 attrs={'autocomplete': 'current-password'}) }}
+        {{ button('Replace Recovery Kit' if ks.kit else 'Make a Recovery Kit', 'secondary', type='submit') }}
+      </form>
+    </div>
+  </section>
+
+  {% if retired_keys %}
+  <section aria-labelledby="rk-t">
+    <h2 class="q-tech__t" id="rk-t">Retired keys</h2>
+    <div class="q-table-wrap">
+    <table class="q-table">
+      <thead><tr><th scope="col">Algorithm</th><th scope="col">Fingerprint</th><th scope="col">Retired</th><th scope="col">Still verifies</th></tr></thead>
+      <tbody>
+        {% for k in retired_keys %}
+        <tr><td>{{ k.alg_id }}{% if k.wrap_domain == 'lost' %}<span class="q-cap">Can’t be opened (replaced by recovery)</span>{% endif %}</td><td>{{ hash(k.public_fingerprint(), 'key fingerprint', 16, 0) }}</td><td>{{ ui_absolute(k.retired_at) if k.retired_at else 'Unknown' }}</td><td>{{ 'Yes' if k.can_verify else 'No' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
