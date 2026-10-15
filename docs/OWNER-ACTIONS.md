@@ -1231,6 +1231,18 @@ rationale you can lift into a Design chapter, and `docs/benchmarks/latest.md` is
 for an Evaluation chapter. I'll draft whatever sections you want in P9 — but the words you submit
 should be words you can defend.
 
+**Update 2026-10-15 — the final report** (`documents/final-report/`, outside this repo) matches
+the teacher's mock (`Final_BE_Report_Version_0_5_ (3).pdf`): every heading, grid tables with captions
+below, full college roll numbers, guide "Ms Varunakshi Bhojane" (confirmed). Two appendices are
+yours, and the build picks them up by file name:
+
+1. **Appendix A, plagiarism report:** run the college's Turnitin and save the PDF as
+   `documents/final-report/report/plagiarism-report.pdf`.
+2. **Appendix B, certificate:** save a project completion certificate (or publication proof) as
+   `documents/final-report/report/certificate.pdf`.
+
+Then rebuild: `.\build.ps1 -Out build-lead` in `report/`, and `python make_docx.py` in `word-build/`.
+
 ### 4.2 Synopsis title page details — `DONE` (2026-08-06)
 
 Supplied by you and built into `../documents/synopsis/synopsis.pdf` (8 pages):
@@ -1343,6 +1355,20 @@ algorithm identifier that names a NIST standard while binding to a pre-standard 
 undetectable from key and signature sizes, caught only by cross-implementation verification.
 Sources are in `docs/paper/research/related-work.md`.
 
+**Update 2026-10-15 — the paper is complete** (`documents/research-paper/`, outside this repo): IEEE
+format, 13 pp PDF + Word, four figures, six tables, 60 verified references in citation order, every
+number measured on `main` @ `5752a11`. `REVIEW-2026-10-15.md` there has the review of your
+partner's rewrite. What is left is yours:
+
+1. **Reword it in your own words.** Edit `draft.md`, then `python build.py`. If someone edits only
+   the Word file, those edits must be carried back into `draft.md` before the next build.
+2. **Pick the venue and check its page limit.** 13 pages is complete but long for most IEEE
+   conferences (6–8); IACR ePrint has no limit.
+3. **Licence the repository** (§1.1); Appendix A currently names no licence.
+4. **For double-blind review,** replace the GitHub link in Appendix A with an anonymised one.
+5. **E-mail addresses** in the author block, if the venue wants them.
+6. **Keep the AI-use statement accurate** to what you did, and to the venue's policy.
+
 ### 4.3 The viva — `TODO`
 
 *Why it's yours:* you're in the room.
@@ -1375,3 +1401,4 @@ notes already embedded in docstrings across the codebase (`interfaces.py`, `benc
 | 2026-10-09 | Added §2.15: the Recovery Kit (R9 Phase 1) at the switch: the address printed on kits, the master key now also locking kits, the banner every account sees, and a hand test on staging. |
 | 2026-10-10 | R9 finishing pass: the Recovery Kit section is §2.15 (it was §2.14 on its branch, which clashed with staging's §2.14); item 3 now says the "Save a Recovery Kit" reminder can be hidden until the next sign-in, except by treasury signers. |
 | 2026-10-14 | R9 Phase 2: §2.15 item 6, a hand test of the phone route (a phone paired at least 7 days before, "Set a new web password", Cancel, and a kit request shortened by the phone). |
+| 2026-10-15 | §4.1: the final report's two appendices (Turnitin report, certificate). §4.4: the paper is complete; venue, licence, anonymised link, e-mails and the rewording are yours. `main` on GitHub now holds the live system (owner's word). |
