@@ -100,6 +100,10 @@ def _scenario(*, signers: int = 3, threshold: int = 2):
     """
     owner = auth_service.register_user(_unique("owner") + "@lab.test", "Owner", PASSWORD)
     vault = vault_service.create_vault(owner, _unique("Vault "), "adversary lab", threshold)
+    # New vaults separate duties by default (Plan S15): whoever raises a decision cannot approve
+    # it. That is a different defence from the ones attacked here, and the scenarios have the
+    # owner both raise and vote, so the lab's vaults allow it explicitly.
+    vault_service.set_requester_can_approve(vault, True, actor_id=owner.id)
     members = [owner]
     for i in range(signers - 1):
         member = auth_service.register_user(

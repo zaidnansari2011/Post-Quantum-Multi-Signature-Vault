@@ -178,6 +178,19 @@ def test_system_level_defences(app, attack_id):
     assert outcome.status == AS_EXPECTED, outcome.headline
 
 
+@pytest.mark.separation_default
+def test_the_whole_lab_runs_in_one_app_with_nothing_errored(app):
+    """The way ``scripts/run_attack_lab.py`` runs it: every attack, with the product's defaults.
+
+    The suite's conftest lets requesters approve in new vaults, so the per-attack test above never
+    met the separation-of-duties default (Plan S15) that made three system attacks error before
+    their premise was set up: the script's report read 7 of 10 while every test stayed green.
+    """
+    summary = lab.run(include_system=True)["summary"]
+    assert summary["error"] == 0, summary
+    assert summary["as_expected"] == summary["total"], summary
+
+
 def test_every_run_records_checkable_evidence():
     """A step with no value is narration. Each run must leave something a sceptic can check."""
     for attack in lab.algorithm_attacks(random.Random()):
