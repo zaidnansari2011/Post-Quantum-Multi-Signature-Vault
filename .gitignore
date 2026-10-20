@@ -47,3 +47,7 @@ Thumbs.db
 
 # Node toolchain for the JS interop test (tests/interop) and, later, the mobile client.
 node_modules/
+
+# Local tool config
+.claude/
+CLAUDE.md
