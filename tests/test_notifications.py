@@ -259,8 +259,13 @@ def test_an_approver_made_a_viewer_is_no_longer_asked(team):
     proposal = _raise(team, at=MONDAY, deadline=MONDAY + timedelta(days=30))
     vault_service.change_member_role(team.vault, team.brij.id, "viewer", actor_id=team.ada.id)
 
-    assert _section(team.brij, "needs_you") == []
-    (item,) = [i for i in _section(team.brij, "updates") if i["kind"] == "decision_raised"]
+    # Read at a fixed time inside the deadline: on the real clock the decision expires once
+    # MONDAY + 30 days has passed, and the body then says so instead.
+    during = MONDAY + timedelta(days=1)
+    assert _section(team.brij, "needs_you", now=during) == []
+    (item,) = [
+        i for i in _section(team.brij, "updates", now=during) if i["kind"] == "decision_raised"
+    ]
     assert item["body"].endswith("You can no longer approve it.")
     notification_service.send_reminders(now=MONDAY + timedelta(days=1))
     assert _rows(team.brij, "decision_reminder", proposal) == []
@@ -492,7 +497,10 @@ def test_reminders_come_one_three_and_six_business_days_after_raising(team):
     notification_service.send_reminders(now=datetime(2026, 10, 20, 10, 0, tzinfo=UTC))
     assert stages() == [1, 3, 6]  # three, and no more
 
-    item = notification_service.view(_rows(team.brij, "decision_reminder")[1])
+    # Viewed before the deadline (1 Nov); on the real clock it would read as expired.
+    item = notification_service.view(
+        _rows(team.brij, "decision_reminder")[1], now=datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
+    )
     assert item["section"] == "needs_you"
     assert item["title"] == "Still waiting on your approval"
     assert item["body"] == (
@@ -595,7 +603,8 @@ def test_the_requester_can_remind_once_a_day(team):
 
     assert notification_service.remind(proposal, team.ada, now=first) == 1
 
-    item = _one(team.chen, "decision_reminder")
+    (row,) = _rows(team.chen, "decision_reminder")
+    item = notification_service.view(row, now=first)  # before the deadline, not the real clock
     assert item["title"] == "Ada Lovelace sent a reminder"
     assert item["section"] == "needs_you"
     assert _rows(team.brij, "decision_reminder") == []  # Brij has voted
