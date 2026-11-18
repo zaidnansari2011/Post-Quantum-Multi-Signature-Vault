@@ -1,0 +1,729 @@
+{
+  "comparisons": 55,
+  "disagreements": 0,
+  "pytest_exitstatus": 0,
+  "records": [
+    {
+      "test": "tests/test_offline_verifier.py::test_a_genuine_decision_verifies_in_the_browser",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_unicode_and_awkward_text_canonicalise_identically",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_rejected_decision_agrees",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_rejection_under_separation_of_duties_agrees",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_edited_text_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_corrupted_signature_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_substituted_signing_key_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding"
+      ],
+      "browser_failed": [
+        "binding"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_tampered_merkle_proof_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "inclusion"
+      ],
+      "browser_failed": [
+        "inclusion"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_forged_checkpoint_signature_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "checkpoint"
+      ],
+      "browser_failed": [
+        "checkpoint"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_forged_witness_co_signature_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "witness"
+      ],
+      "browser_failed": [
+        "witness"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_dropped_signature_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_relabelled_signer_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "identity"
+      ],
+      "browser_failed": [
+        "identity"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_every_signed_field_is_covered_in_the_browser_too[required_m]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_every_signed_field_is_covered_in_the_browser_too[nonce_hex]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_every_signed_field_is_covered_in_the_browser_too[created_at_iso]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_every_signed_field_is_covered_in_the_browser_too[vault_id]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_pinning_keys_agrees_with_python",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_pinning_keys_agrees_with_python",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "pinned_log"
+      ],
+      "browser_failed": [
+        "pinned_log"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_pinning_keys_agrees_with_python",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "pinned_witness"
+      ],
+      "browser_failed": [
+        "pinned_witness"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_short_pin_fails_and_a_full_hash_pin_matches_in_both",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "pinned_log"
+      ],
+      "browser_failed": [
+        "pinned_log"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_short_pin_fails_and_a_full_hash_pin_matches_in_both",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "pinned_witness"
+      ],
+      "browser_failed": [
+        "pinned_witness"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_short_pin_fails_and_a_full_hash_pin_matches_in_both",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_short_pin_fails_and_a_full_hash_pin_matches_in_both",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "pinned_log"
+      ],
+      "browser_failed": [
+        "pinned_log"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_an_unwitnessed_bundle_is_weaker_not_invalid",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_payment_decision_verifies_in_the_browser_with_the_same_hash",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[to-0x000000000000000000000000000000000000bEEF]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[value_wei-100000000000000000000]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[treasury-0x000000000000000000000000000000000000dEaD]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[valid_until-4102444800]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[chain_id-1]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[call_gas-21000]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[config_nonce-1]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[data-0xa9059cbb]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_changed_payment_is_rejected_in_the_browser_too[kind-erc20_transfer]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "content",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_text_describing_another_payment_fails_in_both_verifiers",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "content"
+      ],
+      "browser_failed": [
+        "content"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_verifiers_agree_on_malformed_and_float_payment_numbers",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_payment_authorisations_travel_with_the_record_and_verify",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_forged_authorisation_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_an_authorisation_the_log_never_recorded_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_dropped_authorisation_is_rejected_in_the_browser_too",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_removing_the_authorisations_is_caught_not_skipped",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_malformed_authorisation_fails_the_same_way_in_both[change0]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_malformed_authorisation_fails_the_same_way_in_both[change1]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_malformed_authorisation_fails_the_same_way_in_both[change2]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_malformed_authorisation_fails_the_same_way_in_both[change3]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_malformed_authorisation_fails_the_same_way_in_both[change4]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_malformed_authorisation_fails_the_same_way_in_both[change5]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_unpadded_base64_fails_the_same_way_in_both",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "execution"
+      ],
+      "browser_failed": [
+        "execution"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_an_authorisation_made_with_another_key_than_the_vote_is_refused",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "binding",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "browser_failed": [
+        "binding",
+        "execution",
+        "signatures",
+        "threshold"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_browser_agrees_on_a_log_that_holds_workspace_events",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_browser_agrees_on_a_log_that_holds_workspace_events",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_browser_agrees_on_a_log_that_holds_workspace_events",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "log_entries"
+      ],
+      "browser_failed": [
+        "log_entries"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_browser_writes_the_same_lineage_line_as_python[phone-False]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "inclusion"
+      ],
+      "browser_failed": [
+        "inclusion"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_the_browser_writes_the_same_lineage_line_as_python[kit-True]",
+      "python_ok": false,
+      "browser_ok": false,
+      "python_failed": [
+        "inclusion"
+      ],
+      "browser_failed": [
+        "inclusion"
+      ],
+      "agree": true
+    },
+    {
+      "test": "tests/test_offline_verifier.py::test_a_bundle_without_recoveries_has_no_lineage_in_either",
+      "python_ok": true,
+      "browser_ok": true,
+      "python_failed": [],
+      "browser_failed": [],
+      "agree": true
+    }
+  ]
+}

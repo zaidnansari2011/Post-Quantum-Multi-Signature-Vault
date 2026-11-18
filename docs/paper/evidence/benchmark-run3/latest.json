@@ -1,0 +1,464 @@
+{
+  "schema": "qvault-benchmark/1",
+  "generated_at": "2026-11-18T16:55:21+00:00",
+  "backend": "quantcrypt",
+  "environment": {
+    "python": "3.13.5",
+    "implementation": "CPython",
+    "system": "Windows",
+    "release": "11",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "cpu_count": 12
+  },
+  "parameters": {
+    "iterations": 500,
+    "warmup": 3,
+    "message_size_bytes": 256,
+    "time_budget_s": 120.0
+  },
+  "elapsed_s": 70.96,
+  "signatures": [
+    {
+      "alg_id": "ECDSA-P256",
+      "family": "ECDSA",
+      "human_name": "ECDSA P-256 (SHA-256)",
+      "nist_standard": "FIPS 186-5 - classical, NOT post-quantum",
+      "security_category": 0,
+      "backend": "cryptography",
+      "pqclean_name": null,
+      "sizes": {
+        "public_key": 91,
+        "secret_key": 138,
+        "signature": 64
+      },
+      "measured_sizes": {
+        "public_key": 91,
+        "secret_key": 138,
+        "signature": 64
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.0351428,
+          "median_ms": 0.0289,
+          "stdev_ms": 0.010646320323607858,
+          "min_ms": 0.0282,
+          "max_ms": 0.1287,
+          "p95_ms": 0.0506,
+          "ops_per_sec": 34602.07612456747
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.0679184,
+          "median_ms": 0.0613,
+          "stdev_ms": 0.012445579389191382,
+          "min_ms": 0.0601,
+          "max_ms": 0.1175,
+          "p95_ms": 0.0946,
+          "ops_per_sec": 16313.21370309951
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.0859516,
+          "median_ms": 0.0798,
+          "stdev_ms": 0.013540748915861515,
+          "min_ms": 0.0789,
+          "max_ms": 0.1345,
+          "p95_ms": 0.1194,
+          "ops_per_sec": 12531.328320802006
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    },
+    {
+      "alg_id": "ML-DSA-65",
+      "family": "ML-DSA",
+      "human_name": "CRYSTALS-Dilithium (category 3)",
+      "nist_standard": "FIPS 204",
+      "security_category": 3,
+      "backend": "quantcrypt",
+      "pqclean_name": "ml-dsa-65",
+      "sizes": {
+        "public_key": 1952,
+        "secret_key": 4032,
+        "signature": 3309
+      },
+      "measured_sizes": {
+        "public_key": 1952,
+        "secret_key": 4032,
+        "signature": 3309
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.8212244,
+          "median_ms": 0.7913,
+          "stdev_ms": 0.09413753042176014,
+          "min_ms": 0.7607,
+          "max_ms": 1.2982,
+          "p95_ms": 1.0121,
+          "ops_per_sec": 1263.7432073802604
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 1.6317562,
+          "median_ms": 1.52705,
+          "stdev_ms": 0.38362550519749866,
+          "min_ms": 1.206,
+          "max_ms": 3.8087,
+          "p95_ms": 2.3612,
+          "ops_per_sec": 654.8574048001047
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.6546728,
+          "median_ms": 0.60205,
+          "stdev_ms": 0.11710068830952758,
+          "min_ms": 0.5785,
+          "max_ms": 1.0441,
+          "p95_ms": 0.9421,
+          "ops_per_sec": 1660.9916119923596
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    },
+    {
+      "alg_id": "ML-DSA-87",
+      "family": "ML-DSA",
+      "human_name": "CRYSTALS-Dilithium (category 5)",
+      "nist_standard": "FIPS 204",
+      "security_category": 5,
+      "backend": "quantcrypt",
+      "pqclean_name": "ml-dsa-87",
+      "sizes": {
+        "public_key": 2592,
+        "secret_key": 4896,
+        "signature": 4627
+      },
+      "measured_sizes": {
+        "public_key": 2592,
+        "secret_key": 4896,
+        "signature": 4627
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.8998837999999999,
+          "median_ms": 0.85455,
+          "stdev_ms": 0.12646693928067543,
+          "min_ms": 0.8236,
+          "max_ms": 1.5096,
+          "p95_ms": 1.1952,
+          "ops_per_sec": 1170.2065414545666
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 1.6808756,
+          "median_ms": 1.55695,
+          "stdev_ms": 0.3711522764435893,
+          "min_ms": 1.3119,
+          "max_ms": 3.3845,
+          "p95_ms": 2.4763,
+          "ops_per_sec": 642.2813834740999
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.6924874,
+          "median_ms": 0.683,
+          "stdev_ms": 0.036510412784895314,
+          "min_ms": 0.663,
+          "max_ms": 1.1209,
+          "p95_ms": 0.7427,
+          "ops_per_sec": 1464.1288433382138
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    },
+    {
+      "alg_id": "RSA-2048-PSS",
+      "family": "RSA",
+      "human_name": "RSA-2048 (PSS, SHA-256)",
+      "nist_standard": "FIPS 186-5 / RFC 8017 - classical, NOT post-quantum",
+      "security_category": 0,
+      "backend": "cryptography",
+      "pqclean_name": null,
+      "sizes": {
+        "public_key": 294,
+        "secret_key": 1218,
+        "signature": 256
+      },
+      "measured_sizes": {
+        "public_key": 294,
+        "secret_key": 1219,
+        "signature": 256
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 40.1892748,
+          "median_ms": 35.1967,
+          "stdev_ms": 24.562424522269566,
+          "min_ms": 6.8222,
+          "max_ms": 145.5202,
+          "p95_ms": 87.1651,
+          "ops_per_sec": 28.41175451107632
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.8711488000000001,
+          "median_ms": 0.86295,
+          "stdev_ms": 0.050500133718349126,
+          "min_ms": 0.8253,
+          "max_ms": 1.3341,
+          "p95_ms": 0.9107,
+          "ops_per_sec": 1158.8156903644476
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.0382368,
+          "median_ms": 0.0377,
+          "stdev_ms": 0.0030766307991288615,
+          "min_ms": 0.0363,
+          "max_ms": 0.0775,
+          "p95_ms": 0.0407,
+          "ops_per_sec": 26525.198938992045
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    },
+    {
+      "alg_id": "SLH-DSA-SHAKE-256f",
+      "family": "SLH-DSA",
+      "human_name": "SPHINCS+ SHAKE-256f (category 5)",
+      "nist_standard": "SPHINCS+ round 3 (basis of FIPS 205; not interoperable with it)",
+      "security_category": 5,
+      "backend": "quantcrypt",
+      "pqclean_name": "sphincs-shake-256f-simple",
+      "sizes": {
+        "public_key": 64,
+        "secret_key": 128,
+        "signature": 49856
+      },
+      "measured_sizes": {
+        "public_key": 64,
+        "secret_key": 128,
+        "signature": 49856
+      },
+      "message_size": 256,
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 2.4828458,
+          "median_ms": 2.46915,
+          "stdev_ms": 0.1078724555003331,
+          "min_ms": 2.3789,
+          "max_ms": 3.8732,
+          "p95_ms": 2.5358,
+          "ops_per_sec": 404.99767126339026
+        },
+        "sign": {
+          "op": "sign",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 38.6929682,
+          "median_ms": 38.14345,
+          "stdev_ms": 1.7237913529966706,
+          "min_ms": 37.69,
+          "max_ms": 54.2172,
+          "p95_ms": 42.0265,
+          "ops_per_sec": 26.216820974505453
+        },
+        "verify": {
+          "op": "verify",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 1.8285464,
+          "median_ms": 1.7463,
+          "stdev_ms": 0.29520593105576487,
+          "min_ms": 1.681,
+          "max_ms": 3.8115,
+          "p95_ms": 2.1295,
+          "ops_per_sec": 572.6392945083892
+        }
+      },
+      "rejects_tampered_signature": true,
+      "rejects_tampered_message": true
+    }
+  ],
+  "kems": [
+    {
+      "alg_id": "ML-KEM-768",
+      "family": "ML-KEM",
+      "human_name": "CRYSTALS-Kyber (category 3)",
+      "nist_standard": "FIPS 203",
+      "security_category": 3,
+      "backend": "quantcrypt",
+      "pqclean_name": "ml-kem-768",
+      "sizes": {
+        "public_key": 1184,
+        "secret_key": 2400,
+        "ciphertext": 1088,
+        "shared_secret": 32
+      },
+      "measured_sizes": {
+        "public_key": 1184,
+        "secret_key": 2400,
+        "ciphertext": 1088,
+        "shared_secret": 32
+      },
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.7080098,
+          "median_ms": 0.6687,
+          "stdev_ms": 0.09939750586561319,
+          "min_ms": 0.6478,
+          "max_ms": 1.1336,
+          "p95_ms": 0.9891,
+          "ops_per_sec": 1495.4389113204727
+        },
+        "encapsulate": {
+          "op": "encapsulate",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 1.0903634,
+          "median_ms": 1.0383,
+          "stdev_ms": 0.1342787944155718,
+          "min_ms": 1.0089,
+          "max_ms": 1.6299,
+          "p95_ms": 1.4791,
+          "ops_per_sec": 963.1127805065973
+        },
+        "decapsulate": {
+          "op": "decapsulate",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.7496374,
+          "median_ms": 0.7251,
+          "stdev_ms": 0.07965428067656001,
+          "min_ms": 0.6953,
+          "max_ms": 1.1948,
+          "p95_ms": 0.8953,
+          "ops_per_sec": 1379.1201213625707
+        }
+      }
+    },
+    {
+      "alg_id": "RSA-2048-OAEP",
+      "family": "RSA",
+      "human_name": "RSA-2048 key transport (OAEP, SHA-256)",
+      "nist_standard": "RFC 8017 / SP 800-56B - classical, NOT post-quantum",
+      "security_category": 0,
+      "backend": "cryptography",
+      "pqclean_name": null,
+      "sizes": {
+        "public_key": 294,
+        "secret_key": 1218,
+        "ciphertext": 256,
+        "shared_secret": 32
+      },
+      "measured_sizes": {
+        "public_key": 294,
+        "secret_key": 1219,
+        "ciphertext": 256,
+        "shared_secret": 32
+      },
+      "ops": {
+        "keygen": {
+          "op": "keygen",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 41.9422566,
+          "median_ms": 37.7822,
+          "stdev_ms": 24.29141402183943,
+          "min_ms": 8.3781,
+          "max_ms": 170.4022,
+          "p95_ms": 88.2157,
+          "ops_per_sec": 26.46748998205504
+        },
+        "encapsulate": {
+          "op": "encapsulate",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.0373516,
+          "median_ms": 0.0368,
+          "stdev_ms": 0.002683538745835581,
+          "min_ms": 0.0352,
+          "max_ms": 0.0626,
+          "p95_ms": 0.0398,
+          "ops_per_sec": 27173.91304347826
+        },
+        "decapsulate": {
+          "op": "decapsulate",
+          "iterations": 500,
+          "requested_iterations": 500,
+          "budget_exhausted": false,
+          "mean_ms": 0.8693618,
+          "median_ms": 0.86055,
+          "stdev_ms": 0.06106379364688291,
+          "min_ms": 0.8206,
+          "max_ms": 1.3281,
+          "p95_ms": 0.897,
+          "ops_per_sec": 1162.0475277438848
+        }
+      }
+    }
+  ]
+}
