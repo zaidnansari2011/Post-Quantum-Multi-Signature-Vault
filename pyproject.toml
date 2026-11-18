@@ -11,14 +11,16 @@ target-version = ["py312"]
 # chain/lib holds pinned third-party submodules (ZKNox, OpenZeppelin, forge-std). Their code is
 # audited by commit hash, not reformatted: a formatter rewriting a dependency would detach it
 # from the upstream commit the pin exists to identify.
-# docs/plans and mobile/tools hold one-off screenshot scripts kept beside their evidence.
-extend-exclude = "^/(chain/lib|docs/plans|mobile/tools)/"
+# docs/plans and mobile/tools hold one-off screenshot scripts kept beside their evidence;
+# docs/paper/evidence holds the exact scripts that produced the paper's numbers, kept as run.
+extend-exclude = "^/(chain/lib|docs/plans|docs/paper/evidence|mobile/tools)/"
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-# docs/plans and mobile/tools hold one-off screenshot scripts kept beside their evidence, not app code.
-extend-exclude = ["chain/lib", "docs/plans", "mobile/tools"]
+# docs/plans and mobile/tools hold one-off screenshot scripts kept beside their evidence, not app code;
+# docs/paper/evidence holds the exact scripts behind the paper's numbers, kept as they ran.
+extend-exclude = ["chain/lib", "docs/plans", "docs/paper/evidence", "mobile/tools"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
