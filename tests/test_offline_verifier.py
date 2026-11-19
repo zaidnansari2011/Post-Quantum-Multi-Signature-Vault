@@ -343,6 +343,35 @@ def test_a_relabelled_signer_is_rejected_in_the_browser_too(app, page, bundle):
     assert "identity" in {c["key"] for c in agree(app, page, forged)["checks"] if not c["ok"]}
 
 
+@pytest.mark.parametrize("logged", [True, False])
+def test_a_renamed_signer_reads_the_same_in_the_browser(app, page, decision, logged):
+    """A logged email change verifies in both, with the same words; an unlogged one (what live
+    did on 14 Oct) fails identity in both (tests/test_email_change.py has the Python detail)."""
+    from qvault.extensions import db
+
+    owner = decision.creator
+    if logged:
+        auth_service.change_email(owner, "ada.real@e.com", reason="real address")
+    else:
+        owner.email = "ada.real@e.com"
+        db.session.commit()
+    checkpoint_service.maybe_checkpoint()
+    checkpoint_service.sync_witness()
+    bundle = export_service.build_decision_bundle(decision)
+
+    js = agree(app, page, bundle)
+    py = in_python(app, bundle)
+    js_identity = next(c for c in js["checks"] if c["key"] == "identity")
+    py_identity = next(c for c in py.checks if c.key == "identity")
+    assert js_identity["ok"] is logged
+    if logged:  # failure details have always quoted differently (Python repr); success must match
+        assert (
+            js_identity["detail"]
+            == py_identity.detail
+            == "ada.real@e.com (was ada@e.com), signer1@e.com"
+        )
+
+
 @pytest.mark.parametrize("field", ["required_m", "nonce_hex", "created_at_iso", "vault_id"])
 def test_every_signed_field_is_covered_in_the_browser_too(app, page, bundle, field):
     forged = copy.deepcopy(bundle)

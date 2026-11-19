@@ -6178,9 +6178,21 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
           binding.join('; ') || count(signedEvents.size, 'signing event') + ' matched');
 
       // 6b. identity
-      const registrations = new Map(
-        payloads.filter(([e]) => e.event_type === 'user_registered')
-                .map(([, p]) => [p.user_id, p.email]));
+      // The address the log holds for each account: registration, then email changes in log
+      // order, each counted only when its from_email is the address already held (as core.py).
+      const registrations = new Map();
+      const renamedFrom = new Map();
+      const inOrder = [...payloads].sort(([a], [b]) => (a.seq || 0) - (b.seq || 0));
+      for (const [e, p] of inOrder) {
+        if (e.event_type === 'user_registered') registrations.set(p.user_id, p.email);
+      }
+      for (const [e, p] of inOrder) {
+        if (e.event_type !== 'user_email_changed' || !registrations.has(p.user_id)) continue;
+        if (p.from_email !== registrations.get(p.user_id) || !p.to_email) continue;
+        if (!renamedFrom.has(p.user_id)) renamedFrom.set(p.user_id, []);
+        renamedFrom.get(p.user_id).push(registrations.get(p.user_id));
+        registrations.set(p.user_id, p.to_email);
+      }
       const identity = [];
       for (const s of verified) {
         const recorded = registrations.get(s.signer_id);
@@ -6192,7 +6204,9 @@ global.PQC = { ml_dsa65: __req('pq/ml-dsa.js').ml_dsa65, ml_dsa87: __req('pq/ml-
         }
       }
       add('identity', 'The signers are the accounts the log recorded', !identity.length,
-          identity.join('; ') || [...registrations.values()].sort().join(', '));
+          identity.join('; ') || [...registrations.entries()].filter(([, v]) => v)
+            .map(([k, v]) => String(v) + (renamedFrom.has(k) ? ' (was ' + renamedFrom.get(k).join(', ') + ')' : ''))
+            .sort().join(', '));
 
       // 6b'. key lineage: worked out after step 7, which says which entries are in the log.
 

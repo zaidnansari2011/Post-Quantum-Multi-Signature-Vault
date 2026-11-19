@@ -157,8 +157,8 @@ def update_display_name(user: User, display_name: str, *, commit: bool = True) -
 
     Deliberately does not touch the email. The email is this account's identifier — it is what a
     vault owner types to add someone, and it is embedded in the ``user_registered`` ledger payload
-    that is already hashed into the chain. Changing it would leave the audit record naming an
-    address that no longer resolves to anyone, so the product does not offer it.
+    that is already hashed into the chain. The product does not offer changing it; the operator
+    does it with ``change_email``, which logs the change so verifiers can follow it.
 
     The display name has no such problem: the record stores actor *ids*, and names are resolved for
     display at read time, so a rename shows up consistently across the whole history.
@@ -169,6 +169,44 @@ def update_display_name(user: User, display_name: str, *, commit: bool = True) -
     if text.invisible_in(name):
         raise ValueError(f"The name has hidden characters. {text.MESSAGE}")
     user.display_name = name[:255]
+    if commit:
+        db.session.commit()
+    return user
+
+
+def change_email(user: User, new_email: str, *, reason: str, commit: bool = True) -> User:
+    """Change an account's sign-in email, and say so in the log. Operator-only: no route calls it.
+
+    The email is bound to the account by its ``user_registered`` entry, and an offline verifier
+    names each signer from the log, never from the exported file's own labels. So a change made
+    without an entry leaves every decision that person signed failing the identity check (found
+    on live 2026-11-20, after the 14 Oct switch renamed the team straight in the database). This
+    appends ``user_email_changed`` with the old and new address, which a verifier follows as a
+    chain from the registration: a rename counts only when its ``from_email`` is the address the
+    log already holds for that account.
+
+    The actor is ``operator``: nobody in the product made the change. The entry is about the
+    person (``ref_type='user'``), so it reaches their own audit record and nobody else's.
+    """
+    new = _normalise_email(new_email)
+    if not new or "@" not in new:
+        raise ValueError("A sign-in email needs an @.")
+    if not (reason or "").strip():
+        raise ValueError("Say why the email is changing; the reason goes in the log.")
+    old = user.email
+    if new == old:
+        raise ValueError(f"{old} is already this account's email.")
+    if User.query.filter(User.email == new, User.id != user.id).first() is not None:
+        raise EmailTakenError(new)
+    user.email = new
+    ledger_service.append(
+        "user_email_changed",
+        {"user_id": user.id, "from_email": old, "to_email": new, "reason": reason.strip()},
+        actor="operator",
+        ref_type="user",
+        ref_id=str(user.id),
+        commit=False,
+    )
     if commit:
         db.session.commit()
     return user

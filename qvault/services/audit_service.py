@@ -51,6 +51,7 @@ MAX_PER_PAGE = 200
 SENTENCES = {
     "genesis": "Record opened.",
     "user_registered": "{who} joined and was issued a signing key.",
+    "user_email_changed": "The operator changed a sign-in email.",
     "vault_created": "{who} created {vault}.",
     "member_added": "{who} added a member to {vault}.",
     "member_removed": "{who} removed a member from {vault}.",

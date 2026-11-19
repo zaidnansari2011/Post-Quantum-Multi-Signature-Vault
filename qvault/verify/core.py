@@ -564,11 +564,7 @@ def _verify_into(
     # 6b. Identity. Without this, "signer 3" could be labelled with any email the exporter liked;
     #     the registration entry is where the log itself binds an account id to an address.
     # ---------------------------------------------------------------------------------------
-    registrations = {
-        p.get("user_id"): p.get("email")
-        for raw, p in payloads
-        if raw["event_type"] == "user_registered"
-    }
+    registrations, renamed_from = recorded_names(payloads)
     identity: list[str] = []
     for s in verified:
         claimed = s.get("signer_email")
@@ -585,7 +581,14 @@ def _verify_into(
             "identity",
             "The signers are the accounts the log recorded",
             not identity,
-            "; ".join(identity) or ", ".join(sorted(str(v) for v in registrations.values() if v)),
+            "; ".join(identity)
+            or ", ".join(
+                sorted(
+                    str(v) + (f" (was {', '.join(renamed_from[k])})" if renamed_from.get(k) else "")
+                    for k, v in registrations.items()
+                    if v
+                )
+            ),
         )
     )
 
@@ -784,6 +787,30 @@ LINEAGE_ROUTES = {"kit": "Recovery Kit", "phone": "paired phone", "quorum": "app
 
 
 LINEAGE_UNPROVEN = " (This log entry is not proven to be in the published log.)"
+
+
+def recorded_names(payloads: list) -> tuple[dict, dict]:
+    """The address the log holds for each account, and the addresses it held before.
+
+    Starts from ``user_registered`` and follows ``user_email_changed`` in log order. A change
+    counts only when its ``from_email`` is the address the log already holds for that account, so
+    an entry cannot rename someone it does not chain from; one that does not chain is ignored, and
+    the bundle's label is then judged against the address before it. A log with no such entries
+    reads exactly as before. The browser verifier does the same."""
+    names: dict = {}
+    earlier: dict = {}
+    for raw, p in sorted(payloads, key=lambda rp: rp[0].get("seq", 0)):
+        if raw["event_type"] == "user_registered":
+            names[p.get("user_id")] = p.get("email")
+    for raw, p in sorted(payloads, key=lambda rp: rp[0].get("seq", 0)):
+        uid = p.get("user_id")
+        if raw["event_type"] != "user_email_changed" or uid not in names:
+            continue
+        if p.get("from_email") != names[uid] or not p.get("to_email"):
+            continue
+        earlier.setdefault(uid, []).append(names[uid])
+        names[uid] = p.get("to_email")
+    return names, earlier
 
 
 def lineage_lines(

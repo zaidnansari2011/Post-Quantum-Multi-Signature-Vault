@@ -806,6 +806,7 @@ EVENT_LABELS = {
     "proposal_executed": "Payment paid",
     "proposal_execution_failed": "Payment failed",
     "user_registered": "Person joined",
+    "user_email_changed": "Sign-in email changed",
     "vault_created": "Vault created",
     "member_added": "Member added",
     "member_removed": "Member removed",
